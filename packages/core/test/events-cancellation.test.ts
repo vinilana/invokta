@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   createEngine,
   defineCapability,
+  EngineError,
   type EngineEvent,
   type EngineLogger,
   type EngineSchema,
@@ -49,6 +50,183 @@ function capability(
 }
 
 describe("events and cancellation", () => {
+  it("contains hostile native signal overrides without changing success", async () => {
+    const privateFailure = new Error("private signal override failure");
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const overriddenRemove = vi.fn(() => {
+      throw privateFailure;
+    });
+    Object.defineProperties(signal, {
+      aborted: {
+        configurable: true,
+        get() {
+          throw privateFailure;
+        },
+      },
+      reason: {
+        configurable: true,
+        get() {
+          throw privateFailure;
+        },
+      },
+      addEventListener: {
+        configurable: true,
+        value() {
+          throw privateFailure;
+        },
+      },
+      removeEventListener: {
+        configurable: true,
+        value: overriddenRemove,
+      },
+    });
+    const events: EngineEvent[] = [];
+    const run = vi.fn(async ({ input: value }) => ({ result: value.value }));
+    const engine = createEngine({
+      name: "hostile-native-signal-engine",
+      version: "0.1.0",
+      capabilities: { echo: capability(run, 100) },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+
+    await expect(
+      engine.invoke("echo", { value: "safe" }, { signal }),
+    ).resolves.toEqual({ result: "safe" });
+    expect(run).toHaveBeenCalledOnce();
+    expect(overriddenRemove).not.toHaveBeenCalled();
+    expect(events.map((event) => event.type)).toEqual([
+      "invocation.started",
+      "invocation.completed",
+    ]);
+  });
+
+  it("does not let signal cleanup replace the original capability failure", async () => {
+    const cleanupFailure = new Error("private signal cleanup failure");
+    const expected = new EngineError({
+      code: "EXECUTION_FAILED",
+      message: "The original capability failure.",
+      publicDetails: { retryable: false },
+    });
+    const signal = new AbortController().signal;
+    const overriddenRemove = vi.fn(() => {
+      throw cleanupFailure;
+    });
+    Object.defineProperty(signal, "removeEventListener", {
+      configurable: true,
+      value: overriddenRemove,
+    });
+    const events: EngineEvent[] = [];
+    const engine = createEngine({
+      name: "signal-cleanup-failure-engine",
+      version: "0.1.0",
+      capabilities: {
+        fail: capability(async () => {
+          throw expected;
+        }, 100),
+      },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+
+    await expect(
+      engine.invoke("fail", { value: "safe" }, { signal }),
+    ).rejects.toBe(expected);
+    expect(overriddenRemove).not.toHaveBeenCalled();
+    expect(events.map((event) => event.type)).toEqual([
+      "invocation.started",
+      "invocation.failed",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: "invocation.failed",
+      code: "EXECUTION_FAILED",
+    });
+  });
+
+  it("contains structural signal teardown failures without changing success", async () => {
+    const privateFailure = new Error("private structural signal failure");
+    const removeEventListener = vi.fn(() => {
+      throw privateFailure;
+    });
+    const structuralSignal = {
+      aborted: false,
+      addEventListener() {},
+      removeEventListener,
+    } as unknown as AbortSignal;
+    const events: EngineEvent[] = [];
+    const run = vi.fn(async ({ input: value }) => ({ result: value.value }));
+    const engine = createEngine({
+      name: "structural-signal-engine",
+      version: "0.1.0",
+      capabilities: { echo: capability(run, 100) },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+
+    await expect(
+      engine.invoke("echo", { value: "safe" }, { signal: structuralSignal }),
+    ).resolves.toEqual({ result: "safe" });
+    expect(run).toHaveBeenCalledOnce();
+    expect(removeEventListener).toHaveBeenCalledOnce();
+    expect(events.map((event) => event.type)).toEqual([
+      "invocation.started",
+      "invocation.completed",
+    ]);
+  });
+
+  it("normalizes structural signal setup failures before running", async () => {
+    const privateFailure = new Error("private signal listener failure");
+    let registeredListener: (() => void) | undefined;
+    const removeEventListener = vi.fn();
+    const structuralSignal = {
+      aborted: false,
+      addEventListener(_type: string, listener: () => void) {
+        registeredListener = listener;
+        throw privateFailure;
+      },
+      removeEventListener,
+    } as unknown as AbortSignal;
+    const events: EngineEvent[] = [];
+    const run = vi.fn(async ({ input: value }) => ({ result: value.value }));
+    const engine = createEngine({
+      name: "structural-signal-setup-engine",
+      version: "0.1.0",
+      capabilities: { echo: capability(run, 100) },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+
+    const error = await engine
+      .invoke("echo", { value: "safe" }, { signal: structuralSignal })
+      .catch((cause: unknown) => cause);
+
+    expect(error).toMatchObject({
+      code: "EXECUTION_FAILED",
+      message: "Capability execution failed.",
+    });
+    expect(error).not.toBe(privateFailure);
+    expect(run).not.toHaveBeenCalled();
+    expect(registeredListener).toBeTypeOf("function");
+    expect(removeEventListener).toHaveBeenCalledOnce();
+    expect(removeEventListener).toHaveBeenCalledWith(
+      "abort",
+      registeredListener,
+    );
+    expect(events.map((event) => event.type)).toEqual([
+      "invocation.started",
+      "invocation.failed",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: "invocation.failed",
+      code: "EXECUTION_FAILED",
+    });
+  });
+
   it.each([
     ["zero", 0],
     ["a negative value", -1],

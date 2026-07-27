@@ -60,6 +60,17 @@ const noOpLogger: EngineLogger = Object.freeze({
 });
 
 const maximumTimeoutMs = 2_147_483_647;
+const abortSignalAbortedGetter = Object.getOwnPropertyDescriptor(
+  AbortSignal.prototype,
+  "aborted",
+)?.get;
+const abortSignalReasonGetter = Object.getOwnPropertyDescriptor(
+  AbortSignal.prototype,
+  "reason",
+)?.get;
+const abortSignalAddEventListener = AbortSignal.prototype.addEventListener;
+const abortSignalRemoveEventListener =
+  AbortSignal.prototype.removeEventListener;
 const engineErrorCodes = new Set<EngineErrorCode>([
   "CAPABILITY_NOT_FOUND",
   "INPUT_INVALID",
@@ -69,6 +80,67 @@ const engineErrorCodes = new Set<EngineErrorCode>([
   "CANCELLED",
   "EXECUTION_FAILED",
 ]);
+
+function readSignalAborted(signal: AbortSignal): boolean {
+  if (abortSignalAbortedGetter === undefined) {
+    throw new TypeError("AbortSignal is not supported by this runtime.");
+  }
+  return Reflect.apply(abortSignalAbortedGetter, signal, []) as boolean;
+}
+
+function readSignalReason(signal: AbortSignal): unknown {
+  if (abortSignalReasonGetter === undefined) {
+    throw new TypeError("AbortSignal is not supported by this runtime.");
+  }
+  return Reflect.apply(abortSignalReasonGetter, signal, []);
+}
+
+function addAbortListener(signal: AbortSignal, listener: () => void): void {
+  Reflect.apply(abortSignalAddEventListener, signal, [
+    "abort",
+    listener,
+    { once: true },
+  ]);
+}
+
+function removeAbortListener(signal: AbortSignal, listener: () => void): void {
+  Reflect.apply(abortSignalRemoveEventListener, signal, ["abort", listener]);
+}
+
+function isNativeAbortSignal(signal: AbortSignal): boolean {
+  try {
+    readSignalAborted(signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readReceivedAborted(signal: AbortSignal, native: boolean): boolean {
+  return native ? readSignalAborted(signal) : signal.aborted;
+}
+
+function readReceivedReason(signal: AbortSignal, native: boolean): unknown {
+  return native ? readSignalReason(signal) : signal.reason;
+}
+
+function addReceivedAbortListener(
+  signal: AbortSignal,
+  listener: () => void,
+  native: boolean,
+): void {
+  if (native) addAbortListener(signal, listener);
+  else signal.addEventListener("abort", listener, { once: true });
+}
+
+function removeReceivedAbortListener(
+  signal: AbortSignal,
+  listener: () => void,
+  native: boolean,
+): void {
+  if (native) removeAbortListener(signal, listener);
+  else signal.removeEventListener("abort", listener);
+}
 
 function validateTimeoutMs(
   capabilityId: string,
@@ -179,7 +251,9 @@ function createSignal(
   received: AbortSignal | undefined,
   timeoutMs: number | undefined,
 ): { signal: AbortSignal; cleanup(): void } {
-  if (timeoutMs === undefined) {
+  const nativeReceived =
+    received === undefined || isNativeAbortSignal(received);
+  if (timeoutMs === undefined && nativeReceived) {
     return {
       signal: received ?? new AbortController().signal,
       cleanup: () => undefined,
@@ -187,21 +261,57 @@ function createSignal(
   }
 
   const controller = new AbortController();
-  const abortFromReceived = (): void => controller.abort(received?.reason);
-  if (received?.aborted === true) abortFromReceived();
-  else received?.addEventListener("abort", abortFromReceived, { once: true });
+  let listening = false;
+  let cleaned = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const abortFromReceived = (): void => {
+    if (received === undefined) return;
+    try {
+      controller.abort(readReceivedReason(received, nativeReceived));
+    } catch (cause) {
+      controller.abort(cause);
+    }
+  };
 
-  const timer = setTimeout(
-    () => controller.abort(new Error("Capability invocation timed out.")),
-    timeoutMs,
-  );
+  const cleanup = (): void => {
+    if (cleaned) return;
+    cleaned = true;
+    if (listening && received !== undefined) {
+      try {
+        removeReceivedAbortListener(
+          received,
+          abortFromReceived,
+          nativeReceived,
+        );
+      } catch {
+        // Teardown cannot replace the invocation's result or original failure.
+      }
+    }
+    if (timer !== undefined) clearTimeout(timer);
+  };
+
+  try {
+    if (received !== undefined) {
+      if (readReceivedAborted(received, nativeReceived)) abortFromReceived();
+      else {
+        listening = true;
+        addReceivedAbortListener(received, abortFromReceived, nativeReceived);
+      }
+    }
+    if (timeoutMs !== undefined) {
+      timer = setTimeout(
+        () => controller.abort(new Error("Capability invocation timed out.")),
+        timeoutMs,
+      );
+    }
+  } catch (cause) {
+    cleanup();
+    throw cause;
+  }
 
   return {
     signal: controller.signal,
-    cleanup() {
-      received?.removeEventListener("abort", abortFromReceived);
-      clearTimeout(timer);
-    },
+    cleanup,
   };
 }
 
@@ -259,17 +369,22 @@ async function raceWithCancellation<Value>(
   work: Promise<Value>,
   signal: AbortSignal,
 ): Promise<Value> {
-  if (signal.aborted) throw cancelled(signal.reason);
+  if (readSignalAborted(signal)) throw cancelled(readSignalReason(signal));
   let rejectOnAbort: ((reason: EngineError) => void) | undefined;
   const cancellation = new Promise<never>((_resolve, reject) => {
     rejectOnAbort = reject;
   });
-  const onAbort = (): void => rejectOnAbort?.(cancelled(signal.reason));
-  signal.addEventListener("abort", onAbort, { once: true });
+  const onAbort = (): void =>
+    rejectOnAbort?.(cancelled(readSignalReason(signal)));
+  addAbortListener(signal, onAbort);
   try {
     return await Promise.race([work, cancellation]);
   } finally {
-    signal.removeEventListener("abort", onAbort);
+    try {
+      removeAbortListener(signal, onAbort);
+    } catch {
+      // Cancellation teardown cannot replace the settled work outcome.
+    }
   }
 }
 
@@ -304,7 +419,9 @@ function executionFailed(cause: unknown): EngineError {
 function normalizeError(error: unknown, signal?: AbortSignal): EngineError {
   if (isStableEngineError(error)) return error;
   try {
-    if (signal?.aborted === true) return cancelled(error ?? signal.reason);
+    if (signal !== undefined && readSignalAborted(signal)) {
+      return cancelled(error ?? readSignalReason(signal));
+    }
   } catch {
     // A malformed cancellation signal cannot escape the normalized boundary.
   }
@@ -496,7 +613,9 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           signal: signalState.signal,
           logger,
         });
-        if (context.signal.aborted) throw cancelled(context.signal.reason);
+        if (readSignalAborted(context.signal)) {
+          throw cancelled(readSignalReason(context.signal));
+        }
 
         const run = capability.run as (args: {
           input: unknown;
