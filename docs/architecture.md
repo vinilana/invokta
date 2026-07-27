@@ -45,6 +45,13 @@ This pipeline has no port registry, concurrency slot, queue,
 before/after/onError policies, obligations, retry, fallback, cache, or model
 routing. Those decisions belong to the capability or its injected dependencies.
 
+Input and output validation includes checking the value produced by the Standard
+Schema transformation against the lossless JSON data model in ADR 0002. A value
+outside that model fails in the same validation stage, before `access` for input
+or before return for output. The corresponding code is `INPUT_INVALID` or
+`OUTPUT_INVALID`; public details identify the contract failure without including
+the rejected value.
+
 ## Errors
 
 **AE-ERR-01 — Taxonomy.** `EngineError` MUST use one of these codes:

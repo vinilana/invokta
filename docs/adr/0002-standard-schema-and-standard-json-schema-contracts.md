@@ -21,6 +21,27 @@ converter or abstraction.
 Input and output will be required, JSON-serializable, and have an object as their
 root schema for direct compatibility with MCP tools.
 
+After Standard Schema validation and transformation, the runtime will accept
+only values that can be represented in JSON without exceptions or silent data
+conversion. The supported data model is `null`, strings, booleans, finite numbers
+other than negative zero, dense arrays with no own properties beyond their
+indices and built-in `length`, and ordinary records whose prototype is
+`Object.prototype` or `null` and whose own properties are all enumerable and
+string-keyed. Array entries and record properties must be data properties whose
+values recursively follow the same rule. Shared acyclic references are allowed
+because object identity is not part of the JSON data model.
+
+The runtime will reject `undefined`, `bigint`, symbols, functions, non-finite
+numbers, negative zero, sparse arrays, array properties that JSON would omit,
+non-enumerable own properties, accessor-backed entries, symbol-keyed data,
+proxies, custom prototypes, own or inherited dynamic `toJSON` representations,
+and cycles. After the structural check, the runtime will perform an actual JSON
+encoding assertion and reject any value that the host encoder cannot represent.
+These failures remain part of the existing input or output validation stage and
+use `INPUT_INVALID` or `OUTPUT_INVALID`. Public details describe the
+serialization contract failure without including the rejected value. This check
+adds no adapter-specific encoding behavior to the core.
+
 The core and its public types will not export Zod-specific types, classes, or
 functions. Zod may appear only in examples, fixtures, and integration tests to
 demonstrate that a Standard Schema-compatible implementation works. These

@@ -362,4 +362,366 @@ describe("the core v0.1 contract", () => {
       "OUTPUT_INVALID",
     );
   });
+
+  it("rejects a non-JSON input transformation before access and execution", async () => {
+    const transformedInput = testSchema<{ value: string }, { value: bigint }>(
+      () => ({ value: { value: 1n } }),
+    );
+    const access = vi.fn(() => true);
+    const run = vi.fn(async () => ({ result: "unreachable" }));
+    const engine = createEngine({
+      name: "non-json-input-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Reject a non-JSON input transformation.",
+          input: transformedInput,
+          output,
+          access,
+          run,
+        }),
+      },
+    });
+
+    const error = await expectEngineError(
+      engine.invoke("echo", { value: "private-input" }),
+      "INPUT_INVALID",
+    );
+
+    expect(access).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(error.publicDetails).toEqual({
+      issues: [
+        {
+          message:
+            "The validated value is not safely JSON-serializable without data loss.",
+        },
+      ],
+    });
+    expect(JSON.stringify(error.publicDetails)).not.toContain("private-input");
+  });
+
+  it("rejects a cyclic output transformation after execution", async () => {
+    const transformedOutput = testSchema<
+      { result: string },
+      { result: string; self?: unknown }
+    >(() => {
+      const value: { result: string; self?: unknown } = {
+        result: "private-output",
+      };
+      value.self = value;
+      return { value };
+    });
+    const run = vi.fn(async () => ({ result: "handler-result" }));
+    const engine = createEngine({
+      name: "cyclic-output-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Reject a cyclic output transformation.",
+          input,
+          output: transformedOutput,
+          access: "public",
+          run,
+        }),
+      },
+    });
+
+    const error = await expectEngineError(
+      engine.invoke("echo", { value: "safe-input" }),
+      "OUTPUT_INVALID",
+    );
+
+    expect(run).toHaveBeenCalledOnce();
+    expect(error.publicDetails).toEqual({
+      issues: [
+        {
+          message:
+            "The validated value is not safely JSON-serializable without data loss.",
+        },
+      ],
+    });
+    expect(JSON.stringify(error.publicDetails)).not.toContain("private-output");
+  });
+
+  it("rejects a nonrepresentable root transformation", async () => {
+    const transformedInput = testSchema<{ value: string }, undefined>(() => ({
+      value: undefined,
+    }));
+    const access = vi.fn(() => true);
+    const run = vi.fn(async () => ({ result: "unreachable" }));
+    const engine = createEngine({
+      name: "undefined-input-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Reject an undefined root input transformation.",
+          input: transformedInput,
+          output,
+          access,
+          run,
+        }),
+      },
+    });
+
+    await expectEngineError(
+      engine.invoke("echo", { value: "source" }),
+      "INPUT_INVALID",
+    );
+    expect(access).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["undefined", { result: "private-output", nested: { value: undefined } }],
+    [
+      "a function",
+      {
+        result: "private-output",
+        nested: { value: () => "not representable" },
+      },
+    ],
+    ["NaN", { result: "private-output", nested: { value: Number.NaN } }],
+    [
+      "positive infinity",
+      { result: "private-output", nested: { value: Number.POSITIVE_INFINITY } },
+    ],
+    [
+      "negative infinity",
+      { result: "private-output", nested: { value: Number.NEGATIVE_INFINITY } },
+    ],
+  ])(
+    "rejects nested %s instead of allowing lossy JSON encoding",
+    async (_case, transformedValue) => {
+      const transformedOutput = testSchema<
+        { result: string },
+        Record<string, unknown>
+      >(() => ({ value: transformedValue }));
+      const run = vi.fn(async () => ({ result: "handler-result" }));
+      const engine = createEngine({
+        name: "lossy-output-engine",
+        version: "0.1.0",
+        capabilities: {
+          echo: defineCapability({
+            description: "Reject lossy JSON output transformations.",
+            input,
+            output: transformedOutput,
+            access: "public",
+            run,
+          }),
+        },
+      });
+
+      const error = await expectEngineError(
+        engine.invoke("echo", { value: "safe-input" }),
+        "OUTPUT_INVALID",
+      );
+
+      expect(run).toHaveBeenCalledOnce();
+      expect(error.publicDetails).toEqual({
+        issues: [
+          {
+            message:
+              "The validated value is not safely JSON-serializable without data loss.",
+          },
+        ],
+      });
+      expect(JSON.stringify(error.publicDetails)).not.toContain(
+        "private-output",
+      );
+    },
+  );
+
+  it.each([
+    ["a symbol", () => Symbol("not representable")],
+    ["negative zero", () => -0],
+    ["a sparse array", () => new Array(1)],
+    [
+      "an array property omitted by JSON",
+      () => Object.assign(["represented"], { omitted: "private" }),
+    ],
+    [
+      "an accessor-backed property",
+      () =>
+        Object.defineProperty({}, "value", {
+          enumerable: true,
+          get: () => "private",
+        }),
+    ],
+    [
+      "a non-enumerable record property",
+      () => Object.defineProperty({}, "omitted", { value: "private" }),
+    ],
+    [
+      "a non-enumerable array property",
+      () => Object.defineProperty(["represented"], "omitted", { value: true }),
+    ],
+    ["a custom object representation", () => new Date(0)],
+  ])(
+    "rejects %s outside the lossless JSON data model",
+    async (_case, value) => {
+      const transformedOutput = testSchema<
+        { result: string },
+        Record<string, unknown>
+      >(() => ({
+        value: { result: "private-output", nested: value() },
+      }));
+      const engine = createEngine({
+        name: "unsupported-json-value-engine",
+        version: "0.1.0",
+        capabilities: {
+          echo: defineCapability({
+            description: "Reject unsupported JSON values.",
+            input,
+            output: transformedOutput,
+            access: "public",
+            async run() {
+              return { result: "handler-result" };
+            },
+          }),
+        },
+      });
+
+      await expectEngineError(
+        engine.invoke("echo", { value: "safe-input" }),
+        "OUTPUT_INVALID",
+      );
+    },
+  );
+
+  it("rejects a proxy without executing its dynamic value trap", async () => {
+    const get = vi.fn(
+      (target: { result: string; nested: string }, property: PropertyKey) =>
+        property === "nested" ? 1n : (Reflect.get(target, property) as unknown),
+    );
+    const transformedValue = new Proxy(
+      { result: "private-output", nested: "descriptor-is-safe" },
+      { get },
+    );
+    const transformedOutput = testSchema<
+      { result: string },
+      typeof transformedValue
+    >(() => ({ value: transformedValue }));
+    const engine = createEngine({
+      name: "proxy-output-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Reject a dynamic proxy output.",
+          input,
+          output: transformedOutput,
+          access: "public",
+          async run() {
+            return { result: "handler-result" };
+          },
+        }),
+      },
+    });
+
+    const error = await expectEngineError(
+      engine.invoke("echo", { value: "safe-input" }),
+      "OUTPUT_INVALID",
+    );
+
+    expect(get).not.toHaveBeenCalled();
+    expect(error.publicDetails).toEqual({
+      issues: [
+        {
+          message:
+            "The validated value is not safely JSON-serializable without data loss.",
+        },
+      ],
+    });
+  });
+
+  it("rejects an inherited toJSON representation", async () => {
+    const originalToJson = Object.getOwnPropertyDescriptor(
+      Array.prototype,
+      "toJSON",
+    );
+    const transformedValue = { result: "private-output", nested: [] };
+    const transformedOutput = testSchema<
+      { result: string },
+      typeof transformedValue
+    >(() => ({ value: transformedValue }));
+    const engine = createEngine({
+      name: "inherited-to-json-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Reject inherited JSON representations.",
+          input,
+          output: transformedOutput,
+          access: "public",
+          async run() {
+            return { result: "handler-result" };
+          },
+        }),
+      },
+    });
+
+    Object.defineProperty(Array.prototype, "toJSON", {
+      configurable: true,
+      value: () => "replacement",
+    });
+    try {
+      await expectEngineError(
+        engine.invoke("echo", { value: "safe-input" }),
+        "OUTPUT_INVALID",
+      );
+    } finally {
+      if (originalToJson === undefined) {
+        Reflect.deleteProperty(Array.prototype, "toJSON");
+      } else {
+        Object.defineProperty(Array.prototype, "toJSON", originalToJson);
+      }
+    }
+  });
+
+  it("accepts transformed values from the lossless JSON data model", async () => {
+    const nullPrototypeRecord = Object.assign(Object.create(null) as object, {
+      value: "null prototype",
+    });
+    const shared = { value: "shared" };
+    const transformedValue = {
+      result: "TRANSFORMED",
+      nested: [null, true, 1, "text", nullPrototypeRecord, shared, shared],
+    };
+    const transformedOutput = testSchema<
+      { result: string },
+      typeof transformedValue
+    >(() => ({ value: transformedValue }));
+    const engine = createEngine({
+      name: "json-transform-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Accept a lossless JSON output transformation.",
+          input,
+          output: transformedOutput,
+          access: "public",
+          async run({ input: value }) {
+            return { result: value.value };
+          },
+        }),
+      },
+    });
+
+    const result = await engine.invoke("echo", { value: "transformed" });
+
+    expect(result).toBe(transformedValue);
+    expect(() => JSON.stringify(result)).not.toThrow();
+    expect(JSON.parse(JSON.stringify(result))).toEqual({
+      result: "TRANSFORMED",
+      nested: [
+        null,
+        true,
+        1,
+        "text",
+        { value: "null prototype" },
+        { value: "shared" },
+        { value: "shared" },
+      ],
+    });
+  });
 });

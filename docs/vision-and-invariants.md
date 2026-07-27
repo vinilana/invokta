@@ -60,7 +60,8 @@ another schema abstraction or depend on Zod in the core.
 **AE-SCHEMA-02 — JSON object.** Input and output MUST be JSON-serializable and
 have an object root schema. Both are required. Input is validated and transformed
 before authorization and execution; output is validated and transformed before
-being returned.
+being returned. The transformed values MUST remain inside the lossless JSON data
+model defined in ADR 0002.
 
 **AE-ACCESS-01 — Explicit rule.** Every capability MUST declare `access` as
 `public`, `authenticated`, or an asynchronous/synchronous function. `public`
