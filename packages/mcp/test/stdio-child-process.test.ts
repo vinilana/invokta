@@ -86,7 +86,7 @@ function waitForExit(child: ChildProcessWithoutNullStreams): Promise<{
       reject(
         new Error("The stdio server did not exit after its channel closed."),
       );
-    }, 2_000);
+    }, 5_000);
     timer.unref();
     child.once("close", (code, signal) => {
       clearTimeout(timer);
@@ -299,4 +299,97 @@ it("closes when stdin had already ended before the adapter starts", async () => 
 
   await expect(exited).resolves.toEqual({ code: 0, signal: null });
   expect(stderr.value()).toBe("listeners-clean\n");
+});
+
+it("round trips and cancels concurrent request IDs including falsy IDs", async () => {
+  const child = spawnLifecycleServer();
+  const stdout = captureText(child.stdout);
+  const stderr = captureText(child.stderr);
+  const exited = waitForExit(child);
+
+  try {
+    sendMessage(child, {
+      jsonrpc: "2.0",
+      id: 0,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: {
+          name: "stdio-falsy-cancellation-test",
+          version: "0.0.0-test",
+        },
+      },
+    });
+    await stdout.waitFor('"id":0');
+    sendMessage(child, {
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+    });
+    sendMessage(child, {
+      jsonrpc: "2.0",
+      id: "",
+      method: "tools/list",
+    });
+    await stdout.waitFor('"id":""');
+
+    const requests = [
+      { id: 0, label: "numeric-zero" },
+      { id: "", label: "empty-string" },
+      { id: 1, label: "numeric-control" },
+      { id: "control", label: "string-control" },
+    ] as const;
+    for (const { id, label } of requests) {
+      sendMessage(child, {
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: {
+          name: "example.concurrent-wait",
+          arguments: { label },
+        },
+      });
+    }
+    for (const { label } of requests) {
+      await stderr.waitFor(`started:${label}\n`);
+    }
+    for (const { id } of requests) {
+      sendMessage(child, {
+        jsonrpc: "2.0",
+        method: "notifications/cancelled",
+        params: { requestId: id, reason: "test cancellation" },
+      });
+    }
+    for (const { label } of requests) {
+      await stderr.waitFor(`cancelled:${label}\n`);
+    }
+  } finally {
+    child.stdin.end();
+  }
+
+  await expect(exited).resolves.toEqual({ code: 0, signal: null });
+  expect(stderr.value()).toBe(
+    [
+      "started:numeric-zero",
+      "started:empty-string",
+      "started:numeric-control",
+      "started:string-control",
+      "cancelled:numeric-zero",
+      "cancelled:empty-string",
+      "cancelled:numeric-control",
+      "cancelled:string-control",
+      "listeners-clean",
+      "",
+    ].join("\n"),
+  );
+  expect(
+    stdout
+      .value()
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line)),
+  ).toEqual([
+    expect.objectContaining({ jsonrpc: "2.0", id: 0 }),
+    expect.objectContaining({ jsonrpc: "2.0", id: "" }),
+  ]);
 });

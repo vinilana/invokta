@@ -18,6 +18,7 @@ export {
 } from "./http.js";
 
 import { createMcpServer } from "./protocol-server.js";
+import { preserveFalsyRequestIds } from "./request-id-transport.js";
 
 export interface ServeMcpStdioOptions {
   readonly principal?: Principal | null;
@@ -130,7 +131,7 @@ export async function serveMcpStdio<Capabilities extends CapabilityMap>(
   process.stdout.on("error", closeFromOutput);
 
   try {
-    await server.connect(transport);
+    await server.connect(preserveFalsyRequestIds(transport));
     if (process.stdin.readableEnded || process.stdin.destroyed) requestClose();
     const failure = await lifetime;
     if (failure !== undefined) throw failure;

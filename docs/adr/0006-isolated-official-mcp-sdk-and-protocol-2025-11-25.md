@@ -100,6 +100,14 @@ Standard JSON Schemas. The low-level handler keeps those input and output schema
 unchanged at the transport boundary. This SDK choice remains internal to the MCP
 package and may change without changing its public API.
 
+SDK 1.29.0 treats the valid request IDs `0` and `""` as absent when processing a
+cancellation notification. The MCP package will contain this version-specific
+defect at its transport boundary: those two IDs receive private in-memory
+identities while the SDK processes the request and are restored before any
+message reaches the wire. Other IDs pass through unchanged. This normalization
+uses the SDK's transport interface, remains internal, and must be removed when an
+approved SDK version handles all valid request IDs directly.
+
 No complete in-house protocol implementation will be maintained in parallel with
 the official SDK; local code will be limited to adaptation, isolation, and tests.
 

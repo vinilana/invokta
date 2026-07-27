@@ -161,7 +161,9 @@ into an internal protocol error.
 **AE-MCP-02 — Isolated SDK.** `@ai-engine/mcp` encapsulates the official SDK and
 MUST NOT leak its types through the public API or copy it into the core. The
 baseline revision is `2025-11-25`; the approved version is recorded in ADR 0006
-and the lockfile.
+and the lockfile. Valid request IDs retain their protocol identity, including
+numeric zero and the empty string, and cancellation MUST reach only the request
+identified by the notification.
 
 **AE-MCP-03 — stdio.** `stdout` is reserved exclusively for the protocol; logs go
 to `stderr`. The trusted local principal is configured by the host. The signal

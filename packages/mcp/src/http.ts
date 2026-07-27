@@ -8,6 +8,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { OAuthProtectedResourceMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
 
 import { createMcpServer } from "./protocol-server.js";
+import { preserveFalsyRequestIds } from "./request-id-transport.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
@@ -849,7 +850,7 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
           headers: webHeaders,
           signal: abortController.signal,
         });
-        await protocolServer.connect(transport);
+        await protocolServer.connect(preserveFalsyRequestIds(transport));
         const webResponse = await transport.handleRequest(webRequest, {
           parsedBody,
         });

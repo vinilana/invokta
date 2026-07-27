@@ -70,6 +70,23 @@ const engine = createEngine({
         return { data: "x".repeat(2_000_000) };
       },
     }),
+    "example.concurrent-wait": defineCapability({
+      description: "Waits for cancellation and identifies its request.",
+      input: z.object({ label: z.string() }),
+      output: z.object({ done: z.boolean() }),
+      access: "public",
+      async run({ input, context }) {
+        process.stderr.write(`started:${input.label}\n`);
+        return await new Promise((_resolve, reject) => {
+          const cancel = () => {
+            process.stderr.write(`cancelled:${input.label}\n`);
+            reject(context.signal.reason);
+          };
+          if (context.signal.aborted) cancel();
+          else context.signal.addEventListener("abort", cancel, { once: true });
+        });
+      },
+    }),
   },
 });
 
