@@ -12,6 +12,18 @@ direct call, the CLI, MCP stdio, and stateless MCP Streamable HTTP.
 4. [Implementation plan and acceptance criteria](./implementation-plan-and-acceptance-criteria.md)
 5. [Architecture decision records](./adr/README.md)
 
+## Guides and examples
+
+These guides apply the normative contracts above. When a guide or example
+conflicts with a contract or ADR, the normative source takes precedence.
+
+- [Getting started: direct, CLI, MCP stdio, and MCP HTTP](./getting-started.md)
+- [Integrating an identity provider at the HTTP boundary](./http-authentication.md)
+- [Integrating a PDP through a capability access rule](./capability-authorization.md)
+- [Version 0.1 scope and maturity matrix](./scope-matrix.md)
+- [`hello-engine`: minimal onboarding example](../examples/hello-engine/)
+- [`support-engine`: dependency injection and authorization example](../examples/support-engine/)
+
 ## Normative language
 
 The terms **MUST**, **MUST NOT**, **SHOULD**, **MAY**, and **OPTIONAL** indicate,
