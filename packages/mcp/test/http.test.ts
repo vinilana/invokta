@@ -77,7 +77,7 @@ function endpoint(server: McpHttpServerHandle, path = "/mcp") {
 async function callTool(
   server: McpHttpServerHandle,
   options: {
-    readonly id?: string;
+    readonly id?: string | number;
     readonly token?: string;
     readonly arguments?: Readonly<Record<string, unknown>>;
     readonly headers?: Readonly<Record<string, string>>;
@@ -465,6 +465,24 @@ describe("MCP stateless Streamable HTTP", () => {
         principal: { id: "user:alice" },
       }),
     );
+  });
+
+  it("round trips valid falsy request IDs across stateless requests", async () => {
+    const server = await start();
+
+    const [numericResponse, stringResponse] = await Promise.all([
+      callTool(server, { id: 0, token: "alice" }),
+      callTool(server, { id: "", token: "bob" }),
+    ]);
+    const [numericPayload, stringPayload] = await Promise.all([
+      json(numericResponse),
+      json(stringResponse),
+    ]);
+
+    expect(numericResponse.status).toBe(200);
+    expect(stringResponse.status).toBe(200);
+    expect(numericPayload).toMatchObject({ jsonrpc: "2.0", id: 0 });
+    expect(stringPayload).toMatchObject({ jsonrpc: "2.0", id: "" });
   });
 
   it("interoperates with the official Streamable HTTP client", async () => {
