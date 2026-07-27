@@ -15,5 +15,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
+  },
+  "dependencies": {
+    "@standard-schema/spec": "1.1.0"
   }
 }
