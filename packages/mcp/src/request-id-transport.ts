@@ -12,9 +12,13 @@ import type {
 function rewriteRequestIds(
   message: JSONRPCMessage,
   rewrite: (value: unknown) => unknown | undefined,
+  topLevelIdScope: "request" | "message",
 ): JSONRPCMessage {
   let rewritten: JSONRPCMessage = message;
-  if ("id" in message) {
+  if (
+    "id" in message &&
+    (topLevelIdScope === "message" || "method" in message)
+  ) {
     const id = rewrite(message.id);
     if (id !== undefined) {
       rewritten = { ...message, id } as unknown as JSONRPCMessage;
@@ -74,8 +78,10 @@ class FalsyRequestIdTransport implements Transport {
       extra?: MessageExtraInfo,
     ) => {
       this.onmessage?.(
-        rewriteRequestIds(message, (value) =>
-          this.toInternalRequestId(value),
+        rewriteRequestIds(
+          message,
+          (value) => this.toInternalRequestId(value),
+          "request",
         ) as T,
         extra,
       );
@@ -88,7 +94,11 @@ class FalsyRequestIdTransport implements Transport {
       options?.relatedRequestId,
     );
     return this.transport.send(
-      rewriteRequestIds(message, (value) => this.toExternalRequestId(value)),
+      rewriteRequestIds(
+        message,
+        (value) => this.toExternalRequestId(value),
+        "message",
+      ),
       relatedRequestId === undefined
         ? options
         : { ...options, relatedRequestId },

@@ -86,7 +86,7 @@ function waitForExit(child: ChildProcessWithoutNullStreams): Promise<{
       reject(
         new Error("The stdio server did not exit after its channel closed."),
       );
-    }, 5_000);
+    }, 2_000);
     timer.unref();
     child.once("close", (code, signal) => {
       clearTimeout(timer);
@@ -353,15 +353,16 @@ it("round trips and cancels concurrent request IDs including falsy IDs", async (
     for (const { label } of requests) {
       await stderr.waitFor(`started:${label}\n`);
     }
-    for (const { id } of requests) {
+    for (const [index, { id, label }] of requests.entries()) {
       sendMessage(child, {
         jsonrpc: "2.0",
         method: "notifications/cancelled",
         params: { requestId: id, reason: "test cancellation" },
       });
-    }
-    for (const { label } of requests) {
       await stderr.waitFor(`cancelled:${label}\n`);
+      for (const pending of requests.slice(index + 1)) {
+        expect(stderr.value()).not.toContain(`cancelled:${pending.label}\n`);
+      }
     }
   } finally {
     child.stdin.end();
