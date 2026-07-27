@@ -46,6 +46,18 @@ reading `requestId` or `source` from the options object throws, partially read
 metadata will be discarded. The invocation will use a generated request ID and
 the default `direct` source to emit the ordered started and failed events, then
 reject with `EXECUTION_FAILED`; the original property failure remains internal.
+Identity and cancellation inputs retain their own provenance at this boundary.
+A failure while reading or snapshotting `principal` is always sanitized as
+`UNAUTHENTICATED`. A failure while reading the configured `signal`, registering
+its cancellation listener, or reading its state or reason is always sanitized
+as `EXECUTION_FAILED`, even when the failure itself is an `EngineError`. A signal
+reason access failure that occurs after execution starts is not classified as a
+genuine caller cancellation. Caller-controlled errors at these boundaries cannot
+select public codes, messages, or details. The access rule receives a
+runtime-owned signal view without a capability timeout. Signal-failure provenance
+is associated out of band with that runtime-owned signal and is not exposed or
+replayable through `signal.reason`. The configured capability timeout continues
+to start only after authorization completes.
 
 The only cross-cutting hook will be `onEvent`. It will receive only
 `invocation.started`, `invocation.completed`, and `invocation.failed`, with the

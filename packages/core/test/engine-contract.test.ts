@@ -959,6 +959,58 @@ describe("the core v0.1 contract", () => {
     },
   );
 
+  it("does not let a principal getter select a public error", async () => {
+    const injected = new EngineError({
+      code: "OUTPUT_INVALID",
+      message: "Attacker-selected identity failure.",
+      publicDetails: { secret: "must-not-escape" },
+    });
+    const options = Object.defineProperty({}, "principal", {
+      get() {
+        throw injected;
+      },
+    });
+    const events: EngineEvent[] = [];
+    const access = vi.fn(() => true);
+    const run = vi.fn(async () => ({ result: "unreachable" }));
+    const engine = createEngine({
+      name: "principal-provenance-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Contain identity boundary failures.",
+          input,
+          output,
+          access,
+          run,
+        }),
+      },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+
+    const error = await expectEngineError(
+      engine.invoke("echo", { value: "safe" }, options),
+      "UNAUTHENTICATED",
+    );
+
+    expect(error).not.toBe(injected);
+    expect(error.message).toBe("Authentication is required.");
+    expect(error.publicDetails).toBeUndefined();
+    expect(error.message).not.toContain("Attacker-selected");
+    expect(access).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(events.map((event) => event.type)).toEqual([
+      "invocation.started",
+      "invocation.failed",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: "invocation.failed",
+      code: "UNAUTHENTICATED",
+    });
+  });
+
   it("preserves EngineError and normalizes unknown handler failures", async () => {
     const expected = new EngineError({
       code: "EXECUTION_FAILED",
@@ -1206,6 +1258,58 @@ describe("the core v0.1 contract", () => {
 
     expect(normalized.message).toBe("Capability execution failed.");
     expect(normalized.cause).toBe(injected);
+  });
+
+  it("does not let a signal option getter select a public error", async () => {
+    const injected = new EngineError({
+      code: "FORBIDDEN",
+      message: "Attacker-selected signal failure.",
+      publicDetails: { secret: "must-not-escape" },
+    });
+    const options = Object.defineProperty({}, "signal", {
+      get() {
+        throw injected;
+      },
+    });
+    const events: EngineEvent[] = [];
+    const access = vi.fn(() => true);
+    const run = vi.fn(async () => ({ result: "unreachable" }));
+    const engine = createEngine({
+      name: "signal-option-provenance-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Contain cancellation boundary failures.",
+          input,
+          output,
+          access,
+          run,
+        }),
+      },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+
+    const error = await expectEngineError(
+      engine.invoke("echo", { value: "safe" }, options),
+      "EXECUTION_FAILED",
+    );
+
+    expect(error).not.toBe(injected);
+    expect(error.message).toBe("Capability execution failed.");
+    expect(error.publicDetails).toBeUndefined();
+    expect(error.message).not.toContain("Attacker-selected");
+    expect(access).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(events.map((event) => event.type)).toEqual([
+      "invocation.started",
+      "invocation.failed",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: "invocation.failed",
+      code: "EXECUTION_FAILED",
+    });
   });
 
   it("contains a hostile signal while normalizing an invocation failure", async () => {

@@ -247,13 +247,16 @@ function snapshotCapability(
   }) as AnyCapability;
 }
 
+const callerSignalFailureCauses = new WeakMap<AbortSignal, unknown>();
+
 function createSignal(
   received: AbortSignal | undefined,
   timeoutMs: number | undefined,
+  forceWrapper = false,
 ): { signal: AbortSignal; cleanup(): void } {
   const nativeReceived =
     received === undefined || isNativeAbortSignal(received);
-  if (timeoutMs === undefined && nativeReceived) {
+  if (timeoutMs === undefined && nativeReceived && !forceWrapper) {
     return {
       signal: received ?? new AbortController().signal,
       cleanup: () => undefined,
@@ -269,7 +272,8 @@ function createSignal(
     try {
       controller.abort(readReceivedReason(received, nativeReceived));
     } catch (cause) {
-      controller.abort(cause);
+      callerSignalFailureCauses.set(controller.signal, cause);
+      controller.abort();
     }
   };
 
@@ -369,13 +373,12 @@ async function raceWithCancellation<Value>(
   work: Promise<Value>,
   signal: AbortSignal,
 ): Promise<Value> {
-  if (readSignalAborted(signal)) throw cancelled(readSignalReason(signal));
+  if (readSignalAborted(signal)) throw abortedSignalError(signal);
   let rejectOnAbort: ((reason: EngineError) => void) | undefined;
   const cancellation = new Promise<never>((_resolve, reject) => {
     rejectOnAbort = reject;
   });
-  const onAbort = (): void =>
-    rejectOnAbort?.(cancelled(readSignalReason(signal)));
+  const onAbort = (): void => rejectOnAbort?.(abortedSignalError(signal));
   addAbortListener(signal, onAbort);
   try {
     return await Promise.race([work, cancellation]);
@@ -416,11 +419,19 @@ function executionFailed(cause: unknown): EngineError {
   });
 }
 
+function abortedSignalError(signal: AbortSignal): EngineError {
+  return callerSignalFailureCauses.has(signal)
+    ? executionFailed(callerSignalFailureCauses.get(signal))
+    : cancelled(readSignalReason(signal));
+}
+
 function normalizeError(error: unknown, signal?: AbortSignal): EngineError {
   if (isStableEngineError(error)) return error;
   try {
     if (signal !== undefined && readSignalAborted(signal)) {
-      return cancelled(error ?? readSignalReason(signal));
+      return callerSignalFailureCauses.has(signal)
+        ? executionFailed(callerSignalFailureCauses.get(signal))
+        : cancelled(error ?? readSignalReason(signal));
     }
   } catch {
     // A malformed cancellation signal cannot escape the normalized boundary.
@@ -546,7 +557,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
         try {
           principal = snapshotPrincipal(options?.principal ?? null);
         } catch (cause) {
-          principalError = normalizeError(cause);
+          principalError = unauthenticated(cause);
         }
       }
       const started = performance.now();
@@ -589,23 +600,67 @@ export function createEngine<const Capabilities extends CapabilityMap>(
         );
         const input = structuredClone(validatedInput);
         if (principalError !== undefined) throw principalError;
-        const callerSignal = options?.signal ?? new AbortController().signal;
+        let callerSignal: AbortSignal;
+        try {
+          callerSignal = options?.signal ?? new AbortController().signal;
+        } catch (cause) {
+          throw executionFailed(cause);
+        }
         const accessPrincipal = clonePrincipal(principal);
+        let accessSignalState: ReturnType<typeof createSignal> | undefined;
+        if (typeof capability.access === "function") {
+          try {
+            accessSignalState = createSignal(callerSignal, undefined, true);
+          } catch (cause) {
+            throw executionFailed(cause);
+          }
+        }
+        if (
+          accessSignalState !== undefined &&
+          callerSignalFailureCauses.has(accessSignalState.signal)
+        ) {
+          accessSignalState.cleanup();
+          throw executionFailed(
+            callerSignalFailureCauses.get(accessSignalState.signal),
+          );
+        }
         const accessContext: ExecutionContext = Object.freeze({
           requestId,
           source,
           principal: accessPrincipal,
-          signal: callerSignal,
+          signal: accessSignalState?.signal ?? callerSignal,
           logger,
         });
-        await enforceAccess(
-          capabilityId,
-          capability,
-          structuredClone(input),
-          accessContext,
-        );
+        let accessFailed = false;
+        let accessFailure: unknown;
+        try {
+          await enforceAccess(
+            capabilityId,
+            capability,
+            structuredClone(input),
+            accessContext,
+          );
+        } catch (cause) {
+          accessFailed = true;
+          accessFailure = cause;
+        } finally {
+          accessSignalState?.cleanup();
+        }
+        if (
+          accessSignalState !== undefined &&
+          callerSignalFailureCauses.has(accessSignalState.signal)
+        ) {
+          throw executionFailed(
+            callerSignalFailureCauses.get(accessSignalState.signal),
+          );
+        }
+        if (accessFailed) throw accessFailure;
 
-        signalState = createSignal(callerSignal, capability.timeoutMs);
+        try {
+          signalState = createSignal(callerSignal, capability.timeoutMs);
+        } catch (cause) {
+          throw executionFailed(cause);
+        }
         const context: ExecutionContext = Object.freeze({
           requestId,
           source,
@@ -614,7 +669,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           logger,
         });
         if (readSignalAborted(context.signal)) {
-          throw cancelled(readSignalReason(context.signal));
+          throw abortedSignalError(context.signal);
         }
 
         const run = capability.run as (args: {

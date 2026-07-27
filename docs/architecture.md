@@ -99,6 +99,16 @@ boundary. If either property access throws, the runtime discards all partially
 read option metadata, uses a generated request ID and the default `direct`
 source, emits the ordered started and failed events, and throws a normalized
 `EXECUTION_FAILED` error. The property failure remains internal as the cause.
+Failures while reading or snapshotting `principal` are a distinct identity
+boundary and always produce a sanitized `UNAUTHENTICATED` error. Failures while
+reading `signal` or setting up caller-signal state always produce a sanitized
+`EXECUTION_FAILED` error. An `EngineError` thrown by either caller-controlled
+boundary cannot select its public code, message, or details. A failure to read a
+structural signal's reason is distinguished from genuine cancellation, including
+when it occurs after capability execution has started. Authorization receives a
+runtime-owned, no-timeout signal view so caller-controlled signal properties are
+validated before the access rule runs; the capability timeout still starts only
+after authorization completes.
 
 ## Events
 
