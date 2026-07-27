@@ -146,85 +146,163 @@ describe("events and cancellation", () => {
     });
   });
 
-  it("contains structural signal teardown failures without changing success", async () => {
-    const privateFailure = new Error("private structural signal failure");
-    const removeEventListener = vi.fn(() => {
-      throw privateFailure;
-    });
-    const structuralSignal = {
-      aborted: false,
-      addEventListener() {},
-      removeEventListener,
-    } as unknown as AbortSignal;
-    const events: EngineEvent[] = [];
-    const run = vi.fn(async ({ input: value }) => ({ result: value.value }));
-    const engine = createEngine({
-      name: "structural-signal-engine",
-      version: "0.1.0",
-      capabilities: { echo: capability(run, 100) },
-      onEvent(event) {
-        events.push(event);
+  it.each([
+    [
+      "a proxy-wrapped rejected Promise",
+      (privateFailure: Error) => new Proxy(Promise.reject(privateFailure), {}),
+    ],
+    [
+      "a rejected Promise with a non-configurable hostile constructor",
+      (privateFailure: Error) =>
+        Object.defineProperty(Promise.reject(privateFailure), "constructor", {
+          configurable: false,
+          get() {
+            throw privateFailure;
+          },
+        }),
+    ],
+  ])(
+    "rejects a structural signal before it can create %s",
+    async (_case, createDetachedRejection) => {
+      const privateFailure = new Error("private detached signal failure");
+      const createListenerReturn = vi.fn(() =>
+        createDetachedRejection(privateFailure),
+      );
+      const readAborted = vi.fn(() => false);
+      const addEventListener = vi.fn(() => createListenerReturn());
+      const removeEventListener = vi.fn(() => createListenerReturn());
+      const structuralSignal = Object.defineProperties(
+        { addEventListener, removeEventListener },
+        {
+          aborted: { get: readAborted },
+          reason: { get: createListenerReturn },
+        },
+      ) as unknown as AbortSignal;
+      const access = vi.fn(() => true);
+      const run = vi.fn(async () => ({ result: "unreachable" }));
+      const events: EngineEvent[] = [];
+      const engine = createEngine({
+        name: "platform-signal-boundary-engine",
+        version: "0.1.0",
+        capabilities: {
+          echo: defineCapability({
+            description: "Reject a non-platform cancellation signal.",
+            input,
+            output,
+            access,
+            run,
+          }),
+        },
+        onEvent(event) {
+          events.push(event);
+        },
+      });
+      const unhandledRejections: unknown[] = [];
+      const onUnhandledRejection = (reason: unknown): void => {
+        unhandledRejections.push(reason);
+      };
+
+      process.prependListener("unhandledRejection", onUnhandledRejection);
+      try {
+        await expect(
+          engine.invoke(
+            "echo",
+            { value: "safe" },
+            { signal: structuralSignal },
+          ),
+        ).rejects.toMatchObject({
+          code: "EXECUTION_FAILED",
+          message: "Capability execution failed.",
+        });
+        await new Promise<void>((resolve) => {
+          setImmediate(() => setImmediate(resolve));
+        });
+
+        expect(readAborted).not.toHaveBeenCalled();
+        expect(addEventListener).not.toHaveBeenCalled();
+        expect(removeEventListener).not.toHaveBeenCalled();
+        expect(createListenerReturn).not.toHaveBeenCalled();
+        expect(access).not.toHaveBeenCalled();
+        expect(run).not.toHaveBeenCalled();
+        expect(unhandledRejections).toEqual([]);
+        expect(events.map((event) => event.type)).toEqual([
+          "invocation.started",
+          "invocation.failed",
+        ]);
+        expect(events.at(-1)).toMatchObject({
+          type: "invocation.failed",
+          code: "EXECUTION_FAILED",
+        });
+      } finally {
+        process.removeListener("unhandledRejection", onUnhandledRejection);
+      }
+    },
+  );
+
+  it("rejects a proxied platform signal without executing proxy traps", async () => {
+    const privateFailure = new Error("private proxy trap failure");
+    const createDetachedRejection = vi.fn(() => Promise.reject(privateFailure));
+    const readProperty = vi.fn(
+      (target: AbortSignal, property: string | symbol, receiver: unknown) => {
+        void createDetachedRejection();
+        return Reflect.get(target, property, receiver);
       },
-    });
-
-    await expect(
-      engine.invoke("echo", { value: "safe" }, { signal: structuralSignal }),
-    ).resolves.toEqual({ result: "safe" });
-    expect(run).toHaveBeenCalledOnce();
-    expect(removeEventListener).toHaveBeenCalledOnce();
-    expect(events.map((event) => event.type)).toEqual([
-      "invocation.started",
-      "invocation.completed",
-    ]);
-  });
-
-  it("normalizes structural signal setup failures before running", async () => {
-    const privateFailure = new Error("private signal listener failure");
-    let registeredListener: (() => void) | undefined;
-    const removeEventListener = vi.fn();
-    const structuralSignal = {
-      aborted: false,
-      addEventListener(_type: string, listener: () => void) {
-        registeredListener = listener;
-        throw privateFailure;
-      },
-      removeEventListener,
-    } as unknown as AbortSignal;
-    const events: EngineEvent[] = [];
-    const run = vi.fn(async ({ input: value }) => ({ result: value.value }));
-    const engine = createEngine({
-      name: "structural-signal-setup-engine",
-      version: "0.1.0",
-      capabilities: { echo: capability(run, 100) },
-      onEvent(event) {
-        events.push(event);
-      },
-    });
-
-    const error = await engine
-      .invoke("echo", { value: "safe" }, { signal: structuralSignal })
-      .catch((cause: unknown) => cause);
-
-    expect(error).toMatchObject({
-      code: "EXECUTION_FAILED",
-      message: "Capability execution failed.",
-    });
-    expect(error).not.toBe(privateFailure);
-    expect(run).not.toHaveBeenCalled();
-    expect(registeredListener).toBeTypeOf("function");
-    expect(removeEventListener).toHaveBeenCalledOnce();
-    expect(removeEventListener).toHaveBeenCalledWith(
-      "abort",
-      registeredListener,
     );
-    expect(events.map((event) => event.type)).toEqual([
-      "invocation.started",
-      "invocation.failed",
-    ]);
-    expect(events.at(-1)).toMatchObject({
-      type: "invocation.failed",
-      code: "EXECUTION_FAILED",
+    const signal = new Proxy(new AbortController().signal, {
+      get: readProperty,
     });
+    const access = vi.fn(() => true);
+    const run = vi.fn(async () => ({ result: "unreachable" }));
+    const events: EngineEvent[] = [];
+    const engine = createEngine({
+      name: "proxied-platform-signal-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Reject a proxied platform cancellation signal.",
+          input,
+          output,
+          access,
+          run,
+        }),
+      },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown): void => {
+      unhandledRejections.push(reason);
+    };
+
+    process.prependListener("unhandledRejection", onUnhandledRejection);
+    try {
+      await expect(
+        engine.invoke("echo", { value: "safe" }, { signal }),
+      ).rejects.toMatchObject({
+        code: "EXECUTION_FAILED",
+        message: "Capability execution failed.",
+      });
+      await new Promise<void>((resolve) => {
+        setImmediate(() => setImmediate(resolve));
+      });
+
+      expect(readProperty).not.toHaveBeenCalled();
+      expect(createDetachedRejection).not.toHaveBeenCalled();
+      expect(access).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+      expect(unhandledRejections).toEqual([]);
+      expect(events.map((event) => event.type)).toEqual([
+        "invocation.started",
+        "invocation.failed",
+      ]);
+      expect(events.at(-1)).toMatchObject({
+        type: "invocation.failed",
+        code: "EXECUTION_FAILED",
+      });
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandledRejection);
+    }
   });
 
   it.each([
@@ -305,68 +383,6 @@ describe("events and cancellation", () => {
       });
     },
   );
-
-  it("sanitizes a structural signal reason failure after execution starts", async () => {
-    const injected = new EngineError({
-      code: "FORBIDDEN",
-      message: "Attacker-selected asynchronous signal failure.",
-      publicDetails: { secret: "must-not-escape" },
-    });
-    let aborted = false;
-    let abortListener: (() => void) | undefined;
-    const structuralSignal = {
-      get aborted() {
-        return aborted;
-      },
-      get reason() {
-        throw injected;
-      },
-      addEventListener(_type: string, listener: () => void) {
-        abortListener = listener;
-      },
-      removeEventListener() {},
-    } as unknown as AbortSignal;
-    const executionStarted = Promise.withResolvers<void>();
-    const events: EngineEvent[] = [];
-    const run = vi.fn(async () => {
-      executionStarted.resolve();
-      return new Promise<{ result: string }>(() => undefined);
-    });
-    const engine = createEngine({
-      name: "asynchronous-signal-provenance-engine",
-      version: "0.1.0",
-      capabilities: { echo: capability(run, 100) },
-      onEvent(event) {
-        events.push(event);
-      },
-    });
-
-    const invocation = engine.invoke(
-      "echo",
-      { value: "safe" },
-      { signal: structuralSignal },
-    );
-    await executionStarted.promise;
-    aborted = true;
-    abortListener?.();
-    const error = await invocation.catch((cause: unknown) => cause);
-
-    expect(error).toMatchObject({
-      code: "EXECUTION_FAILED",
-      message: "Capability execution failed.",
-    });
-    expect(error).not.toBe(injected);
-    expect((error as EngineError).publicDetails).toBeUndefined();
-    expect(run).toHaveBeenCalledOnce();
-    expect(events.map((event) => event.type)).toEqual([
-      "invocation.started",
-      "invocation.failed",
-    ]);
-    expect(events.at(-1)).toMatchObject({
-      type: "invocation.failed",
-      code: "EXECUTION_FAILED",
-    });
-  });
 
   it("validates a caller signal before exposing it to access", async () => {
     const injected = new EngineError({
@@ -468,147 +484,6 @@ describe("events and cancellation", () => {
     expect((error as EngineError).publicDetails).toBeUndefined();
     expect(access).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
-  });
-
-  it("does not let access denial hide a caller signal reason failure", async () => {
-    const injected = new EngineError({
-      code: "OUTPUT_INVALID",
-      message: "Attacker-selected authorization signal failure.",
-      publicDetails: { secret: "must-not-escape" },
-    });
-    let aborted = false;
-    let abortListener: (() => void) | undefined;
-    const structuralSignal = {
-      get aborted() {
-        return aborted;
-      },
-      get reason() {
-        throw injected;
-      },
-      addEventListener(_type: string, listener: () => void) {
-        abortListener = listener;
-      },
-      removeEventListener() {},
-    } as unknown as AbortSignal;
-    const accessStarted = Promise.withResolvers<void>();
-    const continueAccess = Promise.withResolvers<void>();
-    const access = vi.fn(async () => {
-      accessStarted.resolve();
-      await continueAccess.promise;
-      return false;
-    });
-    const run = vi.fn(async () => ({ result: "unreachable" }));
-    const events: EngineEvent[] = [];
-    const engine = createEngine({
-      name: "access-signal-reason-engine",
-      version: "0.1.0",
-      capabilities: {
-        echo: defineCapability({
-          description: "Preserve caller signal failure provenance.",
-          input,
-          output,
-          access,
-          run,
-        }),
-      },
-      onEvent(event) {
-        events.push(event);
-      },
-    });
-
-    const invocation = engine.invoke(
-      "echo",
-      { value: "safe" },
-      { signal: structuralSignal },
-    );
-    await accessStarted.promise;
-    aborted = true;
-    abortListener?.();
-    continueAccess.resolve();
-    const error = await invocation.catch((cause: unknown) => cause);
-
-    expect(error).toMatchObject({
-      code: "EXECUTION_FAILED",
-      message: "Capability execution failed.",
-    });
-    expect(error).not.toBe(injected);
-    expect((error as EngineError).publicDetails).toBeUndefined();
-    expect(access).toHaveBeenCalledOnce();
-    expect(run).not.toHaveBeenCalled();
-    expect(events.at(-1)).toMatchObject({
-      type: "invocation.failed",
-      code: "EXECUTION_FAILED",
-    });
-  });
-
-  it("does not let a captured signal failure marker alter later cancellation", async () => {
-    const injected = new EngineError({
-      code: "FORBIDDEN",
-      message: "Private structural signal failure.",
-    });
-    let aborted = false;
-    let callerAbortListener: (() => void) | undefined;
-    const structuralSignal = {
-      get aborted() {
-        return aborted;
-      },
-      get reason() {
-        throw injected;
-      },
-      addEventListener(_type: string, listener: () => void) {
-        callerAbortListener = listener;
-      },
-      removeEventListener() {},
-    } as unknown as AbortSignal;
-    const executionStarted = Promise.withResolvers<void>();
-    let capturedReason: unknown;
-    const captureRun = vi.fn(
-      async ({ context }: { context: { signal: AbortSignal } }) => {
-        context.signal.addEventListener(
-          "abort",
-          () => {
-            capturedReason = context.signal.reason;
-          },
-          { once: true },
-        );
-        executionStarted.resolve();
-        return new Promise<{ result: string }>(() => undefined);
-      },
-    );
-    const replayRun = vi.fn(async () => ({ result: "unreachable" }));
-    const engine = createEngine({
-      name: "signal-provenance-replay-engine",
-      version: "0.1.0",
-      capabilities: {
-        capture: capability(captureRun),
-        replay: capability(replayRun),
-      },
-    });
-
-    const firstInvocation = engine.invoke(
-      "capture",
-      { value: "safe" },
-      { signal: structuralSignal },
-    );
-    await executionStarted.promise;
-    aborted = true;
-    callerAbortListener?.();
-    await expect(firstInvocation).rejects.toMatchObject({
-      code: "EXECUTION_FAILED",
-    });
-    expect(capturedReason).toBeDefined();
-
-    const replayController = new AbortController();
-    replayController.abort(capturedReason);
-
-    await expect(
-      engine.invoke(
-        "replay",
-        { value: "safe" },
-        { signal: replayController.signal },
-      ),
-    ).rejects.toMatchObject({ code: "CANCELLED" });
-    expect(replayRun).not.toHaveBeenCalled();
   });
 
   it.each([

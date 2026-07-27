@@ -71,6 +71,7 @@ const abortSignalReasonGetter = Object.getOwnPropertyDescriptor(
 const abortSignalAddEventListener = AbortSignal.prototype.addEventListener;
 const abortSignalRemoveEventListener =
   AbortSignal.prototype.removeEventListener;
+const isProxy = nodeUtilTypes.isProxy;
 const engineErrorCodes = new Set<EngineErrorCode>([
   "CAPABILITY_NOT_FOUND",
   "INPUT_INVALID",
@@ -107,39 +108,11 @@ function removeAbortListener(signal: AbortSignal, listener: () => void): void {
   Reflect.apply(abortSignalRemoveEventListener, signal, ["abort", listener]);
 }
 
-function isNativeAbortSignal(signal: AbortSignal): boolean {
-  try {
-    readSignalAborted(signal);
-    return true;
-  } catch {
-    return false;
+function assertPlatformAbortSignal(signal: AbortSignal): void {
+  if (isProxy(signal)) {
+    throw new TypeError("AbortSignal proxies are not supported.");
   }
-}
-
-function readReceivedAborted(signal: AbortSignal, native: boolean): boolean {
-  return native ? readSignalAborted(signal) : signal.aborted;
-}
-
-function readReceivedReason(signal: AbortSignal, native: boolean): unknown {
-  return native ? readSignalReason(signal) : signal.reason;
-}
-
-function addReceivedAbortListener(
-  signal: AbortSignal,
-  listener: () => void,
-  native: boolean,
-): void {
-  if (native) addAbortListener(signal, listener);
-  else signal.addEventListener("abort", listener, { once: true });
-}
-
-function removeReceivedAbortListener(
-  signal: AbortSignal,
-  listener: () => void,
-  native: boolean,
-): void {
-  if (native) removeAbortListener(signal, listener);
-  else signal.removeEventListener("abort", listener);
+  readSignalAborted(signal);
 }
 
 function validateTimeoutMs(
@@ -254,9 +227,8 @@ function createSignal(
   timeoutMs: number | undefined,
   forceWrapper = false,
 ): { signal: AbortSignal; cleanup(): void } {
-  const nativeReceived =
-    received === undefined || isNativeAbortSignal(received);
-  if (timeoutMs === undefined && nativeReceived && !forceWrapper) {
+  if (received !== undefined) assertPlatformAbortSignal(received);
+  if (timeoutMs === undefined && !forceWrapper) {
     return {
       signal: received ?? new AbortController().signal,
       cleanup: () => undefined,
@@ -270,7 +242,7 @@ function createSignal(
   const abortFromReceived = (): void => {
     if (received === undefined) return;
     try {
-      controller.abort(readReceivedReason(received, nativeReceived));
+      controller.abort(readSignalReason(received));
     } catch (cause) {
       callerSignalFailureCauses.set(controller.signal, cause);
       controller.abort();
@@ -282,11 +254,7 @@ function createSignal(
     cleaned = true;
     if (listening && received !== undefined) {
       try {
-        removeReceivedAbortListener(
-          received,
-          abortFromReceived,
-          nativeReceived,
-        );
+        removeAbortListener(received, abortFromReceived);
       } catch {
         // Teardown cannot replace the invocation's result or original failure.
       }
@@ -296,10 +264,10 @@ function createSignal(
 
   try {
     if (received !== undefined) {
-      if (readReceivedAborted(received, nativeReceived)) abortFromReceived();
+      if (readSignalAborted(received)) abortFromReceived();
       else {
         listening = true;
-        addReceivedAbortListener(received, abortFromReceived, nativeReceived);
+        addAbortListener(received, abortFromReceived);
       }
     }
     if (timeoutMs !== undefined) {
@@ -393,7 +361,7 @@ async function raceWithCancellation<Value>(
 
 function isStableEngineError(error: unknown): error is EngineError {
   try {
-    if (nodeUtilTypes.isProxy(error) || !(error instanceof EngineError)) {
+    if (isProxy(error) || !(error instanceof EngineError)) {
       return false;
     }
     const code = Object.getOwnPropertyDescriptor(error, "code");

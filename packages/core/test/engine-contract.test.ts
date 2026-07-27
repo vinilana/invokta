@@ -1314,10 +1314,11 @@ describe("the core v0.1 contract", () => {
 
   it("contains a hostile signal while normalizing an invocation failure", async () => {
     const privateFailure = new Error("private AbortSignal state failure");
+    const readAborted = vi.fn(() => {
+      throw privateFailure;
+    });
     const signal = Object.defineProperty({}, "aborted", {
-      get() {
-        throw privateFailure;
-      },
+      get: readAborted,
     }) as AbortSignal;
     const events: EngineEvent[] = [];
     const run = vi.fn(async () => ({ result: "unreachable" }));
@@ -1338,7 +1339,8 @@ describe("the core v0.1 contract", () => {
     );
 
     expect(normalized.message).toBe("Capability execution failed.");
-    expect(normalized.cause).toBe(privateFailure);
+    expect(normalized.cause).toBeInstanceOf(TypeError);
+    expect(readAborted).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
     expect(events.at(-1)).toMatchObject({
       type: "invocation.failed",

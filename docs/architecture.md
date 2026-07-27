@@ -103,12 +103,16 @@ Failures while reading or snapshotting `principal` are a distinct identity
 boundary and always produce a sanitized `UNAUTHENTICATED` error. Failures while
 reading `signal` or setting up caller-signal state always produce a sanitized
 `EXECUTION_FAILED` error. An `EngineError` thrown by either caller-controlled
-boundary cannot select its public code, message, or details. A failure to read a
-structural signal's reason is distinguished from genuine cancellation, including
-when it occurs after capability execution has started. Authorization receives a
-runtime-owned, no-timeout signal view so caller-controlled signal properties are
-validated before the access rule runs; the capability timeout still starts only
-after authorization completes.
+boundary cannot select its public code, message, or details. `InvokeOptions.signal`
+must be a platform-branded `AbortSignal` from the supported runtime. The runtime
+rejects proxies without invoking their traps, then checks the platform brand with
+a captured intrinsic before it invokes any signal method. Structural, polyfilled,
+or proxy substitutes fail as `EXECUTION_FAILED` without executing their accessors,
+traps, or listener methods. Captured platform intrinsics also bypass hostile
+own-property overrides. Authorization receives a runtime-owned, no-timeout signal
+view, while execution retains the caller signal identity when no timeout is
+configured. The capability timeout still starts only after authorization
+completes.
 
 ## Events
 

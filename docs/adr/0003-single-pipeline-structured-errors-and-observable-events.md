@@ -51,13 +51,18 @@ A failure while reading or snapshotting `principal` is always sanitized as
 `UNAUTHENTICATED`. A failure while reading the configured `signal`, registering
 its cancellation listener, or reading its state or reason is always sanitized
 as `EXECUTION_FAILED`, even when the failure itself is an `EngineError`. A signal
-reason access failure that occurs after execution starts is not classified as a
-genuine caller cancellation. Caller-controlled errors at these boundaries cannot
-select public codes, messages, or details. The access rule receives a
-runtime-owned signal view without a capability timeout. Signal-failure provenance
-is associated out of band with that runtime-owned signal and is not exposed or
-replayable through `signal.reason`. The configured capability timeout continues
-to start only after authorization completes.
+reason access failure is not classified as a genuine caller cancellation.
+Caller-controlled errors at these boundaries cannot select public codes,
+messages, or details. Version 0.1 accepts only a platform-branded `AbortSignal`
+from the supported runtime. The runtime rejects proxies without invoking traps,
+then validates the brand with the captured platform getter before any caller
+signal accessor or listener method runs. Structural, polyfilled, and proxy
+substitutes therefore cannot introduce arbitrary asynchronous work. The runtime
+uses captured listener and state intrinsics for accepted signals, bypassing
+own-property overrides. The access rule receives a runtime-owned signal view
+without a capability timeout; execution keeps the original accepted signal when
+no timeout is configured. The configured capability timeout continues to start
+only after authorization completes.
 
 The only cross-cutting hook will be `onEvent`. It will receive only
 `invocation.started`, `invocation.completed`, and `invocation.failed`, with the
