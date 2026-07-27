@@ -1,0 +1,14 @@
+{
+  "name": "@ai-engine/example-support-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
+    "test": "vitest run test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0"
+  }
+}

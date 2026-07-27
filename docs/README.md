@@ -11,6 +11,7 @@ direct call, the CLI, MCP stdio, and stateless MCP Streamable HTTP.
 3. [v0.1 scope and limits](./v0.1-scope.md)
 4. [Implementation plan and acceptance criteria](./implementation-plan-and-acceptance-criteria.md)
 5. [Architecture decision records](./adr/README.md)
+6. [M6 validation record](./validation-record.md)
 
 ## Guides and examples
 
@@ -23,6 +24,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [Version 0.1 scope and maturity matrix](./scope-matrix.md)
 - [`hello-engine`: minimal onboarding example](../examples/hello-engine/)
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)
+- [`support-harness`: private MCP consumer](../examples/support-harness/)
 
 ## Normative language
 

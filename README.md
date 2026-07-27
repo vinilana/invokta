@@ -31,7 +31,9 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
 
 - [`hello-engine`](./examples/hello-engine/) for the shortest complete path;
 - [`support-engine`](./examples/support-engine/) for dependency injection,
-  domain authorization, safe errors, and all four execution channels.
+  domain authorization, safe errors, and all four execution channels;
+- [`support-harness`](./examples/support-harness/) for a private harness that
+  consumes the support capability only through MCP stdio.
 
 ## Documentation
 

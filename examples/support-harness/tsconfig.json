@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "../../node_modules/.cache/tsbuildinfo/example-support-harness.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"]
+}
