@@ -98,6 +98,15 @@ hook produces a sanitized HTTP 500 because the adapter cannot safely infer that
 an arbitrary failure means an invalid credential. The framework does not retry
 the identity provider.
 
+The adapter validates and snapshots the exact authentication mode and required
+hook before listening. Mutating the configuration object afterward cannot
+disable authentication or replace the hook. It deep-clones every returned
+principal immediately, requires a nonempty string `id`, and accepts
+`attributes` only when it is a record. A malformed or non-cloneable principal is
+treated like invalid credentials and produces HTTP 401. This request-local
+snapshot prevents later mutation or reuse of a principal object from changing
+another request's identity.
+
 ## Protected Resource Metadata and challenges
 
 When `resourceMetadata` is configured, the adapter validates it at startup,
@@ -153,6 +162,9 @@ this HTTP adapter.
 
 Host and Origin failures return HTTP 403 before the authentication hook runs.
 This is a request-boundary defense, not a capability authorization result.
+More than one raw `Authorization` header is an invalid request and is rejected
+before the authentication hook runs; authenticators never need to choose among
+ambiguous credentials.
 
 ## Authentication is not authorization
 

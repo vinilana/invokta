@@ -214,6 +214,144 @@ describe("MCP stateless Streamable HTTP", () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  it("rejects malformed authentication configuration before listening", async () => {
+    await expect(
+      serveMcpHttp(createContextEngine(), {
+        port: 0,
+        auth: { mode: "unexpected" } as never,
+      }),
+    ).rejects.toThrow("auth.mode");
+    await expect(
+      serveMcpHttp(createContextEngine(), {
+        port: 0,
+        auth: { mode: "required", authenticate: undefined } as never,
+      }),
+    ).rejects.toThrow("authenticate");
+  });
+
+  it("snapshots the required authentication hook before listening", async () => {
+    const originalAuthenticate = vi.fn(() => ({ id: "user:original" }));
+    const replacementAuthenticate = vi.fn(() => ({ id: "user:replacement" }));
+    const auth = {
+      mode: "required",
+      authenticate: originalAuthenticate,
+    } as {
+      mode: string;
+      authenticate: typeof originalAuthenticate;
+    };
+    const server = await start(createContextEngine(), { auth: auth as never });
+
+    auth.mode = "dangerously-disabled-for-development";
+    auth.authenticate = replacementAuthenticate;
+    const response = await callTool(server, { token: "alice" });
+
+    expect(response.status).toBe(200);
+    expect(await json(response)).toMatchObject({
+      result: { structuredContent: { principalId: "user:original" } },
+    });
+    expect(originalAuthenticate).toHaveBeenCalledOnce();
+    expect(replacementAuthenticate).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed or non-cloneable principals before invoke", async () => {
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const principals = [
+      { id: "" },
+      { id: "user:array", attributes: [] },
+      { id: "user:function", attributes: { unsafe: () => undefined } },
+    ];
+    const server = await start(engine, {
+      auth: {
+        mode: "required",
+        authenticate: () => principals.shift() as never,
+      },
+    });
+
+    const responses = await Promise.all([
+      callTool(server, { token: "empty" }),
+      callTool(server, { token: "array" }),
+      callTool(server, { token: "function" }),
+    ]);
+
+    expect(responses.map(({ status }) => status)).toEqual([401, 401, 401]);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("deeply snapshots a reused principal for each concurrent request", async () => {
+    let firstStarted!: () => void;
+    const didFirstStart = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const sharedPrincipal = {
+      id: "user:initial",
+      attributes: { tenant: "initial" },
+    };
+    const engine = createEngine({
+      name: "principal-isolation-engine",
+      version: "0.1.0",
+      capabilities: {
+        "support.inspect": defineCapability({
+          description: "Returns a request-scoped principal snapshot.",
+          input: z.object({
+            value: z.string(),
+            delayMs: z.number().optional(),
+          }),
+          output: z.object({ principalId: z.string(), tenant: z.string() }),
+          access: "authenticated",
+          async run({ input, context }) {
+            if (input.value === "first") firstStarted();
+            if (input.delayMs !== undefined) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, input.delayMs),
+              );
+            }
+            return {
+              principalId: context.principal?.id ?? "anonymous",
+              tenant: String(context.principal?.attributes?.tenant),
+            };
+          },
+        }),
+      },
+    });
+    const server = await start(engine, {
+      auth: {
+        mode: "required",
+        authenticate(request) {
+          const token =
+            request.headers.get("authorization")?.slice(7) ?? "none";
+          sharedPrincipal.id = `user:${token}`;
+          sharedPrincipal.attributes.tenant = token;
+          return sharedPrincipal;
+        },
+      },
+    });
+
+    const firstPending = callTool(server, {
+      token: "alice",
+      arguments: { value: "first", delayMs: 40 },
+    });
+    await didFirstStart;
+    const second = await callTool(server, {
+      token: "bob",
+      arguments: { value: "second" },
+    });
+    sharedPrincipal.id = "user:mutated-after-authentication";
+    sharedPrincipal.attributes.tenant = "mutated-after-authentication";
+    const first = await firstPending;
+
+    expect(await json(first)).toMatchObject({
+      result: {
+        structuredContent: { principalId: "user:alice", tenant: "alice" },
+      },
+    });
+    expect(await json(second)).toMatchObject({
+      result: {
+        structuredContent: { principalId: "user:bob", tenant: "bob" },
+      },
+    });
+  });
+
   it("passes a fresh principal to engine.invoke with the mcp-http source", async () => {
     const contexts: ExecutionContext[] = [];
     const server = await start(
@@ -446,6 +584,32 @@ describe("MCP stateless Streamable HTTP", () => {
     );
 
     expect(status).toBe(403);
+    expect(authenticate).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate raw Authorization headers before authentication", async () => {
+    const authenticate = vi.fn(async () => ({ id: "user:allowed" }));
+    const server = await start(createContextEngine(), {
+      auth: { mode: "required", authenticate },
+    });
+    const address = server.address();
+
+    const status = await rawHttpStatus(
+      server,
+      [
+        "POST /mcp HTTP/1.1",
+        `Host: ${address.host}:${address.port}`,
+        "Authorization: Bearer allowed",
+        "Authorization: Bearer attacker",
+        "Accept: application/json, text/event-stream",
+        "Content-Type: application/json",
+        "Content-Length: 2",
+        "",
+        "{}",
+      ].join("\r\n"),
+    );
+
+    expect(status).toBe(400);
     expect(authenticate).not.toHaveBeenCalled();
   });
 

@@ -150,6 +150,12 @@ the limit while streaming return HTTP 413 before protocol dispatch.
 An authenticator returns a `Principal` for valid credentials or `null` for
 missing or invalid credentials; `null` produces HTTP 401. A thrown authenticator
 error is treated as an infrastructure failure and produces a sanitized HTTP 500.
+The adapter validates and snapshots the authentication mode and hook before it
+listens. After each successful hook call, it deep-clones and validates the
+request's `Principal`; the ID must be a nonempty string and optional attributes
+must be a record. Malformed, non-cloneable, or subsequently mutated identities
+cannot reach `invoke`. More than one raw `Authorization` header is rejected
+before authentication.
 The adapter propagates cancellation when the active HTTP request disconnects.
 Cross-request MCP cancellation is not promised by the stateless profile because
 no transport or session survives between requests.

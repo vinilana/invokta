@@ -53,6 +53,16 @@ A thrown or rejected hook is an authentication infrastructure failure and
 produces a sanitized HTTP 500. The adapter does not infer whether an arbitrary
 exception means an invalid credential.
 
+The adapter accepts only the exact required and explicitly dangerous development
+authentication modes and validates the required hook before listening. It
+snapshots that mode and hook at startup, so later mutations to host configuration
+cannot swap or disable authentication. It rejects duplicate raw `Authorization`
+headers before calling the hook. A returned principal is deep-cloned and
+validated immediately for that request: its ID is a nonempty string and its
+optional attributes are a record. Malformed or non-cloneable principals fail as
+invalid credentials, and later mutation or reuse of the hook's object cannot
+bleed identity between requests.
+
 Protected Resource Metadata is validated before listening. Its resource URL uses
 HTTPS and the exact `/mcp` path without credentials, query, or fragment. Loopback
 HTTP is permitted only as an explicit development resource. Authorization server
@@ -91,7 +101,8 @@ capability that is already cancellable through the runtime contract.
   shared across authorization and execution.
 - Features that require a session must use explicit external state and must not
   change the adapter's stateless semantics.
-- Tests must cover pluggable authenticators, per-request isolation, fail-closed
-  behavior, and execution denied before the handler.
+- Tests must cover pluggable authenticators, configuration snapshots, principal
+  validation and per-request isolation, fail-closed behavior, and execution
+  denied before the handler.
 - Features that require cross-request cancellation must choose an explicitly
   stateful profile outside the v0.1 adapter.

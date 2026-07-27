@@ -73,6 +73,48 @@ interface HttpResponse {
   readonly body?: unknown;
 }
 
+interface RequiredMcpHttpAuthSnapshot {
+  readonly mode: "required";
+  readonly authenticate: RequiredMcpHttpAuth["authenticate"];
+  readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
+}
+
+interface DangerouslyDisabledMcpHttpAuthSnapshot {
+  readonly mode: "dangerously-disabled-for-development";
+}
+
+type McpHttpAuthSnapshot =
+  | RequiredMcpHttpAuthSnapshot
+  | DangerouslyDisabledMcpHttpAuthSnapshot;
+
+function snapshotAuthOptions(value: McpHttpAuthOptions): McpHttpAuthSnapshot {
+  if (value === null || typeof value !== "object") {
+    throw new TypeError(
+      'auth.mode must be either "required" or "dangerously-disabled-for-development".',
+    );
+  }
+  if (value.mode === "required") {
+    if (typeof value.authenticate !== "function") {
+      throw new TypeError(
+        "auth.authenticate must be a function when auth.mode is required.",
+      );
+    }
+    return Object.freeze({
+      mode: "required",
+      authenticate: value.authenticate,
+      ...(value.resourceMetadata === undefined
+        ? {}
+        : { resourceMetadata: value.resourceMetadata }),
+    });
+  }
+  if (value.mode === "dangerously-disabled-for-development") {
+    return Object.freeze({ mode: value.mode });
+  }
+  throw new TypeError(
+    'auth.mode must be either "required" or "dangerously-disabled-for-development".',
+  );
+}
+
 function normalizeHostname(authority: string): string | null {
   if (authority.toLowerCase() === "::1") return "[::1]";
   try {
@@ -318,13 +360,34 @@ function rawHeaderCount(
   return count;
 }
 
-function validPrincipal(value: Principal | null): value is Principal {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    typeof value.id === "string" &&
-    value.id.length > 0
-  );
+function snapshotPrincipal(value: Principal | null): Principal | null {
+  if (value === null || typeof value !== "object") return null;
+  let snapshot: unknown;
+  try {
+    snapshot = structuredClone(value);
+  } catch {
+    return null;
+  }
+  if (
+    snapshot === null ||
+    typeof snapshot !== "object" ||
+    typeof (snapshot as { readonly id?: unknown }).id !== "string" ||
+    (snapshot as { readonly id: string }).id.length === 0
+  ) {
+    return null;
+  }
+  const attributes = (snapshot as { readonly attributes?: unknown }).attributes;
+  if (
+    attributes !== undefined &&
+    (attributes === null ||
+      typeof attributes !== "object" ||
+      Array.isArray(attributes) ||
+      (Object.getPrototypeOf(attributes) !== Object.prototype &&
+        Object.getPrototypeOf(attributes) !== null))
+  ) {
+    return null;
+  }
+  return snapshot as Principal;
 }
 
 async function readBody(
@@ -419,12 +482,12 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
   if (!Number.isSafeInteger(maxRequestBodyBytes) || maxRequestBodyBytes <= 0) {
     throw new TypeError("maxRequestBodyBytes must be a positive safe integer.");
   }
+  const auth = snapshotAuthOptions(options.auth);
   const allowedHosts = normalizedAllowedHosts(host, options.allowedHosts);
   const allowedOrigins = normalizedAllowedOrigins(options.allowedOrigins);
   const metadata =
-    options.auth.mode === "required" &&
-    options.auth.resourceMetadata !== undefined
-      ? toMetadata(options.auth.resourceMetadata)
+    auth.mode === "required" && auth.resourceMetadata !== undefined
+      ? toMetadata(auth.resourceMetadata)
       : undefined;
   const metadataUrl =
     metadata === undefined
@@ -448,6 +511,13 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
       const requestHost = normalizeHostname(hostHeader);
       if (requestHost === null || !allowedHosts.has(requestHost)) {
         send(response, { status: 403, body: { error: "forbidden" } });
+        return;
+      }
+      if (rawHeaderCount(request.rawHeaders, "authorization") > 1) {
+        send(response, {
+          status: 400,
+          body: { error: "invalid_authorization_header" },
+        });
         return;
       }
 
@@ -504,10 +574,10 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
       });
 
       let principal: Principal | null = null;
-      if (options.auth.mode === "required") {
+      if (auth.mode === "required") {
         let authenticated: Principal | null;
         try {
-          authenticated = await options.auth.authenticate({
+          authenticated = await auth.authenticate({
             path,
             method,
             headers: toHeaderView(request.headers),
@@ -520,7 +590,8 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
           });
           return;
         }
-        if (!validPrincipal(authenticated)) {
+        const authenticatedSnapshot = snapshotPrincipal(authenticated);
+        if (authenticatedSnapshot === null) {
           send(response, {
             status: 401,
             headers:
@@ -533,7 +604,7 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
           });
           return;
         }
-        principal = authenticated;
+        principal = authenticatedSnapshot;
       }
 
       if (method !== "POST") {
