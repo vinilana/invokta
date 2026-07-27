@@ -49,6 +49,82 @@ function capability(
 }
 
 describe("events and cancellation", () => {
+  it.each([
+    ["zero", 0],
+    ["a negative value", -1],
+    ["a fractional value", 1.5],
+    ["NaN", Number.NaN],
+    ["positive infinity", Number.POSITIVE_INFINITY],
+    ["negative infinity", Number.NEGATIVE_INFINITY],
+    ["a value above the timer limit", 2_147_483_648],
+  ])("rejects %s as timeoutMs at engine construction", (_case, timeoutMs) => {
+    const emitWarning = vi.spyOn(process, "emitWarning");
+    try {
+      expect(() =>
+        createEngine({
+          name: "invalid-timeout-engine",
+          version: "0.1.0",
+          capabilities: {
+            invalid: capability(
+              async ({ input: value }) => ({ result: value.value }),
+              timeoutMs,
+            ),
+          },
+        }),
+      ).toThrow(TypeError);
+      expect(emitWarning).not.toHaveBeenCalled();
+    } finally {
+      emitWarning.mockRestore();
+    }
+  });
+
+  it("accepts the inclusive timeoutMs boundaries and expires at the maximum deadline", async () => {
+    vi.useFakeTimers();
+    const emitWarning = vi.spyOn(process, "emitWarning");
+    let observedSignal: AbortSignal | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const engine = createEngine({
+      name: "timeout-boundary-engine",
+      version: "0.1.0",
+      capabilities: {
+        minimum: capability(
+          async ({ input: value }) => ({ result: value.value }),
+          1,
+        ),
+        maximum: capability(async ({ context }) => {
+          observedSignal = context.signal;
+          markStarted?.();
+          await new Promise<void>(() => undefined);
+          return { result: "unreachable" };
+        }, 2_147_483_647),
+      },
+    });
+
+    try {
+      expect(engine.describe("minimum").timeoutMs).toBe(1);
+      expect(engine.describe("maximum").timeoutMs).toBe(2_147_483_647);
+      const invocation = engine.invoke("maximum", { value: "safe" });
+      const cancellation = expect(invocation).rejects.toMatchObject({
+        code: "CANCELLED",
+      });
+      await started;
+
+      await vi.advanceTimersByTimeAsync(2_147_483_646);
+      expect(observedSignal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await cancellation;
+      expect(observedSignal?.aborted).toBe(true);
+      expect(emitWarning).not.toHaveBeenCalled();
+    } finally {
+      emitWarning.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("emits the exact minimal started and completed events", async () => {
     const events: EngineEvent[] = [];
     const engine = createEngine({

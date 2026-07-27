@@ -53,6 +53,14 @@ An asynchronous rejection from the diagnostic logger will also be observed and
 contained. The capability timeout ends after successful output validation,
 before the completed hook is invoked.
 
+An optional capability `timeoutMs` will be a positive integer in the inclusive
+range `1..2_147_483_647`. `createEngine` will reject zero, negative and
+fractional values, `NaN`, infinities, and values above that range synchronously
+with `TypeError`. This construction-time boundary matches the maximum portable
+delay accepted by the Node.js timer used by the supported runtime and prevents
+timer overflow from being coerced into an immediate timeout or emitting a host
+warning. Both inclusive endpoints remain valid configuration.
+
 ## Consequences
 
 - All transports share the same execution semantics.
@@ -65,4 +73,6 @@ before the completed hook is invoked.
   require contract tests.
 - Input snapshotting adds bounded work proportional to the validated payload but
   prevents concurrent caller or authorization mutations from crossing stages.
+- Invalid timeout configuration fails before the engine can invoke a capability
+  or schedule a timer; the maximum valid delay retains its full duration.
 - The kernel does not provide domain events or delivery guarantees.

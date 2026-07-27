@@ -68,6 +68,11 @@ changing later runtime or MCP contracts. Standard Schema validation itself
 continues to run only at invocation through the captured input and output schema
 objects.
 
+When present, `timeoutMs` MUST be an integer from `1` through `2_147_483_647`,
+inclusive. `createEngine` validates this limit synchronously. Zero, negative or
+fractional values, non-finite numbers, and values above the limit fail
+construction with `TypeError`; they never reach the host timer implementation.
+
 ## Errors
 
 **AE-ERR-01 — Taxonomy.** `EngineError` MUST use one of these codes:

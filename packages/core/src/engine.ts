@@ -58,6 +58,24 @@ const noOpLogger: EngineLogger = Object.freeze({
   error: ignoreLog,
 });
 
+const maximumTimeoutMs = 2_147_483_647;
+
+function validateTimeoutMs(
+  capabilityId: string,
+  timeoutMs: number | undefined,
+): void {
+  if (
+    timeoutMs !== undefined &&
+    (!Number.isInteger(timeoutMs) ||
+      timeoutMs < 1 ||
+      timeoutMs > maximumTimeoutMs)
+  ) {
+    throw new TypeError(
+      `Capability ${capabilityId} timeoutMs must be an integer from 1 through ${maximumTimeoutMs}.`,
+    );
+  }
+}
+
 function describeCapability(
   capabilityId: string,
   capability: AnyCapability,
@@ -119,7 +137,11 @@ function toSummary(description: CapabilityDescription): CapabilitySummary {
   });
 }
 
-function snapshotCapability(capability: AnyCapability): AnyCapability {
+function snapshotCapability(
+  capabilityId: string,
+  capability: AnyCapability,
+): AnyCapability {
+  validateTimeoutMs(capabilityId, capability.timeoutMs);
   return Object.freeze({
     description: capability.description,
     ...(capability.title === undefined ? {} : { title: capability.title }),
@@ -292,7 +314,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
   for (const capabilityId of Object.keys(definition.capabilities)) {
     const capability = definition.capabilities[capabilityId];
     if (capability !== undefined) {
-      const snapshot = snapshotCapability(capability);
+      const snapshot = snapshotCapability(capabilityId, capability);
       capabilities.set(capabilityId, snapshot);
       descriptions.set(
         capabilityId,

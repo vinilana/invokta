@@ -46,7 +46,8 @@ the CLI, and through MCP without duplicating the handler.
 **AE-CAP-01 — Minimal capability.** Every capability MUST declare exactly five
 required elements: `description`, `input`, `output`, `access`, and `run`. `title`,
 `timeoutMs`, and `annotations` are optional. The ID is not part of the definition;
-it is the key used in `createEngine`.
+it is the key used in `createEngine`. When provided, `timeoutMs` MUST be a
+positive integer no greater than `2_147_483_647`.
 
 **AE-ENG-01 — Minimal engine.** Every engine MUST declare `name`, `version`, and
 `capabilities`. `logger` and `onEvent` are optional. The resulting public API
