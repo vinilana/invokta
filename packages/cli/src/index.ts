@@ -109,25 +109,39 @@ function serialize(value: unknown, format: "json" | "human" = "json"): string {
   return `${JSON.stringify(value, null, format === "human" ? 2 : undefined)}\n`;
 }
 
+const genericExecutionError =
+  '{"error":{"code":"EXECUTION_FAILED","message":"CLI execution failed."}}\n';
+
 function renderEngineError(error: EngineError): string {
-  const payload = {
-    error: {
-      code: error.code,
-      message: error.message,
-      ...(error.publicDetails === undefined
-        ? {}
-        : { publicDetails: error.publicDetails }),
-    },
-  };
+  let code: unknown;
+  let message: unknown;
   try {
-    return serialize(payload);
+    code = error.code;
+    message = error.message;
   } catch {
+    return genericExecutionError;
+  }
+  if (typeof code !== "string" || typeof message !== "string") {
+    return genericExecutionError;
+  }
+
+  const safeError = { code, message };
+  let publicDetails: unknown;
+  try {
+    publicDetails = error.publicDetails;
+  } catch {
+    return serialize({ error: safeError });
+  }
+
+  try {
     return serialize({
       error: {
-        code: error.code,
-        message: error.message,
+        ...safeError,
+        ...(publicDetails === undefined ? {} : { publicDetails }),
       },
     });
+  } catch {
+    return serialize({ error: safeError });
   }
 }
 

@@ -227,6 +227,9 @@ describe("runCli", () => {
 
     expect(code).toBe(1);
     expect(output.stdout).toEqual([]);
+    expect(output.stderr).toEqual([
+      '{"error":{"code":"EXECUTION_FAILED","message":"Ticket was not found.","publicDetails":{"ticketId":"T-404"}}}\n',
+    ]);
     expect(JSON.parse(output.stderr.join(""))).toEqual({
       error: {
         code: "EXECUTION_FAILED",
@@ -235,6 +238,72 @@ describe("runCli", () => {
       },
     });
     expect(output.stderr.join("")).not.toContain("secret database location");
+    expect(output.stderr.join("")).not.toContain("stack");
+  });
+
+  it("contains a throwing EngineError message accessor", async () => {
+    const error = new EngineError({
+      code: "EXECUTION_FAILED",
+      message: "Initial public message.",
+    });
+    Object.defineProperty(error, "message", {
+      configurable: true,
+      get() {
+        throw new Error("secret backend path: /srv/private/database");
+      },
+    });
+    const engine = createTestEngine({
+      run: async () => {
+        throw error;
+      },
+    });
+    const output = createIo();
+
+    const invocation = runCli(engine, {
+      argv: ["run", "example.echo", "--input", '{"value":"hello"}'],
+      principal: null,
+      io: output.io,
+    });
+
+    await expect(invocation).resolves.toBe(1);
+    expect(output.stdout).toEqual([]);
+    expect(output.stderr).toEqual([
+      '{"error":{"code":"EXECUTION_FAILED","message":"CLI execution failed."}}\n',
+    ]);
+    expect(output.stderr.join("")).not.toContain("secret backend path");
+    expect(output.stderr.join("")).not.toContain("stack");
+  });
+
+  it("contains a throwing EngineError publicDetails accessor", async () => {
+    const error = new EngineError({
+      code: "FORBIDDEN",
+      message: "Capability access is forbidden.",
+    });
+    Object.defineProperty(error, "publicDetails", {
+      configurable: true,
+      get() {
+        throw new Error("secret authorization token");
+      },
+    });
+    const engine = createTestEngine({
+      run: async () => {
+        throw error;
+      },
+    });
+    const output = createIo();
+
+    const invocation = runCli(engine, {
+      argv: ["run", "example.echo", "--input", '{"value":"hello"}'],
+      principal: null,
+      io: output.io,
+    });
+
+    await expect(invocation).resolves.toBe(1);
+    expect(output.stdout).toEqual([]);
+    expect(output.stderr).toEqual([
+      '{"error":{"code":"FORBIDDEN","message":"Capability access is forbidden."}}\n',
+    ]);
+    expect(output.stderr.join("")).not.toContain("secret authorization token");
     expect(output.stderr.join("")).not.toContain("stack");
   });
 
