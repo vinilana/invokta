@@ -81,7 +81,14 @@ through the composition root. It MUST NOT provide an actor, role, or login flag.
 
 **AE-CLI-02 — I/O.** `stdout` contains only the requested result; logs and
 diagnostics go to `stderr`. The exit code is `0` for success, `1` for an execution
-or authorization failure, and `2` for invalid usage or JSON.
+or authorization failure, and `2` for invalid usage or JSON. `runCli` returns the
+exit code and does not terminate the process or mutate `process.exitCode`; the
+composition root owns that process-level decision. Errors are compact JSON with
+only `code`, `message`, and optional `publicDetails`. JSON is the default output
+format; trusted configuration may select deterministic, pretty-printed JSON as
+the human rendering of the same result. Version 0.1 does not impose a stdin size
+limit; hosts that accept untrusted local input must bound the stream before it
+reaches the adapter.
 
 ## MCP
 

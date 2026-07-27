@@ -24,6 +24,24 @@ The CLI will be responsible only for:
 - formatting the result or structured error;
 - choosing the exit code from the documented error category or code.
 
+`runCli` requires the composition root to provide `principal`, including an
+explicit `null` for anonymous local execution. It returns the exit code and never
+terminates the process or mutates `process.exitCode`; the composition root may
+assign the returned value. It accepts an optional host `AbortSignal` and passes it
+unchanged to `invoke`.
+
+JSON is the default and canonical output. A trusted `format: "human"` option may
+select deterministic, pretty-printed JSON of the same value; it does not perform
+semantic rendering. Errors on `stderr` are compact JSON and contain only a code,
+message, and optional `publicDetails`. The adapter never adds a stack, cause, raw
+input, or principal. Engine authors remain responsible for ensuring that the
+explicitly public `message` and `publicDetails` fields contain no secrets.
+
+`run` accepts exactly one input source: `--input <json>` or `--stdin`. Missing,
+duplicate, combined, trailing, and unknown arguments produce exit code `2`
+without invoking the engine. Version 0.1 reads stdin without a framework-owned
+size limit; hosts may inject a bounded reader when local input is not trusted.
+
 Help, version, and purely syntactic errors from the command line itself are not
 engine capabilities and may be handled locally. As soon as a capability is
 selected, its only execution path will be `invoke`.
@@ -35,3 +53,5 @@ selected, its only execution path will be `invoke`.
 - CLI-exclusive features must not exist as shortcuts to handlers; they must be
   modeled as capabilities when they belong to the engine.
 - The mapping of errors to exit codes must be stable and documented.
+- Process termination remains an explicit responsibility of each executable's
+  composition root.
