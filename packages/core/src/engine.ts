@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
+import { types as nodeUtilTypes } from "node:util";
 
-import { EngineError } from "./error.js";
+import { EngineError, type EngineErrorCode } from "./error.js";
 import {
   type InferSchemaInput,
   type InferSchemaOutput,
@@ -59,6 +60,15 @@ const noOpLogger: EngineLogger = Object.freeze({
 });
 
 const maximumTimeoutMs = 2_147_483_647;
+const engineErrorCodes = new Set<EngineErrorCode>([
+  "CAPABILITY_NOT_FOUND",
+  "INPUT_INVALID",
+  "UNAUTHENTICATED",
+  "FORBIDDEN",
+  "OUTPUT_INVALID",
+  "CANCELLED",
+  "EXECUTION_FAILED",
+]);
 
 function validateTimeoutMs(
   capabilityId: string,
@@ -256,14 +266,42 @@ async function raceWithCancellation<Value>(
   }
 }
 
-function normalizeError(error: unknown, signal?: AbortSignal): EngineError {
-  if (error instanceof EngineError) return error;
-  if (signal?.aborted === true) return cancelled(error ?? signal.reason);
+function isStableEngineError(error: unknown): error is EngineError {
+  try {
+    if (nodeUtilTypes.isProxy(error) || !(error instanceof EngineError)) {
+      return false;
+    }
+    const code = Object.getOwnPropertyDescriptor(error, "code");
+    const message = Object.getOwnPropertyDescriptor(error, "message");
+    return (
+      code !== undefined &&
+      "value" in code &&
+      engineErrorCodes.has(code.value as EngineErrorCode) &&
+      message !== undefined &&
+      "value" in message &&
+      typeof message.value === "string"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function executionFailed(cause: unknown): EngineError {
   return new EngineError({
     code: "EXECUTION_FAILED",
     message: "Capability execution failed.",
-    cause: error,
+    cause,
   });
+}
+
+function normalizeError(error: unknown, signal?: AbortSignal): EngineError {
+  if (isStableEngineError(error)) return error;
+  try {
+    if (signal?.aborted === true) return cancelled(error ?? signal.reason);
+  } catch {
+    // A malformed cancellation signal cannot escape the normalized boundary.
+  }
+  return executionFailed(error);
 }
 
 async function enforceAccess(
@@ -367,14 +405,25 @@ export function createEngine<const Capabilities extends CapabilityMap>(
       return snapshotLosslessJson(description);
     },
     async invoke(capabilityId, rawInput, options) {
-      const requestId = options?.requestId ?? randomUUID();
-      const source = options?.source ?? "direct";
+      let requestId: string = randomUUID();
+      let source: ExecutionContext["source"] = "direct";
+      let optionsError: EngineError | undefined;
+      try {
+        const configuredRequestId = options?.requestId;
+        const configuredSource = options?.source;
+        requestId = configuredRequestId ?? requestId;
+        source = configuredSource ?? source;
+      } catch (cause) {
+        optionsError = executionFailed(cause);
+      }
       let principal: Principal | null = null;
       let principalError: EngineError | undefined;
-      try {
-        principal = snapshotPrincipal(options?.principal ?? null);
-      } catch (cause) {
-        principalError = cause as EngineError;
+      if (optionsError === undefined) {
+        try {
+          principal = snapshotPrincipal(options?.principal ?? null);
+        } catch (cause) {
+          principalError = normalizeError(cause);
+        }
       }
       const started = performance.now();
       emit({
@@ -385,6 +434,16 @@ export function createEngine<const Capabilities extends CapabilityMap>(
         ...(principal === null ? {} : { principalId: principal.id }),
         startedAt: new Date().toISOString(),
       });
+      if (optionsError !== undefined) {
+        emit({
+          type: "invocation.failed",
+          requestId,
+          capabilityId,
+          durationMs: performance.now() - started,
+          code: optionsError.code,
+        });
+        throw optionsError;
+      }
 
       let signalState: ReturnType<typeof createSignal> | undefined;
       try {

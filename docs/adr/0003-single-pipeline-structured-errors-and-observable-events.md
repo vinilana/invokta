@@ -36,7 +36,16 @@ Failures will be `EngineError` instances with one of seven stable codes:
 `CAPABILITY_NOT_FOUND`, `INPUT_INVALID`, `UNAUTHENTICATED`, `FORBIDDEN`,
 `OUTPUT_INVALID`, `CANCELLED`, or `EXECUTION_FAILED`. `publicDetails` and `cause`
 will be optional; only `publicDetails` may be serialized by default. Unknown
-exceptions will be normalized as `EXECUTION_FAILED`.
+exceptions will be normalized as `EXECUTION_FAILED`. Runtime-mutated,
+proxy-wrapped, or accessor-backed `EngineError` values whose own `code` and
+`message` data properties cannot establish a stable public error will be treated
+as unknown without invoking the unsafe property.
+
+Invocation metadata extraction is inside the same normalized boundary. If
+reading `requestId` or `source` from the options object throws, partially read
+metadata will be discarded. The invocation will use a generated request ID and
+the default `direct` source to emit the ordered started and failed events, then
+reject with `EXECUTION_FAILED`; the original property failure remains internal.
 
 The only cross-cutting hook will be `onEvent`. It will receive only
 `invocation.started`, `invocation.completed`, and `invocation.failed`, with the

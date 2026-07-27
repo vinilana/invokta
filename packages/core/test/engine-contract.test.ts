@@ -6,6 +6,7 @@ import {
   defineCapability,
   EngineError,
   type AccessRule,
+  type EngineEvent,
   type EngineErrorCode,
   type EngineSchema,
   type ExecutionContext,
@@ -880,6 +881,247 @@ describe("the core v0.1 contract", () => {
     expect(normalized.message).toBe("Capability execution failed.");
     expect(normalized.publicDetails).toBeUndefined();
     expect(normalized.cause).toBeInstanceOf(Error);
+  });
+
+  it("normalizes a handler EngineError whose code is outside the public taxonomy", async () => {
+    const events: EngineEvent[] = [];
+    const malformed = new EngineError({
+      code: "EXECUTION_FAILED",
+      message: "A valid error before runtime mutation.",
+    });
+    Object.defineProperty(malformed, "code", {
+      configurable: true,
+      enumerable: true,
+      value: "PRIVATE_PROVIDER_FAILURE",
+    });
+    const engine = createEngine({
+      name: "mutated-error-engine",
+      version: "0.1.0",
+      capabilities: {
+        fail: createEchoCapability({
+          async run() {
+            throw malformed;
+          },
+        }),
+      },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+
+    const normalized = await expectEngineError(
+      engine.invoke("fail", { value: "x" }),
+      "EXECUTION_FAILED",
+    );
+
+    expect(normalized).not.toBe(malformed);
+    expect(normalized.message).toBe("Capability execution failed.");
+    expect(normalized.cause).toBe(malformed);
+    expect(events.at(-1)).toMatchObject({
+      type: "invocation.failed",
+      code: "EXECUTION_FAILED",
+    });
+  });
+
+  it.each(["code", "message"] as const)(
+    "contains a handler EngineError with a throwing %s getter",
+    async (field) => {
+      const privateFailure = new Error(`private ${field} getter failure`);
+      const hostile = new EngineError({
+        code: "FORBIDDEN",
+        message: "A safe value before accessor replacement.",
+      });
+      Object.defineProperty(hostile, field, {
+        configurable: true,
+        get() {
+          throw privateFailure;
+        },
+      });
+      const events: EngineEvent[] = [];
+      const engine = createEngine({
+        name: `hostile-${field}-engine`,
+        version: "0.1.0",
+        capabilities: {
+          fail: createEchoCapability({
+            async run() {
+              throw hostile;
+            },
+          }),
+        },
+        onEvent(event) {
+          events.push(event);
+        },
+      });
+
+      const normalized = await expectEngineError(
+        engine.invoke("fail", { value: "x" }),
+        "EXECUTION_FAILED",
+      );
+
+      expect(Object.is(normalized, hostile)).toBe(false);
+      expect(normalized.message).toBe("Capability execution failed.");
+      expect(Object.is(normalized.cause, hostile)).toBe(true);
+      expect(events.at(-1)).toMatchObject({
+        type: "invocation.failed",
+        code: "EXECUTION_FAILED",
+      });
+    },
+  );
+
+  it("contains a proxy-wrapped EngineError without invoking its traps", async () => {
+    const privateFailure = new Error("private proxy getter failure");
+    const target = new EngineError({
+      code: "FORBIDDEN",
+      message: "A safe value behind a proxy.",
+    });
+    const hostile = new Proxy(target, {
+      get(targetValue, property, receiver) {
+        if (property === "code" || property === "message") {
+          throw privateFailure;
+        }
+        return Reflect.get(targetValue, property, receiver);
+      },
+    });
+    const events: EngineEvent[] = [];
+    const engine = createEngine({
+      name: "proxied-error-engine",
+      version: "0.1.0",
+      capabilities: {
+        fail: createEchoCapability({
+          async run() {
+            throw hostile;
+          },
+        }),
+      },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+
+    const normalized = await expectEngineError(
+      engine.invoke("fail", { value: "x" }),
+      "EXECUTION_FAILED",
+    );
+
+    expect(normalized.message).toBe("Capability execution failed.");
+    expect(Object.is(normalized.cause, hostile)).toBe(true);
+    expect(events.at(-1)).toMatchObject({
+      type: "invocation.failed",
+      code: "EXECUTION_FAILED",
+    });
+  });
+
+  it.each(["requestId", "source"] as const)(
+    "normalizes a throwing invoke options %s getter inside the observable boundary",
+    async (field) => {
+      const privateFailure = new Error(`private ${field} getter failure`);
+      const options = Object.defineProperty(
+        field === "source" ? { requestId: "request-from-options" } : {},
+        field,
+        {
+          get() {
+            throw privateFailure;
+          },
+        },
+      );
+      const events: EngineEvent[] = [];
+      const run = vi.fn(async () => ({ result: "unreachable" }));
+      const engine = createEngine({
+        name: `hostile-${field}-options-engine`,
+        version: "0.1.0",
+        capabilities: {
+          fail: createEchoCapability({ run }),
+        },
+        onEvent(event) {
+          events.push(event);
+        },
+      });
+
+      const normalized = await expectEngineError(
+        engine.invoke("fail", { value: "x" }, options),
+        "EXECUTION_FAILED",
+      );
+
+      expect(normalized.message).toBe("Capability execution failed.");
+      expect(normalized.cause).toBe(privateFailure);
+      expect(run).not.toHaveBeenCalled();
+      expect(events).toEqual([
+        {
+          type: "invocation.started",
+          requestId: expect.any(String),
+          capabilityId: "fail",
+          source: "direct",
+          startedAt: expect.any(String),
+        },
+        {
+          type: "invocation.failed",
+          requestId: events[0]?.requestId,
+          capabilityId: "fail",
+          durationMs: expect.any(Number),
+          code: "EXECUTION_FAILED",
+        },
+      ]);
+      expect(events[0]?.requestId).not.toBe("request-from-options");
+    },
+  );
+
+  it("does not let an invoke options getter select a public error code", async () => {
+    const injected = new EngineError({
+      code: "FORBIDDEN",
+      message: "Caller-controlled option failure.",
+    });
+    const options = Object.defineProperty({}, "requestId", {
+      get() {
+        throw injected;
+      },
+    });
+    const engine = createEngine({
+      name: "option-error-code-engine",
+      version: "0.1.0",
+      capabilities: { fail: createEchoCapability() },
+    });
+
+    const normalized = await expectEngineError(
+      engine.invoke("fail", { value: "x" }, options),
+      "EXECUTION_FAILED",
+    );
+
+    expect(normalized.message).toBe("Capability execution failed.");
+    expect(normalized.cause).toBe(injected);
+  });
+
+  it("contains a hostile signal while normalizing an invocation failure", async () => {
+    const privateFailure = new Error("private AbortSignal state failure");
+    const signal = Object.defineProperty({}, "aborted", {
+      get() {
+        throw privateFailure;
+      },
+    }) as AbortSignal;
+    const events: EngineEvent[] = [];
+    const run = vi.fn(async () => ({ result: "unreachable" }));
+    const engine = createEngine({
+      name: "hostile-signal-engine",
+      version: "0.1.0",
+      capabilities: {
+        fail: createEchoCapability({ run }),
+      },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+
+    const normalized = await expectEngineError(
+      engine.invoke("fail", { value: "x" }, { signal }),
+      "EXECUTION_FAILED",
+    );
+
+    expect(normalized.message).toBe("Capability execution failed.");
+    expect(normalized.cause).toBe(privateFailure);
+    expect(run).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({
+      type: "invocation.failed",
+      code: "EXECUTION_FAILED",
+    });
   });
 
   it("does not let schema validators escape stage-specific error codes", async () => {

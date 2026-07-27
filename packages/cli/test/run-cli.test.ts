@@ -290,11 +290,8 @@ describe("runCli", () => {
         throw new Error("secret backend path: /srv/private/database");
       },
     });
-    const engine = createTestEngine({
-      run: async () => {
-        throw error;
-      },
-    });
+    const engine = createTestEngine();
+    vi.spyOn(engine, "invoke").mockRejectedValue(error);
     const output = createIo();
 
     const invocation = runCli(engine, {

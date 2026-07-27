@@ -87,7 +87,16 @@ construction with `TypeError`; they never reach the host timer implementation.
 
 Unknown errors become `EXECUTION_FAILED`. Only `publicDetails` may be serialized;
 `cause` and the stack remain internal. Cancellation or a timeout observed by the
-runtime becomes `CANCELLED`.
+runtime becomes `CANCELLED`. A thrown `EngineError` is preserved only when its
+own `code` and `message` data properties form a stable public error. A proxy,
+accessor-backed property, missing message, or code outside the seven-code
+taxonomy is treated as an unknown error without invoking the unsafe property.
+
+Reading `requestId` and `source` from invocation options is part of this error
+boundary. If either property access throws, the runtime discards all partially
+read option metadata, uses a generated request ID and the default `direct`
+source, emits the ordered started and failed events, and throws a normalized
+`EXECUTION_FAILED` error. The property failure remains internal as the cause.
 
 ## Events
 
