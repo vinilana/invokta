@@ -29,8 +29,10 @@ JSON-RPC batches. The adapter therefore rejects every top-level JSON array befor
 SDK dispatch, including empty and single-element arrays. It also parses media
 negotiation at the boundary rather than relying on substring checks: `Accept`
 must list the exact JSON and event-stream media types with positive quality, and
-`Content-Type` must identify the exact JSON media type. The adapter passes the
-single parsed message to the SDK so the body is not parsed twice.
+after authentication exactly one raw `Content-Type` header must identify the
+exact JSON media type. A missing, duplicated, or invalid `Content-Type` returns
+HTTP 415. The adapter passes the single parsed message to the SDK so the body is
+not parsed twice.
 
 Before JSON parsing, the adapter decodes the bounded request stream as strict
 UTF-8. Incomplete, overlong, and invalid-continuation sequences are rejected with

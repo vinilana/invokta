@@ -188,7 +188,9 @@ segments, percent encoding, a query, a fragment, and absolute-form targets are
 rejected. The `2025-11-25` profile accepts exactly one top-level JSON-RPC message
 and rejects every top-level array before SDK dispatch. `Accept` must contain the
 exact `application/json` and `text/event-stream` media ranges with positive
-quality, and `Content-Type` must be the exact `application/json` media type.
+quality. After successful authentication, exactly one raw `Content-Type` header
+is required and it must identify the exact `application/json` media type;
+missing, duplicated, or invalid values return HTTP 415.
 `Host` is validated for every request before authentication. An `Origin` header
 is optional, but any supplied origin requires an explicit exact allowlist.
 Boundary failures for `Host` or `Origin` return HTTP 403. A capability-level

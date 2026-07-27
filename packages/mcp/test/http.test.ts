@@ -967,6 +967,124 @@ describe("MCP stateless Streamable HTTP", () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      name: "valid then invalid with mixed casing",
+      headers: ["Content-Type: application/json", "content-type: text/plain"],
+    },
+    {
+      name: "invalid then valid with mixed casing",
+      headers: ["CONTENT-TYPE: text/plain", "Content-Type: application/json"],
+    },
+    {
+      name: "two identical values",
+      headers: [
+        "Content-Type: application/json",
+        "Content-Type: application/json",
+      ],
+    },
+  ])(
+    "rejects duplicate raw Content-Type headers after authentication: $name",
+    async ({ headers: [first, second] }) => {
+      const authenticate = vi.fn(async () => ({ id: "user:allowed" }));
+      const engine = createContextEngine();
+      const invoke = vi.spyOn(engine, "invoke");
+      const server = await start(engine, {
+        auth: { mode: "required", authenticate },
+      });
+      const address = server.address();
+
+      const status = await rawHttpStatus(
+        server,
+        [
+          "POST /mcp HTTP/1.1",
+          `Host: ${address.host}:${address.port}`,
+          "Authorization: Bearer alice",
+          "Accept: application/json, text/event-stream",
+          first as string,
+          second as string,
+          "Content-Length: 2",
+          "",
+          "{}",
+        ].join("\r\n"),
+      );
+
+      expect(status).toBe(415);
+      expect(authenticate).toHaveBeenCalledOnce();
+      expect(invoke).not.toHaveBeenCalled();
+    },
+  );
+
+  it("preserves security-boundary ordering for duplicate Content-Type", async () => {
+    const authenticate = vi.fn(async (request) =>
+      request.headers.has("authorization") ? { id: "user:allowed" } : null,
+    );
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const server = await start(engine, {
+      allowedOrigins: ["https://client.example.com"],
+      auth: { mode: "required", authenticate },
+    });
+    const address = server.address();
+    const request = (extraHeaders: ReadonlyArray<string>): string =>
+      [
+        "POST /mcp HTTP/1.1",
+        `Host: ${address.host}:${address.port}`,
+        ...extraHeaders,
+        "Accept: application/json, text/event-stream",
+        "Content-Type: application/json",
+        "Content-Type: text/plain",
+        "Content-Length: 2",
+        "",
+        "{}",
+      ].join("\r\n");
+
+    const hostileHost = request([
+      "Host: attacker.example",
+      "Authorization: Bearer alice",
+    ]).replace(`Host: ${address.host}:${address.port}\r\n`, "");
+    const hostileOrigin = request([
+      "Authorization: Bearer alice",
+      "Origin: https://attacker.example.com",
+    ]);
+    const missingAuthentication = request([]);
+
+    await expect(rawHttpStatus(server, hostileHost)).resolves.toBe(403);
+    await expect(rawHttpStatus(server, hostileOrigin)).resolves.toBe(403);
+    await expect(rawHttpStatus(server, missingAuthentication)).resolves.toBe(
+      401,
+    );
+    expect(authenticate).toHaveBeenCalledOnce();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing raw Content-Type after authentication", async () => {
+    const authenticate = vi.fn(async () => ({ id: "user:allowed" }));
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const server = await start(engine, {
+      auth: { mode: "required", authenticate },
+    });
+    const address = server.address();
+
+    const status = await rawHttpStatus(
+      server,
+      [
+        "POST /mcp HTTP/1.1",
+        `Host: ${address.host}:${address.port}`,
+        "Authorization: Bearer alice",
+        "Accept: application/json, text/event-stream",
+        "Content-Length: 2",
+        "",
+        "{}",
+      ].join("\r\n"),
+    );
+
+    expect(status).toBe(415);
+    expect(authenticate).toHaveBeenCalledOnce();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it("accepts exact media types case-insensitively with positive quality", async () => {
     const server = await start();
 

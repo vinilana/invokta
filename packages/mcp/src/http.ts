@@ -774,7 +774,11 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         return;
       }
       const contentType = request.headers["content-type"];
-      if (Array.isArray(contentType) || !exactContentType(contentType)) {
+      if (
+        rawHeaderCount(request.rawHeaders, "content-type") !== 1 ||
+        Array.isArray(contentType) ||
+        !exactContentType(contentType)
+      ) {
         sendBeforeBodyConsumption(request, response, {
           status: 415,
           body: {
