@@ -65,9 +65,13 @@ runtime becomes `CANCELLED`.
 
 **AE-OBS-01 — Single hook.** The only cross-cutting hook in v0.1 is `onEvent`,
 with the events `invocation.started`, `invocation.completed`, and
-`invocation.failed`. Events contain only
-request/capability/source/principalId/timestamp/duration/code as applicable to
-their type. Payloads, tokens, and credentials are not included by default.
+`invocation.failed`. The started event contains `requestId`, `capabilityId`,
+`source`, optional `principalId`, and ISO `startedAt`. The completed event contains
+`requestId`, `capabilityId`, and `durationMs`. The failed event contains those
+identifiers, `durationMs`, and an `EngineErrorCode`. Payloads, tokens, and
+credentials are not included by default. A rejected or thrown `onEvent` hook
+MUST NOT change the invocation result; the runtime MAY send a payload-free
+diagnostic to the configured logger.
 
 ## CLI
 

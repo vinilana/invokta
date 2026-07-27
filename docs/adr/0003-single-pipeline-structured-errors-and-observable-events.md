@@ -35,7 +35,9 @@ The only cross-cutting hook will be `onEvent`. It will receive only
 `invocation.started`, `invocation.completed`, and `invocation.failed`, with the
 minimum fields defined by the public contract. Business payloads, tokens, and
 credentials will not be part of these events. The custom engine may connect the
-hook to logs, metrics, or tracing.
+hook to logs, metrics, or tracing. A hook failure will not change the invocation
+result; the runtime may report it through the configured logger without business
+payloads or credentials.
 
 ## Consequences
 

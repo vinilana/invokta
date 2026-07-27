@@ -65,7 +65,8 @@ being returned.
 **AE-ACCESS-01 — Explicit rule.** Every capability MUST declare `access` as
 `public`, `authenticated`, or an asynchronous/synchronous function. `public`
 accepts `principal = null`; `authenticated` requires a `Principal`; a function
-permits access only when it returns `true`.
+receives `{ principal, input, context, capabilityId }` and permits access only
+when it returns `true`.
 
 **AE-CTX-01 — Minimal context.** `ExecutionContext` MUST contain only `requestId`,
 `source`, `principal`, `signal`, and `logger`. `source` is `direct`, `cli`,

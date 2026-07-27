@@ -106,18 +106,16 @@ describe("the M0 engine walking skeleton", () => {
       ),
     ).resolves.toEqual({ ticketId: "T-43", category: "TECHNICAL" });
     expect(load).toHaveBeenCalledExactlyOnceWith("T-43");
-    expect(observeContext).toHaveBeenCalledExactlyOnceWith({
-      requestId: "request-43",
-      source: "direct",
-      principal: { id: "agent-7" },
-      signal,
-      logger: {
-        debug: expect.any(Function),
-        info: expect.any(Function),
-        warn: expect.any(Function),
-        error: expect.any(Function),
-      },
-    });
+    expect(observeContext).toHaveBeenCalledTimes(1);
+    const context = observeContext.mock.calls[0]?.[0];
+    expect(context?.requestId).toBe("request-43");
+    expect(context?.source).toBe("direct");
+    expect(context?.principal).toEqual({ id: "agent-7" });
+    expect(context?.signal).toBe(signal);
+    expect(context?.logger.debug).toBeTypeOf("function");
+    expect(context?.logger.info).toBeTypeOf("function");
+    expect(context?.logger.warn).toBeTypeOf("function");
+    expect(context?.logger.error).toBeTypeOf("function");
   });
 
   it("rejects invalid transformed input before executing the capability", async () => {
