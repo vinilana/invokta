@@ -207,6 +207,124 @@ describe("the core v0.1 contract", () => {
     expect(originalRun).toHaveBeenCalledOnce();
   });
 
+  it("reads every top-level capability field exactly once during registration", async () => {
+    const reads = {
+      description: 0,
+      title: 0,
+      input: 0,
+      output: 0,
+      access: 0,
+      timeoutMs: 0,
+      annotations: 0,
+      run: 0,
+    };
+    const run = vi.fn(
+      async ({ input: value }: { input: { value: string } }) => ({
+        result: value.value,
+      }),
+    );
+    const firstValues = {
+      description: "Use one coherent capability snapshot.",
+      title: "Stable getter contract",
+      input,
+      output,
+      access: "public",
+      timeoutMs: 25,
+      annotations: { readOnly: true },
+      run,
+    } as const;
+    const descriptors = Object.fromEntries(
+      Object.entries(firstValues).map(([field, value]) => [
+        field,
+        {
+          configurable: true,
+          get() {
+            const capabilityField = field as keyof typeof reads;
+            reads[capabilityField] += 1;
+            if (reads[capabilityField] > 1) {
+              throw new Error(`Capability ${field} was read more than once.`);
+            }
+            return value;
+          },
+        },
+      ]),
+    );
+    const capability = Object.defineProperties({}, descriptors) as ReturnType<
+      typeof createEchoCapability
+    >;
+
+    const engine = createEngine({
+      name: "single-read-capability-engine",
+      version: "0.1.0",
+      capabilities: { echo: capability },
+    });
+
+    await expect(engine.invoke("echo", { value: "stable" })).resolves.toEqual({
+      result: "stable",
+    });
+    expect(engine.describe("echo")).toMatchObject({
+      title: "Stable getter contract",
+      description: "Use one coherent capability snapshot.",
+      timeoutMs: 25,
+      annotations: { readOnly: true },
+    });
+    expect(reads).toEqual({
+      description: 1,
+      title: 1,
+      input: 1,
+      output: 1,
+      access: 1,
+      timeoutMs: 1,
+      annotations: 1,
+      run: 1,
+    });
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["a negative value", -1],
+    ["NaN", Number.NaN],
+    ["positive infinity", Number.POSITIVE_INFINITY],
+  ])(
+    "validates and executes the captured timeout before a getter returns %s",
+    async (_case, laterValue) => {
+      const capability = createEchoCapability();
+      let timeoutReads = 0;
+      Object.defineProperty(capability, "timeoutMs", {
+        configurable: true,
+        get() {
+          timeoutReads += 1;
+          return timeoutReads === 1 ? 25 : laterValue;
+        },
+      });
+      const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+      try {
+        const engine = createEngine({
+          name: "captured-timeout-engine",
+          version: "0.1.0",
+          capabilities: { echo: capability },
+        });
+
+        expect(engine.describe("echo").timeoutMs).toBe(25);
+        await expect(
+          engine.invoke("echo", { value: "stable" }),
+        ).resolves.toEqual({ result: "stable" });
+        expect(timeoutReads).toBe(1);
+        expect(setTimeoutSpy.mock.calls.some((call) => call[1] === 25)).toBe(
+          true,
+        );
+        expect(
+          setTimeoutSpy.mock.calls.some((call) =>
+            Object.is(call[1], laterValue),
+          ),
+        ).toBe(false);
+      } finally {
+        setTimeoutSpy.mockRestore();
+      }
+    },
+  );
+
   it("returns fresh deeply immutable contract snapshots", () => {
     const annotations = {
       readOnly: true,

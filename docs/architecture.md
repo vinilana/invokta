@@ -56,13 +56,15 @@ the request before authorization. `access` receives an independent clone and
 nor authorization mutation changes the data that execution observes.
 
 `createEngine` is also the capability-contract boundary. It MUST capture every
-top-level capability field at construction so later replacement of `input`,
-`output`, `access`, `run`, metadata, annotations, or timeout configuration on the
-original definition cannot change the registered engine. Standard JSON Schema
-converters run synchronously during construction. Their documents MUST be
-object-rooted lossless JSON, are copied away from converter-owned objects, and
-are deeply frozen internally. Cyclic, proxy-backed, accessor-backed, or otherwise
-non-JSON documents fail construction synchronously. `list` and `describe` return
+top-level capability field exactly once at construction so later replacement or
+changing accessors for `input`, `output`, `access`, `run`, metadata, annotations,
+or timeout configuration cannot create a split registered contract. The same
+captured `timeoutMs` value is validated, described, and used for execution.
+Standard JSON Schema converters run synchronously during construction. Their
+documents MUST be object-rooted lossless JSON, copied away from converter-owned
+objects, and deeply frozen internally. Cyclic, proxy-backed, accessor-backed, or
+otherwise non-JSON documents fail construction synchronously. `list` and
+`describe` return
 fresh, deeply frozen snapshots, preventing a caller or adapter request from
 changing later runtime or MCP contracts. Standard Schema validation itself
 continues to run only at invocation through the captured input and output schema

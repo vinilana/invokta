@@ -69,6 +69,10 @@ with `TypeError`. This construction-time boundary matches the maximum portable
 delay accepted by the Node.js timer used by the supported runtime and prevents
 timer overflow from being coerced into an immediate timeout or emitting a host
 warning. Both inclusive endpoints remain valid configuration.
+The capability definition will be captured with one read of each top-level field
+before the timeout is validated or any contract is derived. Validation,
+description, and execution will therefore use the same captured timeout even if
+the source definition uses a changing accessor.
 
 ## Consequences
 

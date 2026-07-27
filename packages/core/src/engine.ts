@@ -151,20 +151,27 @@ function snapshotCapability(
   capabilityId: string,
   capability: AnyCapability,
 ): AnyCapability {
-  validateTimeoutMs(capabilityId, capability.timeoutMs);
+  const description = capability.description;
+  const title = capability.title;
+  const input = capability.input;
+  const output = capability.output;
+  const access = capability.access;
+  const timeoutMs = capability.timeoutMs;
+  const annotations = capability.annotations;
+  const run = capability.run;
+
+  validateTimeoutMs(capabilityId, timeoutMs);
   return Object.freeze({
-    description: capability.description,
-    ...(capability.title === undefined ? {} : { title: capability.title }),
-    input: capability.input,
-    output: capability.output,
-    access: capability.access,
-    ...(capability.timeoutMs === undefined
+    description,
+    ...(title === undefined ? {} : { title }),
+    input,
+    output,
+    access,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(annotations === undefined
       ? {}
-      : { timeoutMs: capability.timeoutMs }),
-    ...(capability.annotations === undefined
-      ? {}
-      : { annotations: snapshotLosslessJson(capability.annotations) }),
-    run: capability.run,
+      : { annotations: snapshotLosslessJson(annotations) }),
+    run,
   }) as AnyCapability;
 }
 
