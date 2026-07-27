@@ -55,6 +55,19 @@ the request before authorization. `access` receives an independent clone and
 `run` receives the request-owned execution snapshot, so neither caller mutation
 nor authorization mutation changes the data that execution observes.
 
+`createEngine` is also the capability-contract boundary. It MUST capture every
+top-level capability field at construction so later replacement of `input`,
+`output`, `access`, `run`, metadata, annotations, or timeout configuration on the
+original definition cannot change the registered engine. Standard JSON Schema
+converters run synchronously during construction. Their documents MUST be
+object-rooted lossless JSON, are copied away from converter-owned objects, and
+are deeply frozen internally. Cyclic, proxy-backed, accessor-backed, or otherwise
+non-JSON documents fail construction synchronously. `list` and `describe` return
+fresh, deeply frozen snapshots, preventing a caller or adapter request from
+changing later runtime or MCP contracts. Standard Schema validation itself
+continues to run only at invocation through the captured input and output schema
+objects.
+
 ## Errors
 
 **AE-ERR-01 — Taxonomy.** `EngineError` MUST use one of these codes:

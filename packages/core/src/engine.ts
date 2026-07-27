@@ -6,6 +6,7 @@ import {
   type InferSchemaInput,
   type InferSchemaOutput,
   readJsonSchema,
+  snapshotLosslessJson,
   validateSchema,
 } from "./schema.js";
 import type {
@@ -72,17 +73,27 @@ function describeCapability(
       { cause },
     );
   }
-  if (inputSchema.type !== "object") {
+  if (
+    typeof inputSchema !== "object" ||
+    inputSchema === null ||
+    Array.isArray(inputSchema) ||
+    inputSchema.type !== "object"
+  ) {
     throw new TypeError(
       `Capability ${capabilityId} input schema must have an object root.`,
     );
   }
-  if (outputSchema.type !== "object") {
+  if (
+    typeof outputSchema !== "object" ||
+    outputSchema === null ||
+    Array.isArray(outputSchema) ||
+    outputSchema.type !== "object"
+  ) {
     throw new TypeError(
       `Capability ${capabilityId} output schema must have an object root.`,
     );
   }
-  return Object.freeze({
+  return snapshotLosslessJson({
     id: capabilityId,
     description: capability.description,
     ...(capability.title === undefined ? {} : { title: capability.title }),
@@ -98,7 +109,7 @@ function describeCapability(
 }
 
 function toSummary(description: CapabilityDescription): CapabilitySummary {
-  return Object.freeze({
+  return snapshotLosslessJson({
     id: description.id,
     description: description.description,
     ...(description.title === undefined ? {} : { title: description.title }),
@@ -106,6 +117,23 @@ function toSummary(description: CapabilityDescription): CapabilitySummary {
       ? {}
       : { annotations: description.annotations }),
   });
+}
+
+function snapshotCapability(capability: AnyCapability): AnyCapability {
+  return Object.freeze({
+    description: capability.description,
+    ...(capability.title === undefined ? {} : { title: capability.title }),
+    input: capability.input,
+    output: capability.output,
+    access: capability.access,
+    ...(capability.timeoutMs === undefined
+      ? {}
+      : { timeoutMs: capability.timeoutMs }),
+    ...(capability.annotations === undefined
+      ? {}
+      : { annotations: snapshotLosslessJson(capability.annotations) }),
+    run: capability.run,
+  }) as AnyCapability;
 }
 
 function createSignal(
@@ -264,14 +292,15 @@ export function createEngine<const Capabilities extends CapabilityMap>(
   for (const capabilityId of Object.keys(definition.capabilities)) {
     const capability = definition.capabilities[capabilityId];
     if (capability !== undefined) {
-      capabilities.set(capabilityId, capability);
+      const snapshot = snapshotCapability(capability);
+      capabilities.set(capabilityId, snapshot);
       descriptions.set(
         capabilityId,
-        describeCapability(capabilityId, capability),
+        describeCapability(capabilityId, snapshot),
       );
     }
   }
-  const summaries = Object.freeze(
+  const summaries = snapshotLosslessJson(
     Array.from(descriptions.values(), toSummary),
   ) as ReadonlyArray<CapabilitySummary>;
 
@@ -303,7 +332,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
   return {
     name: definition.name,
     version: definition.version,
-    list: () => summaries,
+    list: () => snapshotLosslessJson(summaries),
     describe(capabilityId) {
       const description = descriptions.get(capabilityId);
       if (description === undefined) {
@@ -313,7 +342,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           publicDetails: { capabilityId },
         });
       }
-      return description;
+      return snapshotLosslessJson(description);
     },
     async invoke(capabilityId, rawInput, options) {
       const requestId = options?.requestId ?? randomUUID();

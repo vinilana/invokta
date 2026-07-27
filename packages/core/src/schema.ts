@@ -47,7 +47,11 @@ function hasInheritedJsonRepresentation(prototype: object | null): boolean {
   return false;
 }
 
-function assertJsonValue(value: unknown, ancestors: Set<object>): void {
+function assertJsonValue(
+  value: unknown,
+  ancestors: Set<object>,
+  ignoredOwnProperty?: string,
+): void {
   if (value === null) return;
 
   switch (typeof value) {
@@ -97,7 +101,11 @@ function assertJsonValue(value: unknown, ancestors: Set<object>): void {
     }
     if (!propertyNames.includes("length")) rejectNonJsonValue();
   } else if (propertyNames.length !== keys.length) {
-    rejectNonJsonValue();
+    const unexpectedProperty = propertyNames.find(
+      (propertyName) =>
+        !keys.includes(propertyName) && propertyName !== ignoredOwnProperty,
+    );
+    if (unexpectedProperty !== undefined) rejectNonJsonValue();
   }
 
   ancestors.add(value);
@@ -114,6 +122,35 @@ function assertJsonValue(value: unknown, ancestors: Set<object>): void {
   }
 }
 
+function freezeJsonValue<Value>(value: Value, visited: Set<object>): Value {
+  if (typeof value !== "object" || value === null || visited.has(value)) {
+    return value;
+  }
+  visited.add(value);
+  for (const key of Object.keys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor !== undefined && "value" in descriptor) {
+      freezeJsonValue(descriptor.value, visited);
+    }
+  }
+  return Object.freeze(value);
+}
+
+function assertLosslessJson(value: unknown, ignoredOwnProperty?: string): void {
+  assertJsonValue(value, new Set(), ignoredOwnProperty);
+  if (JSON.stringify(value) === undefined) rejectNonJsonValue();
+}
+
+export function snapshotLosslessJson<Value>(value: Value): Value {
+  assertLosslessJson(value);
+  return freezeJsonValue(structuredClone(value), new Set());
+}
+
+function snapshotJsonSchemaDocument(value: unknown): EngineJsonSchema {
+  assertLosslessJson(value, "~standard");
+  return freezeJsonValue(structuredClone(value), new Set()) as EngineJsonSchema;
+}
+
 function assertSafelyJsonSerializable(
   value: unknown,
   options: {
@@ -122,8 +159,7 @@ function assertSafelyJsonSerializable(
   },
 ): void {
   try {
-    assertJsonValue(value, new Set());
-    if (JSON.stringify(value) === undefined) rejectNonJsonValue();
+    assertLosslessJson(value);
   } catch (cause) {
     throw new EngineError({
       code: options.code,
@@ -263,5 +299,49 @@ export function readJsonSchema(
   schema: EngineSchema,
   side: "input" | "output",
 ): EngineJsonSchema {
-  return schema["~standard"].jsonSchema[side]({ target: "draft-2020-12" });
+  if (nodeUtilTypes.isProxy(schema)) {
+    throw new TypeError("A schema contract must not be a proxy.");
+  }
+  const standard = schema["~standard"];
+  if (
+    typeof standard !== "object" ||
+    standard === null ||
+    nodeUtilTypes.isProxy(standard)
+  ) {
+    throw new TypeError("A schema contract is malformed.");
+  }
+  const jsonSchema = readDataProperty(standard, "jsonSchema");
+  if (
+    typeof jsonSchema !== "object" ||
+    jsonSchema === null ||
+    nodeUtilTypes.isProxy(jsonSchema)
+  ) {
+    throw new TypeError("A JSON Schema contract is malformed.");
+  }
+  const converter = readDataProperty(jsonSchema, side);
+  if (typeof converter !== "function") {
+    throw new TypeError(`A JSON Schema ${side} converter is required.`);
+  }
+  const document: unknown = Reflect.apply(converter, jsonSchema, [
+    { target: "draft-2020-12" },
+  ]);
+  return snapshotJsonSchemaDocument(document);
+}
+
+function readDataProperty(value: object, key: PropertyKey): unknown {
+  let current: object | null = value;
+  while (current !== null) {
+    if (nodeUtilTypes.isProxy(current)) {
+      throw new TypeError("A schema contract must not contain a proxy.");
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(current, key);
+    if (descriptor !== undefined) {
+      if (!("value" in descriptor)) {
+        throw new TypeError("A schema contract must use data properties.");
+      }
+      return descriptor.value;
+    }
+    current = Object.getPrototypeOf(current);
+  }
+  return undefined;
 }

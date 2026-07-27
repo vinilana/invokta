@@ -164,6 +164,284 @@ describe("the core v0.1 contract", () => {
     });
   });
 
+  it("snapshots executable capability fields when the engine is created", async () => {
+    const originalInput = testSchema<{ value: string }, { value: string }>(
+      (value) => ({ value: value as { value: string } }),
+    );
+    const originalOutput = testSchema<{ result: string }, { result: string }>(
+      (value) => ({ value: value as { result: string } }),
+    );
+    const originalRun = vi.fn(
+      async ({ input }: { input: { value: string } }) => ({
+        result: input.value,
+      }),
+    );
+    const capability = defineCapability({
+      description: "Use the creation-time executable contract.",
+      input: originalInput,
+      output: originalOutput,
+      access: "public",
+      run: originalRun,
+    });
+    const engine = createEngine({
+      name: "snapshotted-execution-engine",
+      version: "0.1.0",
+      capabilities: { echo: capability },
+    });
+    const mutableCapability = capability as unknown as Record<string, unknown>;
+    mutableCapability.input = testSchema(() => ({
+      issues: [{ message: "mutated input schema" }],
+    }));
+    mutableCapability.output = testSchema(() => ({
+      issues: [{ message: "mutated output schema" }],
+    }));
+    mutableCapability.access = "authenticated";
+    mutableCapability.run = async () => {
+      throw new Error("mutated handler");
+    };
+
+    await expect(engine.invoke("echo", { value: "stable" })).resolves.toEqual({
+      result: "stable",
+    });
+    expect(originalRun).toHaveBeenCalledOnce();
+  });
+
+  it("returns fresh deeply immutable contract snapshots", () => {
+    const annotations = {
+      readOnly: true,
+      destructive: false,
+      idempotent: true,
+      openWorld: false,
+    };
+    const schemaDocument = {
+      type: "object",
+      properties: {
+        value: {
+          type: "string",
+          examples: ["stable"],
+        },
+      },
+      required: ["value"],
+    };
+    const contractSchema = testSchema<{ value: string }, { value: string }>(
+      (value) => ({ value: value as { value: string } }),
+    );
+    Object.assign(contractSchema["~standard"].jsonSchema, {
+      input: () => schemaDocument,
+      output: () => schemaDocument,
+    });
+    const capability = defineCapability({
+      title: "Stable contract",
+      description: "Expose creation-time metadata.",
+      input: contractSchema,
+      output: contractSchema,
+      access: "public",
+      annotations,
+      async run({ input }) {
+        return input;
+      },
+    });
+    const engine = createEngine({
+      name: "immutable-description-engine",
+      version: "0.1.0",
+      capabilities: { stable: capability },
+    });
+
+    annotations.readOnly = false;
+    schemaDocument.properties.value.type = "number";
+    schemaDocument.properties.value.examples.push("mutated");
+    (capability as unknown as Record<string, unknown>).title = "Mutated";
+    (capability as unknown as Record<string, unknown>).description = "Mutated";
+
+    const firstDescription = engine.describe("stable");
+    const secondDescription = engine.describe("stable");
+    const firstList = engine.list();
+    const secondList = engine.list();
+
+    expect(firstDescription).toEqual({
+      id: "stable",
+      title: "Stable contract",
+      description: "Expose creation-time metadata.",
+      annotations: {
+        readOnly: true,
+        destructive: false,
+        idempotent: true,
+        openWorld: false,
+      },
+      inputSchema: {
+        type: "object",
+        properties: {
+          value: { type: "string", examples: ["stable"] },
+        },
+        required: ["value"],
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          value: { type: "string", examples: ["stable"] },
+        },
+        required: ["value"],
+      },
+    });
+    expect(firstList).toEqual([
+      {
+        id: "stable",
+        title: "Stable contract",
+        description: "Expose creation-time metadata.",
+        annotations: {
+          readOnly: true,
+          destructive: false,
+          idempotent: true,
+          openWorld: false,
+        },
+      },
+    ]);
+    expect(firstDescription).not.toBe(secondDescription);
+    expect(firstDescription.inputSchema).not.toBe(
+      secondDescription.inputSchema,
+    );
+    expect(firstDescription.annotations).not.toBe(
+      secondDescription.annotations,
+    );
+    expect(firstList).not.toBe(secondList);
+    expect(firstList[0]).not.toBe(secondList[0]);
+    expect(firstList[0]?.annotations).not.toBe(secondList[0]?.annotations);
+    expect(Object.isFrozen(firstDescription)).toBe(true);
+    expect(Object.isFrozen(firstDescription.inputSchema)).toBe(true);
+    expect(
+      Object.isFrozen(
+        (firstDescription.inputSchema.properties as Record<string, unknown>)
+          .value,
+      ),
+    ).toBe(true);
+    expect(Object.isFrozen(firstDescription.annotations)).toBe(true);
+    expect(Object.isFrozen(firstList)).toBe(true);
+    expect(Object.isFrozen(firstList[0])).toBe(true);
+    expect(Object.isFrozen(firstList[0]?.annotations)).toBe(true);
+    expect(
+      Reflect.set(firstDescription.inputSchema.properties as object, "value", {
+        type: "number",
+      }),
+    ).toBe(false);
+    expect(engine.describe("stable")).toEqual(secondDescription);
+  });
+
+  it.each([
+    ["null", () => null],
+    ["an array", () => [{ type: "object" }]],
+    [
+      "a cyclic document",
+      () => {
+        const document: Record<string, unknown> = { type: "object" };
+        document.self = document;
+        return document;
+      },
+    ],
+    ["a proxy", () => new Proxy({ type: "object" }, {})],
+    ["a bigint", () => ({ type: "object", unsafe: 1n })],
+    ["an undefined property", () => ({ type: "object", unsafe: undefined })],
+  ])(
+    "rejects %s returned by a JSON Schema converter",
+    (_case, createDocument) => {
+      const invalidSchema = testSchema<{ value: string }, { value: string }>(
+        (value) => ({ value: value as { value: string } }),
+      );
+      Object.assign(invalidSchema["~standard"].jsonSchema, {
+        input:
+          createDocument as (typeof invalidSchema)["~standard"]["jsonSchema"]["input"],
+      });
+
+      expect(() =>
+        createEngine({
+          name: "invalid-json-schema-engine",
+          version: "0.1.0",
+          capabilities: {
+            invalid: defineCapability({
+              description: "Reject an unsafe JSON Schema document.",
+              input: invalidSchema,
+              output,
+              access: "public",
+              async run({ input }) {
+                return { result: input.value };
+              },
+            }),
+          },
+        }),
+      ).toThrow(TypeError);
+    },
+  );
+
+  it("rejects an accessor in a converted JSON Schema without invoking it", () => {
+    const getter = vi.fn(() => ({ type: "string" }));
+    const document = Object.defineProperty({ type: "object" }, "properties", {
+      enumerable: true,
+      get: getter,
+    });
+    const invalidSchema = testSchema<{ value: string }, { value: string }>(
+      (value) => ({ value: value as { value: string } }),
+    );
+    Object.assign(invalidSchema["~standard"].jsonSchema, {
+      input: () => document,
+    });
+
+    expect(() =>
+      createEngine({
+        name: "accessor-json-schema-engine",
+        version: "0.1.0",
+        capabilities: {
+          invalid: defineCapability({
+            description: "Reject an accessor-backed schema document.",
+            input: invalidSchema,
+            output,
+            access: "public",
+            async run({ input }) {
+              return { result: input.value };
+            },
+          }),
+        },
+      }),
+    ).toThrow("Capability invalid could not produce its JSON Schemas.");
+    expect(getter).not.toHaveBeenCalled();
+  });
+
+  it("rejects an accessor-backed JSON Schema converter without invoking it", () => {
+    const converterGetter = vi.fn(() => () => ({ type: "object" }));
+    const jsonSchema = Object.defineProperty(
+      { output: () => ({ type: "object" }) },
+      "input",
+      { enumerable: true, get: converterGetter },
+    );
+    const invalidSchema = {
+      "~standard": {
+        version: 1,
+        vendor: "hostile-converter-test",
+        validate(value: unknown) {
+          return { value: value as { value: string } };
+        },
+        jsonSchema,
+      },
+    } as unknown as EngineSchema<{ value: string }, { value: string }>;
+
+    expect(() =>
+      createEngine({
+        name: "accessor-converter-engine",
+        version: "0.1.0",
+        capabilities: {
+          invalid: defineCapability({
+            description: "Reject an accessor-backed schema converter.",
+            input: invalidSchema,
+            output,
+            access: "public",
+            async run({ input }) {
+              return { result: input.value };
+            },
+          }),
+        },
+      }),
+    ).toThrow("Capability invalid could not produce its JSON Schemas.");
+    expect(converterGetter).not.toHaveBeenCalled();
+  });
+
   it("rejects non-object root schemas when creating an engine", () => {
     const invalidInput = defineCapability({
       description: "Invalid scalar input contract.",

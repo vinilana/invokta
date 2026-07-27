@@ -51,10 +51,31 @@ contracts.
 Adapters will consume the standard representation provided by the capability;
 they will not reconstruct schemas from library-specific metadata.
 
+`createEngine` will invoke each input and output JSON Schema converter
+synchronously and retain an internal lossless-JSON snapshot of the result. The
+snapshot excludes the non-enumerable `~standard` metadata that compatible schema
+libraries may attach to a converted document; that protocol metadata is not
+part of the JSON Schema document sent to consumers. All other non-enumerable
+properties, accessors, proxies, cycles, custom prototypes, and values outside the
+lossless JSON data model are rejected at construction. Converter containers and
+methods must be ordinary data properties so the core can reject accessor-backed
+converter hazards without invoking them.
+
+The registered capability captures its creation-time top-level fields. JSON
+Schema documents and annotations are copied away from their producer-owned
+objects, and public `list` and `describe` results are fresh deeply frozen
+snapshots. Mutation of the original definition, a converter result, or one
+request's returned metadata therefore cannot create drift between execution and
+the contracts exposed through adapters. The captured Standard Schema objects
+still perform input and output validation at invocation, preserving their
+validation and transformation behavior.
+
 ## Consequences
 
 - Consumers can choose compatible validators without changing the kernel.
 - Documentation generation and tool exposure use an interoperable format.
 - The core must not assume features exclusive to a particular library.
 - Validation and JSON Schema retrieval require contract tests.
+- Engine construction does bounded work proportional to the registered contract
+  documents, while public metadata reads return request-owned immutable copies.
 - Examples using Zod must be identified as examples, not as the official API.
