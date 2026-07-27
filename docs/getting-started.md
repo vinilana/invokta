@@ -154,8 +154,10 @@ await serveMcpStdio(engine, {
 
 The process that starts the server supplies the trusted local principal. Standard
 output is reserved for MCP messages, so write application diagnostics only to
-standard error. Run the built entry point directly with Node to avoid
-package-manager status text on the protocol stream:
+standard error. Closing the client input closes the protocol connection, cancels
+active capability work, and lets the server process shut down. Run the built
+entry point directly with Node to avoid package-manager status text on the
+protocol stream:
 
 ```sh
 node examples/hello-engine/dist/mcp-stdio.js

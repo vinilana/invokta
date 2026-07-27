@@ -149,7 +149,11 @@ and the lockfile.
 
 **AE-MCP-03 — stdio.** `stdout` is reserved exclusively for the protocol; logs go
 to `stderr`. The trusted local principal is configured by the host. The signal
-provided by the SDK MUST be propagated to `context.signal`.
+provided by the SDK MUST be propagated to `context.signal`. The stdio server owns
+the protocol connection lifetime: stdin end or close MUST idempotently close the
+transport, abort active request signals, remove its stream listeners, and allow
+the process to exit. A broken stdout pipe is a normal client disconnect and MUST
+be contained without an uncaught error or diagnostic on protocol stdout.
 
 **AE-MCP-04 — Stateless HTTP.** The sole endpoint is `/mcp`; each request is
 independent. The default bind address is `127.0.0.1`. `Host` and `Origin` MUST be

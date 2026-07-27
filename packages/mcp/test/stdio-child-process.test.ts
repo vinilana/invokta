@@ -1,4 +1,9 @@
-import { execFileSync } from "node:child_process";
+import {
+  type ChildProcessWithoutNullStreams,
+  execFileSync,
+  spawn,
+} from "node:child_process";
+import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -9,6 +14,90 @@ const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixturePath = fileURLToPath(
   new URL("./fixtures/stdio-server.mjs", import.meta.url),
 );
+const lifecycleFixturePath = fileURLToPath(
+  new URL("./fixtures/stdio-lifecycle-server.mjs", import.meta.url),
+);
+
+interface TextCapture {
+  readonly value: () => string;
+  readonly waitFor: (expected: string) => Promise<void>;
+}
+
+function captureText(stream: Readable): TextCapture {
+  let value = "";
+  const waiters = new Set<{
+    readonly expected: string;
+    readonly resolve: () => void;
+  }>();
+  stream.on("data", (chunk: Buffer | string) => {
+    value += chunk.toString();
+    for (const waiter of waiters) {
+      if (value.includes(waiter.expected)) {
+        waiters.delete(waiter);
+        waiter.resolve();
+      }
+    }
+  });
+  return {
+    value: () => value,
+    async waitFor(expected) {
+      if (value.includes(expected)) return;
+      await new Promise<void>((resolve, reject) => {
+        let timer: NodeJS.Timeout;
+        const waiter = {
+          expected,
+          resolve: () => {
+            clearTimeout(timer);
+            resolve();
+          },
+        };
+        waiters.add(waiter);
+        timer = setTimeout(() => {
+          waiters.delete(waiter);
+          reject(
+            new Error(`Timed out waiting for ${JSON.stringify(expected)}.`),
+          );
+        }, 2_000);
+        timer.unref();
+      });
+    },
+  };
+}
+
+function spawnLifecycleServer(): ChildProcessWithoutNullStreams {
+  const child = spawn(process.execPath, [lifecycleFixturePath], {
+    cwd: repositoryRoot,
+    stdio: "pipe",
+  });
+  child.stdin.on("error", () => undefined);
+  return child;
+}
+
+function waitForExit(child: ChildProcessWithoutNullStreams): Promise<{
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+}> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(
+        new Error("The stdio server did not exit after its channel closed."),
+      );
+    }, 2_000);
+    timer.unref();
+    child.once("close", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal });
+    });
+  });
+}
+
+function sendMessage(
+  child: ChildProcessWithoutNullStreams,
+  message: Readonly<Record<string, unknown>>,
+): void {
+  child.stdin.write(`${JSON.stringify(message)}\n`);
+}
 
 beforeAll(() => {
   execFileSync(
@@ -82,4 +171,63 @@ it("serves handshake, tools/list, and tools/call over protocol-only stdio", asyn
   }
 
   expect(stderr).toBe("");
+});
+
+it("closes on stdin EOF, cancels active work, and exits cleanly", async () => {
+  const child = spawnLifecycleServer();
+  const stdout = captureText(child.stdout);
+  const stderr = captureText(child.stderr);
+  const exited = waitForExit(child);
+
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "stdio-eof-test", version: "0.0.0-test" },
+    },
+  });
+  await stdout.waitFor('"id":1');
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    method: "notifications/initialized",
+  });
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: { name: "example.wait", arguments: {} },
+  });
+  await stderr.waitFor("started\n");
+
+  child.stdin.end();
+
+  await expect(exited).resolves.toEqual({ code: 0, signal: null });
+  expect(stderr.value()).toBe("started\ncancelled\nlisteners-clean\n");
+  for (const line of stdout.value().trim().split("\n")) {
+    expect(() => JSON.parse(line)).not.toThrow();
+  }
+});
+
+it("contains a broken stdout pipe and exits without an uncaught stack", async () => {
+  const child = spawnLifecycleServer();
+  const stderr = captureText(child.stderr);
+  const exited = waitForExit(child);
+  child.stdout.destroy();
+
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "stdio-epipe-test", version: "0.0.0-test" },
+    },
+  });
+
+  await expect(exited).resolves.toEqual({ code: 0, signal: null });
+  expect(stderr.value()).toBe("listeners-clean\n");
 });
