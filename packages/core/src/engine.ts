@@ -196,7 +196,12 @@ async function enforceAccess(
     capabilityId: string;
   }) => boolean | Promise<boolean>;
   if (
-    await access({ principal: context.principal, input, context, capabilityId })
+    (await access({
+      principal: context.principal,
+      input,
+      context,
+      capabilityId,
+    })) === true
   ) {
     return;
   }

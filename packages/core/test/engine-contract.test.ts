@@ -5,6 +5,7 @@ import {
   createEngine,
   defineCapability,
   EngineError,
+  type AccessRule,
   type EngineErrorCode,
   type EngineSchema,
   type ExecutionContext,
@@ -12,6 +13,15 @@ import {
 
 const input = z.object({ value: z.string().min(1) });
 const output = z.object({ result: z.string() });
+
+const invalidAccessDecisions = [
+  ["synchronous string", () => "allowed"],
+  ["asynchronous string", async () => "allowed"],
+  ["synchronous number", () => 1],
+  ["asynchronous number", async () => 1],
+  ["synchronous object", () => ({ allowed: true })],
+  ["asynchronous object", async () => ({ allowed: true })],
+] satisfies ReadonlyArray<readonly [string, () => unknown | Promise<unknown>]>;
 
 function testSchema<Input, Output>(
   validate: (
@@ -264,6 +274,40 @@ describe("the core v0.1 contract", () => {
       }),
     );
   });
+
+  it.each(invalidAccessDecisions)(
+    "fails closed for a %s access decision before run",
+    async (_label, evaluateAccess) => {
+      const access = vi.fn(evaluateAccess) as unknown as AccessRule<{
+        value: string;
+      }>;
+      const run = vi.fn(async () => ({ result: "unreachable" }));
+      const engine = createEngine({
+        name: "fail-closed-authorization-engine",
+        version: "0.1.0",
+        capabilities: {
+          "example.echo": defineCapability({
+            description: "Deny an invalid authorization decision.",
+            input,
+            output,
+            access,
+            run,
+          }),
+        },
+      });
+
+      await expectEngineError(
+        engine.invoke(
+          "example.echo",
+          { value: "identified" },
+          { principal: { id: "user:42" } },
+        ),
+        "FORBIDDEN",
+      );
+      expect(access).toHaveBeenCalledOnce();
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
 
   it("preserves EngineError and normalizes unknown handler failures", async () => {
     const expected = new EngineError({
