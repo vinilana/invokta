@@ -18,6 +18,7 @@
     "test:run": "vitest run",
     "lint": "biome lint .",
     "format:check": "biome format .",
+    "release:verify": "node scripts/verify-release-packages.mjs",
     "check": "yarn typecheck && yarn lint && yarn format:check && yarn test:run && yarn build"
   },
   "devDependencies": {

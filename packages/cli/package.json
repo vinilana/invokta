@@ -16,6 +16,10 @@
       "import": "./dist/index.js"
     }
   },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "prepack": "npm run --silent build"
+  },
   "dependencies": {
     "@ai-engine/core": "0.1.0"
   }
