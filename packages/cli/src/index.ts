@@ -5,12 +5,12 @@ import {
   type Principal,
 } from "@ai-engine/core";
 
-import { readUtf8 } from "./stdin.js";
+import { InvalidUtf8Error, readUtf8 } from "./stdin.js";
 
 export interface CliIo {
   readonly readStdin: () => Promise<string>;
-  readonly writeStdout: (text: string) => void;
-  readonly writeStderr: (text: string) => void;
+  readonly writeStdout: (text: string) => void | Promise<void>;
+  readonly writeStderr: (text: string) => void | Promise<void>;
 }
 
 export interface RunCliOptions {
@@ -50,6 +50,13 @@ class CliUsageError extends Error {
   }
 }
 
+class CliStdoutError extends Error {
+  constructor(cause: unknown) {
+    super("CLI stdout write failed.", { cause });
+    this.name = "CliStdoutError";
+  }
+}
+
 function parseCommand(argv: readonly string[]): CliCommand {
   const [command, ...args] = argv;
   if (command === "list" && args.length === 0) return { name: "list" };
@@ -85,8 +92,12 @@ async function readProcessStdin(): Promise<string> {
 
 const defaultIo: CliIo = {
   readStdin: readProcessStdin,
-  writeStdout: (text) => process.stdout.write(text),
-  writeStderr: (text) => process.stderr.write(text),
+  writeStdout: (text) => {
+    process.stdout.write(text);
+  },
+  writeStderr: (text) => {
+    process.stderr.write(text);
+  },
 };
 
 function resolveIo(overrides: Partial<CliIo> | undefined): CliIo {
@@ -159,6 +170,22 @@ type CapabilityId<Capabilities extends CapabilityMap> = Extract<
   string
 >;
 
+async function writeStdout(io: CliIo, text: string): Promise<void> {
+  try {
+    await io.writeStdout(text);
+  } catch (cause) {
+    throw new CliStdoutError(cause);
+  }
+}
+
+async function writeStderr(io: CliIo, text: string): Promise<void> {
+  try {
+    await io.writeStderr(text);
+  } catch {
+    // A diagnostic destination cannot change the command's numeric result.
+  }
+}
+
 async function execute<Capabilities extends CapabilityMap>(
   engine: Engine<Capabilities>,
   command: CliCommand,
@@ -166,12 +193,15 @@ async function execute<Capabilities extends CapabilityMap>(
   io: CliIo,
 ): Promise<void> {
   if (command.name === "list") {
-    io.writeStdout(serialize(engine.list(), options.format));
+    await writeStdout(io, serialize(engine.list(), options.format));
     return;
   }
   const capabilityId = command.capabilityId as CapabilityId<Capabilities>;
   if (command.name === "describe") {
-    io.writeStdout(serialize(engine.describe(capabilityId), options.format));
+    await writeStdout(
+      io,
+      serialize(engine.describe(capabilityId), options.format),
+    );
     return;
   }
 
@@ -185,7 +215,7 @@ async function execute<Capabilities extends CapabilityMap>(
     principal: options.principal,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
-  io.writeStdout(serialize(result, options.format));
+  await writeStdout(io, serialize(result, options.format));
 }
 
 export async function runCli<Capabilities extends CapabilityMap>(
@@ -206,13 +236,20 @@ export async function runCli<Capabilities extends CapabilityMap>(
     exitCode = 0;
   } catch (error) {
     if (error instanceof CliUsageError) {
-      io.writeStderr(renderUsageError(error));
+      await writeStderr(io, renderUsageError(error));
+      exitCode = 2;
+    } else if (error instanceof InvalidUtf8Error) {
+      await writeStderr(
+        io,
+        renderUsageError(new CliUsageError(error.message, false)),
+      );
       exitCode = 2;
     } else if (error instanceof EngineError) {
-      io.writeStderr(renderEngineError(error));
+      await writeStderr(io, renderEngineError(error));
       exitCode = 1;
     } else {
-      io.writeStderr(
+      await writeStderr(
+        io,
         serialize({
           error: {
             code: "EXECUTION_FAILED",

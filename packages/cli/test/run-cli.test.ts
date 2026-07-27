@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { type CliIo, runCli } from "../src/index.js";
+import { readUtf8 } from "../src/stdin.js";
 
 interface RunObserverArgs {
   readonly input: { readonly value: string };
@@ -49,8 +50,12 @@ function createIo(stdin = "") {
   const readStdin = vi.fn(async () => stdin);
   const io: CliIo = {
     readStdin,
-    writeStdout: (text) => stdout.push(text),
-    writeStderr: (text) => stderr.push(text),
+    writeStdout: (text) => {
+      stdout.push(text);
+    },
+    writeStderr: (text) => {
+      stderr.push(text);
+    },
   };
   return { io, stdout, stderr, readStdin };
 }
@@ -151,6 +156,39 @@ describe("runCli", () => {
       expect.objectContaining({ source: "cli", principal: null }),
     );
     expect(output.stdout).toEqual(['{"result":"from-stdin"}\n']);
+  });
+
+  it("rejects malformed UTF-8 stdin as invalid usage without invoking the engine", async () => {
+    const engine = createTestEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const output = createIo();
+    const io: CliIo = {
+      ...output.io,
+      readStdin: () =>
+        readUtf8(
+          (async function* () {
+            yield new TextEncoder().encode('{"value":"');
+            yield Uint8Array.of(0xff);
+            yield new TextEncoder().encode('"}');
+          })(),
+        ),
+    };
+
+    const code = await runCli(engine, {
+      argv: ["run", "example.echo", "--stdin"],
+      principal: null,
+      io,
+    });
+
+    expect(code).toBe(2);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(output.stdout).toEqual([]);
+    expect(JSON.parse(output.stderr.join(""))).toEqual({
+      error: {
+        code: "INVALID_USAGE",
+        message: "Input must be valid UTF-8.",
+      },
+    });
   });
 
   it("returns exit code 2 for malformed JSON without invoking the engine", async () => {
@@ -502,4 +540,130 @@ describe("runCli", () => {
     expect(output.stdout).toEqual(['{\n  "result": "hello"\n}\n']);
     expect(output.stderr).toEqual([]);
   });
+
+  it("awaits a successful asynchronous stdout write", async () => {
+    const engine = createTestEngine();
+    const output = createIo();
+    const write = Promise.withResolvers<void>();
+    const writeStarted = Promise.withResolvers<void>();
+    let settled = false;
+    const io: CliIo = {
+      ...output.io,
+      writeStdout: () => {
+        writeStarted.resolve();
+        return write.promise;
+      },
+    };
+
+    const invocation = runCli(engine, {
+      argv: ["list"],
+      principal: null,
+      io,
+    });
+    void invocation.then(() => {
+      settled = true;
+    });
+
+    await writeStarted.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(settled).toBe(false);
+
+    write.resolve();
+    await expect(invocation).resolves.toBe(0);
+  });
+
+  it.each([
+    [
+      "throws",
+      () => {
+        throw new Error("secret output destination");
+      },
+    ],
+    [
+      "rejects",
+      async () => {
+        throw new Error("secret output destination");
+      },
+    ],
+  ])(
+    "maps a stdout writer that %s to a safe execution failure",
+    async (_case, writeStdout) => {
+      const engine = createTestEngine();
+      const output = createIo();
+      const io: CliIo = { ...output.io, writeStdout };
+
+      await expect(
+        runCli(engine, {
+          argv: ["list"],
+          principal: null,
+          io,
+        }),
+      ).resolves.toBe(1);
+      expect(output.stderr).toEqual([
+        '{"error":{"code":"EXECUTION_FAILED","message":"CLI execution failed."}}\n',
+      ]);
+      expect(output.stderr.join("")).not.toContain("secret output destination");
+    },
+  );
+
+  it("awaits a successful asynchronous stderr write", async () => {
+    const engine = createTestEngine();
+    const output = createIo();
+    const write = Promise.withResolvers<void>();
+    const writeStarted = Promise.withResolvers<void>();
+    let settled = false;
+    const io: CliIo = {
+      ...output.io,
+      writeStderr: () => {
+        writeStarted.resolve();
+        return write.promise;
+      },
+    };
+
+    const invocation = runCli(engine, {
+      argv: ["unknown"],
+      principal: null,
+      io,
+    });
+    void invocation.then(() => {
+      settled = true;
+    });
+
+    await writeStarted.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(settled).toBe(false);
+
+    write.resolve();
+    await expect(invocation).resolves.toBe(2);
+  });
+
+  it.each([
+    [
+      "throws",
+      () => {
+        throw new Error("secret stderr destination");
+      },
+    ],
+    [
+      "rejects",
+      async () => {
+        throw new Error("secret stderr destination");
+      },
+    ],
+  ])(
+    "contains a stderr writer that %s so runCli still resolves",
+    async (_case, writeStderr) => {
+      const engine = createTestEngine();
+      const output = createIo();
+      const io: CliIo = { ...output.io, writeStderr };
+
+      await expect(
+        runCli(engine, {
+          argv: ["unknown"],
+          principal: null,
+          io,
+        }),
+      ).resolves.toBe(2);
+    },
+  );
 });

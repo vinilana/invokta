@@ -65,7 +65,7 @@ evaluated only after this evidence exists; M6 does not expand the API of release
 | `AE-ARCH-01..03` | Import graph and adapter tests prove direction and the single path through `invoke` |
 | `AE-PIPE-01`, `AE-ERR-01` | Tests instrument order, timeout/cancellation, seven codes, and sanitization |
 | `AE-OBS-01` | Three events, minimal fields, duration, and no payload/credential |
-| `AE-CLI-01..02` | Integration covers commands, argument/stdin, stdout/stderr, and exit codes 0/1/2 |
+| `AE-CLI-01..02` | Integration covers commands, argument/stdin, fatal incremental UTF-8 decoding, awaited and failed stdout/stderr writers, and exit codes 0/1/2 |
 | `AE-MCP-01..04` | Official client lists/calls tools over stdio/HTTP; schemas, errors, possible cancellation, statelessness, and Host/Origin protection |
 | `AE-SEC-01..02` | 401 before `invoke`; 403 before `run`; spoofing through input fails; insecure auth requires opt-in |
 | `AE-SCOPE-01..04`, `AE-LIMIT-01..05` | Manifests and API review prove three packages and the absence of deferred abstractions |

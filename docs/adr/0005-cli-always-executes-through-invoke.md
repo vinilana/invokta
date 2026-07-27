@@ -41,6 +41,16 @@ explicitly public `message` and `publicDetails` fields contain no secrets.
 duplicate, combined, trailing, and unknown arguments produce exit code `2`
 without invoking the engine. Version 0.1 reads stdin without a framework-owned
 size limit; hosts may inject a bounded reader when local input is not trusted.
+The default reader incrementally decodes byte chunks with fatal UTF-8 validation,
+while preserving multibyte code points split across byte chunks and surrogate
+pairs split across string chunks. Malformed UTF-8 is invalid usage, returns exit
+code `2`, and cannot reach `invoke`.
+
+Host-provided stdout and stderr writers may complete synchronously or return a
+promise. `runCli` awaits their completion. A throwing or rejected stdout write is
+a sanitized execution failure with exit code `1`. A throwing or rejected stderr
+write is contained so the diagnostic destination cannot replace the command's
+numeric outcome or create an unhandled rejection.
 
 Help, version, and purely syntactic errors from the command line itself are not
 engine capabilities and may be handled locally. As soon as a capability is
@@ -55,3 +65,6 @@ selected, its only execution path will be `invoke`.
 - The mapping of errors to exit codes must be stable and documented.
 - Process termination remains an explicit responsibility of each executable's
   composition root.
+- Returning from `runCli` confirms completion of every successful asynchronous
+  output write; a failed diagnostic write remains intentionally unobservable to
+  its caller beyond the original numeric result.

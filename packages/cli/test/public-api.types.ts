@@ -6,6 +6,13 @@ import { type CliIo, type RunCliOptions, runCli } from "../src/index.js";
 declare const engine: Engine;
 declare const io: CliIo;
 
+expectTypeOf<
+  CliIo["writeStdout"]
+>().returns.toEqualTypeOf<void | Promise<void>>();
+expectTypeOf<
+  CliIo["writeStderr"]
+>().returns.toEqualTypeOf<void | Promise<void>>();
+
 expectTypeOf(
   runCli(engine, {
     argv: ["list"],

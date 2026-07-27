@@ -107,6 +107,18 @@ the human rendering of the same result. Version 0.1 does not impose a stdin size
 limit; hosts that accept untrusted local input must bound the stream before it
 reaches the adapter.
 
+The default stdin reader MUST decode byte chunks incrementally with fatal UTF-8
+validation. It MUST preserve a valid multibyte code point split across byte
+chunks and a surrogate pair split across string chunks. Malformed UTF-8 produces
+an `INVALID_USAGE` diagnostic and exit code `2` without calling `engine.invoke`.
+
+`CliIo.writeStdout` and `CliIo.writeStderr` accept either `void` or
+`Promise<void>`, and `runCli` MUST await both kinds of writer. A stdout writer
+that throws or rejects produces the sanitized `EXECUTION_FAILED` diagnostic and
+exit code `1`. A stderr writer that throws or rejects is contained; it MUST NOT
+create an unhandled rejection or prevent `runCli` from resolving the numeric code
+selected for the original outcome.
+
 ## MCP
 
 **AE-MCP-01 — One capability, one tool.** Key, title, description, schemas, and
