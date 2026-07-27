@@ -1,0 +1,29 @@
+{
+  "name": "ai-engine-framework",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "packageManager": "yarn@1.22.22",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "biome lint .",
+    "format:check": "biome format .",
+    "check": "yarn typecheck && yarn lint && yarn format:check && yarn test:run && yarn build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.5",
+    "@types/node": "22.20.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}
