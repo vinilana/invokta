@@ -22,13 +22,15 @@ O adaptador terá como revisão normativa do protocolo a string exata
 ser compatíveis com essa revisão. Traduções entre MCP e o modelo do engine
 acontecerão na fronteira e toda execução de tool convergirá para `invoke`.
 
-A versão do SDK ainda não está decidida. Antes de adicionar a dependência, será
-feita pesquisa nas fontes oficiais para verificar, no mínimo, suporte explícito
-ao protocolo `2025-11-25`, compatibilidade com o runtime adotado, notas de release
-e correções de segurança. A versão aprovada será registrada neste ADR ou em um
-ADR que o substitua, fixada exatamente no manifest e no lockfile, sem `^`, `~` ou
-o rótulo `latest`. Até essa pesquisa terminar, nenhum número de versão de SDK é
-considerado normativo.
+A versão aprovada é `@modelcontextprotocol/sdk@1.29.0`, fixada exatamente no
+manifest e no lockfile, sem `^`, `~` ou o rótulo `latest`. A versão 1.29.0 declara
+`2025-11-25` como protocolo mais recente e suportado. Os packages v2 permanecem
+beta na data desta decisão e não serão usados na versão 0.1 do framework.
+
+Como defesa adicional, a integração não importará o entrypoint raiz afetado pelo
+problema conhecido de empacotamento da versão 1.29.0; usará somente os subpaths
+documentados e cobertos por smoke tests. Uma atualização do SDK deverá verificar
+novamente protocolo, exports, runtime, notas de release e correções de segurança.
 
 Não será mantida uma implementação própria completa do protocolo em paralelo ao
 SDK oficial; código local se limitará à adaptação, isolamento e testes.
@@ -38,7 +40,13 @@ SDK oficial; código local se limitará à adaptação, isolamento e testes.
 - Atualizações ou breaking changes do SDK ficam contidos no package MCP.
 - O core permanece utilizável sem instalar o SDK.
 - A revisão de protocolo pode ser testada como contrato explícito.
-- A implementação da integração fica bloqueada até a escolha documentada de uma
-  versão exata e verificada do SDK.
+- O lockfile e os testes de integração tornam a revisão reproduzível.
 - Atualizar o SDK exigirá repetir a pesquisa de compatibilidade e executar os
   testes de conformidade.
+
+## Evidências da decisão
+
+- [Constantes de protocolo do SDK 1.29.0](https://github.com/modelcontextprotocol/typescript-sdk/blob/v1.29.0/src/types.ts#L4-L6)
+- [Manifest do SDK 1.29.0](https://github.com/modelcontextprotocol/typescript-sdk/blob/v1.29.0/package.json)
+- [Especificação MCP 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25)
+- [Problema conhecido do entrypoint raiz](https://github.com/modelcontextprotocol/typescript-sdk/issues/971)
