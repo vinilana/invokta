@@ -171,6 +171,12 @@ percent-encoded aliases, queries, fragments, and absolute-form targets are not
 routed to MCP or authentication. IPv6 `Host` values must use bracketed authority
 syntax, such as `[::1]:3000`; bare `::1` is rejected.
 
+After Host, Origin, and route validation, unsupported methods and declared body
+overflow are rejected before the authentication hook. Early responses close or
+drain the request rather than retaining a keep-alive connection for a slow,
+unconsumed body. A disconnect that happens before body listeners are installed
+also settles body handling and closes request-scoped protocol resources.
+
 ## Authentication is not authorization
 
 The hook proves who made the request and produces a `Principal`. The core still

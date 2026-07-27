@@ -52,6 +52,15 @@ bounded to 1,048,576 bytes by default, with an optional positive safe-integer
 override. Declared or streamed overflow returns HTTP 413 and never reaches MCP
 protocol dispatch.
 
+Host, Origin, and canonical route checks occur first. The adapter then rejects an
+invalid method or declared body overflow before invoking potentially expensive
+authentication. Every response produced without consuming the request body
+signals connection closure, drains available request data, and closes an
+incomplete request after the response flushes, so a slow sender cannot retain a
+keep-alive socket through an early rejection. Body reading observes an already
+aborted or destroyed request and rechecks after installing listeners to contain
+the disconnect race.
+
 The authentication hook returns `null` for missing or invalid credentials, which
 produces HTTP 401 and a Bearer challenge. If Protected Resource Metadata is
 configured, the challenge contains its configured, validated discovery URL.

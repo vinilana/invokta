@@ -158,6 +158,13 @@ is optional, but any supplied origin requires an explicit exact allowlist.
 Boundary failures for `Host` or `Origin` return HTTP 403. A capability-level
 `FORBIDDEN` remains an MCP tool execution error over HTTP 200.
 
+After Host, Origin, and canonical route validation, an invalid method or a
+declared body overflow is rejected before the authentication hook. Any response
+that terminates without consuming the request body advertises connection closure,
+drains available data, and closes an incomplete request after flushing the
+response. Body reading checks the aborted and destroyed state both before and
+after listener installation so a disconnect race always settles.
+
 Exactly one raw `Host` header is required, an IPv6 authority must use brackets,
 and forwarded-host headers are ignored.
 The authentication hook receives only the normalized path, method, cancellation

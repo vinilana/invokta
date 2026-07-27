@@ -8,6 +8,7 @@ import {
 } from "@ai-engine/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -162,6 +163,34 @@ async function rawHttpStatus(
     socket.once("end", () => {
       resolve(Number(response.match(/^HTTP\/1\.1 (\d{3})/u)?.[1]));
     });
+    socket.once("error", reject);
+  });
+}
+
+async function rawHttpResponseFromSlowBody(
+  server: McpHttpServerHandle,
+  requestHead: string,
+): Promise<{ readonly response: string; readonly closed: boolean }> {
+  const address = server.address();
+  return new Promise((resolve, reject) => {
+    const socket = createConnection(address.port, address.host);
+    let response = "";
+    let settled = false;
+    const finish = (closed: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      socket.destroy();
+      resolve({ response, closed });
+    };
+    const timeout = setTimeout(() => finish(false), 1_000);
+    socket.setEncoding("utf8");
+    socket.once("connect", () => socket.write(`${requestHead}x`));
+    socket.on("data", (chunk) => {
+      response += chunk;
+    });
+    socket.once("end", () => finish(true));
+    socket.once("close", () => finish(true));
     socket.once("error", reject);
   });
 }
@@ -714,6 +743,23 @@ describe("MCP stateless Streamable HTTP", () => {
     });
   });
 
+  it("rejects an invalid MCP method before authentication", async () => {
+    const authenticate = vi.fn(async () => ({ id: "user:allowed" }));
+    const server = await start(createContextEngine(), {
+      auth: { mode: "required", authenticate },
+    });
+
+    const response = await fetch(endpoint(server), {
+      method: "PUT",
+      headers: { authorization: "Bearer alice" },
+      body: "ignored",
+    });
+
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST");
+    expect(authenticate).not.toHaveBeenCalled();
+  });
+
   it("preserves Streamable HTTP media-type and notification responses", async () => {
     const server = await start();
     const unacceptable = await fetch(endpoint(server), {
@@ -846,7 +892,11 @@ describe("MCP stateless Streamable HTTP", () => {
   it("rejects a declared body larger than the configured limit", async () => {
     const engine = createContextEngine();
     const invoke = vi.spyOn(engine, "invoke");
-    const server = await start(engine, { maxRequestBodyBytes: 8 });
+    const authenticate = vi.fn(async () => ({ id: "user:allowed" }));
+    const server = await start(engine, {
+      maxRequestBodyBytes: 8,
+      auth: { mode: "required", authenticate },
+    });
     const address = server.address();
 
     const status = await rawHttpStatus(
@@ -864,7 +914,131 @@ describe("MCP stateless Streamable HTTP", () => {
     );
 
     expect(status).toBe(413);
+    expect(authenticate).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("settles body handling when the request was aborted during authentication", async () => {
+    let authenticationStarted!: () => void;
+    const didStartAuthentication = new Promise<void>((resolve) => {
+      authenticationStarted = resolve;
+    });
+    const closeSpy = vi.spyOn(Server.prototype, "close");
+    const server = await start(createContextEngine(), {
+      auth: {
+        mode: "required",
+        async authenticate(request) {
+          authenticationStarted();
+          if (!request.signal.aborted) {
+            await new Promise<void>((resolve) =>
+              request.signal.addEventListener("abort", () => resolve(), {
+                once: true,
+              }),
+            );
+          }
+          return { id: "user:disconnected" };
+        },
+      },
+    });
+    const address = server.address();
+    const socket = createConnection(address.port, address.host);
+    socket.once("connect", () => {
+      socket.write(
+        [
+          "POST /mcp HTTP/1.1",
+          `Host: ${address.host}:${address.port}`,
+          "Authorization: Bearer alice",
+          "Accept: application/json, text/event-stream",
+          "Content-Type: application/json",
+          "Content-Length: 100",
+          "",
+          "{",
+        ].join("\r\n"),
+      );
+    });
+
+    await didStartAuthentication;
+    socket.destroy();
+
+    try {
+      await vi.waitFor(() => expect(closeSpy).toHaveBeenCalled(), {
+        timeout: 1_000,
+        interval: 10,
+      });
+    } finally {
+      closeSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    {
+      name: "Host rejection",
+      target: "/mcp",
+      method: "POST",
+      host: "attacker.example",
+      authorization: "Bearer alice",
+      accept: "application/json, text/event-stream",
+      contentType: "application/json",
+      expectedStatus: 403,
+    },
+    {
+      name: "unknown path",
+      target: "/other",
+      method: "POST",
+      authorization: "Bearer alice",
+      accept: "application/json, text/event-stream",
+      contentType: "application/json",
+      expectedStatus: 404,
+    },
+    {
+      name: "invalid method",
+      target: "/mcp",
+      method: "PUT",
+      authorization: "Bearer alice",
+      expectedStatus: 405,
+    },
+    {
+      name: "missing authentication",
+      target: "/mcp",
+      method: "POST",
+      accept: "application/json, text/event-stream",
+      contentType: "application/json",
+      expectedStatus: 401,
+    },
+    {
+      name: "invalid media negotiation",
+      target: "/mcp",
+      method: "POST",
+      authorization: "Bearer alice",
+      accept: "application/json;q=0, text/event-stream",
+      contentType: "application/json",
+      expectedStatus: 406,
+    },
+  ])("closes a slow unconsumed body after $name", async (testCase) => {
+    const server = await start();
+    const address = server.address();
+    const headers = [
+      `${testCase.method} ${testCase.target} HTTP/1.1`,
+      `Host: ${testCase.host ?? `${address.host}:${address.port}`}`,
+      ...(testCase.authorization === undefined
+        ? []
+        : [`Authorization: ${testCase.authorization}`]),
+      ...(testCase.accept === undefined ? [] : [`Accept: ${testCase.accept}`]),
+      ...(testCase.contentType === undefined
+        ? []
+        : [`Content-Type: ${testCase.contentType}`]),
+      "Content-Length: 100000",
+      "",
+      "",
+    ].join("\r\n");
+
+    const outcome = await rawHttpResponseFromSlowBody(server, headers);
+
+    expect(outcome.response).toMatch(
+      new RegExp(`^HTTP/1\\.1 ${testCase.expectedStatus}`, "u"),
+    );
+    expect(outcome.response.toLowerCase()).toContain("connection: close");
+    expect(outcome.closed).toBe(true);
   });
 
   it("rejects a chunked body when reading crosses the configured limit", async () => {

@@ -297,6 +297,23 @@ function send(
   response.end(body);
 }
 
+function sendBeforeBodyConsumption(
+  request: import("node:http").IncomingMessage,
+  response: import("node:http").ServerResponse,
+  value: HttpResponse,
+): void {
+  response.shouldKeepAlive = false;
+  request.once("error", () => undefined);
+  request.resume();
+  response.once("finish", () => {
+    if (!request.complete && !request.destroyed) request.destroy();
+  });
+  send(response, {
+    ...value,
+    headers: { ...value.headers, connection: "close" },
+  });
+}
+
 function requestUrl(hostHeader: string, path: string): string {
   return new URL(path, `http://${hostHeader}`).href;
 }
@@ -480,10 +497,19 @@ async function readBody(
       reject(error);
     };
     const onAborted = (): void => onError(new Error("Request aborted."));
+    if (request.aborted || request.destroyed) {
+      onAborted();
+      return;
+    }
     request.on("data", onData);
     request.once("end", onEnd);
     request.once("error", onError);
     request.once("aborted", onAborted);
+    if (request.aborted || request.destroyed) {
+      onAborted();
+    } else if (request.readableEnded) {
+      onEnd();
+    }
   });
 }
 
@@ -499,11 +525,11 @@ function declaredBodyExceedsLimit(
 }
 
 function sendPayloadTooLarge(
+  request: import("node:http").IncomingMessage,
   response: import("node:http").ServerResponse,
 ): void {
-  send(response, {
+  sendBeforeBodyConsumption(request, response, {
     status: 413,
-    headers: { connection: "close" },
     body: { error: "payload_too_large" },
   });
 }
@@ -566,21 +592,30 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
   const httpServer = createServer((request, response) => {
     void (async () => {
       if (rawHeaderCount(request.rawHeaders, "host") !== 1) {
-        send(response, { status: 403, body: { error: "forbidden" } });
+        sendBeforeBodyConsumption(request, response, {
+          status: 403,
+          body: { error: "forbidden" },
+        });
         return;
       }
       const hostHeader = request.headers.host;
       if (hostHeader === undefined) {
-        send(response, { status: 403, body: { error: "forbidden" } });
+        sendBeforeBodyConsumption(request, response, {
+          status: 403,
+          body: { error: "forbidden" },
+        });
         return;
       }
       const requestHost = normalizeRequestHostname(hostHeader);
       if (requestHost === null || !allowedHosts.has(requestHost)) {
-        send(response, { status: 403, body: { error: "forbidden" } });
+        sendBeforeBodyConsumption(request, response, {
+          status: 403,
+          body: { error: "forbidden" },
+        });
         return;
       }
       if (rawHeaderCount(request.rawHeaders, "authorization") > 1) {
-        send(response, {
+        sendBeforeBodyConsumption(request, response, {
           status: 400,
           body: { error: "invalid_authorization_header" },
         });
@@ -591,11 +626,17 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
       if (originHeader !== undefined) {
         const origin = normalizeOrigin(originHeader);
         if (origin === null) {
-          send(response, { status: 403, body: { error: "forbidden" } });
+          sendBeforeBodyConsumption(request, response, {
+            status: 403,
+            body: { error: "forbidden" },
+          });
           return;
         }
         if (allowedOrigins === undefined || !allowedOrigins.has(origin)) {
-          send(response, { status: 403, body: { error: "forbidden" } });
+          sendBeforeBodyConsumption(request, response, {
+            status: 403,
+            body: { error: "forbidden" },
+          });
           return;
         }
       }
@@ -603,7 +644,7 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
       const requestTarget = request.url ?? "/";
       const path = parseRequestPath(requestTarget);
       if (path === null) {
-        send(response, {
+        sendBeforeBodyConsumption(request, response, {
           status: 400,
           body: { error: "invalid_request_target" },
         });
@@ -612,18 +653,36 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
       const method = request.method ?? "GET";
       if (metadata !== undefined && path === metadataPath) {
         if (request.method !== "GET") {
-          send(response, {
+          sendBeforeBodyConsumption(request, response, {
             status: 405,
             headers: { allow: "GET" },
             body: { error: "method_not_allowed" },
           });
           return;
         }
-        send(response, { status: 200, body: metadata });
+        sendBeforeBodyConsumption(request, response, {
+          status: 200,
+          body: metadata,
+        });
         return;
       }
       if (path !== MCP_PATH) {
-        send(response, { status: 404, body: { error: "not_found" } });
+        sendBeforeBodyConsumption(request, response, {
+          status: 404,
+          body: { error: "not_found" },
+        });
+        return;
+      }
+      if (method !== "POST") {
+        sendBeforeBodyConsumption(request, response, {
+          status: 405,
+          headers: { allow: "POST" },
+          body: { error: "method_not_allowed" },
+        });
+        return;
+      }
+      if (declaredBodyExceedsLimit(request, maxRequestBodyBytes)) {
+        sendPayloadTooLarge(request, response);
         return;
       }
 
@@ -650,7 +709,7 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
             signal: abortController.signal,
           });
         } catch {
-          send(response, {
+          sendBeforeBodyConsumption(request, response, {
             status: 500,
             body: { error: "authentication_failed" },
           });
@@ -658,7 +717,7 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         }
         const authenticatedSnapshot = snapshotPrincipal(authenticated);
         if (authenticatedSnapshot === null) {
-          send(response, {
+          sendBeforeBodyConsumption(request, response, {
             status: 401,
             headers:
               metadataUrl === undefined
@@ -673,43 +732,40 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         principal = authenticatedSnapshot;
       }
 
-      if (method !== "POST") {
-        send(response, {
-          status: 405,
-          headers: { allow: "POST" },
-          body: { error: "method_not_allowed" },
-        });
-        return;
-      }
-
-      if (declaredBodyExceedsLimit(request, maxRequestBodyBytes)) {
-        request.resume();
-        sendPayloadTooLarge(response);
-        return;
-      }
-
       const accept = request.headers.accept;
       if (
         Array.isArray(accept) ||
         !acceptableMediaType(accept, "application/json") ||
         !acceptableMediaType(accept, "text/event-stream")
       ) {
-        sendProtocolError(
-          response,
-          406,
-          -32000,
-          "Not Acceptable: Client must accept both application/json and text/event-stream",
-        );
+        sendBeforeBodyConsumption(request, response, {
+          status: 406,
+          body: {
+            jsonrpc: "2.0",
+            error: {
+              code: -32000,
+              message:
+                "Not Acceptable: Client must accept both application/json and text/event-stream",
+            },
+            id: null,
+          },
+        });
         return;
       }
       const contentType = request.headers["content-type"];
       if (Array.isArray(contentType) || !exactContentType(contentType)) {
-        sendProtocolError(
-          response,
-          415,
-          -32000,
-          "Unsupported Media Type: Content-Type must be application/json",
-        );
+        sendBeforeBodyConsumption(request, response, {
+          status: 415,
+          body: {
+            jsonrpc: "2.0",
+            error: {
+              code: -32000,
+              message:
+                "Unsupported Media Type: Content-Type must be application/json",
+            },
+            id: null,
+          },
+        });
         return;
       }
 
@@ -725,12 +781,14 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
       const transport = new WebStandardStreamableHTTPServerTransport(
         statelessTransportOptions,
       );
+      let consumedBody = false;
       try {
         const body = await readBody(request, maxRequestBodyBytes);
         if (body === null) {
-          sendPayloadTooLarge(response);
+          sendPayloadTooLarge(request, response);
           return;
         }
+        consumedBody = true;
         let parsedBody: unknown;
         try {
           parsedBody = JSON.parse(Buffer.from(body).toString("utf8"));
@@ -763,21 +821,26 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         await writeWebResponse(response, webResponse);
       } catch {
         if (!response.headersSent && !response.destroyed) {
-          send(response, {
+          const failure = {
             status: 500,
             body: {
               jsonrpc: "2.0",
               error: { code: -32603, message: "Internal server error" },
               id: null,
             },
-          });
+          } as const;
+          if (consumedBody) send(response, failure);
+          else sendBeforeBodyConsumption(request, response, failure);
         }
       } finally {
         await protocolServer.close().catch(() => undefined);
       }
     })().catch(() => {
       if (!response.headersSent && !response.destroyed) {
-        send(response, { status: 500, body: { error: "internal_error" } });
+        sendBeforeBodyConsumption(request, response, {
+          status: 500,
+          body: { error: "internal_error" },
+        });
       } else if (!response.destroyed) {
         response.destroy();
       }
