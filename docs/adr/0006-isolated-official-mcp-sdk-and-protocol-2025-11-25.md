@@ -32,6 +32,12 @@ must list the exact JSON and event-stream media types with positive quality, and
 `Content-Type` must identify the exact JSON media type. The adapter passes the
 single parsed message to the SDK so the body is not parsed twice.
 
+Before JSON parsing, the adapter decodes the bounded request stream as strict
+UTF-8. Incomplete, overlong, and invalid-continuation sequences are rejected with
+a sanitized HTTP 400 JSON-RPC parse error before SDK dispatch. Decoding remains
+incremental so a valid multibyte sequence may cross transport chunks without
+requiring a second byte buffer.
+
 The approved version is `@modelcontextprotocol/sdk@1.29.0`, pinned exactly in the
 manifest and lockfile, without `^`, `~`, or the `latest` tag. Version 1.29.0
 declares `2025-11-25` as the latest supported protocol. The v2 packages remain in

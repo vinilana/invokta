@@ -218,6 +218,10 @@ request's `Principal`; the ID must be a nonempty string and optional attributes
 must be a record. Malformed, non-cloneable, or subsequently mutated identities
 cannot reach `invoke`. More than one raw `Authorization` header is rejected
 before authentication.
+Request bodies are decoded incrementally as strict UTF-8 while enforcing the byte
+limit. An incomplete, overlong, or otherwise malformed byte sequence produces a
+sanitized HTTP 400 JSON-RPC parse error before SDK dispatch or `invoke`; valid
+multibyte sequences may span incoming chunks.
 The adapter propagates cancellation when the active HTTP request disconnects.
 Cross-request MCP cancellation is not promised by the stateless profile because
 no transport or session survives between requests.

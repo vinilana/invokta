@@ -195,6 +195,61 @@ async function rawHttpResponseFromSlowBody(
   });
 }
 
+async function rawHttpResponseFromBodyChunks(
+  server: McpHttpServerHandle,
+  chunks: ReadonlyArray<Uint8Array>,
+): Promise<{ readonly status: number; readonly body: string }> {
+  const address = server.address();
+  return new Promise((resolve, reject) => {
+    const socket = createConnection(address.port, address.host);
+    const responseChunks: Buffer[] = [];
+    socket.once("connect", () => {
+      socket.write(
+        [
+          "POST /mcp HTTP/1.1",
+          `Host: ${address.host}:${address.port}`,
+          "Authorization: Bearer alice",
+          "Accept: application/json, text/event-stream",
+          "Content-Type: application/json",
+          "Transfer-Encoding: chunked",
+          "Connection: close",
+          "",
+          "",
+        ].join("\r\n"),
+      );
+      for (const chunk of chunks) {
+        socket.write(`${chunk.byteLength.toString(16)}\r\n`);
+        socket.write(chunk);
+        socket.write("\r\n");
+      }
+      socket.end("0\r\n\r\n");
+    });
+    socket.on("data", (chunk: Buffer) => responseChunks.push(chunk));
+    socket.once("end", () => {
+      const raw = Buffer.concat(responseChunks).toString("utf8");
+      const separator = raw.indexOf("\r\n\r\n");
+      resolve({
+        status: Number(raw.match(/^HTTP\/1\.1 (\d{3})/u)?.[1]),
+        body: separator === -1 ? "" : raw.slice(separator + 4),
+      });
+    });
+    socket.once("error", reject);
+  });
+}
+
+function toolCallBodyWithValueBytes(
+  value: Uint8Array,
+  id: string,
+): ReadonlyArray<Uint8Array> {
+  return [
+    Buffer.from(
+      `{"jsonrpc":"2.0","id":"${id}","method":"tools/call","params":{"name":"support.inspect","arguments":{"value":"`,
+    ),
+    value,
+    Buffer.from('"}}}'),
+  ];
+}
+
 describe("MCP stateless Streamable HTTP", () => {
   it("binds to loopback by default and returns a neutral address handle", async () => {
     const server = await start();
@@ -820,6 +875,78 @@ describe("MCP stateless Streamable HTTP", () => {
 
     expect(response.status).toBe(406);
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "truncated two-byte sequence", bytes: [0xc3] },
+    { name: "overlong", bytes: [0xc0, 0xaf] },
+    { name: "invalid continuation", bytes: [0xe2, 0x28, 0xa1] },
+  ])("rejects $name UTF-8 before SDK dispatch", async ({ name, bytes }) => {
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const connect = vi.spyOn(Server.prototype, "connect");
+    const server = await start(engine);
+
+    try {
+      const response = await rawHttpResponseFromBodyChunks(
+        server,
+        toolCallBodyWithValueBytes(Uint8Array.from(bytes), `utf8-${name}`),
+      );
+
+      expect(response.status).toBe(400);
+      expect(response.body).toContain('"code":-32700');
+      expect(response.body).toContain("Parse error: Invalid UTF-8");
+      expect(response.body).not.toContain(`utf8-${name}`);
+      expect(connect).not.toHaveBeenCalled();
+      expect(invoke).not.toHaveBeenCalled();
+    } finally {
+      connect.mockRestore();
+    }
+  });
+
+  it("rejects an incomplete multibyte sequence pending at EOF", async () => {
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const connect = vi.spyOn(Server.prototype, "connect");
+    const server = await start(engine);
+
+    try {
+      const response = await rawHttpResponseFromBodyChunks(server, [
+        Buffer.from(
+          '{"jsonrpc":"2.0","id":"pending-eof","method":"tools/call","params":{"name":"support.inspect","arguments":{"value":"',
+        ),
+        Uint8Array.from([0xc3]),
+      ]);
+
+      expect(response.status).toBe(400);
+      expect(response.body).toContain("Parse error: Invalid UTF-8");
+      expect(response.body).not.toContain("pending-eof");
+      expect(connect).not.toHaveBeenCalled();
+      expect(invoke).not.toHaveBeenCalled();
+    } finally {
+      connect.mockRestore();
+    }
+  });
+
+  it("accepts a valid multibyte value split across body chunks", async () => {
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const server = await start(engine);
+    const body = toolCallBodyWithValueBytes(
+      Uint8Array.from([0xf0, 0x9f, 0x99, 0x82]),
+      "utf8-valid",
+    );
+
+    const response = await rawHttpResponseFromBodyChunks(server, [
+      body[0] as Uint8Array,
+      Uint8Array.from([0xf0]),
+      Uint8Array.from([0x9f, 0x99]),
+      Uint8Array.from([0x82]),
+      body[2] as Uint8Array,
+    ]);
+
+    expect(response.status).toBe(200);
+    expect(invoke).toHaveBeenCalledOnce();
   });
 
   it.each([

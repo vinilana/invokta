@@ -457,12 +457,18 @@ function snapshotPrincipal(value: Principal | null): Principal | null {
   return snapshot as Principal;
 }
 
+type BodyReadResult =
+  | { readonly status: "ok"; readonly body: string }
+  | { readonly status: "payload-too-large" }
+  | { readonly status: "invalid-utf8" };
+
 async function readBody(
   request: import("node:http").IncomingMessage,
   maxBytes: number,
-): Promise<Uint8Array | null> {
+): Promise<BodyReadResult> {
   return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    const chunks: string[] = [];
     let total = 0;
     let settled = false;
     const cleanup = (): void => {
@@ -479,16 +485,31 @@ async function readBody(
         cleanup();
         request.once("error", () => undefined);
         request.resume();
-        resolve(null);
+        resolve({ status: "payload-too-large" });
         return;
       }
-      chunks.push(buffer);
+      try {
+        const decoded = decoder.decode(buffer, { stream: true });
+        if (decoded.length > 0) chunks.push(decoded);
+      } catch {
+        settled = true;
+        cleanup();
+        request.once("error", () => undefined);
+        request.resume();
+        resolve({ status: "invalid-utf8" });
+      }
     };
     const onEnd = (): void => {
       if (settled) return;
       settled = true;
       cleanup();
-      resolve(Buffer.concat(chunks));
+      try {
+        const decoded = decoder.decode();
+        if (decoded.length > 0) chunks.push(decoded);
+        resolve({ status: "ok", body: chunks.join("") });
+      } catch {
+        resolve({ status: "invalid-utf8" });
+      }
     };
     const onError = (error: Error): void => {
       if (settled) return;
@@ -783,15 +804,26 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
       );
       let consumedBody = false;
       try {
-        const body = await readBody(request, maxRequestBodyBytes);
-        if (body === null) {
+        const bodyResult = await readBody(request, maxRequestBodyBytes);
+        if (bodyResult.status === "payload-too-large") {
           sendPayloadTooLarge(request, response);
+          return;
+        }
+        if (bodyResult.status === "invalid-utf8") {
+          sendBeforeBodyConsumption(request, response, {
+            status: 400,
+            body: {
+              jsonrpc: "2.0",
+              error: { code: -32700, message: "Parse error: Invalid UTF-8" },
+              id: null,
+            },
+          });
           return;
         }
         consumedBody = true;
         let parsedBody: unknown;
         try {
-          parsedBody = JSON.parse(Buffer.from(body).toString("utf8"));
+          parsedBody = JSON.parse(bodyResult.body);
         } catch {
           sendProtocolError(response, 400, -32700, "Parse error: Invalid JSON");
           return;
@@ -811,7 +843,6 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         const webRequest = new Request(requestUrl(hostHeader, path), {
           method: "POST",
           headers: webHeaders,
-          body,
           signal: abortController.signal,
         });
         await protocolServer.connect(transport);
