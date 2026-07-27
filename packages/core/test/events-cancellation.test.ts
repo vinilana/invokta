@@ -12,6 +12,25 @@ import {
 const input = z.object({ value: z.string() });
 const output = z.object({ result: z.string() });
 
+type Settlement<Value> =
+  | { readonly status: "fulfilled"; readonly value: Value }
+  | { readonly status: "rejected"; readonly reason: unknown }
+  | { readonly status: "pending" };
+
+async function settleByNextTurn<Value>(
+  promise: Promise<Value>,
+): Promise<Settlement<Value>> {
+  return Promise.race([
+    promise.then<Settlement<Value>, Settlement<Value>>(
+      (value) => ({ status: "fulfilled", value }),
+      (reason: unknown) => ({ status: "rejected", reason }),
+    ),
+    new Promise<Settlement<Value>>((resolve) => {
+      setImmediate(() => resolve({ status: "pending" }));
+    }),
+  ]);
+}
+
 function capability(
   run: (args: {
     input: { value: string };
@@ -131,6 +150,145 @@ describe("events and cancellation", () => {
     );
   });
 
+  it("does not wait for a pending asynchronous started event hook", async () => {
+    const events: EngineEvent["type"][] = [];
+    const pending = new Promise<void>(() => undefined);
+    const run = vi.fn(
+      async ({ input: value }: { input: { value: string } }) => ({
+        result: value.value,
+      }),
+    );
+    const engine = createEngine({
+      name: "pending-started-event-engine",
+      version: "0.1.0",
+      capabilities: { echo: capability(run) },
+      onEvent(event) {
+        events.push(event.type);
+        return event.type === "invocation.started" ? pending : undefined;
+      },
+    });
+
+    const settlement = await settleByNextTurn(
+      engine.invoke("echo", { value: "safe" }),
+    );
+
+    expect(settlement).toEqual({
+      status: "fulfilled",
+      value: { result: "safe" },
+    });
+    expect(run).toHaveBeenCalledOnce();
+    expect(events).toEqual(["invocation.started", "invocation.completed"]);
+  });
+
+  it("does not wait for a pending asynchronous completed event hook", async () => {
+    const events: EngineEvent["type"][] = [];
+    const pending = new Promise<void>(() => undefined);
+    const engine = createEngine({
+      name: "pending-completed-event-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: capability(async ({ input: value }) => ({ result: value.value })),
+      },
+      onEvent(event) {
+        events.push(event.type);
+        return event.type === "invocation.completed" ? pending : undefined;
+      },
+    });
+
+    const settlement = await settleByNextTurn(
+      engine.invoke("echo", { value: "safe" }),
+    );
+
+    expect(settlement).toEqual({
+      status: "fulfilled",
+      value: { result: "safe" },
+    });
+    expect(events).toEqual(["invocation.started", "invocation.completed"]);
+  });
+
+  it("does not wait for a pending asynchronous failed event hook", async () => {
+    const events: EngineEvent["type"][] = [];
+    const pending = new Promise<void>(() => undefined);
+    const engine = createEngine({
+      name: "pending-failed-event-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: capability(async () => {
+          throw new Error("private capability failure");
+        }),
+      },
+      onEvent(event) {
+        events.push(event.type);
+        return event.type === "invocation.failed" ? pending : undefined;
+      },
+    });
+
+    const settlement = await settleByNextTurn(
+      engine.invoke("echo", { value: "safe" }),
+    );
+
+    expect(settlement).toMatchObject({
+      status: "rejected",
+      reason: { code: "EXECUTION_FAILED" },
+    });
+    expect(events).toEqual(["invocation.started", "invocation.failed"]);
+  });
+
+  it("observes asynchronous hook and diagnostic logger rejections", async () => {
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown): void => {
+      unhandledRejections.push(reason);
+    };
+    const rejectingLoggerResult = Promise.reject(
+      new Error("private logger failure"),
+    );
+    void rejectingLoggerResult.then(undefined, () => undefined);
+    const observeLoggerRejection = vi.spyOn(rejectingLoggerResult, "then");
+    const logger: EngineLogger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(() => rejectingLoggerResult) as EngineLogger["error"],
+    };
+    const engine = createEngine({
+      name: "rejecting-async-events-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: capability(async ({ input: value }) => ({ result: value.value })),
+      },
+      logger,
+      async onEvent() {
+        throw new Error("private telemetry failure");
+      },
+    });
+
+    process.prependListener("unhandledRejection", onUnhandledRejection);
+    try {
+      await expect(engine.invoke("echo", { value: "safe" })).resolves.toEqual({
+        result: "safe",
+      });
+      await new Promise<void>((resolve) => {
+        setImmediate(() => setImmediate(resolve));
+      });
+
+      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(logger.error).toHaveBeenCalledWith("Engine event hook failed.", {
+        eventType: "invocation.started",
+        requestId: expect.any(String),
+      });
+      expect(logger.error).toHaveBeenCalledWith("Engine event hook failed.", {
+        eventType: "invocation.completed",
+        requestId: expect.any(String),
+      });
+      expect(observeLoggerRejection.mock.calls.length).toBeGreaterThanOrEqual(
+        2,
+      );
+      expect(unhandledRejections).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandledRejection);
+    }
+  });
+
   it("cancels before running when the caller signal is already aborted", async () => {
     const run = vi.fn(async ({ input }: { input: { value: string } }) => ({
       result: input.value,
@@ -205,6 +363,46 @@ describe("events and cancellation", () => {
     await expect(engine.invoke("echo", { value: "x" })).rejects.toMatchObject({
       code: "CANCELLED",
     });
+  });
+
+  it("clears a successful invocation timeout before emitting completion", async () => {
+    vi.useFakeTimers();
+    let observedSignal: AbortSignal | undefined;
+    let completionObserved: (() => void) | undefined;
+    const completionStarted = new Promise<void>((resolve) => {
+      completionObserved = resolve;
+    });
+    let releaseCompletion: (() => void) | undefined;
+    const completionPending = new Promise<void>((resolve) => {
+      releaseCompletion = resolve;
+    });
+    const engine = createEngine({
+      name: "completion-timeout-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: capability(async ({ input: value, context }) => {
+          observedSignal = context.signal;
+          return { result: value.value };
+        }, 10),
+      },
+      onEvent(event) {
+        if (event.type !== "invocation.completed") return undefined;
+        completionObserved?.();
+        return completionPending;
+      },
+    });
+
+    try {
+      const invocation = engine.invoke("echo", { value: "safe" });
+      await completionStarted;
+      await vi.advanceTimersByTimeAsync(11);
+      releaseCompletion?.();
+
+      await expect(invocation).resolves.toEqual({ result: "safe" });
+      expect(observedSignal?.aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("starts the capability timeout only after authorization completes", async () => {

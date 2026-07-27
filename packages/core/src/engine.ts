@@ -218,6 +218,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
   definition: EngineDefinition<Capabilities>,
 ): Engine<Capabilities> {
   const logger = definition.logger ?? noOpLogger;
+  const onEvent = definition.onEvent;
   const capabilities = new Map<string, AnyCapability>();
   const descriptions = new Map<string, CapabilityDescription>();
   for (const capabilityId of Object.keys(definition.capabilities)) {
@@ -234,19 +235,28 @@ export function createEngine<const Capabilities extends CapabilityMap>(
     Array.from(descriptions.values(), toSummary),
   ) as ReadonlyArray<CapabilitySummary>;
 
-  const emit = async (event: EngineEvent): Promise<void> => {
-    if (definition.onEvent === undefined) return;
+  const reportEventHookFailure = (event: EngineEvent): void => {
     try {
-      await definition.onEvent(event);
-    } catch {
-      try {
-        logger.error("Engine event hook failed.", {
+      const diagnosticResult: unknown = logger.error(
+        "Engine event hook failed.",
+        {
           eventType: event.type,
           requestId: event.requestId,
-        });
-      } catch {
-        // Observability hooks must not change invocation behavior.
-      }
+        },
+      );
+      void Promise.resolve(diagnosticResult).catch(() => undefined);
+    } catch {
+      // Observability hooks must not change invocation behavior.
+    }
+  };
+
+  const emit = (event: EngineEvent): void => {
+    if (onEvent === undefined) return;
+    try {
+      const delivery = onEvent(event);
+      void Promise.resolve(delivery).catch(() => reportEventHookFailure(event));
+    } catch {
+      reportEventHookFailure(event);
     }
   };
 
@@ -270,7 +280,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
       const source = options?.source ?? "direct";
       const principal = options?.principal ?? null;
       const started = performance.now();
-      await emit({
+      emit({
         type: "invocation.started",
         requestId,
         capabilityId,
@@ -328,7 +338,9 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           }),
           context.signal,
         );
-        await emit({
+        signalState.cleanup();
+        signalState = undefined;
+        emit({
           type: "invocation.completed",
           requestId,
           capabilityId,
@@ -337,7 +349,9 @@ export function createEngine<const Capabilities extends CapabilityMap>(
         return output as CapabilityOutput<Capabilities[typeof capabilityId]>;
       } catch (cause) {
         const error = normalizeError(cause, signalState?.signal);
-        await emit({
+        signalState?.cleanup();
+        signalState = undefined;
+        emit({
           type: "invocation.failed",
           requestId,
           capabilityId,

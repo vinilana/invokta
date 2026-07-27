@@ -78,7 +78,14 @@ with the events `invocation.started`, `invocation.completed`, and
 identifiers, `durationMs`, and an `EngineErrorCode`. Payloads, tokens, and
 credentials are not included by default. A rejected or thrown `onEvent` hook
 MUST NOT change the invocation result; the runtime MAY send a payload-free
-diagnostic to the configured logger.
+diagnostic to the configured logger. The runtime invokes the started hook and
+then exactly one terminal hook synchronously in pipeline order, but it observes
+any promise returned by a hook without awaiting it. Event delivery is therefore
+best-effort: a pending hook cannot block execution or result delivery, and v0.1
+provides no delivery-completion guarantee. Rejections from the hook and from an
+asynchronous diagnostic logger are contained without producing an unhandled
+rejection. After successful output validation, the runtime MUST clear its
+capability timeout before invoking the completed hook.
 
 ## CLI
 

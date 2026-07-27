@@ -37,7 +37,14 @@ minimum fields defined by the public contract. Business payloads, tokens, and
 credentials will not be part of these events. The custom engine may connect the
 hook to logs, metrics, or tracing. A hook failure will not change the invocation
 result; the runtime may report it through the configured logger without business
-payloads or credentials.
+payloads or credentials. Hook invocation will be synchronous and ordered as a
+started event followed by exactly one completed or failed event. A promise
+returned by a hook will be observed for rejection but will not be awaited, so a
+pending observability backend cannot delay capability execution, result delivery,
+or error delivery. Version 0.1 provides no event delivery-completion guarantee.
+An asynchronous rejection from the diagnostic logger will also be observed and
+contained. The capability timeout ends after successful output validation,
+before the completed hook is invoked.
 
 ## Consequences
 
@@ -45,6 +52,8 @@ payloads or credentials.
 - Error codes make integrations stable without depending on human-readable
   messages.
 - Logs, metrics, and tracing can observe events without entering the domain.
+- Observability integrations that require delivery guarantees or backpressure
+  must provide them outside this best-effort hook.
 - The pipeline and the order of its stages become part of the contract and
   require contract tests.
 - The kernel does not provide domain events or delivery guarantees.
