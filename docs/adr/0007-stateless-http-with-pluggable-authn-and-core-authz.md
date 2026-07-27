@@ -24,6 +24,14 @@ authenticator will receive the transport data and produce a normalized principal
 limited to the request context, or reject the request. Tokens, headers, and
 framework types will not cross into the domain.
 
+A non-null principal entering `invoke` must be a structured-cloneable record with
+a non-empty string `id`. Its optional `attributes` value must itself be a
+structured-cloneable record. The core will deep-snapshot this identity before any
+asynchronous pipeline work and will give authorization and execution independent
+copies. A malformed or uncloneable identity fails closed as `UNAUTHENTICATED`
+before the access rule or handler. Mutation by the authenticator's caller or by
+an access rule therefore cannot alter the identity observed by execution.
+
 The adapter will validate `Host` before authentication on every request and will
 ignore forwarded-host headers. Loopback binds receive safe loopback host defaults;
 a non-loopback bind requires an explicit host allowlist. An absent `Origin` is
@@ -79,6 +87,8 @@ capability that is already cancellable through the runtime contract.
 - Identity strategies can vary without modifying core capabilities.
 - Horizontal scaling does not depend on a session maintained by an instance.
 - The same authorization policy applies to HTTP and other transports.
+- Request identity snapshotting prevents mutable authentication state from being
+  shared across authorization and execution.
 - Features that require a session must use explicit external state and must not
   change the adapter's stateless semantics.
 - Tests must cover pluggable authenticators, per-request isolation, fail-closed

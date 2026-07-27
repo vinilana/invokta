@@ -17,6 +17,7 @@ import type {
   EngineLogger,
   ExecutionContext,
   InvokeOptions,
+  Principal,
 } from "./types.js";
 
 type CapabilityInput<Capability extends AnyCapability> = InferSchemaInput<
@@ -145,6 +146,48 @@ function cancelled(cause: unknown): EngineError {
   });
 }
 
+function unauthenticated(cause?: unknown): EngineError {
+  return new EngineError({
+    code: "UNAUTHENTICATED",
+    message: "Authentication is required.",
+    ...(cause === undefined ? {} : { cause }),
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function snapshotPrincipal(value: unknown): Principal | null {
+  if (value === null) return null;
+  try {
+    const snapshot: unknown = structuredClone(value);
+    if (!isRecord(snapshot)) throw new TypeError("Principal must be a record.");
+    if (typeof snapshot.id !== "string" || snapshot.id.length === 0) {
+      throw new TypeError("Principal id must be a non-empty string.");
+    }
+    if (snapshot.attributes !== undefined && !isRecord(snapshot.attributes)) {
+      throw new TypeError("Principal attributes must be a record.");
+    }
+    return {
+      id: snapshot.id,
+      ...(snapshot.attributes === undefined
+        ? {}
+        : { attributes: snapshot.attributes }),
+    };
+  } catch (cause) {
+    throw unauthenticated(cause);
+  }
+}
+
+function clonePrincipal(snapshot: Principal | null): Principal | null {
+  return snapshot === null ? null : structuredClone(snapshot);
+}
+
 async function raceWithCancellation<Value>(
   work: Promise<Value>,
   signal: AbortSignal,
@@ -182,10 +225,7 @@ async function enforceAccess(
   if (capability.access === "public") return;
   if (capability.access === "authenticated") {
     if (context.principal === null) {
-      throw new EngineError({
-        code: "UNAUTHENTICATED",
-        message: "Authentication is required.",
-      });
+      throw unauthenticated();
     }
     return;
   }
@@ -278,7 +318,13 @@ export function createEngine<const Capabilities extends CapabilityMap>(
     async invoke(capabilityId, rawInput, options) {
       const requestId = options?.requestId ?? randomUUID();
       const source = options?.source ?? "direct";
-      const principal = options?.principal ?? null;
+      let principal: Principal | null = null;
+      let principalError: EngineError | undefined;
+      try {
+        principal = snapshotPrincipal(options?.principal ?? null);
+      } catch (cause) {
+        principalError = cause as EngineError;
+      }
       const started = performance.now();
       emit({
         type: "invocation.started",
@@ -299,19 +345,31 @@ export function createEngine<const Capabilities extends CapabilityMap>(
             publicDetails: { capabilityId },
           });
         }
-        const input = await validateSchema(capability.input, rawInput, {
-          code: "INPUT_INVALID",
-          message: "Capability input validation failed.",
-        });
+        const validatedInput = await validateSchema(
+          capability.input,
+          rawInput,
+          {
+            code: "INPUT_INVALID",
+            message: "Capability input validation failed.",
+          },
+        );
+        const input = structuredClone(validatedInput);
+        if (principalError !== undefined) throw principalError;
         const callerSignal = options?.signal ?? new AbortController().signal;
+        const accessPrincipal = clonePrincipal(principal);
         const accessContext: ExecutionContext = Object.freeze({
           requestId,
           source,
-          principal,
+          principal: accessPrincipal,
           signal: callerSignal,
           logger,
         });
-        await enforceAccess(capabilityId, capability, input, accessContext);
+        await enforceAccess(
+          capabilityId,
+          capability,
+          structuredClone(input),
+          accessContext,
+        );
 
         signalState = createSignal(callerSignal, capability.timeoutMs);
         const context: ExecutionContext = Object.freeze({

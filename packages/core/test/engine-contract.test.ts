@@ -9,6 +9,7 @@ import {
   type EngineErrorCode,
   type EngineSchema,
   type ExecutionContext,
+  type Principal,
 } from "../src/index.js";
 
 const input = z.object({ value: z.string().min(1) });
@@ -275,6 +276,258 @@ describe("the core v0.1 contract", () => {
     );
   });
 
+  it("isolates execution input from caller mutations during authorization", async () => {
+    const callerOwnedInput = {
+      value: "original",
+      nested: { decision: "reader" },
+    };
+    const transformedInput = testSchema<
+      { value: string },
+      typeof callerOwnedInput
+    >(() => ({ value: callerOwnedInput }));
+    const transformedOutput = z.object({
+      result: z.string(),
+      decision: z.string(),
+    });
+    const authorizationStarted = Promise.withResolvers<void>();
+    const continueAuthorization = Promise.withResolvers<void>();
+    const access = vi.fn(
+      async ({ input }: { input: typeof callerOwnedInput }) => {
+        authorizationStarted.resolve();
+        await continueAuthorization.promise;
+        expect(input).not.toBe(callerOwnedInput);
+        expect(input).toEqual({
+          value: "original",
+          nested: { decision: "reader" },
+        });
+        return true;
+      },
+    );
+    const run = vi.fn(
+      async ({ input }: { input: typeof callerOwnedInput }) => ({
+        result: input.value,
+        decision: input.nested.decision,
+      }),
+    );
+    const engine = createEngine({
+      name: "caller-input-isolation-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Isolate validated input from its original owner.",
+          input: transformedInput,
+          output: transformedOutput,
+          access,
+          run,
+        }),
+      },
+    });
+
+    const invocation = engine.invoke("echo", { value: "source" });
+    await authorizationStarted.promise;
+    callerOwnedInput.value = "caller mutation";
+    callerOwnedInput.nested.decision = "administrator";
+    continueAuthorization.resolve();
+
+    await expect(invocation).resolves.toEqual({
+      result: "original",
+      decision: "reader",
+    });
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: {
+          value: "original",
+          nested: { decision: "reader" },
+        },
+      }),
+    );
+  });
+
+  it("isolates execution input from mutations made by the access rule", async () => {
+    const transformedInput = testSchema<
+      { value: string },
+      { value: string; nested: { decision: string } }
+    >(() => ({
+      value: { value: "original", nested: { decision: "reader" } },
+    }));
+    const transformedOutput = z.object({
+      result: z.string(),
+      decision: z.string(),
+    });
+    const access = vi.fn(
+      ({
+        input,
+      }: {
+        input: { value: string; nested: { decision: string } };
+      }) => {
+        input.value = "access mutation";
+        input.nested.decision = "administrator";
+        return true;
+      },
+    );
+    const run = vi.fn(
+      async ({
+        input,
+      }: {
+        input: { value: string; nested: { decision: string } };
+      }) => ({
+        result: input.value,
+        decision: input.nested.decision,
+      }),
+    );
+    const engine = createEngine({
+      name: "access-input-isolation-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Keep authorization mutations out of execution.",
+          input: transformedInput,
+          output: transformedOutput,
+          access,
+          run,
+        }),
+      },
+    });
+
+    await expect(engine.invoke("echo", { value: "source" })).resolves.toEqual({
+      result: "original",
+      decision: "reader",
+    });
+    expect(access).toHaveBeenCalledOnce();
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: {
+          value: "original",
+          nested: { decision: "reader" },
+        },
+      }),
+    );
+  });
+
+  it("isolates the execution principal from its caller and the access rule", async () => {
+    const principal = {
+      id: "user:original",
+      attributes: { authorization: { role: "reader" } },
+    };
+    const authorizationStarted = Promise.withResolvers<void>();
+    const continueAuthorization = Promise.withResolvers<void>();
+    let accessPrincipal: Principal | undefined;
+    const access = vi.fn(
+      async ({
+        principal: receivedPrincipal,
+        context,
+      }: {
+        principal: Principal | null;
+        context: ExecutionContext;
+      }) => {
+        if (receivedPrincipal === null) return false;
+        accessPrincipal = receivedPrincipal;
+        authorizationStarted.resolve();
+        await continueAuthorization.promise;
+        expect(receivedPrincipal).not.toBe(principal);
+        expect(context.principal).toBe(receivedPrincipal);
+        expect(receivedPrincipal).toEqual({
+          id: "user:original",
+          attributes: { authorization: { role: "reader" } },
+        });
+        const mutablePrincipal = receivedPrincipal as {
+          id: string;
+          attributes: { authorization: { role: string } };
+        };
+        mutablePrincipal.id = "user:access-mutation";
+        mutablePrincipal.attributes.authorization.role = "administrator";
+        return true;
+      },
+    );
+    const run = vi.fn(async ({ context }: { context: ExecutionContext }) => {
+      const executionPrincipal = context.principal as Principal;
+      expect(executionPrincipal).not.toBe(principal);
+      expect(executionPrincipal).not.toBe(accessPrincipal);
+      const attributes = executionPrincipal.attributes as {
+        authorization: { role: string };
+      };
+      return {
+        result: executionPrincipal.id,
+        role: attributes.authorization.role,
+      };
+    });
+    const engine = createEngine({
+      name: "principal-isolation-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Keep request identity stable during authorization.",
+          input,
+          output: z.object({ result: z.string(), role: z.string() }),
+          access,
+          run,
+        }),
+      },
+    });
+
+    const invocation = engine.invoke(
+      "echo",
+      { value: "source" },
+      { principal },
+    );
+    await authorizationStarted.promise;
+    principal.id = "user:caller-mutation";
+    principal.attributes.authorization.role = "administrator";
+    continueAuthorization.resolve();
+
+    await expect(invocation).resolves.toEqual({
+      result: "user:original",
+      role: "reader",
+    });
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["a missing id", {}],
+    ["an empty id", { id: "" }],
+    ["a non-string id", { id: 42 }],
+    ["a primitive principal", "user:primitive"],
+    ["array attributes", { id: "user:42", attributes: [] }],
+    ["null attributes", { id: "user:42", attributes: null }],
+    [
+      "uncloneable attributes",
+      { id: "user:42", attributes: { authorize: () => true } },
+    ],
+  ])(
+    "rejects %s as UNAUTHENTICATED before access and run",
+    async (_case, principal) => {
+      const access = vi.fn(() => true);
+      const run = vi.fn(async () => ({ result: "unreachable" }));
+      const engine = createEngine({
+        name: "invalid-principal-engine",
+        version: "0.1.0",
+        capabilities: {
+          echo: defineCapability({
+            description: "Reject malformed request identity.",
+            input,
+            output,
+            access,
+            run,
+          }),
+        },
+      });
+
+      const error = await expectEngineError(
+        engine.invoke(
+          "echo",
+          { value: "source" },
+          { principal: principal as never },
+        ),
+        "UNAUTHENTICATED",
+      );
+
+      expect(error.message).toBe("Authentication is required.");
+      expect(error.publicDetails).toBeUndefined();
+      expect(access).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(invalidAccessDecisions)(
     "fails closed for a %s access decision before run",
     async (_label, evaluateAccess) => {
@@ -407,7 +660,7 @@ describe("the core v0.1 contract", () => {
     );
   });
 
-  it("reads a validated input value once and uses that exact value", async () => {
+  it("reads a validated input value once before creating isolated snapshots", async () => {
     const capturedValue = { value: "captured" };
     const laterUnsafeValue = { value: 1n };
     let valueReads = 0;
@@ -422,7 +675,7 @@ describe("the core v0.1 contract", () => {
     );
     const access = vi.fn(
       ({ input: validated }: { input: { value: string } }) =>
-        validated === capturedValue,
+        validated.value === capturedValue.value,
     );
     const run = vi.fn(
       async ({ input: validated }: { input: { value: string } }) => ({
@@ -448,10 +701,15 @@ describe("the core v0.1 contract", () => {
     });
     expect(valueReads).toBe(1);
     expect(access).toHaveBeenCalledWith(
-      expect.objectContaining({ input: capturedValue }),
+      expect.objectContaining({ input: { value: "captured" } }),
     );
     expect(run).toHaveBeenCalledWith(
-      expect.objectContaining({ input: capturedValue }),
+      expect.objectContaining({ input: { value: "captured" } }),
+    );
+    expect(access.mock.calls[0]?.[0].input).not.toBe(capturedValue);
+    expect(run.mock.calls[0]?.[0].input).not.toBe(capturedValue);
+    expect(access.mock.calls[0]?.[0].input).not.toBe(
+      run.mock.calls[0]?.[0].input,
     );
   });
 

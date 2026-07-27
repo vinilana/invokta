@@ -150,6 +150,18 @@ The business input cannot choose or override the principal. Even when an input
 schema contains fields named `principal`, `actor`, or `role`, they remain
 ordinary domain data and do not replace `context.principal`.
 
+The input and identity supplied to an access rule are request-scoped snapshots.
+The runtime gives `run` independent execution snapshots, so changing nested
+input or principal properties inside the rule does not change what the handler
+observes. A caller also cannot alter execution by mutating validator-owned input
+or principal attributes while an asynchronous access decision is pending.
+
+A non-null principal must be structured-cloneable, have a non-empty string `id`,
+and use a record for optional `attributes`. Treat token objects, live SDK
+instances, functions, and other uncloneable values as boundary concerns; map
+only the normalized identity data into `Principal`. Invalid identity fails as
+`UNAUTHENTICATED` before the access rule and handler.
+
 ## Keep error details private
 
 Return a boolean from the access function; do not expose the policy document,

@@ -61,7 +61,10 @@ another schema abstraction or depend on Zod in the core.
 have an object root schema. Both are required. Input is validated and transformed
 before authorization and execution; output is validated and transformed before
 being returned. The transformed values MUST remain inside the lossless JSON data
-model defined in ADR 0002.
+model defined in ADR 0002. After input validation, the runtime MUST capture a
+deep request-owned snapshot. The access rule receives a separate deep snapshot,
+while `run` receives the unmodified execution snapshot; mutations by the caller
+or access rule MUST NOT cross these boundaries.
 
 **AE-ACCESS-01 — Explicit rule.** Every capability MUST declare `access` as
 `public`, `authenticated`, or an asynchronous/synchronous function. `public`
@@ -74,9 +77,13 @@ when it returns `true`.
 `mcp-stdio`, or `mcp-http`. The context MUST NOT contain a service locator, port
 registry, error factory, policy context, or mutable metadata bag.
 
-**AE-PRINCIPAL-01 — Minimal identity.** `Principal` MUST contain `id` and MAY
-contain read-only `attributes`. Roles, scopes, tenants, groups, and claims are not
-standardized; when needed, they belong in `attributes`.
+**AE-PRINCIPAL-01 — Minimal identity.** `Principal` MUST be a structured-cloneable
+record with a non-empty string `id` and MAY contain `attributes` as a
+structured-cloneable record. Roles, scopes, tenants, groups, and claims are not
+standardized; when needed, they belong in `attributes`. The runtime MUST capture
+the request identity before asynchronous pipeline work and provide independent
+deep snapshots to authorization and execution. A malformed or uncloneable
+non-null identity fails as `UNAUTHENTICATED` before `access` or `run`.
 
 ## Maturity
 

@@ -60,8 +60,8 @@ evaluated only after this evidence exists; M6 does not expand the API of release
 | `AE-INV-01..04` | Real capability reused directly, through the CLI, and through MCP without duplicating `run` |
 | `AE-CAP-01`, `AE-ENG-01` | Type and runtime tests of the minimal API, IDs supplied as keys, and `list`/`describe` |
 | `AE-SCHEMA-01..02` | Valid input/output are transformed; invalid values produce distinct codes; non-object root schemas are rejected |
-| `AE-ACCESS-01` | `public`, `authenticated`, and a function; denial never calls `run` |
-| `AE-CTX-01`, `AE-PRINCIPAL-01` | Context contains only the normative fields; Principal comes from the boundary |
+| `AE-ACCESS-01` | `public`, `authenticated`, and a function; denial never calls `run`; access mutation cannot change execution input |
+| `AE-CTX-01`, `AE-PRINCIPAL-01` | Context contains only the normative fields; Principal comes from the boundary; malformed identity fails closed; caller/access mutations cannot change the execution identity |
 | `AE-ARCH-01..03` | Import graph and adapter tests prove direction and the single path through `invoke` |
 | `AE-PIPE-01`, `AE-ERR-01` | Tests instrument order, timeout/cancellation, seven codes, and sanitization |
 | `AE-OBS-01` | Three events, minimal fields, duration, and no payload/credential |

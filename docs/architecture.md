@@ -50,7 +50,10 @@ Schema transformation against the lossless JSON data model in ADR 0002. A value
 outside that model fails in the same validation stage, before `access` for input
 or before return for output. The corresponding code is `INPUT_INVALID` or
 `OUTPUT_INVALID`; public details identify the contract failure without including
-the rejected value.
+the rejected value. A successful input transformation is deep-snapshotted for
+the request before authorization. `access` receives an independent clone and
+`run` receives the request-owned execution snapshot, so neither caller mutation
+nor authorization mutation changes the data that execution observes.
 
 ## Errors
 
@@ -165,7 +168,11 @@ engine decides domain authorization and may call any PDP through a function.
 authentication is required, a missing or failed identity produces a 401 before
 `invoke` and, when configured, a challenge/Protected Resource Metadata. An
 authenticated but unauthorized principal produces `FORBIDDEN` and does not call
-`run`.
+`run`. A non-null principal passed to `invoke` must be a structured-cloneable
+record with a non-empty string `id`; when present, `attributes` must be a
+structured-cloneable record. The core snapshots it before asynchronous work and
+gives `access` and `run` independent copies. Malformed or uncloneable identity is
+`UNAUTHENTICATED` and reaches neither stage.
 
 The framework does not issue tokens, perform login, store users, validate JWTs
 from a specific provider, or implement an Authorization Server/policy engine.

@@ -25,6 +25,13 @@ An adapter may decode a request before the pipeline and encode the response afte
 it, but it must not skip or reimplement stages. Version 0.1 will have no
 before/after/onError policies, queue, concurrency, retry, or lifecycle.
 
+After a successful input transformation and lossless-JSON check, the core will
+capture a deep request-owned snapshot. Authorization receives a separate deep
+clone of that snapshot. The execution handler receives the unmodified execution
+snapshot, not the authorization clone or the validator-owned value. This makes
+the authorization decision and execution deterministic even when a validator
+returns caller-owned data or an access rule mutates its arguments.
+
 Failures will be `EngineError` instances with one of seven stable codes:
 `CAPABILITY_NOT_FOUND`, `INPUT_INVALID`, `UNAUTHENTICATED`, `FORBIDDEN`,
 `OUTPUT_INVALID`, `CANCELLED`, or `EXECUTION_FAILED`. `publicDetails` and `cause`
@@ -56,4 +63,6 @@ before the completed hook is invoked.
   must provide them outside this best-effort hook.
 - The pipeline and the order of its stages become part of the contract and
   require contract tests.
+- Input snapshotting adds bounded work proportional to the validated payload but
+  prevents concurrent caller or authorization mutations from crossing stages.
 - The kernel does not provide domain events or delivery guarantees.
