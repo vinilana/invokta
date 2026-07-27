@@ -147,12 +147,19 @@ The protocol endpoint accepts only `POST`. Each accepted POST creates a new MCP
 server and a new transport with sessions, resumption, event storage, and
 server-to-client SSE disabled. When OAuth Protected Resource Metadata is
 configured, its public well-known GET route is the only non-protocol route.
+Only the exact, canonical `/mcp` request target reaches protocol dispatch; dot
+segments, percent encoding, a query, a fragment, and absolute-form targets are
+rejected. The `2025-11-25` profile accepts exactly one top-level JSON-RPC message
+and rejects every top-level array before SDK dispatch. `Accept` must contain the
+exact `application/json` and `text/event-stream` media ranges with positive
+quality, and `Content-Type` must be the exact `application/json` media type.
 `Host` is validated for every request before authentication. An `Origin` header
 is optional, but any supplied origin requires an explicit exact allowlist.
 Boundary failures for `Host` or `Origin` return HTTP 403. A capability-level
 `FORBIDDEN` remains an MCP tool execution error over HTTP 200.
 
-Exactly one raw `Host` header is required; forwarded-host headers are ignored.
+Exactly one raw `Host` header is required, an IPv6 authority must use brackets,
+and forwarded-host headers are ignored.
 The authentication hook receives only the normalized path, method, cancellation
 signal, and a read-only header view with `get` and `has`. Request bodies default
 to a 1,048,576-byte limit. A host may configure `maxRequestBodyBytes` to another

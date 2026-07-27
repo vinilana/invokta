@@ -613,6 +613,23 @@ describe("MCP stateless Streamable HTTP", () => {
     expect(authenticate).not.toHaveBeenCalled();
   });
 
+  it("rejects an unbracketed IPv6 Host before authentication", async () => {
+    const authenticate = vi.fn(async () => ({ id: "user:allowed" }));
+    const server = await start(createContextEngine(), {
+      auth: { mode: "required", authenticate },
+    });
+
+    const status = await rawHttpStatus(
+      server,
+      ["POST /mcp HTTP/1.1", "Host: ::1", "Content-Length: 0", "", ""].join(
+        "\r\n",
+      ),
+    );
+
+    expect(status).toBe(403);
+    expect(authenticate).not.toHaveBeenCalled();
+  });
+
   it("accepts an exact configured Origin after Host validation", async () => {
     const server = await start(createContextEngine(), {
       allowedOrigins: ["https://client.example.com"],
@@ -738,6 +755,92 @@ describe("MCP stateless Streamable HTTP", () => {
     expect(unsupported.status).toBe(415);
     expect(notification.status).toBe(202);
     expect(await notification.text()).toBe("");
+  });
+
+  it.each([
+    "application/json;q=0, text/event-stream",
+    "application/json, text/event-stream;q=0",
+    "application/json-patch+json, text/event-stream",
+    "text/application/json, text/event-stream",
+  ])("rejects non-acceptable exact media ranges: %s", async (accept) => {
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const server = await start(engine);
+
+    const response = await callTool(server, {
+      token: "alice",
+      headers: { accept },
+    });
+
+    expect(response.status).toBe(406);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "application/json-seq",
+    "application/json-patch+json",
+    'text/plain; note="application/json"',
+  ])("rejects a non-exact JSON Content-Type: %s", async (contentType) => {
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const server = await start(engine);
+
+    const response = await callTool(server, {
+      token: "alice",
+      headers: { "content-type": contentType },
+    });
+
+    expect(response.status).toBe(415);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("accepts exact media types case-insensitively with positive quality", async () => {
+    const server = await start();
+
+    const response = await callTool(server, {
+      token: "alice",
+      headers: {
+        accept: "Application/JSON; q=1, Text/Event-Stream; q=0.5",
+        "content-type": "Application/JSON; charset=utf-8",
+      },
+    });
+
+    expect(response.status).toBe(200);
+  });
+
+  it.each([
+    "[]",
+    JSON.stringify([
+      {
+        jsonrpc: "2.0",
+        id: "batch-call",
+        method: "tools/call",
+        params: {
+          name: "support.inspect",
+          arguments: { value: "must-not-run" },
+        },
+      },
+    ]),
+  ])("rejects every top-level JSON array before SDK dispatch", async (body) => {
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const server = await start(engine);
+
+    const response = await fetch(endpoint(server), {
+      method: "POST",
+      headers: {
+        authorization: "Bearer alice",
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+      },
+      body,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await json(response)).toMatchObject({
+      error: { code: -32600 },
+    });
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it("rejects a declared body larger than the configured limit", async () => {
@@ -911,6 +1014,37 @@ describe("MCP stateless Streamable HTTP", () => {
     expect(absoluteStatus).toBe(400);
     expect(authenticate).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["/./mcp", "/routing/../mcp", "/%6dcp", "/m%63p"])(
+    "rejects noncanonical MCP request target %s before authentication",
+    async (target) => {
+      const authenticate = vi.fn(async () => ({ id: "user:allowed" }));
+      const engine = createContextEngine();
+      const invoke = vi.spyOn(engine, "invoke");
+      const server = await start(engine, {
+        auth: { mode: "required", authenticate },
+      });
+      const address = server.address();
+
+      const status = await rawHttpStatus(
+        server,
+        [
+          `POST ${target} HTTP/1.1`,
+          `Host: ${address.host}:${address.port}`,
+          "Authorization: Bearer alice",
+          "Accept: application/json, text/event-stream",
+          "Content-Type: application/json",
+          "Content-Length: 2",
+          "",
+          "{}",
+        ].join("\r\n"),
+      );
+
+      expect(status).toBe(400);
+      expect(authenticate).not.toHaveBeenCalled();
+      expect(invoke).not.toHaveBeenCalled();
+    },
+  );
 
   it("publishes protected resource metadata and its 401 challenge", async () => {
     const resource = "https://engine.example.com/mcp";

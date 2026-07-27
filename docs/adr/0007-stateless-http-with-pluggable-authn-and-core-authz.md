@@ -39,6 +39,12 @@ accepted for non-browser clients, while every supplied origin requires an
 explicit normalized HTTP(S) origin allowlist. Host or Origin rejection returns
 HTTP 403 before authentication.
 
+Only the exact canonical `/mcp` target is a protocol route. Dot-segment and
+percent-encoded aliases, queries, fragments, and absolute-form targets are
+rejected before authentication. IPv6 `Host` authorities require brackets; a bare
+multi-colon authority is rejected before authentication even when it represents
+loopback.
+
 The adapter requires exactly one raw `Host` header and does not consult forwarded
 host headers. The authentication hook receives a minimal read-only view of
 headers rather than a mutable platform header object. HTTP request bodies are

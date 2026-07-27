@@ -24,6 +24,14 @@ to reject older revisions that the pinned SDK can negotiate correctly.
 Translations between MCP and the engine model will occur at the boundary, and
 every tool execution will converge on `invoke`.
 
+That revision permits one JSON-RPC message per HTTP POST and does not permit
+JSON-RPC batches. The adapter therefore rejects every top-level JSON array before
+SDK dispatch, including empty and single-element arrays. It also parses media
+negotiation at the boundary rather than relying on substring checks: `Accept`
+must list the exact JSON and event-stream media types with positive quality, and
+`Content-Type` must identify the exact JSON media type. The adapter passes the
+single parsed message to the SDK so the body is not parsed twice.
+
 The approved version is `@modelcontextprotocol/sdk@1.29.0`, pinned exactly in the
 manifest and lockfile, without `^`, `~`, or the `latest` tag. Version 1.29.0
 declares `2025-11-25` as the latest supported protocol. The v2 packages remain in

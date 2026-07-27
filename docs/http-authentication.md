@@ -166,6 +166,11 @@ More than one raw `Authorization` header is an invalid request and is rejected
 before the authentication hook runs; authenticators never need to choose among
 ambiguous credentials.
 
+The request target must be the exact canonical `/mcp` path. Dot-segment or
+percent-encoded aliases, queries, fragments, and absolute-form targets are not
+routed to MCP or authentication. IPv6 `Host` values must use bracketed authority
+syntax, such as `[::1]:3000`; bare `::1` is rejected.
+
 ## Authentication is not authorization
 
 The hook proves who made the request and produces a `Principal`. The core still

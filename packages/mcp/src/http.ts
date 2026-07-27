@@ -134,6 +134,13 @@ function normalizeHostname(authority: string): string | null {
   }
 }
 
+function normalizeRequestHostname(authority: string): string | null {
+  if (!authority.startsWith("[") && authority.split(":").length > 2) {
+    return null;
+  }
+  return normalizeHostname(authority);
+}
+
 function isLoopback(host: string): boolean {
   const normalized = normalizeHostname(host);
   return (
@@ -315,14 +322,57 @@ function normalizeOrigin(value: string): string | null {
 }
 
 function parseRequestPath(target: string): string | null {
-  if (!target.startsWith("/") || target.startsWith("//")) return null;
+  if (
+    !target.startsWith("/") ||
+    target.startsWith("//") ||
+    target.includes("%")
+  ) {
+    return null;
+  }
   try {
     const parsed = new URL(target, "http://request.invalid");
-    if (parsed.search !== "" || parsed.hash !== "") return null;
+    if (
+      parsed.search !== "" ||
+      parsed.hash !== "" ||
+      target !== parsed.pathname
+    ) {
+      return null;
+    }
     return parsed.pathname;
   } catch {
     return null;
   }
+}
+
+function acceptableMediaType(
+  value: string | undefined,
+  expected: string,
+): boolean {
+  if (value === undefined) return false;
+  return value.split(",").some((range) => {
+    const [mediaType, ...parameters] = range.split(";");
+    if (mediaType?.trim().toLowerCase() !== expected) return false;
+    let quality = 1;
+    let sawQuality = false;
+    for (const parameter of parameters) {
+      const separator = parameter.indexOf("=");
+      if (separator === -1) continue;
+      const name = parameter.slice(0, separator).trim().toLowerCase();
+      if (name !== "q") continue;
+      if (sawQuality) return false;
+      sawQuality = true;
+      const rawQuality = parameter.slice(separator + 1).trim();
+      if (!/^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/u.test(rawQuality)) {
+        return false;
+      }
+      quality = Number(rawQuality);
+    }
+    return quality > 0;
+  });
+}
+
+function exactContentType(value: string | undefined): boolean {
+  return value?.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
 }
 
 function toWebHeaders(
@@ -458,6 +508,22 @@ function sendPayloadTooLarge(
   });
 }
 
+function sendProtocolError(
+  response: import("node:http").ServerResponse,
+  status: number,
+  code: number,
+  message: string,
+): void {
+  send(response, {
+    status,
+    body: {
+      jsonrpc: "2.0",
+      error: { code, message },
+      id: null,
+    },
+  });
+}
+
 async function writeWebResponse(
   target: import("node:http").ServerResponse,
   source: Response,
@@ -508,7 +574,7 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         send(response, { status: 403, body: { error: "forbidden" } });
         return;
       }
-      const requestHost = normalizeHostname(hostHeader);
+      const requestHost = normalizeRequestHostname(hostHeader);
       if (requestHost === null || !allowedHosts.has(requestHost)) {
         send(response, { status: 403, body: { error: "forbidden" } });
         return;
@@ -622,6 +688,31 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         return;
       }
 
+      const accept = request.headers.accept;
+      if (
+        Array.isArray(accept) ||
+        !acceptableMediaType(accept, "application/json") ||
+        !acceptableMediaType(accept, "text/event-stream")
+      ) {
+        sendProtocolError(
+          response,
+          406,
+          -32000,
+          "Not Acceptable: Client must accept both application/json and text/event-stream",
+        );
+        return;
+      }
+      const contentType = request.headers["content-type"];
+      if (Array.isArray(contentType) || !exactContentType(contentType)) {
+        sendProtocolError(
+          response,
+          415,
+          -32000,
+          "Unsupported Media Type: Content-Type must be application/json",
+        );
+        return;
+      }
+
       const protocolServer = createMcpServer(engine, {
         principal,
         source: "mcp-http",
@@ -640,14 +731,35 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
           sendPayloadTooLarge(response);
           return;
         }
+        let parsedBody: unknown;
+        try {
+          parsedBody = JSON.parse(Buffer.from(body).toString("utf8"));
+        } catch {
+          sendProtocolError(response, 400, -32700, "Parse error: Invalid JSON");
+          return;
+        }
+        if (Array.isArray(parsedBody)) {
+          sendProtocolError(
+            response,
+            400,
+            -32600,
+            "Invalid Request: Exactly one JSON-RPC message is required",
+          );
+          return;
+        }
+        const webHeaders = toWebHeaders(request.headers);
+        webHeaders.set("accept", "application/json, text/event-stream");
+        webHeaders.set("content-type", "application/json");
         const webRequest = new Request(requestUrl(hostHeader, path), {
           method: "POST",
-          headers: toWebHeaders(request.headers),
+          headers: webHeaders,
           body,
           signal: abortController.signal,
         });
         await protocolServer.connect(transport);
-        const webResponse = await transport.handleRequest(webRequest);
+        const webResponse = await transport.handleRequest(webRequest, {
+          parsedBody,
+        });
         await writeWebResponse(response, webResponse);
       } catch {
         if (!response.headersSent && !response.destroyed) {
