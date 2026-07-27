@@ -112,7 +112,10 @@ reaches the adapter.
 **AE-MCP-01 — One capability, one tool.** Key, title, description, schemas, and
 annotations map directly to the tool. Success returns `structuredContent` and a
 JSON text fallback. A nonexistent tool is a protocol error; all other capability
-errors return `isError: true`.
+errors return `isError: true`. Error serialization is atomic: if the adapter
+cannot safely read or serialize the structured `EngineError`, it MUST return the
+generic `EXECUTION_FAILED` tool error and MUST NOT let the SDK convert the failure
+into an internal protocol error.
 
 **AE-MCP-02 — Isolated SDK.** `@ai-engine/mcp` encapsulates the official SDK and
 MUST NOT leak its types through the public API or copy it into the core. The

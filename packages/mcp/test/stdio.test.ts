@@ -187,6 +187,143 @@ describe("MCP stdio protocol adapter", () => {
     expect(JSON.stringify(result)).not.toContain("cause");
   });
 
+  it.each([
+    {
+      name: "a throwing code getter",
+      createError() {
+        const error = new EngineError({
+          code: "EXECUTION_FAILED",
+          message: "Safe public message.",
+        });
+        Object.defineProperty(error, "code", {
+          get() {
+            throw new Error("secret-code-getter");
+          },
+        });
+        return error;
+      },
+    },
+    {
+      name: "a mutated code",
+      createError() {
+        const error = new EngineError({
+          code: "EXECUTION_FAILED",
+          message: "Safe public message.",
+        });
+        Object.defineProperty(error, "code", {
+          value: "secret-invalid-code",
+        });
+        return error;
+      },
+    },
+    {
+      name: "a throwing message getter",
+      createError() {
+        const error = new EngineError({
+          code: "EXECUTION_FAILED",
+          message: "Safe public message.",
+        });
+        Object.defineProperty(error, "message", {
+          get() {
+            throw new Error("secret-message-getter");
+          },
+        });
+        return error;
+      },
+    },
+    {
+      name: "a mutated message",
+      createError() {
+        const error = new EngineError({
+          code: "EXECUTION_FAILED",
+          message: "Safe public message.",
+        });
+        Object.defineProperty(error, "message", {
+          value: { secret: "secret-invalid-message" },
+        });
+        return error;
+      },
+    },
+    {
+      name: "a throwing publicDetails getter",
+      createError() {
+        const error = new EngineError({
+          code: "EXECUTION_FAILED",
+          message: "Safe public message.",
+        });
+        Object.defineProperty(error, "publicDetails", {
+          get() {
+            throw new Error("secret-details-getter");
+          },
+        });
+        return error;
+      },
+    },
+    {
+      name: "a throwing publicDetails proxy",
+      createError() {
+        return new EngineError({
+          code: "EXECUTION_FAILED",
+          message: "Safe public message.",
+          publicDetails: new Proxy(
+            {},
+            {
+              get() {
+                throw new Error("secret-details-proxy");
+              },
+            },
+          ),
+        });
+      },
+    },
+    {
+      name: "a throwing EngineError proxy",
+      createError() {
+        return new Proxy(
+          new EngineError({
+            code: "EXECUTION_FAILED",
+            message: "Safe public message.",
+          }),
+          {
+            getPrototypeOf() {
+              throw new Error("secret-error-proxy");
+            },
+          },
+        );
+      },
+    },
+  ])(
+    "sanitizes $name without producing a protocol error",
+    async ({ createError }) => {
+      const engine = createEchoEngine();
+      Object.defineProperty(engine, "invoke", {
+        value: async () => {
+          throw createError();
+        },
+      });
+      const { client } = await connect(engine);
+
+      const result = await client.callTool({
+        name: "support.echo",
+        arguments: { text: "hello" },
+      });
+
+      expect(result).toEqual({
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              code: "EXECUTION_FAILED",
+              message: "Capability execution failed.",
+            }),
+          },
+        ],
+      });
+      expect(JSON.stringify(result)).not.toContain("secret-");
+    },
+  );
+
   it("maps input and output validation failures to tool execution errors", async () => {
     const invalidInputClient = (await connect(createEchoEngine())).client;
 

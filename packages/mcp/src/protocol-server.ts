@@ -3,6 +3,7 @@ import {
   type CapabilityMap,
   type Engine,
   EngineError,
+  type EngineErrorCode,
   type EngineJsonSchema,
   type ExecutionSource,
   type Principal,
@@ -24,6 +25,21 @@ interface McpServerOptions {
 interface McpObjectSchema extends Readonly<Record<string, unknown>> {
   readonly type: "object";
 }
+
+const ENGINE_ERROR_CODES = new Set<EngineErrorCode>([
+  "CAPABILITY_NOT_FOUND",
+  "INPUT_INVALID",
+  "UNAUTHENTICATED",
+  "FORBIDDEN",
+  "OUTPUT_INVALID",
+  "CANCELLED",
+  "EXECUTION_FAILED",
+]);
+
+const EXECUTION_FAILED_TEXT = JSON.stringify({
+  code: "EXECUTION_FAILED",
+  message: "Capability execution failed.",
+});
 
 function asObjectSchema(schema: EngineJsonSchema): McpObjectSchema {
   return schema as McpObjectSchema;
@@ -54,45 +70,38 @@ function mapAnnotations(annotations: CapabilityAnnotations | undefined):
   };
 }
 
-function safeEngineError(error: unknown): {
-  readonly code: string;
-  readonly message: string;
-  readonly publicDetails?: unknown;
-} {
-  if (!(error instanceof EngineError)) {
-    return {
-      code: "EXECUTION_FAILED",
-      message: "Capability execution failed.",
-    };
-  }
-  return {
-    code: error.code,
-    message: error.message,
-    ...(error.publicDetails === undefined
-      ? {}
-      : { publicDetails: error.publicDetails }),
-  };
-}
-
-function safeJson(value: unknown, fallback: unknown): string {
+function serializeEngineError(error: unknown): string {
   try {
-    return JSON.stringify(value);
+    if (!(error instanceof EngineError)) return EXECUTION_FAILED_TEXT;
+
+    const code: unknown = error.code;
+    const message: unknown = error.message;
+    const publicDetails: unknown = error.publicDetails;
+    if (
+      typeof code !== "string" ||
+      !ENGINE_ERROR_CODES.has(code as EngineErrorCode) ||
+      typeof message !== "string"
+    ) {
+      return EXECUTION_FAILED_TEXT;
+    }
+
+    return JSON.stringify({
+      code,
+      message,
+      ...(publicDetails === undefined ? {} : { publicDetails }),
+    });
   } catch {
-    return JSON.stringify(fallback);
+    return EXECUTION_FAILED_TEXT;
   }
 }
 
 function errorResult(error: unknown) {
-  const safeError = safeEngineError(error);
   return {
     isError: true as const,
     content: [
       {
         type: "text" as const,
-        text: safeJson(safeError, {
-          code: safeError.code,
-          message: safeError.message,
-        }),
+        text: serializeEngineError(error),
       },
     ],
   };
