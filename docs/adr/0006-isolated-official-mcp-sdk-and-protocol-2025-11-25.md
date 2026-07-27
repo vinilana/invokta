@@ -19,8 +19,10 @@ of `@ai-engine/core`.
 
 The adapter's normative protocol revision will be the exact string `2025-11-25`.
 The handshake, capabilities, messages, and conformance tests must be compatible
-with this revision. Translations between MCP and the engine model will occur at
-the boundary, and every tool execution will converge on `invoke`.
+with this revision. It is the current compatibility baseline, not an instruction
+to reject older revisions that the pinned SDK can negotiate correctly.
+Translations between MCP and the engine model will occur at the boundary, and
+every tool execution will converge on `invoke`.
 
 The approved version is `@modelcontextprotocol/sdk@1.29.0`, pinned exactly in the
 manifest and lockfile, without `^`, `~`, or the `latest` tag. Version 1.29.0
@@ -32,6 +34,13 @@ As an additional defense, the integration will not import the root entry point
 affected by the known packaging issue in version 1.29.0; it will use only the
 documented subpaths covered by smoke tests. An SDK update must reverify the
 protocol, exports, runtime, release notes, and security fixes.
+
+The adapter will use the SDK's low-level `Server` API for tool registration. This
+is deliberate: the high-level `McpServer` API accepts schema-library shapes and
+normalizes them, while engine capabilities already expose their authoritative
+Standard JSON Schemas. The low-level handler keeps those input and output schemas
+unchanged at the transport boundary. This SDK choice remains internal to the MCP
+package and may change without changing its public API.
 
 No complete in-house protocol implementation will be maintained in parallel with
 the official SDK; local code will be limited to adaptation, isolation, and tests.

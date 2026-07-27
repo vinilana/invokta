@@ -17,6 +17,7 @@
     }
   },
   "dependencies": {
-    "@ai-engine/core": "0.1.0"
+    "@ai-engine/core": "0.1.0",
+    "@modelcontextprotocol/sdk": "1.29.0"
   }
 }
