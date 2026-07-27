@@ -1,30 +1,31 @@
 # AI Engine Framework v0.1
 
-Esta documentação é a fonte normativa para a implementação da versão 0.1.0. O
-framework permite definir uma capability de domínio uma vez e executá-la por
-chamada direta, CLI, MCP stdio e MCP Streamable HTTP stateless.
+This documentation is the normative source for implementing version 0.1.0. The
+framework allows a domain capability to be defined once and executed through a
+direct call, the CLI, MCP stdio, and stateless MCP Streamable HTTP.
 
-## Ordem de leitura
+## Reading order
 
-1. [Visão e invariantes](./visao-e-invariantes.md)
-2. [Arquitetura e contratos](./arquitetura.md)
-3. [Escopo e limites da v0.1](./escopo-v0.1.md)
-4. [Plano e critérios de aceite](./plano-e-criterios-de-aceite.md)
-5. [Registros de decisões arquiteturais](./adr/README.md)
+1. [Vision and invariants](./vision-and-invariants.md)
+2. [Architecture and contracts](./architecture.md)
+3. [v0.1 scope and limits](./v0.1-scope.md)
+4. [Implementation plan and acceptance criteria](./implementation-plan-and-acceptance-criteria.md)
+5. [Architecture decision records](./adr/README.md)
 
-## Linguagem normativa
+## Normative language
 
-Os termos **DEVE**, **NÃO DEVE**, **DEVERIA**, **PODE** e **OPCIONAL** indicam,
-respectivamente, requisitos, proibições, recomendações e extensões permitidas.
-Requisitos identificados como `AE-<ÁREA>-NN` são rastreados na matriz de aceite.
+The terms **MUST**, **MUST NOT**, **SHOULD**, **MAY**, and **OPTIONAL** indicate,
+respectively, requirements, prohibitions, recommendations, and permitted
+extensions. Requirements identified as `AE-<AREA>-NN` are tracked in the
+acceptance matrix.
 
-Em caso de conflito, a especificação de escopo e os ADRs mais recentes prevalecem
-sobre exemplos. Uma mudança que amplie a API pública ou os conceitos da v0.1 exige
-um caso real, um teste e uma decisão arquitetural explícita.
+In the event of a conflict, the scope specification and the most recent ADRs take
+precedence over examples. A change that expands the public API or the concepts in
+v0.1 requires a real use case, a test, and an explicit architectural decision.
 
-## Resultado de referência
+## Reference outcome
 
-Uma engine deve publicar a mesma capability sem duplicar regra de negócio:
+An engine must publish the same capability without duplicating business rules:
 
 ```text
 my-engine list
