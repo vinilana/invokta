@@ -24,17 +24,54 @@ export interface ServeMcpStdioOptions {
 }
 
 class CallbackStdioServerTransport extends StdioServerTransport {
+  private readonly pendingSends = new Set<Promise<void>>();
+  private closing: Promise<void> | undefined;
+
   constructor(private readonly output: Writable) {
     super(process.stdin, output);
   }
 
   override send(message: JSONRPCMessage): Promise<void> {
-    return new Promise((resolve, reject) => {
+    if (this.closing !== undefined) {
+      return Promise.reject(new Error("The MCP stdio transport is closed."));
+    }
+    const pending = new Promise<void>((resolve, reject) => {
       this.output.write(serializeMessage(message), (error) => {
         if (error === undefined || error === null) resolve();
         else reject(error);
       });
     });
+    this.pendingSends.add(pending);
+    const forget = (): void => {
+      this.pendingSends.delete(pending);
+    };
+    void pending.then(forget, forget);
+    return pending;
+  }
+
+  override close(): Promise<void> {
+    this.closing ??= this.closeOnce();
+    return this.closing;
+  }
+
+  private async closeOnce(): Promise<void> {
+    await super.close();
+    if (!this.output.destroyed) {
+      // Writable.destroy() does not interrupt an active libuv pipe write.
+      const nativeHandle =
+        this.pendingSends.size === 0
+          ? undefined
+          : (
+              this.output as Writable & {
+                readonly _handle?: { close(): void };
+              }
+            )._handle;
+      this.output.destroy();
+      nativeHandle?.close();
+    }
+    while (this.pendingSends.size > 0) {
+      await Promise.allSettled([...this.pendingSends]);
+    }
   }
 }
 
@@ -94,6 +131,7 @@ export async function serveMcpStdio<Capabilities extends CapabilityMap>(
 
   try {
     await server.connect(transport);
+    if (process.stdin.readableEnded || process.stdin.destroyed) requestClose();
     const failure = await lifetime;
     if (failure !== undefined) throw failure;
   } catch (cause) {

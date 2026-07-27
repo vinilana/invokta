@@ -158,7 +158,10 @@ provided by the SDK MUST be propagated to `context.signal`. The stdio server own
 the protocol connection lifetime: stdin end or close MUST idempotently close the
 transport, abort active request signals, remove its stream listeners, and allow
 the process to exit. A broken stdout pipe is a normal client disconnect and MUST
-be contained without an uncaught error or diagnostic on protocol stdout.
+be contained without an uncaught error or diagnostic on protocol stdout. During
+channel teardown, pending protocol writes are discarded and settled before error
+containment is removed, so a backpressured or late-failing write cannot keep the
+process alive or escape as an uncaught stream error.
 
 **AE-MCP-04 — Stateless HTTP.** The sole endpoint is `/mcp`; each request is
 independent. The default bind address is `127.0.0.1`. `Host` and `Origin` MUST be

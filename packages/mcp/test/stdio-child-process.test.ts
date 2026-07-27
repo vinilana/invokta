@@ -64,9 +64,12 @@ function captureText(stream: Readable): TextCapture {
   };
 }
 
-function spawnLifecycleServer(): ChildProcessWithoutNullStreams {
+function spawnLifecycleServer(
+  mode?: "backpressure" | "delayed-epipe" | "pre-ended",
+): ChildProcessWithoutNullStreams {
   const child = spawn(process.execPath, [lifecycleFixturePath], {
     cwd: repositoryRoot,
+    env: { ...process.env, STDIO_LIFECYCLE_MODE: mode },
     stdio: "pipe",
   });
   child.stdin.on("error", () => undefined);
@@ -227,6 +230,72 @@ it("contains a broken stdout pipe and exits without an uncaught stack", async ()
       clientInfo: { name: "stdio-epipe-test", version: "0.0.0-test" },
     },
   });
+
+  await expect(exited).resolves.toEqual({ code: 0, signal: null });
+  expect(stderr.value()).toBe("listeners-clean\n");
+});
+
+it("contains a delayed EPIPE after stdin closes during an active write", async () => {
+  const child = spawnLifecycleServer("delayed-epipe");
+  const stderr = captureText(child.stderr);
+  const exited = waitForExit(child);
+
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "stdio-delayed-epipe-test", version: "0.0.0-test" },
+    },
+  });
+  await stderr.waitFor("write-started\n");
+  child.stdin.end();
+
+  await expect(exited).resolves.toEqual({ code: 0, signal: null });
+  expect(stderr.value()).toBe("write-started\nlisteners-clean\n");
+});
+
+it("drops a backpressured response when stdin closes and exits cleanly", async () => {
+  const child = spawnLifecycleServer("backpressure");
+  const stderr = captureText(child.stderr);
+  const exited = waitForExit(child);
+
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "stdio-backpressure-test", version: "0.0.0-test" },
+    },
+  });
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    method: "notifications/initialized",
+  });
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: { name: "example.large", arguments: {} },
+  });
+  await stderr.waitFor("large-write-started\n");
+  child.stdin.end();
+
+  await expect(exited).resolves.toEqual({ code: 0, signal: null });
+  expect(stderr.value()).toBe(
+    "large-result\nlarge-write-started\nlisteners-clean\n",
+  );
+});
+
+it("closes when stdin had already ended before the adapter starts", async () => {
+  const child = spawnLifecycleServer("pre-ended");
+  const stderr = captureText(child.stderr);
+  const exited = waitForExit(child);
+  child.stdin.end();
 
   await expect(exited).resolves.toEqual({ code: 0, signal: null });
   expect(stderr.value()).toBe("listeners-clean\n");
