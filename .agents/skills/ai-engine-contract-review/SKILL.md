@@ -1,67 +1,67 @@
 ---
 name: ai-engine-contract-review
-description: "Revisar contratos do AI Engine quanto a API pública, critérios de aceite, erros, invariantes, limites operacionais, compatibilidade e fronteiras arquiteturais. Usar antes de implementar ou aprovar mudanças em interfaces, schemas, portas, eventos, persistência observável, configuração e comportamentos públicos deste repositório."
+description: "Review AI Engine contracts for public APIs, acceptance criteria, errors, invariants, operational limits, compatibility, and architectural boundaries. Use before implementing or approving changes to interfaces, schemas, ports, events, observable persistence, configuration, or public behavior in this repository."
 ---
 
 # AI Engine Contract Review
 
-## Estabelecer a fonte de verdade
+## Establish the source of truth
 
-1. Ler `docs/README.md` e o contrato conceitual em `docs/visao-e-invariantes.md`.
-2. Confrontar a mudança com `docs/arquitetura.md`, `docs/escopo-v0.1.md`, `docs/plano-e-criterios-de-aceite.md`, `docs/adr/README.md` e os ADRs aplicáveis.
-3. Inspecionar tipos públicos, testes de aceitação e implementação existente. Não inferir garantias apenas de exemplos ou detalhes internos.
-4. Identificar o consumidor, a superfície pública e o tipo de mudança: aditiva, compatível, ambígua ou quebradora.
-5. Permanecer em modo somente leitura quando o pedido for revisar. Editar apenas quando o usuário solicitar correções.
+1. Read `docs/README.md` and `docs/vision-and-invariants.md`.
+2. Compare the change with `docs/architecture.md`, `docs/v0.1-scope.md`, `docs/implementation-plan-and-acceptance-criteria.md`, `docs/adr/README.md`, and applicable ADRs.
+3. Inspect public types, acceptance tests, and the existing implementation. Do not infer guarantees from examples or internal details.
+4. Identify the consumer, public surface, and change type: additive, compatible, ambiguous, or breaking.
+5. Stay read-only for review requests. Edit only when the user requests fixes.
 
-## Cumprir os gates
+## Apply the gates
 
-### Gate 1 — Superfície completa
+### Gate 1 — Complete surface
 
-Inventariar, conforme aplicável:
+Inventory each applicable concern:
 
-- operação, entrada, saída e efeitos observáveis;
-- erros públicos, códigos, mensagens estáveis e política de retry;
-- defaults, configuração, ordenação e determinismo;
-- timeout, cancelamento, concorrência e idempotência;
-- limites de tamanho, quantidade, profundidade, tempo e recursos;
-- versionamento, migração e compatibilidade retroativa;
-- porta responsável e adaptador autorizado pelos ADRs.
+- operations, inputs, outputs, and observable effects;
+- public errors, codes, stable messages, and retry policy;
+- defaults, configuration, ordering, and determinism;
+- timeouts, cancellation, concurrency, and idempotency;
+- size, count, depth, time, and resource limits;
+- versioning, migration, and backward compatibility;
+- responsible ports and ADR-authorized adapters.
 
-Marcar explicitamente `não especificado` em vez de preencher lacunas por suposição.
+Mark missing details as `unspecified`; do not fill gaps with assumptions.
 
-### Gate 2 — Aceite executável
+### Gate 2 — Executable acceptance
 
-- Reescrever cada requisito como resultado binário e observável quando ele estiver vago.
-- Mapear `requisito → contrato → teste de aceitação → evidência`.
-- Exigir casos felizes, erros previstos e bordas nos limites inclusivo/exclusivo.
-- Rejeitar critérios baseados apenas em estrutura interna, adjetivos subjetivos ou implementação futura não definida.
+- Rewrite vague requirements as binary, observable outcomes.
+- Map `requirement → contract → acceptance test → evidence`.
+- Require happy paths, expected errors, and inclusive and exclusive boundary cases.
+- Reject criteria based only on internal structure, subjective adjectives, or undefined future implementation.
 
-### Gate 3 — Limites e falhas
+### Gate 3 — Limits and failures
 
-- Verificar validação no boundary correto e comportamento consistente entre adaptadores.
-- Exigir falha segura e determinística para entrada inválida, excesso de limite, indisponibilidade e cancelamento.
-- Procurar recursos sem teto, trabalho duplicado, crescimento não limitado e dependência externa sem timeout.
-- Confirmar que logs, métricas e erros não exponham segredo ou conteúdo sensível.
+- Verify validation at the correct boundary and consistent behavior across adapters.
+- Require safe, deterministic failure for invalid input, limit violations, unavailability, and cancellation.
+- Find unbounded resources, duplicate work, uncontrolled growth, and external dependencies without timeouts.
+- Confirm that logs, metrics, and errors expose no secrets or sensitive content.
 
-### Gate 4 — Arquitetura e evolução
+### Gate 4 — Architecture and evolution
 
-- Confirmar direção de dependências e responsabilidade de cada porta e adaptador nos ADRs.
-- Sinalizar vazamento de tipo de framework, transporte ou persistência para o domínio.
-- Separar contrato intencional de detalhe de implementação; impedir que testes públicos cristalizem detalhes internos.
-- Classificar quebra de compatibilidade e exigir decisão, versionamento ou migração explícita.
+- Confirm dependency direction and each port and adapter responsibility against the ADRs.
+- Flag framework, transport, or persistence types that leak into the domain.
+- Separate intentional contracts from implementation details. Prevent public tests from freezing internal details.
+- Classify compatibility breaks and require an explicit decision, version, or migration.
 
-### Gate 5 — Veredito
+### Gate 5 — Verdict
 
-Emitir `APROVADO` somente quando contrato, aceite e limites estiverem completos, testáveis e coerentes com os ADRs. Emitir `APROVADO COM RESSALVAS` apenas para riscos não bloqueantes com ação concreta. Emitir `BLOQUEADO` para ambiguidade material, quebra não autorizada, ausência de limite crítico ou violação arquitetural.
+Return `APPROVED` only when contracts, acceptance criteria, and limits are complete, testable, and consistent with the ADRs. Return `APPROVED WITH CONDITIONS` only for non-blocking risks with concrete actions. Return `BLOCKED` for material ambiguity, unauthorized breaking changes, missing critical limits, or architectural violations.
 
-## Relatar a revisão
+## Report the review
 
-Apresentar primeiro os achados, por severidade, com evidência `arquivo:linha`. Em seguida, incluir:
+Present findings first, ordered by severity, with `file:line` evidence. Then include:
 
-- matriz compacta de rastreabilidade;
-- lacunas marcadas como `não especificado`;
-- impacto de compatibilidade;
-- perguntas que exigem decisão;
-- veredito e gates pendentes.
+- a compact traceability matrix;
+- gaps marked as `unspecified`;
+- compatibility impact;
+- questions requiring decisions;
+- the verdict and pending gates.
 
-Não declarar ausência de problemas sem registrar as superfícies e os limites verificados.
+Do not report that no issues exist without listing the surfaces and limits checked.
