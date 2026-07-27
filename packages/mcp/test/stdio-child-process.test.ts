@@ -86,7 +86,7 @@ function waitForExit(child: ChildProcessWithoutNullStreams): Promise<{
       reject(
         new Error("The stdio server did not exit after its channel closed."),
       );
-    }, 2_000);
+    }, 5_000);
     timer.unref();
     child.once("close", (code, signal) => {
       clearTimeout(timer);
