@@ -1,0 +1,23 @@
+{
+  "name": "@ai-engine/example-hello",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "test": "vitest run test",
+    "direct": "node dist/direct.js",
+    "cli": "node dist/cli.js",
+    "mcp:stdio": "node dist/mcp-stdio.js",
+    "mcp:http": "node dist/mcp-http.js"
+  },
+  "dependencies": {
+    "@ai-engine/cli": "0.1.0",
+    "@ai-engine/core": "0.1.0",
+    "@ai-engine/mcp": "0.1.0",
+    "zod": "4.4.3"
+  }
+}
