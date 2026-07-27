@@ -407,6 +407,222 @@ describe("the core v0.1 contract", () => {
     );
   });
 
+  it("reads a validated input value once and uses that exact value", async () => {
+    const capturedValue = { value: "captured" };
+    const laterUnsafeValue = { value: 1n };
+    let valueReads = 0;
+    const validationResult = Object.defineProperty({}, "value", {
+      get() {
+        valueReads += 1;
+        return valueReads === 1 ? capturedValue : laterUnsafeValue;
+      },
+    });
+    const dynamicInput = testSchema<{ value: string }, { value: string }>(
+      () => validationResult as { value: { value: string } },
+    );
+    const access = vi.fn(
+      ({ input: validated }: { input: { value: string } }) =>
+        validated === capturedValue,
+    );
+    const run = vi.fn(
+      async ({ input: validated }: { input: { value: string } }) => ({
+        result: validated.value,
+      }),
+    );
+    const engine = createEngine({
+      name: "single-read-input-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Use one stable validated input value.",
+          input: dynamicInput,
+          output,
+          access,
+          run,
+        }),
+      },
+    });
+
+    await expect(engine.invoke("echo", { value: "source" })).resolves.toEqual({
+      result: "captured",
+    });
+    expect(valueReads).toBe(1);
+    expect(access).toHaveBeenCalledWith(
+      expect.objectContaining({ input: capturedValue }),
+    );
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ input: capturedValue }),
+    );
+  });
+
+  it("reads a validated output value once and returns that exact value", async () => {
+    const capturedValue = { result: "captured" };
+    const laterUnsafeValue = { result: 1n };
+    let valueReads = 0;
+    const validationResult = Object.defineProperty({}, "value", {
+      get() {
+        valueReads += 1;
+        return valueReads === 1 ? capturedValue : laterUnsafeValue;
+      },
+    });
+    const dynamicOutput = testSchema<{ result: string }, { result: string }>(
+      () => validationResult as { value: { result: string } },
+    );
+    const run = vi.fn(async () => ({ result: "handler-result" }));
+    const engine = createEngine({
+      name: "single-read-output-engine",
+      version: "0.1.0",
+      capabilities: {
+        echo: defineCapability({
+          description: "Return one stable validated output value.",
+          input,
+          output: dynamicOutput,
+          access: "public",
+          run,
+        }),
+      },
+    });
+
+    const result = await engine.invoke("echo", { value: "source" });
+
+    expect(result).toBe(capturedValue);
+    expect(valueReads).toBe(1);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [
+      "a throwing issues getter",
+      () =>
+        Object.defineProperty({}, "issues", {
+          get() {
+            throw new Error("private issues getter detail");
+          },
+        }),
+    ],
+    ["a malformed issues collection", () => ({ issues: "private issues" })],
+    ["a malformed issue message", () => ({ issues: [{ message: 1n }] })],
+    [
+      "a throwing issue message getter",
+      () => ({
+        issues: [
+          Object.defineProperty({}, "message", {
+            get() {
+              throw new Error("private issue message detail");
+            },
+          }),
+        ],
+      }),
+    ],
+    [
+      "a malformed issue path",
+      () => ({
+        issues: [{ message: "public validation issue", path: "private path" }],
+      }),
+    ],
+    [
+      "a throwing issue path getter",
+      () => ({
+        issues: [
+          Object.defineProperty(
+            { message: "public validation issue" },
+            "path",
+            {
+              get() {
+                throw new Error("private issue path detail");
+              },
+            },
+          ),
+        ],
+      }),
+    ],
+    [
+      "a throwing value getter",
+      () =>
+        Object.defineProperty({}, "value", {
+          get() {
+            throw new Error("private value getter detail");
+          },
+        }),
+    ],
+  ])(
+    "contains %s inside the input and output validation stages",
+    async (_case, createValidationResult) => {
+      const hostileInput = testSchema<{ value: string }, { value: string }>(
+        () =>
+          createValidationResult() as
+            | { value: { value: string } }
+            | { issues: ReadonlyArray<{ message: string }> },
+      );
+      const hostileOutput = testSchema<{ result: string }, { result: string }>(
+        () =>
+          createValidationResult() as
+            | { value: { result: string } }
+            | { issues: ReadonlyArray<{ message: string }> },
+      );
+      const inputAccess = vi.fn(() => true);
+      const inputRun = vi.fn(async () => ({ result: "unreachable" }));
+      const outputRun = vi.fn(async () => ({ result: "handler-result" }));
+      const inputEngine = createEngine({
+        name: "hostile-input-result-engine",
+        version: "0.1.0",
+        capabilities: {
+          echo: defineCapability({
+            description: "Contain a hostile input validation result.",
+            input: hostileInput,
+            output,
+            access: inputAccess,
+            run: inputRun,
+          }),
+        },
+      });
+      const outputEngine = createEngine({
+        name: "hostile-output-result-engine",
+        version: "0.1.0",
+        capabilities: {
+          echo: defineCapability({
+            description: "Contain a hostile output validation result.",
+            input,
+            output: hostileOutput,
+            access: "public",
+            run: outputRun,
+          }),
+        },
+      });
+
+      const inputError = await expectEngineError(
+        inputEngine.invoke("echo", { value: "private input" }),
+        "INPUT_INVALID",
+      );
+      const outputError = await expectEngineError(
+        outputEngine.invoke("echo", { value: "private input" }),
+        "OUTPUT_INVALID",
+      );
+
+      expect(inputError.message).toBe("Capability input validation failed.");
+      expect(outputError.message).toBe("Capability output validation failed.");
+      expect(inputError.publicDetails).toBeUndefined();
+      expect(outputError.publicDetails).toBeUndefined();
+      expect(
+        JSON.stringify([
+          {
+            code: inputError.code,
+            message: inputError.message,
+            publicDetails: inputError.publicDetails,
+          },
+          {
+            code: outputError.code,
+            message: outputError.message,
+            publicDetails: outputError.publicDetails,
+          },
+        ]),
+      ).not.toContain("private");
+      expect(inputAccess).not.toHaveBeenCalled();
+      expect(inputRun).not.toHaveBeenCalled();
+      expect(outputRun).toHaveBeenCalledOnce();
+    },
+  );
+
   it("rejects a non-JSON input transformation before access and execution", async () => {
     const transformedInput = testSchema<{ value: string }, { value: bigint }>(
       () => ({ value: { value: 1n } }),

@@ -135,27 +135,63 @@ function assertSafelyJsonSerializable(
 }
 
 function normalizePath(
-  path: ReadonlyArray<PropertyKey | StandardSchemaV1.PathSegment> | undefined,
+  path: unknown,
 ): ReadonlyArray<string | number> | undefined {
   if (path === undefined) return undefined;
-  return path.map((segment) => {
-    const key =
-      typeof segment === "object" && segment !== null && "key" in segment
-        ? segment.key
-        : segment;
-    return typeof key === "number" ? key : String(key);
-  });
+  if (!Array.isArray(path) || nodeUtilTypes.isProxy(path)) {
+    throw new TypeError("A validation issue path must be an array.");
+  }
+  const normalized: Array<string | number> = [];
+  for (let index = 0; index < path.length; index += 1) {
+    const segment: unknown = path[index];
+    let key: unknown = segment;
+    if (typeof segment === "object" && segment !== null) {
+      if (nodeUtilTypes.isProxy(segment) || !("key" in segment)) {
+        throw new TypeError("A validation path segment is malformed.");
+      }
+      key = (segment as StandardSchemaV1.PathSegment).key;
+    }
+    if (typeof key === "number") {
+      if (!Number.isFinite(key) || Object.is(key, -0)) {
+        throw new TypeError("A numeric validation path segment is invalid.");
+      }
+      normalized.push(key);
+    } else if (typeof key === "string" || typeof key === "symbol") {
+      normalized.push(String(key));
+    } else {
+      throw new TypeError("A validation path segment is malformed.");
+    }
+  }
+  return normalized;
 }
 
 function normalizeIssues(
-  issues: ReadonlyArray<StandardSchemaV1.Issue>,
+  issues: unknown,
 ): ReadonlyArray<{ message: string; path?: ReadonlyArray<string | number> }> {
-  return issues.map((issue) => {
-    const path = normalizePath(issue.path);
-    return path === undefined
-      ? { message: issue.message }
-      : { message: issue.message, path };
-  });
+  if (!Array.isArray(issues) || nodeUtilTypes.isProxy(issues)) {
+    throw new TypeError("Validation issues must be an array.");
+  }
+  const normalized: Array<{
+    message: string;
+    path?: ReadonlyArray<string | number>;
+  }> = [];
+  for (let index = 0; index < issues.length; index += 1) {
+    const issue: unknown = issues[index];
+    if (
+      typeof issue !== "object" ||
+      issue === null ||
+      nodeUtilTypes.isProxy(issue)
+    ) {
+      throw new TypeError("A validation issue is malformed.");
+    }
+    const message = (issue as StandardSchemaV1.Issue).message;
+    if (typeof message !== "string") {
+      throw new TypeError("A validation issue message must be a string.");
+    }
+    const path = normalizePath((issue as StandardSchemaV1.Issue).path);
+    normalized.push(path === undefined ? { message } : { message, path });
+  }
+  return normalized;
 }
 
 export async function validateSchema<Schema extends EngineSchema>(
@@ -177,16 +213,50 @@ export async function validateSchema<Schema extends EngineSchema>(
     });
   }
 
-  if (result.issues !== undefined) {
+  let issues: unknown;
+  let normalizedIssues:
+    | ReadonlyArray<{
+        message: string;
+        path?: ReadonlyArray<string | number>;
+      }>
+    | undefined;
+  let validatedValue: InferSchemaOutput<Schema> | undefined;
+  try {
+    if (
+      typeof result !== "object" ||
+      result === null ||
+      nodeUtilTypes.isProxy(result)
+    ) {
+      throw new TypeError("The schema validator returned a malformed result.");
+    }
+    const validatorResult = result as {
+      readonly issues?: unknown;
+      readonly value?: InferSchemaOutput<Schema>;
+    };
+    issues = validatorResult.issues;
+    if (issues === undefined) {
+      validatedValue = validatorResult.value;
+    } else {
+      normalizedIssues = normalizeIssues(issues);
+    }
+  } catch (cause) {
     throw new EngineError({
       code: options.code,
       message: options.message,
-      publicDetails: { issues: normalizeIssues(result.issues) },
-      cause: result.issues,
+      cause,
     });
   }
-  assertSafelyJsonSerializable(result.value, options);
-  return result.value;
+
+  if (issues !== undefined) {
+    throw new EngineError({
+      code: options.code,
+      message: options.message,
+      publicDetails: { issues: normalizedIssues },
+      cause: issues,
+    });
+  }
+  assertSafelyJsonSerializable(validatedValue, options);
+  return validatedValue as InferSchemaOutput<Schema>;
 }
 
 export function readJsonSchema(
