@@ -169,12 +169,20 @@ identified by the notification.
 to `stderr`. The trusted local principal is configured by the host. The signal
 provided by the SDK MUST be propagated to `context.signal`. The stdio server owns
 the protocol connection lifetime: stdin end or close MUST idempotently close the
-transport, abort active request signals, remove its stream listeners, and allow
-the process to exit. A broken stdout pipe is a normal client disconnect and MUST
-be contained without an uncaught error or diagnostic on protocol stdout. During
-channel teardown, pending protocol writes are discarded and settled before error
-containment is removed, so a backpressured or late-failing write cannot keep the
-process alive or escape as an uncaught stream error.
+transport, abort active request signals, and remove its stream listeners. A
+broken stdout pipe is a normal client disconnect and MUST be contained without an
+uncaught error or diagnostic on protocol stdout. On
+POSIX, where Node performs pipe writes asynchronously, channel teardown MUST
+discard and settle pending protocol writes before error containment is removed,
+so a backpressured or late-failing write cannot keep the process alive or escape
+as an uncaught stream error.
+
+[Node performs pipe writes synchronously on Windows](https://nodejs.org/api/process.html#a-note-on-process-io).
+Normal stdio protocol exchanges remain supported there, but a peer that stops
+draining stdout can block JavaScript before EOF handlers run. Windows
+integrations MUST continuously drain server stdout and MUST provide process
+supervision capable of terminating a stalled process. The adapter does not claim
+interruptible teardown for a non-reading Windows peer.
 
 **AE-MCP-04 — Stateless HTTP.** The sole endpoint is `/mcp`; each request is
 independent. The default bind address is `127.0.0.1`. `Host` and `Origin` MUST be

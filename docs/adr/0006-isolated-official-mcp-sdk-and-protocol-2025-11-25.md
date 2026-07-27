@@ -108,6 +108,16 @@ message reaches the wire. Other IDs pass through unchanged. This normalization
 uses the SDK's transport interface, remains internal, and must be removed when an
 approved SDK version handles all valid request IDs directly.
 
+Node's process I/O behavior sets an operating-system boundary for stdio
+shutdown. Writes to pipes are asynchronous on POSIX, so the adapter can discard
+and settle pending writes during channel teardown. Writes to pipes are
+synchronous on Windows; a non-reading peer can therefore block JavaScript before
+the input EOF handlers execute. The interruptible pending-write teardown
+guarantee applies to POSIX pipes. Normal MCP stdio exchange remains supported on
+Windows, but the host or client must continuously drain server stdout and
+supervise the process so it can terminate a stall. This boundary does not add or
+imply a framework output-size limit.
+
 No complete in-house protocol implementation will be maintained in parallel with
 the official SDK; local code will be limited to adaptation, isolation, and tests.
 
@@ -122,6 +132,8 @@ the official SDK; local code will be limited to adaptation, isolation, and tests
 - The repository audit gate avoids the stale Hono false positive while the
   aggregate advisory range remains unresolved, without overstating protection
   for package consumers.
+- Windows deployments must treat continuous stdout draining and process
+  supervision as host responsibilities.
 
 ## Decision evidence
 
@@ -133,3 +145,4 @@ the official SDK; local code will be limited to adaptation, isolation, and tests
 - [Hono maintainer advisory](https://github.com/honojs/node-server/security/advisories/GHSA-frvp-7c67-39w9)
 - [Upstream SDK range issue #2531](https://github.com/modelcontextprotocol/typescript-sdk/issues/2531)
 - [`@hono/node-server` 2.0.12 manifest](https://github.com/honojs/node-server/blob/v2.0.12/package.json)
+- [Node process I/O behavior](https://nodejs.org/api/process.html#a-note-on-process-io)

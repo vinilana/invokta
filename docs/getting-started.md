@@ -154,10 +154,14 @@ await serveMcpStdio(engine, {
 
 The process that starts the server supplies the trusted local principal. Standard
 output is reserved for MCP messages, so write application diagnostics only to
-standard error. Closing the client input closes the protocol connection, cancels
-active capability work, and lets the server process shut down. Run the built
-entry point directly with Node to avoid package-manager status text on the
-protocol stream:
+standard error. Under normal protocol flow, closing the client input closes the
+protocol connection, cancels active capability work, and lets the server process
+shut down. On POSIX, the adapter can also interrupt a pending asynchronous pipe
+write during teardown. On Windows, Node writes to pipes synchronously, so the
+client must continuously drain server stdout and supervise the process; a non-reading
+peer can otherwise block JavaScript before the EOF handlers run. Normal MCP stdio
+exchange remains supported on Windows. Run the built entry point directly with
+Node to avoid package-manager status text on the protocol stream:
 
 ```sh
 node examples/hello-engine/dist/mcp-stdio.js
