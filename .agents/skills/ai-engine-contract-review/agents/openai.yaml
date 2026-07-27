@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Engine Contract Review"
+  short_description: "Revisar contratos e limites do AI Engine"
+  default_prompt: "Use $ai-engine-contract-review para revisar a API, o aceite e os limites do próximo marco do AI Engine."

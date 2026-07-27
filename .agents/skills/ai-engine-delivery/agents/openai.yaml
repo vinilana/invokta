@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Engine Delivery"
+  short_description: "Entregar marcos do AI Engine com TDD"
+  default_prompt: "Use $ai-engine-delivery para implementar o próximo marco do AI Engine com TDD e os gates do repositório."
