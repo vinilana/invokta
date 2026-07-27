@@ -111,6 +111,36 @@ independent. The default bind address is `127.0.0.1`. `Host` and `Origin` MUST b
 validated. Unauthenticated mode requires an explicit development option whose
 name communicates the risk.
 
+The protocol endpoint accepts only `POST`. Each accepted POST creates a new MCP
+server and a new transport with sessions, resumption, event storage, and
+server-to-client SSE disabled. When OAuth Protected Resource Metadata is
+configured, its public well-known GET route is the only non-protocol route.
+`Host` is validated for every request before authentication. An `Origin` header
+is optional, but any supplied origin requires an explicit exact allowlist.
+Boundary failures for `Host` or `Origin` return HTTP 403. A capability-level
+`FORBIDDEN` remains an MCP tool execution error over HTTP 200.
+
+Exactly one raw `Host` header is required; forwarded-host headers are ignored.
+The authentication hook receives only the normalized path, method, cancellation
+signal, and a read-only header view with `get` and `has`. Request bodies default
+to a 1,048,576-byte limit. A host may configure `maxRequestBodyBytes` to another
+positive safe integer. Both an oversized `Content-Length` and a body that crosses
+the limit while streaming return HTTP 413 before protocol dispatch.
+
+An authenticator returns a `Principal` for valid credentials or `null` for
+missing or invalid credentials; `null` produces HTTP 401. A thrown authenticator
+error is treated as an infrastructure failure and produces a sanitized HTTP 500.
+The adapter propagates cancellation when the active HTTP request disconnects.
+Cross-request MCP cancellation is not promised by the stateless profile because
+no transport or session survives between requests.
+
+Protected Resource Metadata requires an HTTP(S) resource whose path is exactly
+`/mcp`, without credentials, query, or fragment. HTTPS is mandatory except for an
+explicit loopback HTTP development resource. At least one authorization server
+is required; each authorization server uses HTTPS without credentials, query, or
+fragment. Authorization-server paths are allowed because OAuth issuer identifiers
+may use path components.
+
 ## Authentication and authorization
 
 **AE-SEC-01 — Hybrid model.** The core contains `Principal` and `AccessRule`, and

@@ -4,6 +4,7 @@ import {
   type Engine,
   EngineError,
   type EngineJsonSchema,
+  type ExecutionSource,
   type Principal,
 } from "@ai-engine/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -16,6 +17,8 @@ import {
 
 interface McpServerOptions {
   readonly principal: Principal | null;
+  readonly source: Extract<ExecutionSource, "mcp-stdio" | "mcp-http">;
+  readonly requestSignal?: AbortSignal;
 }
 
 interface McpObjectSchema extends Readonly<Record<string, unknown>> {
@@ -139,9 +142,12 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
         capabilityId,
         (request.params.arguments ?? {}) as never,
         {
-          source: "mcp-stdio",
+          source: options.source,
           principal: options.principal,
-          signal: extra.signal,
+          signal:
+            options.requestSignal === undefined
+              ? extra.signal
+              : AbortSignal.any([extra.signal, options.requestSignal]),
         },
       );
       const structuredContent = result as Readonly<Record<string, unknown>>;

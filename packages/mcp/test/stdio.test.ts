@@ -31,6 +31,7 @@ async function connect(
 ) {
   const server = createMcpServer(engine, {
     principal,
+    source: "mcp-stdio",
   });
   const client = new Client(
     { name: "mcp-adapter-test", version: "0.0.0-test" },
