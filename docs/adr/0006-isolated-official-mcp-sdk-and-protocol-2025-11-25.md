@@ -43,6 +43,48 @@ affected by the known packaging issue in version 1.29.0; it will use only the
 documented subpaths covered by smoke tests. An SDK update must reverify the
 protocol, exports, runtime, release notes, and security fixes.
 
+The root Yarn workspace resolves `@hono/node-server` to exactly `2.0.12` as a
+temporary supply-chain audit workaround for GHSA-frvp-7c67-39w9. On Windows, the
+optional `serve-static` entry point can interpret an encoded backslash as a path
+separator and bypass prefix-mounted middleware within the configured static
+root. The framework does not import `serve-static`, and its HTTP adapter uses the
+SDK's Web Standard transport, so that vulnerable static-file path is not
+reachable through framework code.
+
+As verified on 2026-07-27, the Hono repository advisory records two affected
+ranges: versions before `1.19.15`, and 2.x versions before `2.0.5`. It identifies
+`1.19.15` and `2.0.5` as the respective patches. The aggregated GitHub/npm data
+consumed by Yarn instead reports every version before `2.0.5` as affected, so it
+still flags the SDK-compatible, maintainer-patched `1.19.17` release. The exact
+`2.0.12` resolution keeps the install on an unaffected release and makes the
+repository audit deterministic despite that stale aggregate range; it is not the
+security patch for the previous lockfile.
+
+The package is nevertheless a real SDK runtime dependency. The SDK's Node
+Streamable HTTP transport imports `getRequestListener` from
+`@hono/node-server`, so the repository keeps a direct initialization-request
+compatibility check for that transport in addition to the framework adapter
+tests. This is not a complete MCP lifecycle test. Version `2.0.12` requires
+Node.js 20 or newer, which is within this project's Node.js `>=22.20.0`
+contract.
+
+SDK 1.29.0 declares the incompatible range `^1.19.9`. Yarn therefore emits an
+expected incompatible-resolution warning when applying the exact 2.x
+resolution. Upstream issue #2531 tracks the range mismatch; its statement that no
+patched 1.x release existed described the state when it was filed but became
+obsolete after the patched 1.x publication. The warning is accepted only while
+the full transport suite and repository dependency audit remain green.
+
+Root Yarn resolutions are not included in a published package's dependency
+contract. A downstream consumer of `@ai-engine/mcp` does not inherit this
+control and must evaluate its own lockfile and advisory data. In particular, this
+repository's zero-audit result is not a guarantee about a consumer's install.
+The resolution must be removed when an unforced install using the approved SDK
+passes the repository dependency audit and either resolves an unaffected
+`@hono/node-server` release or no longer installs that dependency. Removal
+requires repeating the SDK compatibility research, transport tests, and
+dependency audit.
+
 The adapter will use the SDK's low-level `Server` API for tool registration. This
 is deliberate: the high-level `McpServer` API accepts schema-library shapes and
 normalizes them, while engine capabilities already expose their authoritative
@@ -61,6 +103,9 @@ the official SDK; local code will be limited to adaptation, isolation, and tests
 - The lockfile and integration tests make the revision reproducible.
 - Updating the SDK will require repeating the compatibility research and running
   the conformance tests.
+- The repository audit gate avoids the stale Hono false positive while the
+  aggregate advisory range remains unresolved, without overstating protection
+  for package consumers.
 
 ## Decision evidence
 
@@ -68,3 +113,7 @@ the official SDK; local code will be limited to adaptation, isolation, and tests
 - [SDK 1.29.0 manifest](https://github.com/modelcontextprotocol/typescript-sdk/blob/v1.29.0/package.json)
 - [MCP specification 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25)
 - [Known root entry point issue](https://github.com/modelcontextprotocol/typescript-sdk/issues/971)
+- [GHSA-frvp-7c67-39w9](https://github.com/advisories/GHSA-frvp-7c67-39w9)
+- [Hono maintainer advisory](https://github.com/honojs/node-server/security/advisories/GHSA-frvp-7c67-39w9)
+- [Upstream SDK range issue #2531](https://github.com/modelcontextprotocol/typescript-sdk/issues/2531)
+- [`@hono/node-server` 2.0.12 manifest](https://github.com/honojs/node-server/blob/v2.0.12/package.json)
