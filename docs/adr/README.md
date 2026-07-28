@@ -15,3 +15,4 @@ a new ADR that explicitly references and supersedes the previous one.
 | [0006](0006-isolated-official-mcp-sdk-and-protocol-2025-11-25.md) | Isolated official MCP SDK and protocol `2025-11-25` | Accepted | 2026-07-27 |
 | [0007](0007-stateless-http-with-pluggable-authn-and-core-authz.md) | Stateless HTTP, pluggable authentication, and authorization in the core | Accepted | 2026-07-27 |
 | [0008](0008-tdd-and-commits-scoped-to-each-deliverable.md) | TDD and commits scoped to each deliverable | Accepted | 2026-07-27 |
+| [0009](0009-post-v0.1-capability-composition-and-dev-tooling.md) | Post-v0.1 capability composition and dev-only tooling | Accepted | 2026-07-28 |
