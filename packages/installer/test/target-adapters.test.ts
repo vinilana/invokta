@@ -129,6 +129,13 @@ describe("first native-toggle target adapters", () => {
         ]),
       ),
     ).toEqual({
+      antigravity: {
+        targetId: "antigravity",
+        targetContractVersion: 1,
+        format: "json",
+        parentPath: ["mcpServers"],
+        toggleStrategy: "native-disabled",
+      },
       "claude-code": {
         targetId: "claude-code",
         targetContractVersion: 1,
@@ -173,11 +180,7 @@ describe("first native-toggle target adapters", () => {
       },
     });
 
-    for (const targetId of [
-      "antigravity",
-      "grok-build",
-      "opencode-v2",
-    ] as const) {
+    for (const targetId of ["grok-build", "opencode-v2"] as const) {
       expect(
         registryCompatibilityAdapters[targetId](stdioDescriptor()),
       ).toEqual({

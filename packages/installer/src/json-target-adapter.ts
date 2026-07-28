@@ -1,9 +1,9 @@
 import {
-  parse,
   type ArrayNode,
   type DocumentNode,
   type MemberNode,
   type ObjectNode,
+  parse,
   type Token,
   type ValueNode,
 } from "@humanwhocodes/momoa";
@@ -18,30 +18,30 @@ import {
   assertPostImageDefinition,
   assertServerName,
   assertTargetInspectionConsistency,
+  type DecodedTargetSource,
   decodeTargetSource,
   encodeTargetPostImage,
   finalizeInspectedMcpDefinition,
   freezeDefinition,
   freezeDetachedDefinition,
   frozenTargetInspection,
+  type InspectedJsonValue,
   inspectedJsonArray,
   inspectedJsonRecord,
   inspectedJsonScalar,
   inspectionPass,
   parsePass,
   patchPass,
-  targetInspectionState,
-  type DecodedTargetSource,
-  type InspectedJsonValue,
   type TargetAdapter,
   type TargetAdapterCounters,
   type TargetConfigInspection,
   type TargetPatch,
   type TargetPatchRequest,
+  targetInspectionState,
   unsupportedDefinition,
 } from "./target-adapter.js";
 
-type JsonDialect = "claude" | "cursor" | "kimi";
+type JsonDialect = "antigravity" | "claude" | "cursor" | "kimi";
 
 interface JsonInspectionState {
   readonly dialect: JsonDialect;
@@ -51,7 +51,7 @@ interface JsonInspectionState {
   readonly servers: ObjectNode | undefined;
   readonly serverMember: MemberNode | undefined;
   readonly server: ObjectNode | undefined;
-  readonly enabled: ValueNode | undefined;
+  readonly toggle: ValueNode | undefined;
   readonly members: ReadonlyMap<ObjectNode, ReadonlyMap<string, MemberNode>>;
   readonly tokens: readonly Token[];
 }
@@ -64,13 +64,10 @@ interface AstInspection {
 interface JsonTargetOptions {
   readonly targetId: Extract<
     ConfigurationTargetId,
-    "claude-code" | "cursor" | "kimi-code"
+    "antigravity" | "claude-code" | "cursor" | "kimi-code"
   >;
   readonly dialect: JsonDialect;
-  readonly toggleStrategy: Extract<
-    ToggleStrategy,
-    "native-enabled" | "detached"
-  >;
+  readonly toggleStrategy: ToggleStrategy;
   readonly compatibility: TargetAdapter["compatibility"];
   readonly descriptorToDefinition: TargetAdapter["descriptorToDefinition"];
 }
@@ -269,8 +266,16 @@ function objectNode(node: ValueNode | undefined): ObjectNode | undefined {
 
 function finalizationOptions(
   dialect: JsonDialect,
-  toggleStrategy: "native-enabled" | "detached",
+  toggleStrategy: ToggleStrategy,
 ) {
+  if (dialect === "antigravity") {
+    return {
+      httpUrlField: "serverUrl",
+      rawTransportPolicy: "reject" as const,
+      toggleStrategy,
+      typePolicy: "none" as const,
+    };
+  }
   if (dialect === "kimi") {
     return {
       httpBearerTokenField: "bearerTokenEnvVar",
@@ -302,7 +307,7 @@ function emptyState(
     servers: undefined,
     serverMember: undefined,
     server: undefined,
-    enabled: undefined,
+    toggle: undefined,
     members: new Map(),
     tokens: Object.freeze([]),
   });
@@ -369,7 +374,11 @@ function parseAndInspect(
       servers,
       serverMember,
       server,
-      enabled: objectValue(memberState, server, "enabled"),
+      toggle: objectValue(
+        memberState,
+        server,
+        options.toggleStrategy === "native-disabled" ? "disabled" : "enabled",
+      ),
       members: astInspection.members,
       tokens: Object.freeze(document.tokens ?? []),
     } satisfies JsonInspectionState),
@@ -455,17 +464,21 @@ function mappedConfigDefinition(
 ): Readonly<Record<string, unknown>> {
   const stdio = definition.transport === "stdio";
   const keys =
-    dialect === "claude"
+    dialect === "antigravity"
       ? stdio
-        ? ["type", "command", "args", "env"]
-        : ["type", "url", "headers"]
-      : dialect === "cursor"
+        ? ["command", "args", "disabled"]
+        : ["serverUrl", "disabled"]
+      : dialect === "claude"
         ? stdio
-          ? ["command", "args", "env"]
-          : ["url", "headers"]
-        : stdio
-          ? ["command", "args", "enabled"]
-          : ["url", "bearerTokenEnvVar", "enabled"];
+          ? ["type", "command", "args", "env"]
+          : ["type", "url", "headers"]
+        : dialect === "cursor"
+          ? stdio
+            ? ["command", "args", "env"]
+            : ["url", "headers"]
+          : stdio
+            ? ["command", "args", "enabled"]
+            : ["url", "bearerTokenEnvVar", "enabled"];
   const mapped: Record<string, unknown> = {};
   for (const key of keys) {
     if (Object.hasOwn(definition, key)) mapped[key] = definition[key];
@@ -571,17 +584,21 @@ function validateMappedDefinition(
   const http = definition.transport === "streamable-http";
   if (!stdio && !http) invalid();
   const allowed = new Set(
-    dialect === "claude"
+    dialect === "antigravity"
       ? stdio
-        ? ["transport", "type", "command", "args", "env"]
-        : ["transport", "type", "url", "headers"]
-      : dialect === "cursor"
+        ? ["transport", "command", "args", "disabled"]
+        : ["transport", "serverUrl", "disabled"]
+      : dialect === "claude"
         ? stdio
-          ? ["transport", "command", "args", "env"]
-          : ["transport", "url", "headers"]
-        : stdio
-          ? ["transport", "command", "args", "enabled"]
-          : ["transport", "url", "bearerTokenEnvVar", "enabled"],
+          ? ["transport", "type", "command", "args", "env"]
+          : ["transport", "type", "url", "headers"]
+        : dialect === "cursor"
+          ? stdio
+            ? ["transport", "command", "args", "env"]
+            : ["transport", "url", "headers"]
+          : stdio
+            ? ["transport", "command", "args", "enabled"]
+            : ["transport", "url", "bearerTokenEnvVar", "enabled"],
   );
   if (Object.keys(definition).some((key) => !allowed.has(key))) invalid();
   if (stdio) {
@@ -600,7 +617,13 @@ function validateMappedDefinition(
       invalid();
     }
   } else {
-    if (typeof definition.url !== "string") invalid();
+    if (
+      dialect === "antigravity"
+        ? typeof definition.serverUrl !== "string"
+        : typeof definition.url !== "string"
+    ) {
+      invalid();
+    }
     if (dialect === "claude" && definition.type !== "http") invalid();
     if (
       (dialect === "claude" || dialect === "cursor") &&
@@ -618,6 +641,9 @@ function validateMappedDefinition(
     }
   }
   if (dialect === "kimi" && typeof definition.enabled !== "boolean") {
+    invalid();
+  }
+  if (dialect === "antigravity" && typeof definition.disabled !== "boolean") {
     invalid();
   }
 }
@@ -692,8 +718,12 @@ function constructPatch(
     ) {
       invalid();
     }
-    const desired = request.action === "enable";
-    if (request.inspection.currentServer.definition.enabled === desired) {
+    const desiredEnabled = request.action === "enable";
+    const currentEnabled =
+      options.toggleStrategy === "native-disabled"
+        ? request.inspection.currentServer.definition.disabled === false
+        : request.inspection.currentServer.definition.enabled === true;
+    if (currentEnabled === desiredEnabled) {
       return { kind: "unchanged" };
     }
   }
@@ -749,17 +779,23 @@ function constructPatch(
       state.serverMember,
     );
   } else {
-    const desired = request.action === "enable";
+    const desiredEnabled = request.action === "enable";
+    const toggleField =
+      options.toggleStrategy === "native-disabled" ? "disabled" : "enabled";
+    const desiredValue =
+      options.toggleStrategy === "native-disabled"
+        ? !desiredEnabled
+        : desiredEnabled;
     postText =
-      state.enabled === undefined
+      state.toggle === undefined
         ? insertProperty(
             source.text,
             state.server as ObjectNode,
-            "enabled",
-            String(desired),
+            toggleField,
+            String(desiredValue),
             source.newline,
           )
-        : replaceRange(source.text, state.enabled, String(desired));
+        : replaceRange(source.text, state.toggle, String(desiredValue));
   }
 
   const postImage = encodeTargetPostImage(
@@ -816,9 +852,9 @@ export function createJsonTargetAdapter(
 
 export function jsonDefinition(
   definition: Record<string, unknown>,
-  toggleStrategy: "native-enabled" | "detached",
+  toggleStrategy: ToggleStrategy,
 ): Readonly<Record<string, unknown>> {
-  return toggleStrategy === "detached"
-    ? freezeDetachedDefinition(definition)
-    : freezeDefinition(definition);
+  return toggleStrategy === "native-enabled"
+    ? freezeDefinition(definition)
+    : freezeDetachedDefinition(definition);
 }

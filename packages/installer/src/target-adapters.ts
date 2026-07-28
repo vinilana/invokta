@@ -1,13 +1,13 @@
-import type { SuspendedDescriptor } from "./installer-state.js";
 import { InstallerError } from "./installer-error.js";
-import {
-  createJson5TargetAdapter,
-  json5Definition,
-} from "./json5-target-adapter.js";
+import type { SuspendedDescriptor } from "./installer-state.js";
 import {
   createJsonTargetAdapter,
   jsonDefinition,
 } from "./json-target-adapter.js";
+import {
+  createJson5TargetAdapter,
+  json5Definition,
+} from "./json5-target-adapter.js";
 import type {
   CapabilityInstallDescriptor,
   ConfigurationTargetId,
@@ -27,8 +27,8 @@ import {
   yamlDefinition,
 } from "./yaml-target-adapter.js";
 
-export { createTargetAdapterCounters };
 export type { TargetAdapter, TargetAdapterCounters };
+export { createTargetAdapterCounters };
 
 export const openClawEnvironmentPolicyCommit =
   "f308af8a344a30432e1b13fa348533e54cd190c8";
@@ -447,6 +447,67 @@ function cursorDefinition(
   );
 }
 
+function antigravityCompatibility(descriptor: CapabilityInstallDescriptor) {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    return transport.forwardEnv.length === 0
+      ? ({ supported: true } as const)
+      : ({
+          supported: false,
+          reason: "antigravity-forward-env-unsupported",
+        } as const);
+  }
+  if (transport.authentication.type === "bearer-env") {
+    return {
+      supported: false as const,
+      reason: "antigravity-http-authentication-unsupported",
+    };
+  }
+  if (Object.keys(transport.headersFromEnv).length > 0) {
+    return {
+      supported: false as const,
+      reason: "antigravity-http-headers-unsupported",
+    };
+  }
+  return { supported: true as const };
+}
+
+function antigravityDefinition(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Readonly<Record<string, unknown>> {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    if (transport.forwardEnv.length > 0) {
+      throw new InstallerError("TARGET_UNSUPPORTED");
+    }
+    return jsonDefinition(
+      {
+        transport: "stdio",
+        command: transport.command,
+        args: [...transport.args],
+        disabled: false,
+      },
+      "native-disabled",
+    );
+  }
+  if (
+    transport.authentication.type === "bearer-env" ||
+    Object.keys(transport.headersFromEnv).length > 0
+  ) {
+    throw new InstallerError("TARGET_UNSUPPORTED");
+  }
+  return jsonDefinition(
+    {
+      transport: "streamable-http",
+      serverUrl: transport.url,
+      disabled: false,
+    },
+    "native-disabled",
+  );
+}
+
 function kimiCompatibility(descriptor: CapabilityInstallDescriptor) {
   const transport = descriptor.server.transport;
   if (transport.type === "stdio" && transport.forwardEnv.length > 0) {
@@ -523,6 +584,19 @@ const openclaw = createJson5TargetAdapter({
   },
 });
 
+const antigravity = createJsonTargetAdapter({
+  targetId: "antigravity",
+  dialect: "antigravity",
+  toggleStrategy: "native-disabled",
+  compatibility: antigravityCompatibility,
+  descriptorToDefinition: (descriptor) => {
+    if (!antigravityCompatibility(descriptor).supported) {
+      throw new InstallerError("TARGET_UNSUPPORTED");
+    }
+    return antigravityDefinition(descriptor);
+  },
+});
+
 const claudeCode = createJsonTargetAdapter({
   targetId: "claude-code",
   dialect: "claude",
@@ -553,6 +627,7 @@ const kimiCode = createJsonTargetAdapter({
 });
 
 export const configurationTargetAdapters = Object.freeze({
+  antigravity,
   "claude-code": claudeCode,
   codex,
   cursor,
@@ -566,7 +641,7 @@ const unsupportedCompatibility = () =>
 
 export const registryCompatibilityAdapters: RegistryCompatibilityAdapters =
   Object.freeze({
-    antigravity: unsupportedCompatibility,
+    antigravity: antigravity.compatibility,
     "claude-code": claudeCode.compatibility,
     codex: codex.compatibility,
     cursor: cursor.compatibility,
