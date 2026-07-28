@@ -13,6 +13,9 @@ const emptyRegistryBytes = new TextEncoder().encode(
   `${JSON.stringify({ schemaVersion: 1, entries: [] }, null, 2)}\n`,
 );
 
+const inspectMissing: InstallerFileSystem["inspectPath"] = async () =>
+  ({ kind: "missing" }) as const;
+
 function adapters(): RegistryCompatibilityAdapters {
   return Object.fromEntries(
     configurationTargetIds.map((targetId) => [
@@ -25,7 +28,10 @@ function adapters(): RegistryCompatibilityAdapters {
 describe("bundled registry loader", () => {
   it("loads the immutable source package-relative through the injected filesystem", async () => {
     const readFile = vi.fn(async () => emptyRegistryBytes);
-    const fileSystem: InstallerFileSystem = { readFile };
+    const fileSystem: InstallerFileSystem = {
+      readFile,
+      inspectPath: inspectMissing,
+    };
 
     const registry = await loadBundledRegistry(fileSystem, adapters());
 
@@ -40,14 +46,24 @@ describe("bundled registry loader", () => {
   it("maps read, decoding, parsing, and validation failures to REGISTRY_INVALID", async () => {
     const privateCause = new Error("private registry path");
     const failures: readonly InstallerFileSystem[] = [
-      { readFile: async () => Promise.reject(privateCause) },
-      { readFile: async () => Uint8Array.from([0x80]) },
-      { readFile: async () => new TextEncoder().encode("not-json") },
+      {
+        readFile: async () => Promise.reject(privateCause),
+        inspectPath: inspectMissing,
+      },
+      {
+        readFile: async () => Uint8Array.from([0x80]),
+        inspectPath: inspectMissing,
+      },
+      {
+        readFile: async () => new TextEncoder().encode("not-json"),
+        inspectPath: inspectMissing,
+      },
       {
         readFile: async () =>
           new TextEncoder().encode(
             JSON.stringify({ schemaVersion: 2, entries: [] }),
           ),
+        inspectPath: inspectMissing,
       },
     ];
 

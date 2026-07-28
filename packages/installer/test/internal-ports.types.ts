@@ -1,6 +1,14 @@
 import { expectTypeOf } from "vitest";
 
-import type { InstallerFileSystem } from "../src/file-system.js";
+import type {
+  InstallerFileSystem,
+  InstallerPathInspection,
+} from "../src/file-system.js";
+import type {
+  ExecutableResolver,
+  OperatingSystemHomeResolver,
+  TargetConfigEvidenceProbes,
+} from "../src/harness-detection.js";
 import type {
   InteractivePrompter,
   PromptOutcome,
@@ -8,10 +16,16 @@ import type {
 
 declare const fileSystem: InstallerFileSystem;
 declare const prompter: InteractivePrompter;
+declare const resolveExecutable: ExecutableResolver;
+declare const resolveHomeDirectory: OperatingSystemHomeResolver;
+declare const configEvidenceProbes: TargetConfigEvidenceProbes;
 
 expectTypeOf(
   fileSystem.readFile(new URL("file:///registry.json")),
 ).toEqualTypeOf<Promise<Uint8Array>>();
+expectTypeOf(fileSystem.inspectPath("/users/tester/config.json")).toEqualTypeOf<
+  Promise<InstallerPathInspection>
+>();
 
 expectTypeOf(prompter.confirm("Apply changes?")).toEqualTypeOf<
   Promise<PromptOutcome<boolean>>
@@ -29,6 +43,41 @@ const submitted: PromptOutcome<string> = {
   value: "support-engine",
 };
 expectTypeOf(submitted).toMatchTypeOf<PromptOutcome<string>>();
+
+expectTypeOf(resolveHomeDirectory()).toEqualTypeOf<string>();
+expectTypeOf(resolveExecutable("codex")).toEqualTypeOf<
+  Promise<
+    | {
+        readonly path: string;
+        readonly identity: {
+          readonly device: number;
+          readonly inode: number;
+          readonly realPath: string;
+        };
+        readonly legacyAliasFor?: "agy";
+      }
+    | undefined
+  >
+>();
+expectTypeOf(
+  configEvidenceProbes.codex({
+    homeDirectory: "/users/tester",
+    targetId: "codex",
+  }),
+).toEqualTypeOf<
+  Promise<
+    | { readonly kind: "present"; readonly path: string }
+    | { readonly kind: "absent" }
+    | {
+        readonly kind: "blocked";
+        readonly code:
+          | "HARNESS_CONFIG_UNSAFE"
+          | "HARNESS_CONFIG_AMBIGUOUS"
+          | "HARNESS_CONFIG_READ_FAILED"
+          | "TARGET_UNSUPPORTED";
+      }
+  >
+>();
 
 // @ts-expect-error Clack cancellation symbols cannot cross the internal port.
 const leakedCancellation: PromptOutcome<string> = Symbol("cancel");
