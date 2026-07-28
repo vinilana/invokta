@@ -25,9 +25,13 @@ configuration is server-scoped, the installer enables and disables the whole
 entry; it does not claim to toggle individual MCP tools within a multi-capability
 server.
 
-The first supported harness adapters are Codex, Hermes Agent, and OpenClaw. The
-adapter boundary is intentionally finite and explicit. The installer does not
-guess configuration shapes for unknown agents.
+The first supported harness surfaces are Codex, Hermes Agent, OpenClaw, Claude
+Code, Antigravity CLI (`agy`), Antigravity IDE, Cursor, Kimi Code CLI, OpenCode
+v2, Grok Build, and TRAE AI. Antigravity CLI and Antigravity IDE share one
+configuration target, so the release has eleven detectable surfaces and ten
+independently writable targets. The adapter boundary is intentionally finite and
+explicit. The installer does not guess configuration shapes for unknown agents
+or unsupported product versions.
 
 ## Relationship to the existing architecture
 
@@ -66,9 +70,13 @@ binary are:
 | `ai-engine-installer` | Interactive executable; owns no capability execution command |
 
 No existing runtime or tooling package may depend on the installer. The
-installer may use format-preserving configuration libraries and Node built-ins,
-but it must not depend on `@ai-engine/core`, `@ai-engine/cli`,
-`@ai-engine/mcp`, or `@ai-engine/tooling`.
+installer MUST depend directly on `@clack/prompts` for its production
+interactive experience and may use format-preserving configuration libraries
+and Node built-ins. It must not depend on `@ai-engine/core`, `@ai-engine/cli`,
+`@ai-engine/mcp`, or `@ai-engine/tooling`. `@clack/prompts` is contained behind
+an installer-owned terminal port; its types do not appear in a public API. The
+package is native ESM and declares the repository runtime floor of Node.js
+`>=22.20.0`.
 
 ## Goals
 
@@ -123,12 +131,23 @@ but it must not depend on `@ai-engine/core`, `@ai-engine/cli`,
 
 **Harness**
 : A supported local AI or coding-agent application that acts as an MCP client.
-  The first adapters are `codex`, `hermes`, and `openclaw`.
+  A harness surface is what the user sees and what detection identifies.
 
-**Harness adapter**
-: Installer-owned code that resolves one harness's standard configuration,
-  reads and patches its format, maps the canonical MCP descriptor, and reports
-  a reload hint. Adapters are not framework adapters and never invoke an engine.
+**Configuration target**
+: One standard user-level MCP configuration file and dialect. Multiple harness
+  surfaces may share a target. The first release has eleven surfaces and ten
+  targets because `antigravity-cli` and `antigravity-ide` both use the
+  `antigravity` target.
+
+**Surface detector**
+: Installer-owned code that resolves the finite executable evidence for one
+  user-facing harness surface without executing it.
+
+**Configuration target adapter**
+: Installer-owned code that resolves one standard user config, reads and patches
+  its format, maps the canonical MCP descriptor, and reports a reload hint. One
+  adapter may serve multiple surfaces. These are not framework adapters and
+  never invoke an engine.
 
 **Managed installation**
 : A harness MCP entry first written or explicitly adopted by the installer and
@@ -141,8 +160,9 @@ but it must not depend on `@ai-engine/core`, `@ai-engine/cli`,
 **Drift**
 : A managed harness MCP definition whose normalized transport fields no longer
   match the fingerprint recorded when the installer last adopted or wrote it.
-  The harness's native enabled or disabled field is excluded from this
-  fingerprint.
+  A harness-native enabled or disabled field is excluded from this fingerprint.
+  For a detached-toggle target, manually recreating or changing a suspended
+  server entry is also drift.
 
 ## User-facing CLI
 
@@ -158,33 +178,90 @@ ai-engine-installer --version
 
 Running without arguments starts the interactive interface. Any other argument
 is invalid usage. The first release has no hidden non-interactive mutation mode.
+The installer orchestrator returns `Promise<0 | 1 | 2 | 130>` and neither calls
+`process.exit` nor mutates `process.exitCode`; the binary composition root owns
+the final process status. This internal seam is testability infrastructure, not
+a published programmatic mutation API.
 
 The command MUST require an interactive input terminal and output terminal.
 When either is unavailable, it MUST fail without reading or writing registry,
 state, or harness configuration.
+
+`--help` writes English usage with one trailing LF to stdout and exits `0`.
+`--version` writes only the package semantic version and one trailing LF to
+stdout and exits `0`. Invalid usage and pre-interactive initialization errors
+write one sanitized diagnostic to stderr and use the exit mapping below. The
+interactive Clack session owns stdout only after TTY and initialization gates
+have passed; stack traces and cause chains never reach either user-facing stream.
+
+### Interactive experience with `@clack/prompts`
+
+`@clack/prompts` is normative for the production terminal experience, with
+version `1.7.0` as the reviewed baseline. The package manifest may use the
+repository's normal compatible-version policy, but the lockfile MUST select a
+reviewed exact version and an upgrade MUST rerun pseudoterminal and cancellation
+tests. The installer MUST use these primitives through an internal
+`InteractivePrompter` port:
+
+| Stage | Clack primitive | Required behavior |
+| --- | --- | --- |
+| Session boundary | `intro`, `outro`, `cancel` | Open and close one visually coherent session without terminating the process inside the UI adapter. |
+| Capability choice | `autocomplete` | Search up to 1,000 registry options labeled with title and stable ID, show bounded description/capability hints, and return the stable entry ID. |
+| Action choice | `select` | Show only actions valid for the selected status, plus explicit Back and Quit choices. |
+| Target choice | `multiselect` | Show the eligible configuration targets, surface labels, status, and config-path hint; require at least one target. |
+| Review | `note` | Render the bounded, secret-free preflight summary and trust warning. |
+| Confirmation | `confirm` | Ask once for the writable target set with `initialValue: false`; Enter alone MUST cancel. |
+| Detection and commit feedback | `spinner` and `log` | Stop a spinner before starting another prompt and report every target independently. |
+
+Every value returned by `autocomplete`, `select`, `multiselect`, or `confirm`
+MUST pass through `isCancel` before it is narrowed or used. A Clack cancellation
+symbol maps to the installer's cancellation result; the UI adapter MUST NOT call
+`process.exit`, mutate `process.exitCode`, install global signal handlers, or
+perform a config mutation. `SIGINT` is owned by the executable composition root
+and retains the exit behavior defined below.
+
+Correctness MUST NOT depend on ANSI color, Unicode symbols, animation frames,
+terminal width, or incidental Clack wording. Stable installer codes, target IDs,
+actions, paths, and result categories remain installer-owned values. The
+production adapter renders English copy, honors `NO_COLOR`, truncates only
+display labels rather than IDs or paths, and sends no Clack rendering to stdout
+for `--help`, `--version`, invalid usage, or `NO_TTY`.
+
+Most interaction tests target the injected `InteractivePrompter` event model,
+not ANSI snapshots. At least one real pseudoterminal test MUST exercise the
+locked Clack version for navigation, search, multiselect, default-negative
+confirmation, cancellation at every prompt, narrow terminals, and `NO_COLOR`.
+Clack package types and cancellation symbols MUST NOT cross the port boundary.
 
 ### Primary flow
 
 The interface MUST perform these steps in order:
 
 1. validate the bundled registry;
-2. detect every supported harness and inspect any safe, parseable user config;
+2. detect every supported harness surface, coalesce surfaces that share a
+   configuration target, and inspect any safe, parseable user config;
 3. show registry entries in deterministic `title`, then `id`, order;
 4. let the user select one entry;
-5. show each detected harness and the entry's current status there;
+5. show each detected harness surface and the entry's current status for its
+   configuration target;
 6. offer only actions valid for the selected status;
-7. let the user select one or more eligible harnesses;
+7. let the user select one or more eligible configuration targets;
 8. preflight every selected target without writing;
 9. show the action, server name, target config paths, required executable, and
    required environment variable names;
 10. require an explicit confirmation whose default is cancel;
-11. apply each selected harness mutation and report its independent result;
+11. apply each selected target mutation and report its independent result;
 12. show the adapter-specific reload or restart hint for every successful
-    target.
+    target and return to the inventory until the user chooses Quit.
 
 The preview MUST NOT show environment variable values, existing config content,
 HTTP credential values, installer state content, or a serialized whole MCP
 entry.
+
+One batch applies exactly one of Install, Enable, Disable, or Adopt. After the
+action is chosen, the multiselect contains only targets eligible for that action;
+the installer never combines different actions into one confirmation or commit
+summary.
 
 ### Status model
 
@@ -193,38 +270,60 @@ The UI uses these stable statuses for a registry entry in one harness:
 | Status | Meaning | Available action |
 | --- | --- | --- |
 | `available` | No MCP entry exists for the registry server name. | Install |
-| `enabled` | The installer manages a matching entry and the harness treats it as enabled. | Disable |
-| `disabled` | The installer manages a matching entry and the harness treats it as disabled. | Enable |
+| `enabled` | The installer manages a matching entry stored as enabled in this user target. | Disable |
+| `disabled` | The installer manages a matching entry stored as disabled or suspended in this user target. | Enable |
 | `external` | A structurally matching entry exists without installer ownership. | Adopt |
 | `conflict` | An external entry uses the same server name with a different definition. | None |
 | `drifted` | A managed entry differs from the last applied definition. | None |
 | `outdated` | A managed, non-drifted entry matches its recorded definition, but the bundled registry now describes a different definition. | Enable or disable only |
 | `invalid-config` | The target config cannot be safely parsed or patched. | None |
+| `unsupported` | The target cannot represent one or more canonical descriptor fields without embedding a secret or changing semantics. | None |
 
 Adoption MUST be available only when the external entry's normalized definition
 equals the current registry definition. Adoption writes installer state but does
 not rewrite the harness config. A conflicting definition cannot be adopted or
 replaced in this release.
 
-An omitted native enablement field means enabled when that is the documented
-harness default. On the first successful installer mutation, the adapter writes
-an explicit native boolean so subsequent state is unambiguous.
+Each configuration target declares one toggle strategy:
+
+- `native-enabled` writes an explicit `enabled: true/false` equivalent;
+- `native-disabled` writes an explicit `disabled: false/true` equivalent;
+- `detached` removes only the installer-managed server entry on disable and
+  restores the recorded descriptor on enable because the harness documents no
+  persistent server toggle.
+
+An omitted native field means enabled when that is the documented target
+default. On the first successful mutation of a native-toggle target, the adapter
+writes an explicit boolean so later state is unambiguous. A detached disable is
+not uninstall: ownership state and a secret-free canonical descriptor snapshot
+remain, the server name is reserved, and re-enable restores the exact recorded
+descriptor even when the bundled registry has become newer. It removes neither
+the config file nor its MCP parent map. Manually inserting anything at that name
+while it is detached produces `drifted` and is never overwritten.
+
+Statuses describe only the standard user target. A higher-precedence project,
+workspace, profile, managed, plugin, or inline configuration may shadow the same
+server name at runtime. The installer does not inspect those out-of-scope layers
+and MUST NOT claim that `enabled` proves effective availability in every session.
 
 ### Exit codes and cancellation
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | The user exited without requesting a mutation, cancelled before writing, or every requested target succeeded. |
-| `1` | At least one requested target failed, including a partial multi-target result. |
+| `0` | The user chose Quit and no confirmed target failed or was blocked during the session. |
+| `1` | At least one confirmed target failed or was blocked during the session, including a partial multi-target result. |
 | `2` | Invalid usage, no TTY, invalid registry, or installer initialization failure. |
-| `130` | `SIGINT` cancelled the operation after the interactive interface started. |
+| `130` | `SIGINT` or a Clack cancellation symbol cancelled the interactive session. |
 
-`Escape`, `q`, and a negative confirmation return to the previous screen or exit
-without writing. `SIGINT` before a target commit writes nothing. A signal that
-arrives during an atomic file replacement is observed immediately after that
-critical section; the installer MUST finish or roll back that one target before
-exiting. Successful earlier targets in a multi-target operation remain applied
-and appear in the final summary.
+Explicit Back choices and a negative confirmation return to the previous screen
+without writing; Quit closes the session. The session accumulates confirmed
+target failures, so Quit returns `1` after any such failure and `0` otherwise.
+Clack cancellation at a prompt and `SIGINT` exit `130`. `SIGINT` before a target
+commit writes nothing. A signal
+that arrives during an atomic file replacement is observed immediately after
+that critical section; the installer MUST finish or roll back that one target
+before exiting. Successful earlier targets in a multi-target operation remain
+applied and appear in the final summary.
 
 ## Supported platforms and harnesses
 
@@ -243,47 +342,97 @@ executing `echo`, `env`, or another process.
 
 ### Detection
 
-A harness is `installed` only when one of its adapter-declared executable names
-resolves through the installer's inherited `PATH` to an executable regular file.
-Resolution MUST be implemented without a shell and MUST not execute the harness,
-including with `--version`.
+A harness surface is `installed` when one of its declared executable names
+resolves through the inherited `PATH` to an executable regular file. Resolution
+MUST use no shell and MUST not execute the harness, including with `--version`.
+An existing standard config without an executable is reported as
+`configuration only`; this is weak evidence, not a claim that an application is
+installed.
 
-When the standard config exists but no executable resolves, the UI shows the
-harness as `configuration only`; it is not eligible for mutation. A stale config
-is not proof that the harness remains installed. When the executable resolves
-and the config does not exist, the harness is installed and remains eligible;
-the adapter may create the standard user config after confirmation.
+An installed surface is eligible even when its config is absent; the adapter
+may create the standard user config after confirmation. A `configuration only`
+target is eligible only for patching its existing file, is labeled with the
+weaker evidence, and requires the same explicit confirmation. It MUST NOT cause
+creation of a missing config or application directory. This permits GUI-first
+installations whose optional shell launcher was not installed without scanning
+application bundles or treating a stale config as definitive installation.
 
 Detection is a snapshot captured before the primary flow. The installer MUST
-recheck the executable and target path safety during preflight, but it MUST NOT
-continuously scan the machine.
+recheck its evidence and target path safety during preflight, but it MUST NOT
+continuously scan the machine. Surfaces that resolve to one configuration target
+are coalesced before status or mutation planning. The UI may say, for example,
+`Antigravity (AGY CLI + IDE)`, but there is exactly one selectable target, lock,
+patch, state record, result, and reload section for that file.
 
-When no supported executable resolves, the interface shows the
-`NO_SUPPORTED_HARNESS` notice, includes any `configuration only` findings for
-diagnosis, performs no mutation, and exits `0` after the user dismisses it.
+When no supported executable or standard config is found, the interface shows
+the `NO_SUPPORTED_HARNESS` notice, performs no mutation, and exits `0` after the
+user dismisses it.
 
-### Initial adapter matrix
+### Initial surface matrix
+
+| Surface ID | Display name | Executable evidence | Configuration target |
+| --- | --- | --- | --- |
+| `codex` | Codex | `codex` | `codex` |
+| `hermes` | Hermes Agent | `hermes` | `hermes` |
+| `openclaw` | OpenClaw | `openclaw` | `openclaw` |
+| `claude-code` | Claude Code | `claude` | `claude-code` |
+| `antigravity-cli` | Antigravity CLI (AGY) | `agy` | `antigravity` |
+| `antigravity-ide` | Antigravity IDE | `antigravity`, only when distinct from the resolved `agy` binary or a legacy alias | `antigravity` |
+| `cursor` | Cursor | `cursor` or `cursor-agent` | `cursor` |
+| `kimi-code` | Kimi Code CLI | `kimi` | `kimi-code` |
+| `opencode-v2` | OpenCode v2 | `opencode2` | `opencode-v2` |
+| `grok-build` | Grok Build | `grok` | `grok-build` |
+| `trae` | TRAE AI | `trae` | `trae` |
+
+Resolving more than one executable for the same surface does not create another
+target. Detection compares resolved executable identities; an `antigravity`
+launcher that resolves to the same file as `agy`, or is identified as its legacy
+alias, counts only as `antigravity-cli`. Legacy OpenCode v1 uses a different
+executable and MCP dialect and is not silently treated as OpenCode v2.
+
+### Initial configuration-target matrix
 
 Only the documented user-level location is in scope. A documented environment
 override is honored only where listed below; project and profile layers remain
 out of scope.
 
-| Harness ID | Executable | Standard user config | Format | MCP map | Enabled state | Reload hint |
-| --- | --- | --- | --- | --- | --- | --- |
-| `codex` | `codex` | `${CODEX_HOME:-~/.codex}/config.toml` | TOML | `mcp_servers.<server>` | `enabled = true/false` | Start a new Codex session or restart the active client. |
-| `hermes` | `hermes` | `${HERMES_HOME:-~/.hermes}/config.yaml` | YAML | `mcp_servers.<server>` | `enabled: true/false` | Run `/reload-mcp` or start a new Hermes session. |
-| `openclaw` | `openclaw` | `${OPENCLAW_CONFIG_PATH:-~/.openclaw/openclaw.json}` | JSON5 | `mcp.servers.<server>` | `enabled: true/false` | The gateway normally hot-applies MCP changes; use `openclaw mcp status` to inspect them. |
+| Target ID | Standard user config | Format and MCP map | Toggle strategy | Reload hint |
+| --- | --- | --- | --- | --- |
+| `codex` | `${CODEX_HOME:-~/.codex}/config.toml` | TOML, `mcp_servers.<server>` | `native-enabled` | Start a new Codex session or restart the active client. |
+| `hermes` | `${HERMES_HOME:-~/.hermes}/config.yaml` | YAML, `mcp_servers.<server>` | `native-enabled` | Run `/reload-mcp` or start a new Hermes session. |
+| `openclaw` | `${OPENCLAW_CONFIG_PATH:-~/.openclaw/openclaw.json}` | JSON5, `mcp.servers.<server>` | `native-enabled` | Let the gateway hot-apply the change or inspect with `openclaw mcp status`. |
+| `claude-code` | `~/.claude.json` | JSON, `mcpServers.<server>` user scope | `detached` | Start a new Claude Code session and inspect with `/mcp`. |
+| `antigravity` | `~/.gemini/config/mcp_config.json` | JSON, `mcpServers.<server>` | `native-disabled` | In AGY use `/mcp` to reload; in the IDE refresh MCP servers or restart it. |
+| `cursor` | `~/.cursor/mcp.json` | JSON, `mcpServers.<server>` | `detached` | Start a new Cursor Agent session or restart Cursor. |
+| `kimi-code` | `${KIMI_CODE_HOME:-~/.kimi-code}/mcp.json` | JSON, `mcpServers.<server>` | `native-enabled` | Start a new Kimi session and inspect with `/mcp`. |
+| `opencode-v2` | `~/.config/opencode/opencode.json` or an existing sibling `opencode.jsonc` | JSON/JSONC, `mcp.servers.<server>` | `native-disabled` | Start a new OpenCode v2 session. |
+| `grok-build` | `~/.grok/config.toml` | TOML, `mcp_servers.<server>` | `native-enabled` | In `/mcps`, press `r` to refresh, or start a new session. |
+| `trae` | `~/.trae/mcp.json` | JSON, `mcpServers.<server>` | `detached` | Restart TRAE or reload MCP servers from its MCP settings. |
 
-`CODEX_HOME` and `HERMES_HOME` are directory overrides to which the documented
-file name is appended. `OPENCLAW_CONFIG_PATH` is a file override. The resulting
-target MUST resolve to an absolute config-file path inside the current user's
-home. Empty, relative, home-escaping, NUL-containing, or wrongly typed overrides
-make that harness ineligible and produce `HARNESS_CONFIG_UNSAFE`.
+`CODEX_HOME`, `HERMES_HOME`, and `KIMI_CODE_HOME` are directory overrides to
+which the documented file name is appended. `OPENCLAW_CONFIG_PATH` is a file
+override. The resulting target MUST resolve to an absolute config-file path
+inside the current user's home. Empty, relative, home-escaping, NUL-containing,
+or wrongly typed overrides make that target ineligible and produce
+`HARNESS_CONFIG_UNSAFE`.
+
+For OpenCode v2, exactly one of `opencode.json` and `opencode.jsonc` may exist.
+The adapter uses the existing file, or creates `opencode.json` when neither
+exists. Both existing at once are `HARNESS_CONFIG_AMBIGUOUS`; the installer does
+not infer the product's merge precedence or choose one. The TRAE target covers
+the current international user-level dialect only. TRAE CN, TRAE Work/SOLO,
+macOS `Application Support` variants, and their edition-specific config roots
+remain separate product versions and are not guessed.
 
 These mappings were verified against the harness documentation available on
-2026-07-28. Each adapter MUST carry fixtures for its documented shape. A later
-harness format change is an adapter compatibility change, not permission to
-guess or fall back to another path.
+2026-07-28, except that TRAE's public documentation does not currently provide
+a stable cross-edition user-config contract. The `trae` row is therefore an
+implementation gate: its adapter MUST NOT ship until a primary vendor source or
+a fixture captured from the supported international release confirms the
+executable, `~/.trae/mcp.json`, and `mcpServers` shape. Every other adapter MUST
+also carry fixtures for its documented shape. A later harness format change is
+an adapter compatibility change, not permission to guess or fall back to
+another path.
 
 ## Local registry contract
 
@@ -293,8 +442,8 @@ The source registry is `packages/installer/registry/capabilities.json`. It is
 included in the published package and loaded relative to the package, not the
 current working directory. The file is immutable from the installer's point of
 view. Adding or changing a production entry requires repository review, registry
-validation, acceptance fixtures for every supported harness, and a package
-release.
+validation, compatibility evidence for every target the descriptor claims to
+support, and a package release.
 
 The installer MUST perform no DNS, HTTP, Git, package-manager, or marketplace
 operation while loading the registry. The first production release MUST include
@@ -375,8 +524,8 @@ registry before harness detection or mutation.
 **AE-INSTALL-REG-02 — Unique identities.** Entry `id` and `server.name` values
 MUST each be unique across the registry. `id` MUST match
 `^[a-z][a-z0-9-]{0,127}$`. `server.name` MUST match
-`^[a-z][a-z0-9_-]{0,63}$` so one stable name maps safely to all first-release
-harnesses.
+`^[a-z][a-z0-9_-]{0,63}$` so one stable name maps safely to every first-release
+target that can represent the descriptor.
 
 **AE-INSTALL-REG-03 — Capability metadata.** `version`, `title`, and
 `description` MUST be non-empty after trimming. `capabilityIds` MUST contain at
@@ -415,12 +564,14 @@ environment-backed HTTP headers. An individual registry string MUST be at most
 4,096 Unicode scalar values; `title` is further limited to 120 and `description`
 to 1,000.
 
-**AE-INSTALL-REG-09 — Portable mapping.** Every production entry MUST map
-losslessly to all three first-release adapters. Registry validation invokes each
-adapter's mapping validation and fails the whole registry when, for example, a
-forwarded environment name would be rejected by a harness's published stdio
-environment safety policy. The registry cannot declare a harness-specific entry
-or silently drop a field.
+**AE-INSTALL-REG-09 — Explicit compatibility.** Registry validation asks every
+configuration-target adapter whether it can map each entry losslessly. A
+production entry MUST be compatible with at least one target. An incompatible
+target is a deterministic `unsupported` status with a stable, non-secret reason;
+it does not invalidate an otherwise canonical registry entry. An adapter MUST
+NOT silently drop, embed, or reinterpret a field. Compatibility is computed from
+the canonical descriptor and adapter contract, never declared as a raw
+harness-specific fragment in the registry.
 
 Registry validation reports all detectable issues in deterministic JSON-pointer
 order and never includes the rejected value in a diagnostic.
@@ -428,17 +579,28 @@ order and never includes the rejected value in a diagnostic.
 ## Canonical MCP mapping
 
 The registry is harness-neutral. Each adapter MUST map only the following
-fields. An entry that any adapter cannot represent without changing its meaning
-is `REGISTRY_INVALID` before the interactive inventory opens.
+fields. An entry that no first-release adapter can represent is
+`REGISTRY_INVALID`; an entry that only some adapters can represent remains valid
+and produces `unsupported` for the others.
 
 ### Stdio mapping
 
-| Canonical field | Codex | Hermes Agent | OpenClaw |
+| Target | Command and arguments | `forwardEnv: [NAME]` | Toggle encoding |
 | --- | --- | --- | --- |
-| `command` | `command` | `command` | `command` |
-| `args` | `args` | `args` | `args` |
-| `forwardEnv: [NAME]` | `env_vars = ["NAME"]` | `env.NAME: "${NAME}"` | `env.NAME: "${NAME}"` |
-| enabled | `enabled = true/false` | `enabled: true/false` | `enabled: true/false` |
+| `codex` | `command`, `args` | `env_vars = ["NAME"]` | `enabled = true/false` |
+| `hermes` | `command`, `args` | `env.NAME: "${NAME}"` | `enabled: true/false` |
+| `openclaw` | `command`, `args` | `env.NAME: "${NAME}"` | `enabled: true/false` |
+| `claude-code` | `command`, `args` | `env.NAME: "${NAME}"` | detached entry |
+| `antigravity` | `command`, `args` | unsupported when non-empty | `disabled: false/true` |
+| `cursor` | `command`, `args` | `env.NAME: "${env:NAME}"` | detached entry |
+| `kimi-code` | `command`, `args` | unsupported when non-empty | `enabled: true/false` |
+| `opencode-v2` | `type: "local"`, `command: [command, ...args]` | `environment.NAME: "{env:NAME}"` | `disabled: false/true` |
+| `grok-build` | `command`, `args` | `env.NAME: "${NAME}"` | `enabled = true/false` |
+| `trae` | `command`, `args` after its implementation gate clears | unsupported when non-empty until vendor evidence exists | detached entry |
+
+`unsupported` in this table is deliberate. Antigravity, Kimi, and TRAE accept
+literal environment values in their documented stdio shapes, but the installer
+does not persist a current secret value merely to make a descriptor portable.
 
 The adapter checks only whether each required environment variable is present
 and non-empty in the installer process. It MUST NOT read the value into a
@@ -453,21 +615,28 @@ command blocks installation or enabling but does not block disabling.
 
 ### Streamable HTTP mapping
 
-| Canonical field | Codex | Hermes Agent | OpenClaw |
-| --- | --- | --- | --- |
-| `url` | `url` | `url` | `url` plus `transport: "streamable-http"` |
-| `bearer-env` | `bearer_token_env_var` | `headers.Authorization: "Bearer ${NAME}"` | `headers.Authorization: "Bearer ${NAME}"` |
-| `headersFromEnv.X = NAME` | `env_http_headers.X = "NAME"` | `headers.X: "${NAME}"` | `headers.X: "${NAME}"` |
-| enabled | `enabled = true/false` | `enabled: true/false` | `enabled: true/false` |
+| Target | URL encoding | `bearer-env` | `headersFromEnv.X = NAME` | Toggle encoding |
+| --- | --- | --- | --- | --- |
+| `codex` | `url` | `bearer_token_env_var` | `env_http_headers.X = "NAME"` | `enabled = true/false` |
+| `hermes` | `url` | `headers.Authorization: "Bearer ${NAME}"` | `headers.X: "${NAME}"` | `enabled: true/false` |
+| `openclaw` | `url`, `transport: "streamable-http"` | `headers.Authorization: "Bearer ${NAME}"` | `headers.X: "${NAME}"` | `enabled: true/false` |
+| `claude-code` | `type: "http"`, `url` | `headers.Authorization: "Bearer ${NAME}"` | `headers.X: "${NAME}"` | detached entry |
+| `antigravity` | `serverUrl` | unsupported | unsupported when non-empty | `disabled: false/true` |
+| `cursor` | `url` | `headers.Authorization: "Bearer ${env:NAME}"` | `headers.X: "${env:NAME}"` | detached entry |
+| `kimi-code` | `url` | `bearerTokenEnvVar: "NAME"` | unsupported when non-empty | `enabled: true/false` |
+| `opencode-v2` | `type: "remote"`, `url` | `headers.Authorization: "Bearer {env:NAME}"` | `headers.X: "{env:NAME}"` | `disabled: false/true` |
+| `grok-build` | `url` | `headers.Authorization: "Bearer ${NAME}"` | `headers.X: "${NAME}"` | `enabled = true/false` |
+| `trae` | `url` after its implementation gate clears | unsupported | unsupported when non-empty | detached entry |
 
 The installer validates required environment variable presence but does not
 connect to the URL. OAuth-authenticated entries are deferred because OAuth
 client behavior, token storage, and login commands differ by harness.
 
 Adapter-produced definitions MUST contain only the canonical transport fields
-and the native enablement field. The installer MUST NOT add tool filters,
-approval bypasses, trust flags, timeouts, parallel-call hints, TLS bypasses, or
-other harness-specific behavior that is absent from the registry contract.
+and, for native-toggle targets, the native enablement field. The installer MUST
+NOT add tool filters, approval bypasses, trust flags, timeouts, parallel-call
+hints, TLS bypasses, or other harness-specific behavior that is absent from the
+registry contract.
 
 ## Installer state and ownership
 
@@ -485,10 +654,29 @@ interface InstallerState {
 interface ManagedInstallation {
   readonly capabilityId: string;
   readonly registryVersion: string;
-  readonly harnessId: "codex" | "hermes" | "openclaw";
+  readonly targetId:
+    | "codex"
+    | "hermes"
+    | "openclaw"
+    | "claude-code"
+    | "antigravity"
+    | "cursor"
+    | "kimi-code"
+    | "opencode-v2"
+    | "grok-build"
+    | "trae";
   readonly configPath: string;
   readonly serverName: string;
   readonly definitionSha256: string;
+  readonly targetContractVersion: 1;
+  readonly toggleStrategy:
+    | "native-enabled"
+    | "native-disabled"
+    | "detached";
+  readonly suspendedDescriptor?: {
+    readonly name: string;
+    readonly transport: StdioTransport | StreamableHttpTransport;
+  };
   readonly adopted: boolean;
   readonly installedAt: string;
   readonly updatedAt: string;
@@ -496,23 +684,36 @@ interface ManagedInstallation {
 ```
 
 The map key is the deterministic tuple
-`<capabilityId>\u0000<harnessId>\u0000<configPath>`. The encoded state file MUST
-be at most 1,048,576 bytes. It contains no environment values, headers, URLs with
-credentials, source config bytes, or registry snapshots.
+`<capabilityId>\u0000<targetId>\u0000<configPath>`. The encoded state file MUST
+be at most 16,777,216 bytes. It contains no environment values, literal header
+values, credential-bearing URLs, or source config bytes. A
+`suspendedDescriptor` is the minimal canonical, secret-free snapshot needed to
+restore a detached server and is not a snapshot of the harness config.
 
-The state schema is closed and may contain at most 3,000 installations. Every
+The state schema is closed and may contain at most 10,000 installations. Every
 map key MUST equal the tuple derived from its value. IDs, server names, and
 absolute config paths MUST satisfy their registry and adapter constraints;
 `definitionSha256` MUST be 64 lowercase hexadecimal characters; `installedAt`
 and `updatedAt` MUST be UTC RFC 3339 timestamps; and `updatedAt` MUST not precede
 `installedAt`. Any violation makes the state `STATE_INVALID`; the installer does
-not discard or partially recover records.
+not discard or partially recover records. `toggleStrategy` MUST equal the target
+adapter's declared strategy. `suspendedDescriptor` MUST be absent for a native
+strategy and for an enabled detached entry; it is required exactly when a
+detached entry is disabled and absent from the config. It MUST satisfy the same
+closed schema, string, transport, URL, and secret rules as the registry.
+`targetContractVersion` MUST equal numeric `1` and binds restoration to the
+mapping rules in this specification.
 
 `definitionSha256` is lowercase hexadecimal SHA-256 over canonical JSON of the
 adapter's normalized MCP definition, excluding only the native enabled or
 disabled field. Object keys are sorted lexicographically; array order is
 preserved. The normalized definition includes the transport, command or URL,
-arguments, environment variable names, and header names.
+arguments, environment variable names, header names, and every other field
+present inside the selected server entry. Installer-generated entries contain
+no such extra fields. Adding an unknown, policy, timeout, tool-filter, or auth
+field to a managed entry therefore changes the fingerprint and fails closed as
+drift instead of being lost by a detached toggle. Hash input may contain an
+existing secret value in memory, but only the digest is retained or reported.
 
 The state file is private installer data, created with mode `0600` under a
 directory created with mode `0700` on POSIX. An existing state file must be a
@@ -538,8 +739,10 @@ entry. It reports `CONFIG_DRIFT` without printing either definition.
 
 **AE-INSTALL-OWN-04 — Registry updates do not rewrite.** When the current entry
 still matches its state fingerprint but not the current registry fingerprint,
-it is `outdated`. Enable and disable change only the native boolean and preserve
-the installed definition. Automatic upgrade is not part of this release.
+it is `outdated`. Native toggles change only their boolean. Detached disable
+removes the current entry and records its canonical descriptor; detached enable
+restores that recorded descriptor. Both strategies preserve the installed
+definition. Automatic upgrade is not part of this release.
 
 **AE-INSTALL-OWN-05 — Idempotency.** Installing an already managed enabled entry,
 enabling an enabled entry, or disabling a disabled entry produces success with
@@ -552,7 +755,7 @@ state.
 
 Before showing the final confirmation, each target adapter MUST:
 
-1. resolve and recheck the harness executable;
+1. resolve and recheck the surface executable or existing-config evidence;
 2. resolve the exact standard config path;
 3. reject unsafe path components and symlinks;
 4. read at most 4,194,304 encoded bytes when the file exists;
@@ -564,7 +767,8 @@ Before showing the final confirmation, each target adapter MUST:
    user;
 8. verify the MCP parent path is absent or has the documented object/table type;
 9. classify ownership, collision, enablement, and drift;
-10. validate the registry descriptor can be mapped losslessly;
+10. validate the registry descriptor can be mapped losslessly or classify the
+    target as `unsupported`;
 11. check required command and environment-variable presence for install or
     enable;
 12. build an in-memory patch and the expected post-write fingerprint;
@@ -601,7 +805,7 @@ For one target, the installer MUST:
 Lock metadata may contain only installer PID, creation time, and target path.
 The installer never breaks or deletes a lock it did not create. A stale lock
 requires manual inspection in this release. The state-first lock order prevents
-two installer processes that target different harnesses from losing ownership
+two installer processes that target different config files from losing ownership
 records or deadlocking each other. Native harnesses do not honor installer locks;
 the content-hash check detects changes completed before the commit re-read but
 does not claim a cross-process transaction with a harness writing at the same
@@ -635,8 +839,8 @@ For an existing config, a successful mutation MUST preserve:
 
 The adapter may normalize only the selected server entry. Re-serializing the
 whole file through a lossy object serializer is non-conforming for TOML, YAML,
-and JSON5. Parser and patcher library choices are internal, but acceptance
-fixtures must prove preservation.
+JSON, JSONC, and JSON5. Parser and patcher library choices are internal, but
+acceptance fixtures must prove preservation.
 
 When creating a missing config, the adapter writes the smallest valid document
 containing the MCP parent map and selected entry, using UTF-8, LF, a trailing
@@ -645,9 +849,9 @@ config directory and file, never other harness bootstrap state.
 
 ### Multi-target behavior
 
-Each harness target is an independent transaction. Targets are processed in
-lexicographic `harnessId`, then `configPath`, order. The batch is not atomic
-across harnesses. A failure does not roll back earlier successful targets and
+Each configuration target is an independent transaction. Targets are processed
+in lexicographic `targetId`, then `configPath`, order. The batch is not atomic
+across targets. A failure does not roll back earlier successful targets and
 does not prevent later preflight-clean targets from being attempted, unless the
 user cancels or the installer state becomes unsafe.
 
@@ -667,7 +871,9 @@ details.
 | `NO_TTY` | `The installer requires an interactive terminal.` | No; rerun in a TTY. |
 | `NO_SUPPORTED_HARNESS` | `No supported AI harness was detected.` | No automatic retry. |
 | `HARNESS_CONFIG_INVALID` | `The harness configuration is invalid.` | No; repair the config. |
+| `HARNESS_CONFIG_AMBIGUOUS` | `More than one harness configuration could be selected.` | No; remove the ambiguity and rerun. |
 | `HARNESS_CONFIG_UNSAFE` | `The harness configuration path is unsafe.` | No; repair ownership or path. |
+| `TARGET_UNSUPPORTED` | `This capability cannot be configured for the selected harness.` | No; choose a compatible target. |
 | `COMMAND_NOT_FOUND` | `The MCP server command was not found.` | No; install it and rerun. |
 | `REQUIRED_ENV_MISSING` | `A required environment variable is missing.` | No; set it and rerun. |
 | `CONFIG_CONFLICT` | `A different MCP server already uses this name.` | No; resolve it manually. |
@@ -682,8 +888,9 @@ details.
 | `CONFIG_ROLLBACK_FAILED` | `The harness configuration could not be restored.` | No automatic retry; inspect the target manually. |
 | `CANCELLED` | `Installation was cancelled.` | Not applicable. |
 
-A diagnostic MAY include the harness ID, registry entry ID, server name, safe
-config path, missing environment variable name, or declared command. It MUST NOT
+A diagnostic MAY include the surface ID, target ID, registry entry ID, server
+name, safe config path, missing environment variable name, declared command, or
+stable compatibility reason. It MUST NOT
 include environment values, existing MCP definitions, whole config fragments,
 HTTP headers, registry raw values, stack traces, or cause chains in the
 interactive UI.
@@ -704,8 +911,8 @@ The installer MUST satisfy these boundaries:
 
 - never execute a registry command, harness binary, package manager, or shell;
 - never connect to a registry or MCP endpoint;
-- never interpolate environment values into generated configuration when the
-  harness can reference the variable by name;
+- read a required environment variable only as present/non-empty and never
+  interpolate its value into generated configuration;
 - never store or render credential values;
 - never follow a config or state-file symlink;
 - never modify a config not owned by the current user;
@@ -728,14 +935,15 @@ shown once per target install or adoption, not on every enable toggle.
 
 | Dimension | First-release limit or rule |
 | --- | --- |
-| Supported harnesses | Exactly 3: Codex, Hermes Agent, OpenClaw |
+| Detectable harness surfaces | Exactly 11: Codex, Hermes Agent, OpenClaw, Claude Code, Antigravity CLI, Antigravity IDE, Cursor, Kimi Code CLI, OpenCode v2, Grok Build, TRAE AI |
+| Writable configuration targets | Exactly 10; both Antigravity surfaces share `antigravity` |
 | Platforms | Linux, macOS, WSL |
 | Registry sources | Exactly 1 bundled local JSON document |
 | Registry size | 1 MiB encoded |
 | Registry entries | 1,000 |
-| Config size | 4 MiB encoded per harness |
-| State size | 1 MiB encoded |
-| Managed installation records | 3,000 |
+| Config size | 4 MiB encoded per target |
+| State size | 16 MiB encoded |
+| Managed installation records | 10,000 |
 | Parsed config nesting | At most 100 mapping/array levels |
 | YAML aliases, anchors, merge keys | 0 |
 | Transports | stdio and Streamable HTTP |
@@ -745,11 +953,11 @@ shown once per target install or adoption, not on every enable toggle.
 | Registry command executions | 0 |
 | Automatic retries | Lock acquisition only; bounded by 2 seconds |
 
-Detection order is adapter ID order. Registry display order is Unicode code-point
-order of `title`, then `id`; no locale-sensitive comparison is used. Target
-commit order is `harnessId`, then absolute `configPath`. Registry issue order is
-JSON pointer. These orders MUST be stable across repeated runs with the same
-inputs.
+Detection order is surface ID order. Registry display order is Unicode
+code-point order of `title`, then `id`; no locale-sensitive comparison is used.
+Target display and commit order is `targetId`, then absolute `configPath`.
+Registry issue order is JSON pointer. These orders MUST be stable across
+repeated runs with the same inputs.
 
 The installer runs one interactive session and one mutation at a time. It does
 not expose an in-process concurrency API. Parsing and patch construction must be
@@ -770,55 +978,66 @@ walks over untrusted parsed data that can overflow the JavaScript stack.
   metadata but does not rewrite installed harness config.
 - Changing a transport descriptor makes an existing managed install `outdated`;
   automatic upgrade remains out of scope.
-- Adding a new harness adapter is additive only when existing registry entries
-  retain the same mapping for existing harnesses.
+- Adding a new surface is additive only when target coalescing remains
+  deterministic. Adding a new configuration target is additive only when
+  existing registry entries retain their mappings and compatibility statuses for
+  existing targets.
 - A harness format change that invalidates fixtures requires an adapter update
   and release. The installer must fail closed rather than attempt a legacy or
   guessed write.
+- A target mapping change MUST either retain read/restore support for
+  `targetContractVersion: 1` or ship a failure-atomic state migration before any
+  mutation. It MUST NOT reinterpret a suspended descriptor under a new mapping.
 - State `schemaVersion: 1` is exact. A later state version requires an explicit,
   tested, failure-atomic migration before mutation.
-- Removing a harness adapter is breaking for users with managed state for that
-  adapter and requires a migration or a major package release.
+- Removing a configuration target is breaking for users with managed state for
+  that target and requires a migration or a major package release. Removing only
+  one of multiple surfaces for a shared target is a detection compatibility
+  change but does not orphan target state.
 
 ## Acceptance criteria
 
 | ID | Observable outcome | Minimum evidence |
 | --- | --- | --- |
-| `AE-INSTALL-AC-01` | With `codex`, `hermes`, and `openclaw` fixtures on `PATH`, the UI reports all three as installed without executing them. | Fake executables that fail the test if invoked, plus an injected path-resolver test. |
-| `AE-INSTALL-AC-02` | A config file without an executable is shown as `configuration only` and cannot be selected. | Table-driven detection test for all adapters. |
-| `AE-INSTALL-AC-03` | A missing config for an installed harness is created only after confirmation, with the documented MCP shape and POSIX mode `0600`. | Child-process fixture for each adapter. |
-| `AE-INSTALL-AC-04` | Installing one stdio entry maps command, args, forwarded environment names, and `enabled` correctly for Codex, Hermes, and OpenClaw. | Golden semantic assertions over TOML, YAML, and JSON5 fixtures. |
-| `AE-INSTALL-AC-05` | Installing one Streamable HTTP entry maps URL, bearer environment authentication, environment-backed headers, and `enabled` correctly for all adapters without a network request. | Adapter tests with a network-call sentinel. |
-| `AE-INSTALL-AC-06` | Install, disable, and enable transition `available → enabled → disabled → enabled` without losing the transport definition. | End-to-end interactive test for each adapter. |
+| `AE-INSTALL-AC-01` | Fake executables for all eleven surfaces are reported as installed without being executed; AGY CLI and Antigravity IDE resolve to one target. | Failing-if-invoked executable fixtures, injected path resolver, and coalescing assertions. |
+| `AE-INSTALL-AC-02` | An existing config without an executable is labeled `configuration only`, may be patched after confirmation, and never authorizes creation of a missing config. | Table-driven detection and writer-spy test for all targets. |
+| `AE-INSTALL-AC-03` | A missing config for an installed surface is created only after confirmation, with the documented MCP shape and POSIX mode `0600`. | Child-process fixture for every shipping target. |
+| `AE-INSTALL-AC-04` | A stdio entry without forwarded variables maps to every shipping target; a non-empty `forwardEnv` maps exactly where documented and produces `unsupported` elsewhere. | Golden semantic assertions over TOML, YAML, JSON, JSONC, and JSON5 fixtures. |
+| `AE-INSTALL-AC-05` | A credential-free Streamable HTTP entry maps to every shipping target; bearer/header environment references map exactly where documented and produce `unsupported` elsewhere, with no network request. | Cross-target adapter tests with a network-call sentinel. |
+| `AE-INSTALL-AC-06` | Install, disable, and enable transition `available → enabled → disabled → enabled` without losing the transport definition for `native-enabled`, `native-disabled`, and `detached`. | End-to-end interactive test for every shipping target. |
 | `AE-INSTALL-AC-07` | Repeating install, enable, or disable on the resulting state performs no config or state write. | Writer spies plus mtime/content assertions. |
 | `AE-INSTALL-AC-08` | A matching external entry can be adopted only after explicit confirmation and adoption does not rewrite its config. | Interactive adoption test and writer spy. |
 | `AE-INSTALL-AC-09` | A same-name, different external entry is `conflict`, is never overwritten, and emits no definition content. | Table-driven conflict and diagnostic-safety tests. |
 | `AE-INSTALL-AC-10` | Manual change to a managed definition produces `drifted`; enable and disable make no write. | State fingerprint regression test. |
-| `AE-INSTALL-AC-11` | A registry descriptor change produces `outdated`; toggling changes only the native boolean and preserves the installed descriptor. | Old-state/new-registry fixture. |
-| `AE-INSTALL-AC-12` | Comments, unrelated values, key order outside the selected entry, newline convention, trailing-newline state, mode, and ownership survive each adapter mutation. | Byte-aware preservation fixtures for TOML, YAML, and JSON5. |
-| `AE-INSTALL-AC-13` | Malformed config, duplicate key, depth 101, YAML alias/anchor/merge, wrong MCP parent type, oversized config, symlink, wrong owner, relative or home-escaping override, and unsafe state each fail before a write. | Boundary fixtures with writer spies and POSIX filesystem tests. |
+| `AE-INSTALL-AC-11` | A registry descriptor change produces `outdated`; native and detached toggles preserve the installed descriptor rather than installing the new one. | Old-state/new-registry fixtures for all three toggle strategies. |
+| `AE-INSTALL-AC-12` | Comments, unrelated values, key order outside the selected entry, newline convention, trailing-newline state, mode, and ownership survive each adapter mutation. | Byte-aware preservation fixtures for TOML, YAML, JSON, JSONC, and JSON5. |
+| `AE-INSTALL-AC-13` | Malformed config, duplicate key, depth 101, YAML alias/anchor/merge, wrong MCP parent type, both OpenCode config siblings, oversized config, symlink, wrong owner, relative or home-escaping override, and unsafe state each fail before a write. | Boundary fixtures with writer spies and POSIX filesystem tests. |
 | `AE-INSTALL-AC-14` | A config changed after preflight produces `CONFIG_CHANGED` and retains the concurrent bytes. | Deterministic concurrency test with a pre-commit barrier. |
-| `AE-INSTALL-AC-15` | A second writer cannot acquire the state or adjacent config lock within the two-second total budget, cannot lose state while targeting another harness, and does not alter a lock or config it does not own. | Two-process lock integration tests with a fake clock where possible. |
+| `AE-INSTALL-AC-15` | A second writer cannot acquire the state or adjacent config lock within the two-second total budget, cannot lose state while targeting another config, and does not alter a lock or config it does not own. | Two-process lock integration tests with a fake clock where possible. |
 | `AE-INSTALL-AC-16` | State-write failure restores the exact original config and reports `STATE_WRITE_FAILED`; restoration failure reports `CONFIG_ROLLBACK_FAILED` without exposing bytes. | Fault-injected filesystem tests. |
 | `AE-INSTALL-AC-17` | Missing command or required environment blocks install/enable, while disable remains available; no environment value reaches UI, state, or captured logs. | Process-environment and diagnostic leak tests using unique secret sentinels. |
-| `AE-INSTALL-AC-18` | Registry unknown fields, duplicate IDs/names, invalid or adapter-unmappable transports/URLs/env names, empty metadata, count limits, and inclusive/exclusive byte limits fail deterministically. | Table-driven registry and cross-adapter contract tests at every boundary. |
-| `AE-INSTALL-AC-19` | Running without both TTYs exits `2`; cancel before writing exits `0`; `SIGINT` exits `130`; none corrupts a config or state file. | Pseudoterminal child-process tests. |
-| `AE-INSTALL-AC-20` | In a three-target operation, results are attempted in adapter order, prior successes remain when one target fails, later clean targets still run, and exit code is `1`. | Fault-injected multi-target integration test. |
+| `AE-INSTALL-AC-18` | Registry unknown fields, duplicate IDs/names, invalid transports/URLs/env names, entries supported by no target, empty metadata, count limits, and inclusive/exclusive byte limits fail deterministically; partial target incompatibility remains valid. | Table-driven registry and cross-target compatibility tests at every boundary. |
+| `AE-INSTALL-AC-19` | Running without both TTYs exits `2`; negative confirmation writes nothing and Quit exits `0` unless an earlier confirmed target failed; Clack cancellation or `SIGINT` exits `130`; none corrupts config or state. | Pseudoterminal child-process tests. |
+| `AE-INSTALL-AC-20` | In a four-target operation, results are attempted in target order, prior successes remain when one target fails, later clean targets still run, and exit code is `1`. | Fault-injected multi-target integration test. |
 | `AE-INSTALL-AC-21` | A registry containing 1,000 valid entries and a depth-100, 4 MiB valid config is validated and inspected without stack overflow or superlinear adapter passes; depth 101 fails before patching. | Instrumented inclusive/exclusive limit test. |
 | `AE-INSTALL-AC-22` | Source inspection and runtime sentinels prove the installer imports no framework package, invokes no engine, opens no network connection, and runs no harness, shell, package manager, or registry command. | Import-graph check plus child-process/network sentinels. |
-| `AE-INSTALL-AC-23` | `--help` and `--version` succeed without registry, harness, state, or network access; unknown arguments exit `2`. | CLI child-process tests. |
+| `AE-INSTALL-AC-23` | `--help` and `--version` succeed without loading Clack, registry, harness, state, or network access; unknown arguments exit `2`. | CLI child-process tests and module-load sentinels. |
 | `AE-INSTALL-AC-24` | The published package contains the validated registry and binary, and a clean install can configure at least one real AI Engine MCP entry. | Packed-package smoke test in an isolated home and `PATH`. |
+| `AE-INSTALL-AC-25` | The locked `@clack/prompts` adapter supports autocomplete, multiselect, default-negative confirmation, Back/Quit, cancellation at every prompt, `NO_COLOR`, and a narrow terminal without exposing Clack types or symbols. | Port contract tests plus a real pseudoterminal smoke matrix against the locked package. |
+| `AE-INSTALL-AC-26` | When both `agy` and `antigravity` resolve, one user choice produces one preview path, lock, write, state record, result, and reload section. | Shared-target integration test with config/state writer spies. |
+| `AE-INSTALL-AC-27` | The first installer release is blocked until TRAE's executable, user config path, and MCP shape satisfy the documented evidence gate and its adapter passes the common lifecycle. | Release-gate assertion plus primary-source or captured supported-release fixture review. |
+| `AE-INSTALL-AC-28` | State accepts exactly 10,000 valid records and 16 MiB inclusive, rejects the next record or byte, and enforces `targetContractVersion` plus every conditional `suspendedDescriptor` invariant without retaining a secret sentinel. | Inclusive/exclusive state-schema and leak tests. |
 
 ## Traceability
 
 | Requirement | Contract surface | Acceptance evidence |
 | --- | --- | --- |
-| Detect installed AI harnesses | Finite adapter list, executable-only detection, config-only state | `AE-INSTALL-AC-01`, `AE-INSTALL-AC-02` |
-| Interactive install, enable, and disable | Primary flow, status model, exit and cancellation contract | `AE-INSTALL-AC-03`, `AE-INSTALL-AC-06`, `AE-INSTALL-AC-07`, `AE-INSTALL-AC-19`, `AE-INSTALL-AC-23` |
+| Detect installed AI harnesses | Finite surface list, executable/config evidence, shared-target coalescing | `AE-INSTALL-AC-01`, `AE-INSTALL-AC-02`, `AE-INSTALL-AC-26`, `AE-INSTALL-AC-27` |
+| Interactive install, enable, and disable | Clack port, primary flow, status, toggle strategies, exit and cancellation | `AE-INSTALL-AC-03`, `AE-INSTALL-AC-06`, `AE-INSTALL-AC-07`, `AE-INSTALL-AC-19`, `AE-INSTALL-AC-23`, `AE-INSTALL-AC-25` |
 | Local capability registry | Closed schema, identity, transports, limits, packaged source | `AE-INSTALL-AC-18`, `AE-INSTALL-AC-21`, `AE-INSTALL-AC-24` |
-| Correct harness configuration | Adapter matrix and canonical MCP mapping | `AE-INSTALL-AC-04`, `AE-INSTALL-AC-05` |
+| Correct harness configuration | Surface/target matrices, compatibility, canonical MCP mapping | `AE-INSTALL-AC-04`, `AE-INSTALL-AC-05`, `AE-INSTALL-AC-18` |
 | Preserve user configuration | Preflight, atomic patch, format preservation | `AE-INSTALL-AC-12` through `AE-INSTALL-AC-16` |
-| Ownership and collision safety | State fingerprint, adopt, conflict, drift, outdated | `AE-INSTALL-AC-08` through `AE-INSTALL-AC-11` |
+| Ownership and collision safety | State fingerprint, suspended descriptor, adopt, conflict, drift, outdated | `AE-INSTALL-AC-08` through `AE-INSTALL-AC-11`, `AE-INSTALL-AC-28` |
 | Secret and execution safety | Environment references, no command/network execution, sanitized errors | `AE-INSTALL-AC-09`, `AE-INSTALL-AC-17`, `AE-INSTALL-AC-22` |
 | Determinism and bounded operation | Ordering, byte/count limits, lock timeout, independent targets | `AE-INSTALL-AC-15`, `AE-INSTALL-AC-18`, `AE-INSTALL-AC-20`, `AE-INSTALL-AC-21` |
 | Existing architecture remains unchanged | Standalone package, MCP configuration boundary, no framework imports | `AE-INSTALL-AC-22`, package dependency review |
@@ -831,29 +1050,39 @@ evidence, ends green, and is one cohesive commit:
 1. Record the package and architectural boundary in a new ADR, including the
    relationship with ADRs 0001, 0004, 0005, and 0009.
 2. Add the `@ai-engine/installer` package skeleton, injectable filesystem and
-   terminal boundaries, stable installer errors, and CLI usage behavior.
+   `InteractivePrompter` boundaries, the direct `@clack/prompts` dependency,
+   stable installer errors, and CLI usage behavior.
 3. Add the closed registry schema, limits, source packaging, normalization, and
    production registry review workflow.
-4. Add executable-only harness detection and the read-only interactive inventory.
+4. Add executable/config-evidence detection, surface-to-target coalescing, and
+   the read-only interactive inventory.
 5. Implement state ownership, fingerprints, adoption, conflicts, drift, and
    idempotent planning without config writes.
-6. Implement the Codex TOML adapter with preservation and atomic-write tests.
-7. Implement the Hermes YAML adapter with preservation and atomic-write tests.
-8. Implement the OpenClaw JSON5 adapter with preservation and atomic-write tests.
-9. Add lock handling, optimistic concurrency, state rollback, cancellation, and
-   independent multi-target commits.
-10. Add the full interactive flow, pseudoterminal tests, secret sentinels,
-    package smoke test, one real registry entry, and user documentation.
+6. Implement the Codex TOML, Hermes YAML, and OpenClaw JSON5 targets with native
+   toggle and preservation tests.
+7. Implement the Claude Code, Cursor, and Kimi JSON targets, including detached
+   toggles and compatibility tests.
+8. Implement the shared Antigravity JSON target and prove AGY/IDE coalescing.
+9. Implement the OpenCode v2 JSONC and Grok Build TOML targets.
+10. Clear the TRAE evidence gate and implement its target before declaring the
+    first adapter set complete; a release MUST NOT claim the eleven-surface
+    scope while that gate remains open.
+11. Add lock handling, optimistic concurrency, state rollback, cancellation,
+    and independent multi-target commits.
+12. Add the full Clack flow, pseudoterminal tests, secret sentinels, package
+    smoke test, one real registry entry, and user documentation.
 
-No slice may add a harness by copying a raw config fragment into the registry.
-Every harness requires an adapter, current source evidence, preservation
-fixtures, error boundaries, and the same install/enable/disable acceptance path.
+No slice may add a target by copying a raw config fragment into the registry.
+Every surface requires detection evidence; every target requires an adapter,
+current source evidence, preservation fixtures, error boundaries, and the same
+install/enable/disable acceptance path.
 
 ## Deferred and unspecified
 
 The following require later evidence and an explicit specification update:
 
-- Claude Code, Gemini CLI, OpenCode, Cursor, VS Code, and other harness adapters;
+- Gemini CLI, VS Code, legacy OpenCode v1, TRAE CN, TRAE Work/SOLO, and other
+  harness adapters or product editions;
 - native Windows support;
 - project, workspace, profile, system, managed, container, and remote-host
   scopes;
@@ -870,10 +1099,10 @@ The following require later evidence and an explicit specification update:
 - a public programmatic API or non-interactive mutation commands;
 - telemetry, analytics, remote error reporting, and registry usage metrics.
 
-The concrete terminal UI library, TOML/YAML/JSON5 patch libraries, and internal
-adapter type signatures are implementation details. They remain replaceable only
-while all observable behavior and acceptance criteria in this specification are
-preserved.
+TOML/YAML/JSON/JSONC/JSON5 patch libraries and internal adapter type signatures
+are implementation details. `@clack/prompts` is not: replacing it requires a
+specification and dependency decision update in addition to preserving all
+observable behavior and acceptance criteria.
 
 ## Harness source notes
 
@@ -885,3 +1114,14 @@ be rechecked when implementation begins:
 - [Hermes Agent MCP config reference](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/reference/mcp-config-reference.md)
 - [OpenClaw MCP commands and configuration](https://docs.openclaw.ai/cli/mcp)
 - [OpenClaw configuration reference](https://docs.openclaw.ai/gateway/configuration-reference)
+- [`@clack/prompts` package and interaction primitives](https://www.npmjs.com/package/@clack/prompts)
+- [Claude Code MCP scopes and configuration](https://code.claude.com/docs/en/mcp)
+- [Antigravity MCP configuration shared by IDE and CLI](https://antigravity.google/docs/mcp)
+- [Antigravity CLI installation and the `agy` executable](https://antigravity.google/docs/cli/install)
+- [Cursor MCP global configuration](https://docs.cursor.com/context/model-context-protocol)
+- [Kimi Code CLI MCP configuration](https://www.kimi.com/code/docs/en/kimi-code-cli/customization/mcp.html)
+- [OpenCode v2 MCP servers](https://opencode.ai/v2/docs/mcp-servers)
+- [OpenCode v2 global configuration](https://opencode.ai/v2/docs/config)
+- [Grok Build MCP servers](https://docs.x.ai/build/features/mcp-servers)
+- [Grok Build user configuration](https://docs.x.ai/build/settings)
+- [TRAE official MCP FAQ, which documents the JSON shape but not one stable cross-edition global path](https://forum.trae.cn/t/topic/65)
