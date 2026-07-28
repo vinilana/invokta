@@ -1,0 +1,30 @@
+{
+  "name": "@ai-engine/example-community-capabilities",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./classify-ticket": {
+      "types": "./dist/classify-ticket.d.ts",
+      "import": "./dist/classify-ticket.js"
+    },
+    "./library": {
+      "types": "./dist/library.d.ts",
+      "import": "./dist/library.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
+    "test": "vitest run test"
+  },
+  "dependencies": {
+    "@ai-engine/core": "0.1.0",
+    "zod": "4.4.3"
+  }
+}

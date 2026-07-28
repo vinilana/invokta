@@ -21,12 +21,15 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [Getting started: direct, CLI, MCP stdio, and MCP HTTP](./getting-started.md)
 - [Integrating an identity provider at the HTTP boundary](./http-authentication.md)
 - [Integrating a PDP through a capability access rule](./capability-authorization.md)
+- [Authoring and composing community capabilities](./capability-composition.md)
 - [Version 0.1 scope and maturity matrix](./scope-matrix.md)
 - [`hello-engine`: minimal onboarding example](../examples/hello-engine/)
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)
 - [`support-harness`: private MCP consumer](../examples/support-harness/)
 - [`crawl-engine`: outbound provider integration with Firecrawl](../examples/crawl-engine/)
 - [`spec-engine`: spec-driven development workflow as domain rules](../examples/spec-engine/)
+- [`community-capabilities`: atomic and library capability publication fixture](../examples/community-capabilities/)
+- [`composed-engine`: local, atomic, and library capability composition](../examples/composed-engine/)
 
 ## Normative language
 

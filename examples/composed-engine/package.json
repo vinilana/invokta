@@ -1,0 +1,27 @@
+{
+  "name": "@ai-engine/example-composed",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
+    "test": "vitest run test",
+    "direct": "node dist/direct.js",
+    "cli": "node dist/cli.js",
+    "mcp:stdio": "node dist/mcp-stdio.js",
+    "mcp:http": "node dist/mcp-http.js",
+    "check:capabilities": "node ../../packages/tooling/dist/cli.js check-capabilities ./dist/capabilities.js"
+  },
+  "dependencies": {
+    "@ai-engine/cli": "0.1.0",
+    "@ai-engine/core": "0.1.0",
+    "@ai-engine/example-community-capabilities": "0.1.0",
+    "@ai-engine/mcp": "0.1.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@ai-engine/tooling": "0.1.0",
+    "@modelcontextprotocol/sdk": "1.29.0"
+  }
+}
