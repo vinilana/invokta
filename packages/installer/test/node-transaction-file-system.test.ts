@@ -1,4 +1,7 @@
 import {
+  chmodSync,
+  constants,
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -9,6 +12,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { open } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -147,6 +151,158 @@ describe.skipIf(process.platform === "win32")(
       expect(readFileSync(existingPath, "utf8")).toBe("owner-one");
       expect(readFileSync(targetPath, "utf8")).toBe("target");
       expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    });
+
+    it("recovers exact private file and directory modes under umask 0777", async () => {
+      const directory = temporaryDirectory();
+      const filePath = join(directory, "private.lock");
+      const childDirectory = join(directory, "private");
+      const fileSystem = createNodeFileSystem();
+      const previousUmask = process.umask(0o777);
+      try {
+        const handle = await fileSystem.createExclusiveNoFollow(
+          filePath,
+          0o600,
+        );
+        await handle.close();
+        await fileSystem.mkdir(childDirectory, 0o700);
+      } finally {
+        process.umask(previousUmask);
+        if (existsSync(childDirectory)) chmodSync(childDirectory, 0o700);
+      }
+
+      expect(statSync(filePath).mode & 0o7777).toBe(0o600);
+      expect(statSync(childDirectory).mode & 0o7777).toBe(0o700);
+    });
+
+    it("removes only its own exclusive file when setup and close fail", async () => {
+      const directory = temporaryDirectory();
+      const path = join(directory, "failed.lock");
+      const probe = await open(
+        join(directory, "probe"),
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+        0o600,
+      );
+      const prototype = Object.getPrototypeOf(probe) as {
+        chmod(this: { close(): Promise<void> }, mode: number): Promise<void>;
+      };
+      const originalChmod = prototype.chmod;
+      await probe.close();
+      prototype.chmod = async function () {
+        const originalClose = this.close.bind(this);
+        this.close = async () => {
+          await originalClose();
+          throw new Error("injected descriptor close failure");
+        };
+        throw new Error("injected descriptor setup failure");
+      };
+      try {
+        await expectFileSystemError(
+          createNodeFileSystem().createExclusiveNoFollow(path, 0o600),
+          "IO_FAILED",
+        );
+      } finally {
+        prototype.chmod = originalChmod;
+      }
+
+      expect(existsSync(path)).toBe(false);
+    });
+
+    it("never deletes a replacement after exclusive file setup fails", async () => {
+      const directory = temporaryDirectory();
+      const path = join(directory, "raced.lock");
+      const displacedPath = join(directory, "raced.lock.displaced");
+      const probe = await open(
+        join(directory, "probe"),
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+        0o600,
+      );
+      const prototype = Object.getPrototypeOf(probe) as {
+        chmod(mode: number): Promise<void>;
+      };
+      const originalChmod = prototype.chmod;
+      await probe.close();
+      prototype.chmod = async () => {
+        renameSync(path, displacedPath);
+        writeFileSync(path, "replacement", { mode: 0o600 });
+        throw new Error("injected replacement race");
+      };
+      try {
+        await expectFileSystemError(
+          createNodeFileSystem().createExclusiveNoFollow(path, 0o600),
+          "IO_FAILED",
+        );
+      } finally {
+        prototype.chmod = originalChmod;
+      }
+
+      expect(readFileSync(path, "utf8")).toBe("replacement");
+      expect(existsSync(displacedPath)).toBe(true);
+    });
+
+    it("conditionally removes an empty directory after post-create setup fails", async () => {
+      const directory = temporaryDirectory();
+      const path = join(directory, "failed-directory");
+      const probe = await open(
+        directory,
+        constants.O_RDONLY | constants.O_DIRECTORY,
+      );
+      const prototype = Object.getPrototypeOf(probe) as {
+        stat(
+          this: { close(): Promise<void> },
+          options: { readonly bigint: true },
+        ): Promise<unknown>;
+      };
+      const originalStat = prototype.stat;
+      await probe.close();
+      prototype.stat = async function (options) {
+        const result = await originalStat.call(this, options);
+        const originalClose = this.close.bind(this);
+        this.close = async () => {
+          await originalClose();
+          throw new Error("injected directory close failure");
+        };
+        return result;
+      };
+      try {
+        await expectFileSystemError(
+          createNodeFileSystem().mkdir(path, 0o700),
+          "IO_FAILED",
+        );
+      } finally {
+        prototype.stat = originalStat;
+      }
+
+      expect(existsSync(path)).toBe(false);
+    });
+
+    it("preserves a created directory if concurrent data makes cleanup unsafe", async () => {
+      const directory = temporaryDirectory();
+      const path = join(directory, "populated-directory");
+      const sentinelPath = join(path, "user-data.txt");
+      const probe = await open(
+        directory,
+        constants.O_RDONLY | constants.O_DIRECTORY,
+      );
+      const prototype = Object.getPrototypeOf(probe) as {
+        stat(options: { readonly bigint: true }): Promise<unknown>;
+      };
+      const originalStat = prototype.stat;
+      await probe.close();
+      prototype.stat = async () => {
+        writeFileSync(sentinelPath, "preserve me");
+        throw new Error("injected populated-directory race");
+      };
+      try {
+        await expectFileSystemError(
+          createNodeFileSystem().mkdir(path, 0o700),
+          "IO_FAILED",
+        );
+      } finally {
+        prototype.stat = originalStat;
+      }
+
+      expect(readFileSync(sentinelPath, "utf8")).toBe("preserve me");
     });
 
     it("keeps reads and identity bound to the opened descriptor across a path replacement", async () => {

@@ -1,12 +1,14 @@
 import { constants, type BigIntStats, type Stats } from "node:fs";
 import {
   type FileHandle,
+  chmod,
   lstat,
   mkdir,
   open,
   readFile,
   realpath,
   rename,
+  rmdir,
   unlink,
 } from "node:fs/promises";
 
@@ -85,6 +87,84 @@ function validateMode(mode: number): void {
 function validateId(id: number): void {
   if (!Number.isSafeInteger(id) || id < 0) {
     throw new InstallerFileSystemError("INVALID_ARGUMENT");
+  }
+}
+
+function currentUserId(): number {
+  if (process.getuid === undefined) {
+    throw new InstallerFileSystemError("IO_FAILED");
+  }
+  const uid = process.getuid();
+  validateId(uid);
+  return uid;
+}
+
+function sameObjectIdentity(
+  expected: InstallerFileStat,
+  current: InstallerFileStat,
+): boolean {
+  return (
+    expected.kind === current.kind &&
+    expected.dev === current.dev &&
+    expected.ino === current.ino &&
+    expected.uid === current.uid &&
+    expected.gid === current.gid
+  );
+}
+
+async function lstatIdentity(
+  path: string,
+): Promise<InstallerFileStat | undefined> {
+  try {
+    return toFileStat(await lstat(path, { bigint: true }));
+  } catch {
+    return undefined;
+  }
+}
+
+async function closeAfterSetupFailure(handle: FileHandle): Promise<void> {
+  try {
+    await handle.close();
+  } catch {
+    // Cleanup remains identity-conditional even when descriptor close fails.
+  }
+}
+
+async function unlinkCreatedFile(
+  path: string,
+  created: InstallerFileStat,
+): Promise<void> {
+  const current = await lstatIdentity(path);
+  if (
+    current === undefined ||
+    current.kind !== "regular-file" ||
+    !sameObjectIdentity(created, current)
+  ) {
+    return;
+  }
+  try {
+    await unlink(path);
+  } catch {
+    // A changed or non-removable path is preserved for manual inspection.
+  }
+}
+
+async function removeCreatedDirectory(
+  path: string,
+  created: InstallerFileStat,
+): Promise<void> {
+  const current = await lstatIdentity(path);
+  if (
+    current === undefined ||
+    current.kind !== "directory" ||
+    !sameObjectIdentity(created, current)
+  ) {
+    return;
+  }
+  try {
+    await rmdir(path);
+  } catch {
+    // Never recurse: a nonempty or changed directory may contain user data.
   }
 }
 
@@ -242,11 +322,29 @@ export function createNodeFileSystem(): InstallerTransactionFileSystem {
             constants.O_NOFOLLOW,
           mode,
         );
+        let created: InstallerFileStat | undefined;
         try {
+          created = await handleStat(handle);
+          if (
+            created.kind !== "regular-file" ||
+            created.uid !== currentUserId()
+          ) {
+            throw new InstallerFileSystemError("IO_FAILED");
+          }
           await handle.chmod(mode);
+          const configured = await handleStat(handle);
+          if (
+            !sameObjectIdentity(created, configured) ||
+            (configured.mode & 0o7777) !== mode
+          ) {
+            throw new InstallerFileSystemError("IO_FAILED");
+          }
           return writeHandle(handle);
         } catch (error) {
-          await handle.close();
+          await closeAfterSetupFailure(handle);
+          if (created !== undefined) {
+            await unlinkCreatedFile(path, created);
+          }
           throw error;
         }
       });
@@ -255,14 +353,49 @@ export function createNodeFileSystem(): InstallerTransactionFileSystem {
       validateMode(mode);
       await normalized(async () => {
         await mkdir(path, { mode });
-        const handle = await open(
-          path,
-          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
-        );
+        let created: InstallerFileStat | undefined;
         try {
-          await handle.chmod(mode);
-        } finally {
-          await handle.close();
+          const initial = await lstatIdentity(path);
+          if (
+            initial === undefined ||
+            initial.kind !== "directory" ||
+            initial.uid !== currentUserId()
+          ) {
+            throw new InstallerFileSystemError("IO_FAILED");
+          }
+          created = initial;
+          await chmod(path, mode);
+          const configured = await lstatIdentity(path);
+          if (
+            configured === undefined ||
+            !sameObjectIdentity(created, configured) ||
+            (configured.mode & 0o7777) !== mode
+          ) {
+            throw new InstallerFileSystemError("IO_FAILED");
+          }
+          const handle = await open(
+            path,
+            constants.O_RDONLY |
+              constants.O_DIRECTORY |
+              constants.O_NOFOLLOW |
+              constants.O_NONBLOCK,
+          );
+          try {
+            const descriptor = await handleStat(handle);
+            if (
+              !sameObjectIdentity(created, descriptor) ||
+              (descriptor.mode & 0o7777) !== mode
+            ) {
+              throw new InstallerFileSystemError("IO_FAILED");
+            }
+          } finally {
+            await handle.close();
+          }
+        } catch (error) {
+          if (created !== undefined) {
+            await removeCreatedDirectory(path, created);
+          }
+          throw error;
         }
       });
     },
