@@ -1,13 +1,13 @@
-import type { SuspendedDescriptor } from "./installer-state.js";
 import { InstallerError } from "./installer-error.js";
-import {
-  createJson5TargetAdapter,
-  json5Definition,
-} from "./json5-target-adapter.js";
+import type { SuspendedDescriptor } from "./installer-state.js";
 import {
   createJsonTargetAdapter,
   jsonDefinition,
 } from "./json-target-adapter.js";
+import {
+  createJson5TargetAdapter,
+  json5Definition,
+} from "./json5-target-adapter.js";
 import type {
   CapabilityInstallDescriptor,
   ConfigurationTargetId,
@@ -27,8 +27,8 @@ import {
   yamlDefinition,
 } from "./yaml-target-adapter.js";
 
-export { createTargetAdapterCounters };
 export type { TargetAdapter, TargetAdapterCounters };
+export { createTargetAdapterCounters };
 
 export const openClawEnvironmentPolicyCommit =
   "f308af8a344a30432e1b13fa348533e54cd190c8";
@@ -313,6 +313,23 @@ function cursorPlaceholderHeaders(
   return headers;
 }
 
+function openCodePlaceholderHeaders(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Record<string, string> {
+  const transport = descriptor.server.transport;
+  if (transport.type !== "streamable-http") return {};
+  const headers: Record<string, string> = {};
+  if (transport.authentication.type === "bearer-env") {
+    headers.authorization = `Bearer {env:${transport.authentication.variable}}`;
+  }
+  for (const [name, environment] of Object.entries(transport.headersFromEnv)) {
+    headers[name.toLowerCase()] = `{env:${environment}}`;
+  }
+  return headers;
+}
+
 function hermesDefinition(
   descriptor:
     | CapabilityInstallDescriptor
@@ -447,6 +464,67 @@ function cursorDefinition(
   );
 }
 
+function antigravityCompatibility(descriptor: CapabilityInstallDescriptor) {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    return transport.forwardEnv.length === 0
+      ? ({ supported: true } as const)
+      : ({
+          supported: false,
+          reason: "antigravity-forward-env-unsupported",
+        } as const);
+  }
+  if (transport.authentication.type === "bearer-env") {
+    return {
+      supported: false as const,
+      reason: "antigravity-http-authentication-unsupported",
+    };
+  }
+  if (Object.keys(transport.headersFromEnv).length > 0) {
+    return {
+      supported: false as const,
+      reason: "antigravity-http-headers-unsupported",
+    };
+  }
+  return { supported: true as const };
+}
+
+function antigravityDefinition(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Readonly<Record<string, unknown>> {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    if (transport.forwardEnv.length > 0) {
+      throw new InstallerError("TARGET_UNSUPPORTED");
+    }
+    return jsonDefinition(
+      {
+        transport: "stdio",
+        command: transport.command,
+        args: [...transport.args],
+        disabled: false,
+      },
+      "native-disabled",
+    );
+  }
+  if (
+    transport.authentication.type === "bearer-env" ||
+    Object.keys(transport.headersFromEnv).length > 0
+  ) {
+    throw new InstallerError("TARGET_UNSUPPORTED");
+  }
+  return jsonDefinition(
+    {
+      transport: "streamable-http",
+      serverUrl: transport.url,
+      disabled: false,
+    },
+    "native-disabled",
+  );
+}
+
 function kimiCompatibility(descriptor: CapabilityInstallDescriptor) {
   const transport = descriptor.server.transport;
   if (transport.type === "stdio" && transport.forwardEnv.length > 0) {
@@ -503,7 +581,67 @@ function kimiDefinition(
   );
 }
 
+function openCodeDefinition(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Readonly<Record<string, unknown>> {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    return jsonDefinition(
+      {
+        transport: "stdio",
+        type: "local",
+        command: [transport.command, ...transport.args],
+        environment: Object.fromEntries(
+          transport.forwardEnv.map((name) => [name, `{env:${name}}`]),
+        ),
+        disabled: false,
+      },
+      "native-disabled",
+    );
+  }
+  return jsonDefinition(
+    {
+      transport: "streamable-http",
+      type: "remote",
+      url: transport.url,
+      oauth: false,
+      headers: openCodePlaceholderHeaders(descriptor),
+      disabled: false,
+    },
+    "native-disabled",
+  );
+}
+
+function grokDefinition(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Readonly<Record<string, unknown>> {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    return tomlDefinition({
+      transport: "stdio",
+      command: transport.command,
+      args: [...transport.args],
+      env: Object.fromEntries(
+        transport.forwardEnv.map((name) => [name, `\${${name}}`]),
+      ),
+      enabled: true,
+    });
+  }
+  return tomlDefinition({
+    transport: "streamable-http",
+    url: transport.url,
+    headers: placeholderHeaders(descriptor),
+    enabled: true,
+  });
+}
+
 const codex = createTomlTargetAdapter({
+  targetId: "codex",
+  dialect: "codex",
   compatibility: portableCompatibility,
   descriptorToDefinition: codexDefinition,
 });
@@ -520,6 +658,19 @@ const openclaw = createJson5TargetAdapter({
       throw new InstallerError("TARGET_UNSUPPORTED");
     }
     return openClawDefinition(descriptor);
+  },
+});
+
+const antigravity = createJsonTargetAdapter({
+  targetId: "antigravity",
+  dialect: "antigravity",
+  toggleStrategy: "native-disabled",
+  compatibility: antigravityCompatibility,
+  descriptorToDefinition: (descriptor) => {
+    if (!antigravityCompatibility(descriptor).supported) {
+      throw new InstallerError("TARGET_UNSUPPORTED");
+    }
+    return antigravityDefinition(descriptor);
   },
 });
 
@@ -552,29 +703,44 @@ const kimiCode = createJsonTargetAdapter({
   },
 });
 
+const openCode = createJsonTargetAdapter({
+  targetId: "opencode-v2",
+  dialect: "opencode",
+  toggleStrategy: "native-disabled",
+  compatibility: portableCompatibility,
+  descriptorToDefinition: openCodeDefinition,
+});
+
+const grokBuild = createTomlTargetAdapter({
+  targetId: "grok-build",
+  dialect: "grok",
+  compatibility: portableCompatibility,
+  descriptorToDefinition: grokDefinition,
+});
+
 export const configurationTargetAdapters = Object.freeze({
+  antigravity,
   "claude-code": claudeCode,
   codex,
   cursor,
+  "grok-build": grokBuild,
   hermes,
   "kimi-code": kimiCode,
   openclaw,
+  "opencode-v2": openCode,
 } as const);
-
-const unsupportedCompatibility = () =>
-  ({ supported: false, reason: "target-adapter-not-implemented" }) as const;
 
 export const registryCompatibilityAdapters: RegistryCompatibilityAdapters =
   Object.freeze({
-    antigravity: unsupportedCompatibility,
+    antigravity: antigravity.compatibility,
     "claude-code": claudeCode.compatibility,
     codex: codex.compatibility,
     cursor: cursor.compatibility,
-    "grok-build": unsupportedCompatibility,
+    "grok-build": grokBuild.compatibility,
     hermes: hermes.compatibility,
     "kimi-code": kimiCode.compatibility,
     openclaw: openclaw.compatibility,
-    "opencode-v2": unsupportedCompatibility,
+    "opencode-v2": openCode.compatibility,
   } satisfies Record<
     ConfigurationTargetId,
     RegistryCompatibilityAdapters[ConfigurationTargetId]

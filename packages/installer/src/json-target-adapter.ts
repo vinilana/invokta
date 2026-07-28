@@ -1,9 +1,9 @@
 import {
-  parse,
   type ArrayNode,
   type DocumentNode,
   type MemberNode,
   type ObjectNode,
+  parse,
   type Token,
   type ValueNode,
 } from "@humanwhocodes/momoa";
@@ -18,40 +18,41 @@ import {
   assertPostImageDefinition,
   assertServerName,
   assertTargetInspectionConsistency,
+  type DecodedTargetSource,
   decodeTargetSource,
   encodeTargetPostImage,
   finalizeInspectedMcpDefinition,
   freezeDefinition,
   freezeDetachedDefinition,
   frozenTargetInspection,
+  type InspectedJsonValue,
   inspectedJsonArray,
   inspectedJsonRecord,
   inspectedJsonScalar,
   inspectionPass,
   parsePass,
   patchPass,
-  targetInspectionState,
-  type DecodedTargetSource,
-  type InspectedJsonValue,
   type TargetAdapter,
   type TargetAdapterCounters,
   type TargetConfigInspection,
   type TargetPatch,
   type TargetPatchRequest,
+  targetInspectionStateFor,
   unsupportedDefinition,
 } from "./target-adapter.js";
 
-type JsonDialect = "claude" | "cursor" | "kimi";
+type JsonDialect = "antigravity" | "claude" | "cursor" | "kimi" | "opencode";
 
 interface JsonInspectionState {
   readonly dialect: JsonDialect;
   readonly source: DecodedTargetSource;
   readonly serverName: string;
   readonly root: ObjectNode | undefined;
+  readonly mcp: ObjectNode | undefined;
   readonly servers: ObjectNode | undefined;
   readonly serverMember: MemberNode | undefined;
   readonly server: ObjectNode | undefined;
-  readonly enabled: ValueNode | undefined;
+  readonly toggle: ValueNode | undefined;
   readonly members: ReadonlyMap<ObjectNode, ReadonlyMap<string, MemberNode>>;
   readonly tokens: readonly Token[];
 }
@@ -64,13 +65,10 @@ interface AstInspection {
 interface JsonTargetOptions {
   readonly targetId: Extract<
     ConfigurationTargetId,
-    "claude-code" | "cursor" | "kimi-code"
+    "antigravity" | "claude-code" | "cursor" | "kimi-code" | "opencode-v2"
   >;
   readonly dialect: JsonDialect;
-  readonly toggleStrategy: Extract<
-    ToggleStrategy,
-    "native-enabled" | "detached"
-  >;
+  readonly toggleStrategy: ToggleStrategy;
   readonly compatibility: TargetAdapter["compatibility"];
   readonly descriptorToDefinition: TargetAdapter["descriptorToDefinition"];
 }
@@ -122,10 +120,23 @@ function selectedPath(
   );
 }
 
-function inspectAst(document: DocumentNode, serverName: string): AstInspection {
+function serverPath(
+  dialect: JsonDialect,
+  serverName: string,
+): readonly string[] {
+  return dialect === "opencode"
+    ? ["mcp", "servers", serverName]
+    : ["mcpServers", serverName];
+}
+
+function inspectAst(
+  document: DocumentNode,
+  serverName: string,
+  dialect: JsonDialect,
+): AstInspection {
   const members = new Map<ObjectNode, ReadonlyMap<string, MemberNode>>();
   const values = new Map<ValueNode, InspectedJsonValue>();
-  const serverPath = ["mcpServers", serverName] as const;
+  const selectedServerPath = serverPath(dialect, serverName);
   type Task =
     | {
         readonly kind: "visit";
@@ -163,7 +174,7 @@ function inspectAst(document: DocumentNode, serverName: string): AstInspection {
     if (task.kind === "finish-array") {
       const inspected = inspectedJsonArray(
         task.items,
-        selectedPath(task.path, serverPath),
+        selectedPath(task.path, selectedServerPath),
       );
       values.set(task.node, inspected);
       task.assign(inspected);
@@ -172,8 +183,8 @@ function inspectAst(document: DocumentNode, serverName: string): AstInspection {
     if (task.kind === "finish-object") {
       const inspected = inspectedJsonRecord(
         task.fields,
-        selectedPath(task.path, serverPath),
-        samePath(task.path, serverPath),
+        selectedPath(task.path, selectedServerPath),
+        samePath(task.path, selectedServerPath),
       );
       values.set(task.node, inspected);
       task.assign(inspected);
@@ -193,7 +204,10 @@ function inspectAst(document: DocumentNode, serverName: string): AstInspection {
         if (objectMembers.has(name)) invalid();
         objectMembers.set(name, member);
         const child = member.value;
-        const normalizedName = samePath(path, [...serverPath, "headers"])
+        const normalizedName = samePath(path, [
+          ...selectedServerPath,
+          "headers",
+        ])
           ? name.toLowerCase()
           : name;
         if (fields.has(normalizedName)) invalid();
@@ -237,7 +251,7 @@ function inspectAst(document: DocumentNode, serverName: string): AstInspection {
     }
     const inspected = inspectedJsonScalar(
       scalarValue(node),
-      selectedPath(path, serverPath),
+      selectedPath(path, selectedServerPath),
     );
     values.set(node, inspected);
     assign(inspected);
@@ -269,14 +283,33 @@ function objectNode(node: ValueNode | undefined): ObjectNode | undefined {
 
 function finalizationOptions(
   dialect: JsonDialect,
-  toggleStrategy: "native-enabled" | "detached",
+  toggleStrategy: ToggleStrategy,
 ) {
+  if (dialect === "antigravity") {
+    return {
+      httpUrlField: "serverUrl",
+      rawTransportPolicy: "reject" as const,
+      toggleStrategy,
+      typePolicy: "none" as const,
+    };
+  }
   if (dialect === "kimi") {
     return {
       httpBearerTokenField: "bearerTokenEnvVar",
       rawTransportPolicy: "reject" as const,
       toggleStrategy,
       typePolicy: "none" as const,
+    };
+  }
+  if (dialect === "opencode") {
+    return {
+      stdioCommandKind: "array" as const,
+      stdioEnvironmentField: "environment",
+      stdioEnvironmentKind: "object" as const,
+      httpHeadersField: "headers",
+      rawTransportPolicy: "reject" as const,
+      toggleStrategy,
+      typePolicy: "opencode" as const,
     };
   }
   return {
@@ -299,10 +332,11 @@ function emptyState(
     source,
     serverName,
     root: undefined,
+    mcp: undefined,
     servers: undefined,
     serverMember: undefined,
     server: undefined,
-    enabled: undefined,
+    toggle: undefined,
     members: new Map(),
     tokens: Object.freeze([]),
   });
@@ -314,6 +348,7 @@ function parseAndInspect(
   counters: TargetAdapterCounters | undefined,
   phase: "source" | "post-image",
   options: Pick<JsonTargetOptions, "dialect" | "toggleStrategy">,
+  inspectionOwner: object,
 ): TargetConfigInspection {
   assertServerName(serverName);
   const source = decodeTargetSource(sourceBytes, counters, phase);
@@ -323,6 +358,7 @@ function parseAndInspect(
       { kind: "absent" },
       emptyState(source, serverName, options.dialect),
       undefined,
+      inspectionOwner,
     );
   }
 
@@ -331,11 +367,12 @@ function parseAndInspect(
   let astInspection: AstInspection;
   try {
     document = parse(source.text, {
-      mode: "json",
+      mode: options.dialect === "opencode" ? "jsonc" : "json",
       ranges: true,
       tokens: true,
+      ...(options.dialect === "opencode" ? { allowTrailingCommas: true } : {}),
     });
-    astInspection = inspectAst(document, serverName);
+    astInspection = inspectAst(document, serverName, options.dialect);
   } catch (cause) {
     if (cause instanceof InstallerError) throw cause;
     return invalid(cause);
@@ -343,7 +380,17 @@ function parseAndInspect(
   if (document.body.type !== "Object") invalid();
   const root = document.body;
   const memberState = { members: astInspection.members };
-  const servers = objectNode(objectValue(memberState, root, "mcpServers"));
+  const mcp =
+    options.dialect === "opencode"
+      ? objectNode(objectValue(memberState, root, "mcp"))
+      : undefined;
+  const servers = objectNode(
+    objectValue(
+      memberState,
+      options.dialect === "opencode" ? mcp : root,
+      options.dialect === "opencode" ? "servers" : "mcpServers",
+    ),
+  );
   const serverMember = objectMember(memberState, servers, serverName);
   const server = objectNode(serverMember?.value);
   const inspectedServer =
@@ -366,14 +413,20 @@ function parseAndInspect(
       source,
       serverName,
       root,
+      mcp,
       servers,
       serverMember,
       server,
-      enabled: objectValue(memberState, server, "enabled"),
+      toggle: objectValue(
+        memberState,
+        server,
+        options.toggleStrategy === "native-disabled" ? "disabled" : "enabled",
+      ),
       members: astInspection.members,
       tokens: Object.freeze(document.tokens ?? []),
     } satisfies JsonInspectionState),
     finalized?.canonicals,
+    inspectionOwner,
   );
 }
 
@@ -388,6 +441,7 @@ function insertProperty(
   key: string,
   value: string,
   newline: string,
+  tokens: readonly Token[],
 ): string {
   const [start, end] = range(object);
   const close = end - 1;
@@ -402,8 +456,15 @@ function insertProperty(
     return `${text.slice(0, close)}${inside.trim() === "" ? "" : " "}${JSON.stringify(key)}: ${value}${inside.trim() === "" ? "" : " "}${text.slice(close)}`;
   }
   const [, lastEnd] = range(last.value);
-  const withComma = `${text.slice(0, lastEnd)},${text.slice(lastEnd)}`;
-  const adjustedClose = close + 1;
+  const hasTrailingComma = tokens.some((token) => {
+    if (token.type !== "Comma") return false;
+    const [start, end] = range(token);
+    return start >= lastEnd && end <= close;
+  });
+  const withComma = hasTrailingComma
+    ? text
+    : `${text.slice(0, lastEnd)},${text.slice(lastEnd)}`;
+  const adjustedClose = close + (hasTrailingComma ? 0 : 1);
   if (inside.includes("\n")) {
     const closeIndent = lineIndent(withComma, adjustedClose);
     const insertionStart = adjustedClose - closeIndent.length;
@@ -455,22 +516,30 @@ function mappedConfigDefinition(
 ): Readonly<Record<string, unknown>> {
   const stdio = definition.transport === "stdio";
   const keys =
-    dialect === "claude"
+    dialect === "antigravity"
       ? stdio
-        ? ["type", "command", "args", "env"]
-        : ["type", "url", "headers"]
-      : dialect === "cursor"
+        ? ["command", "args", "disabled"]
+        : ["serverUrl", "disabled"]
+      : dialect === "claude"
         ? stdio
-          ? ["command", "args", "env"]
-          : ["url", "headers"]
-        : stdio
-          ? ["command", "args", "enabled"]
-          : ["url", "bearerTokenEnvVar", "enabled"];
+          ? ["type", "command", "args", "env"]
+          : ["type", "url", "headers"]
+        : dialect === "cursor"
+          ? stdio
+            ? ["command", "args", "env"]
+            : ["url", "headers"]
+          : dialect === "kimi"
+            ? stdio
+              ? ["command", "args", "enabled"]
+              : ["url", "bearerTokenEnvVar", "enabled"]
+            : stdio
+              ? ["type", "command", "environment", "disabled"]
+              : ["type", "url", "oauth", "headers", "disabled"];
   const mapped: Record<string, unknown> = {};
   for (const key of keys) {
     if (Object.hasOwn(definition, key)) mapped[key] = definition[key];
   }
-  for (const optional of ["env", "headers"] as const) {
+  for (const optional of ["env", "environment", "headers"] as const) {
     const value = mapped[optional];
     if (
       typeof value === "object" &&
@@ -520,30 +589,38 @@ const reservedHeaderNames: ReadonlySet<string> = new Set([
 
 function validEnvironmentPlaceholders(
   value: unknown,
-  dialect: Extract<JsonDialect, "claude" | "cursor">,
+  dialect: Extract<JsonDialect, "claude" | "cursor" | "opencode">,
 ): boolean {
   if (!stringRecord(value)) return false;
   return Object.entries(value as Record<string, string>).every(
     ([name, placeholder]) =>
       environmentNamePattern.test(name) &&
       placeholder ===
-        (dialect === "claude" ? `\${${name}}` : `\${env:${name}}`),
+        (dialect === "claude"
+          ? `\${${name}}`
+          : dialect === "cursor"
+            ? `\${env:${name}}`
+            : `{env:${name}}`),
   );
 }
 
 function validHeaderPlaceholders(
   value: unknown,
-  dialect: Extract<JsonDialect, "claude" | "cursor">,
+  dialect: Extract<JsonDialect, "claude" | "cursor" | "opencode">,
 ): boolean {
   if (!stringRecord(value)) return false;
   const barePattern =
     dialect === "claude"
       ? /^\$\{[A-Z_][A-Z0-9_]{0,127}\}$/u
-      : /^\$\{env:[A-Z_][A-Z0-9_]{0,127}\}$/u;
+      : dialect === "cursor"
+        ? /^\$\{env:[A-Z_][A-Z0-9_]{0,127}\}$/u
+        : /^\{env:[A-Z_][A-Z0-9_]{0,127}\}$/u;
   const bearerPattern =
     dialect === "claude"
       ? /^Bearer \$\{[A-Z_][A-Z0-9_]{0,127}\}$/u
-      : /^Bearer \$\{env:[A-Z_][A-Z0-9_]{0,127}\}$/u;
+      : dialect === "cursor"
+        ? /^Bearer \$\{env:[A-Z_][A-Z0-9_]{0,127}\}$/u
+        : /^Bearer \{env:[A-Z_][A-Z0-9_]{0,127}\}$/u;
   return Object.entries(value as Record<string, string>).every(
     ([name, placeholder]) =>
       name === name.toLowerCase() &&
@@ -571,21 +648,38 @@ function validateMappedDefinition(
   const http = definition.transport === "streamable-http";
   if (!stdio && !http) invalid();
   const allowed = new Set(
-    dialect === "claude"
+    dialect === "antigravity"
       ? stdio
-        ? ["transport", "type", "command", "args", "env"]
-        : ["transport", "type", "url", "headers"]
-      : dialect === "cursor"
+        ? ["transport", "command", "args", "disabled"]
+        : ["transport", "serverUrl", "disabled"]
+      : dialect === "claude"
         ? stdio
-          ? ["transport", "command", "args", "env"]
-          : ["transport", "url", "headers"]
-        : stdio
-          ? ["transport", "command", "args", "enabled"]
-          : ["transport", "url", "bearerTokenEnvVar", "enabled"],
+          ? ["transport", "type", "command", "args", "env"]
+          : ["transport", "type", "url", "headers"]
+        : dialect === "cursor"
+          ? stdio
+            ? ["transport", "command", "args", "env"]
+            : ["transport", "url", "headers"]
+          : dialect === "kimi"
+            ? stdio
+              ? ["transport", "command", "args", "enabled"]
+              : ["transport", "url", "bearerTokenEnvVar", "enabled"]
+            : stdio
+              ? ["transport", "type", "command", "environment", "disabled"]
+              : ["transport", "type", "url", "oauth", "headers", "disabled"],
   );
   if (Object.keys(definition).some((key) => !allowed.has(key))) invalid();
   if (stdio) {
-    if (
+    if (dialect === "opencode") {
+      if (
+        definition.type !== "local" ||
+        !Array.isArray(definition.command) ||
+        definition.command.length === 0 ||
+        definition.command.some((argument) => typeof argument !== "string")
+      ) {
+        invalid();
+      }
+    } else if (
       typeof definition.command !== "string" ||
       !Array.isArray(definition.args) ||
       definition.args.some((argument) => typeof argument !== "string")
@@ -594,16 +688,35 @@ function validateMappedDefinition(
     }
     if (dialect === "claude" && definition.type !== "stdio") invalid();
     if (
-      (dialect === "claude" || dialect === "cursor") &&
-      !validEnvironmentPlaceholders(definition.env, dialect)
+      (dialect === "claude" ||
+        dialect === "cursor" ||
+        dialect === "opencode") &&
+      !validEnvironmentPlaceholders(
+        dialect === "opencode" ? definition.environment : definition.env,
+        dialect,
+      )
     ) {
       invalid();
     }
   } else {
-    if (typeof definition.url !== "string") invalid();
+    if (
+      dialect === "antigravity"
+        ? typeof definition.serverUrl !== "string"
+        : typeof definition.url !== "string"
+    ) {
+      invalid();
+    }
     if (dialect === "claude" && definition.type !== "http") invalid();
     if (
-      (dialect === "claude" || dialect === "cursor") &&
+      dialect === "opencode" &&
+      (definition.type !== "remote" || definition.oauth !== false)
+    ) {
+      invalid();
+    }
+    if (
+      (dialect === "claude" ||
+        dialect === "cursor" ||
+        dialect === "opencode") &&
       !validHeaderPlaceholders(definition.headers, dialect)
     ) {
       invalid();
@@ -618,6 +731,12 @@ function validateMappedDefinition(
     }
   }
   if (dialect === "kimi" && typeof definition.enabled !== "boolean") {
+    invalid();
+  }
+  if (dialect === "antigravity" && typeof definition.disabled !== "boolean") {
+    invalid();
+  }
+  if (dialect === "opencode" && typeof definition.disabled !== "boolean") {
     invalid();
   }
 }
@@ -642,21 +761,15 @@ function canonicalDefinition(
 function constructPatch(
   request: TargetPatchRequest,
   options: Pick<JsonTargetOptions, "dialect" | "toggleStrategy">,
+  inspectionOwner: object,
 ): TargetPatch {
   const sourceCanonicals = assertTargetInspectionConsistency(
     request.inspection,
   );
-  const rawState = request.inspection[targetInspectionState];
-  if (
-    typeof rawState !== "object" ||
-    rawState === null ||
-    !("source" in rawState) ||
-    !("serverName" in rawState) ||
-    !("dialect" in rawState)
-  ) {
-    invalid();
-  }
-  const state = rawState as JsonInspectionState;
+  const state = targetInspectionStateFor<JsonInspectionState>(
+    request.inspection,
+    inspectionOwner,
+  );
   if (state.dialect !== options.dialect) invalid();
 
   let insertedDefinition: Readonly<Record<string, unknown>> | undefined;
@@ -692,8 +805,12 @@ function constructPatch(
     ) {
       invalid();
     }
-    const desired = request.action === "enable";
-    if (request.inspection.currentServer.definition.enabled === desired) {
+    const desiredEnabled = request.action === "enable";
+    const currentEnabled =
+      options.toggleStrategy === "native-disabled"
+        ? request.inspection.currentServer.definition.disabled === false
+        : request.inspection.currentServer.definition.enabled === true;
+    if (currentEnabled === desiredEnabled) {
       return { kind: "unchanged" };
     }
   }
@@ -705,25 +822,46 @@ function constructPatch(
     const entry = definitionJson(insertedDefinition, options.dialect);
     if (source.missing) {
       postText = `${JSON.stringify(
-        {
-          mcpServers: {
-            [state.serverName]: mappedConfigDefinition(
-              insertedDefinition,
-              options.dialect,
-            ),
-          },
-        },
+        options.dialect === "opencode"
+          ? {
+              mcp: {
+                servers: {
+                  [state.serverName]: mappedConfigDefinition(
+                    insertedDefinition,
+                    options.dialect,
+                  ),
+                },
+              },
+            }
+          : {
+              mcpServers: {
+                [state.serverName]: mappedConfigDefinition(
+                  insertedDefinition,
+                  options.dialect,
+                ),
+              },
+            },
         undefined,
         2,
       )}\n`;
     } else if (state.root === undefined) invalid();
-    else if (state.servers === undefined) {
+    else if (options.dialect === "opencode" && state.mcp === undefined) {
       postText = insertProperty(
         source.text,
         state.root,
-        "mcpServers",
+        "mcp",
+        `{"servers":{${JSON.stringify(state.serverName)}:${entry}}}`,
+        source.newline,
+        state.tokens,
+      );
+    } else if (state.servers === undefined) {
+      postText = insertProperty(
+        source.text,
+        options.dialect === "opencode" ? (state.mcp as ObjectNode) : state.root,
+        options.dialect === "opencode" ? "servers" : "mcpServers",
         `{${JSON.stringify(state.serverName)}:${entry}}`,
         source.newline,
+        state.tokens,
       );
     } else {
       postText = insertProperty(
@@ -732,6 +870,7 @@ function constructPatch(
         state.serverName,
         entry,
         source.newline,
+        state.tokens,
       );
     }
   } else if (options.toggleStrategy === "detached") {
@@ -749,17 +888,24 @@ function constructPatch(
       state.serverMember,
     );
   } else {
-    const desired = request.action === "enable";
+    const desiredEnabled = request.action === "enable";
+    const toggleField =
+      options.toggleStrategy === "native-disabled" ? "disabled" : "enabled";
+    const desiredValue =
+      options.toggleStrategy === "native-disabled"
+        ? !desiredEnabled
+        : desiredEnabled;
     postText =
-      state.enabled === undefined
+      state.toggle === undefined
         ? insertProperty(
             source.text,
             state.server as ObjectNode,
-            "enabled",
-            String(desired),
+            toggleField,
+            String(desiredValue),
             source.newline,
+            state.tokens,
           )
-        : replaceRange(source.text, state.enabled, String(desired));
+        : replaceRange(source.text, state.toggle, String(desiredValue));
   }
 
   const postImage = encodeTargetPostImage(
@@ -773,6 +919,7 @@ function constructPatch(
     request.counters,
     "post-image",
     options,
+    inspectionOwner,
   );
   assertPostImageDefinition(request, postInspection, options.toggleStrategy);
   return { kind: "changed", postImage };
@@ -781,6 +928,7 @@ function constructPatch(
 export function createJsonTargetAdapter(
   options: JsonTargetOptions,
 ): TargetAdapter {
+  const inspectionOwner = Object.freeze({});
   const parseOptions = Object.freeze({
     dialect: options.dialect,
     toggleStrategy: options.toggleStrategy,
@@ -789,8 +937,10 @@ export function createJsonTargetAdapter(
     metadata: Object.freeze({
       targetId: options.targetId,
       targetContractVersion: 1,
-      format: "json",
-      parentPath: Object.freeze(["mcpServers"]),
+      format: options.dialect === "opencode" ? "jsonc" : "json",
+      parentPath: Object.freeze(
+        options.dialect === "opencode" ? ["mcp", "servers"] : ["mcpServers"],
+      ),
       toggleStrategy: options.toggleStrategy,
     }),
     compatibility: options.compatibility,
@@ -809,16 +959,24 @@ export function createJsonTargetAdapter(
       return options.descriptorToDefinition(fake);
     },
     inspect: ({ source, serverName, counters }) =>
-      parseAndInspect(source, serverName, counters, "source", parseOptions),
-    constructPatch: (request) => constructPatch(request, parseOptions),
+      parseAndInspect(
+        source,
+        serverName,
+        counters,
+        "source",
+        parseOptions,
+        inspectionOwner,
+      ),
+    constructPatch: (request) =>
+      constructPatch(request, parseOptions, inspectionOwner),
   } satisfies TargetAdapter);
 }
 
 export function jsonDefinition(
   definition: Record<string, unknown>,
-  toggleStrategy: "native-enabled" | "detached",
+  toggleStrategy: ToggleStrategy,
 ): Readonly<Record<string, unknown>> {
-  return toggleStrategy === "detached"
-    ? freezeDetachedDefinition(definition)
-    : freezeDefinition(definition);
+  return toggleStrategy === "native-enabled"
+    ? freezeDefinition(definition)
+    : freezeDetachedDefinition(definition);
 }

@@ -1,31 +1,34 @@
 import { type AST, parseTOML } from "toml-eslint-parser";
 
 import { InstallerError } from "./installer-error.js";
-import type { CapabilityInstallDescriptor } from "./registry.js";
+import type {
+  CapabilityInstallDescriptor,
+  ConfigurationTargetId,
+} from "./registry.js";
 import {
   assertPostImageDefinition,
   assertServerName,
   assertTargetInspectionConsistency,
+  type DecodedTargetSource,
   decodeTargetSource,
   encodeTargetPostImage,
   finalizeInspectedMcpDefinition,
   freezeDefinition,
   frozenTargetInspection,
+  type InspectedJsonRecord,
+  type InspectedJsonValue,
   inspectedJsonArray,
   inspectedJsonRecord,
   inspectedJsonScalar,
   inspectionPass,
   parsePass,
   patchPass,
-  targetInspectionState,
-  type DecodedTargetSource,
   type TargetAdapter,
   type TargetAdapterCounters,
   type TargetConfigInspection,
   type TargetPatch,
   type TargetPatchRequest,
-  type InspectedJsonRecord,
-  type InspectedJsonValue,
+  targetInspectionStateFor,
   unsupportedDefinition,
 } from "./target-adapter.js";
 
@@ -47,8 +50,18 @@ interface TomlAstInspection extends TomlSyntax {
 }
 
 interface TomlInspectionState extends TomlSyntax {
+  readonly dialect: TomlDialect;
   readonly source: DecodedTargetSource;
   readonly serverName: string;
+}
+
+type TomlDialect = "codex" | "grok";
+
+interface TomlTargetOptions {
+  readonly targetId: Extract<ConfigurationTargetId, "codex" | "grok-build">;
+  readonly dialect: TomlDialect;
+  readonly compatibility: TargetAdapter["compatibility"];
+  readonly descriptorToDefinition: TargetAdapter["descriptorToDefinition"];
 }
 
 function invalid(cause?: unknown): never {
@@ -112,8 +125,9 @@ function normalizedDraftKey(
   draft: TomlRecordDraft,
   key: string,
   selectedPath: readonly string[],
+  httpHeadersField: string,
 ): string {
-  return samePath(draft.path, [...selectedPath, "env_http_headers"])
+  return samePath(draft.path, [...selectedPath, httpHeadersField])
     ? key.toLowerCase()
     : key;
 }
@@ -122,12 +136,18 @@ function prepareDraftPath(
   root: TomlRecordDraft,
   path: readonly string[],
   selectedPath: readonly string[],
+  httpHeadersField: string,
   postorder: TomlRecordDraft[],
 ): (value: InspectedJsonValue) => void {
   if (path.length === 0) invalid();
   let current = root;
   for (const rawSegment of path.slice(0, -1)) {
-    const segment = normalizedDraftKey(current, rawSegment, selectedPath);
+    const segment = normalizedDraftKey(
+      current,
+      rawSegment,
+      selectedPath,
+      httpHeadersField,
+    );
     const existing = current.fields.get(segment);
     if (existing === undefined) {
       const child = recordDraft([...current.path, rawSegment], postorder);
@@ -138,7 +158,12 @@ function prepareDraftPath(
     else invalid();
   }
   const rawKey = path.at(-1) as string;
-  const key = normalizedDraftKey(current, rawKey, selectedPath);
+  const key = normalizedDraftKey(
+    current,
+    rawKey,
+    selectedPath,
+    httpHeadersField,
+  );
   if (current.fields.has(key)) invalid();
   const pending: TomlPendingValue = { kind: "pending" };
   current.fields.set(key, pending);
@@ -182,6 +207,7 @@ function decodeTomlValue(
     topLevelPair: boolean,
   ) => void,
   selectedPath: readonly string[],
+  httpHeadersField: string,
   captureSelectedServer: (value: InspectedJsonRecord) => void,
 ): InspectedJsonValue {
   let result: InspectedJsonValue | undefined;
@@ -280,6 +306,7 @@ function decodeTomlValue(
         draft,
         relativePath,
         selectedPath,
+        httpHeadersField,
         postorder,
       );
       stack.push({
@@ -300,8 +327,10 @@ function decodeTomlValue(
 function inspectTomlAst(
   ast: AST.TOMLProgram,
   serverName: string,
+  dialect: TomlDialect,
 ): TomlAstInspection {
   const selectedPath = ["mcp_servers", serverName] as const;
+  const httpHeadersField = dialect === "codex" ? "env_http_headers" : "headers";
   const serverPostorder: TomlRecordDraft[] = [];
   const serverDraft = recordDraft(selectedPath, serverPostorder);
   let serverValue: InspectedJsonRecord | undefined;
@@ -390,6 +419,7 @@ function inspectTomlAst(
           absolutePath,
           inspectPair,
           selectedPath,
+          httpHeadersField,
           captureSelectedServer,
         );
         if (
@@ -400,6 +430,7 @@ function inspectTomlAst(
             serverDraft,
             absolutePath.slice(selectedPath.length),
             selectedPath,
+            httpHeadersField,
             serverPostorder,
           );
           assignChild(child);
@@ -415,6 +446,7 @@ function inspectTomlAst(
         relativePath,
         inspectPair,
         selectedPath,
+        httpHeadersField,
         captureSelectedServer,
       );
       if (
@@ -425,6 +457,7 @@ function inspectTomlAst(
           serverDraft,
           relativePath.slice(selectedPath.length),
           selectedPath,
+          httpHeadersField,
           serverPostorder,
         );
         assignChild(child);
@@ -449,6 +482,8 @@ function parseAndInspect(
   serverName: string,
   counters: TargetAdapterCounters | undefined,
   phase: "source" | "post-image",
+  dialect: TomlDialect,
+  inspectionOwner: object,
 ): TargetConfigInspection {
   assertServerName(serverName);
   const source = decodeTargetSource(sourceBytes, counters, phase);
@@ -457,6 +492,7 @@ function parseAndInspect(
     return frozenTargetInspection(
       { kind: "absent" },
       {
+        dialect,
         source,
         serverName,
         parentInline: undefined,
@@ -466,6 +502,7 @@ function parseAndInspect(
         enabledValue: undefined,
       } satisfies TomlInspectionState,
       undefined,
+      inspectionOwner,
     );
   }
   parsePass(counters, phase);
@@ -473,7 +510,7 @@ function parseAndInspect(
   let astInspection: TomlAstInspection;
   try {
     ast = parseTOML(source.text, { tomlVersion: "1.0.0" });
-    astInspection = inspectTomlAst(ast, serverName);
+    astInspection = inspectTomlAst(ast, serverName, dialect);
   } catch (cause) {
     if (cause instanceof InstallerError) throw cause;
     return invalid(cause);
@@ -482,9 +519,10 @@ function parseAndInspect(
     astInspection.serverValue === undefined
       ? undefined
       : finalizeInspectedMcpDefinition(astInspection.serverValue, {
-          stdioEnvironmentField: "env_vars",
-          stdioEnvironmentKind: "array",
-          httpHeadersField: "env_http_headers",
+          stdioEnvironmentField: dialect === "codex" ? "env_vars" : "env",
+          stdioEnvironmentKind: dialect === "codex" ? "array" : "object",
+          httpHeadersField:
+            dialect === "codex" ? "env_http_headers" : "headers",
           rawTransportPolicy: "reject",
         });
   if (phase === "source") inspectionPass(counters);
@@ -493,11 +531,13 @@ function parseAndInspect(
       ? { kind: "absent" }
       : { kind: "present", definition: finalized.definition },
     {
+      dialect,
       source,
       serverName,
       ...astInspection,
     } satisfies TomlInspectionState,
     finalized?.canonicals,
+    inspectionOwner,
   );
 }
 
@@ -510,8 +550,31 @@ function renderTomlArray(values: readonly unknown[]): string {
   return `[${values.map((value) => tomlString(value as string)).join(", ")}]`;
 }
 
+function renderTomlStringRecord(
+  value: unknown,
+  capitalizeAuthorization = false,
+): string {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.values(value).some((entry) => typeof entry !== "string")
+  ) {
+    invalid();
+  }
+  const fields = Object.entries(value).map(([name, fieldValue]) => {
+    const renderedName =
+      capitalizeAuthorization && name === "authorization"
+        ? "Authorization"
+        : name;
+    return `${tomlString(renderedName)} = ${tomlString(fieldValue as string)}`;
+  });
+  return `{ ${fields.join(", ")} }`;
+}
+
 function configFields(
   definition: Readonly<Record<string, unknown>>,
+  dialect: TomlDialect,
 ): readonly (readonly [string, string])[] {
   const fields: Array<readonly [string, string]> = [];
   if (
@@ -521,21 +584,37 @@ function configFields(
   ) {
     fields.push(["command", tomlString(definition.command)]);
     fields.push(["args", renderTomlArray(definition.args)]);
-    if (Array.isArray(definition.env_vars) && definition.env_vars.length > 0) {
-      fields.push(["env_vars", renderTomlArray(definition.env_vars)]);
+    if (dialect === "codex") {
+      if (
+        Array.isArray(definition.env_vars) &&
+        definition.env_vars.length > 0
+      ) {
+        fields.push(["env_vars", renderTomlArray(definition.env_vars)]);
+      }
+    } else if (
+      typeof definition.env === "object" &&
+      definition.env !== null &&
+      !Array.isArray(definition.env) &&
+      Object.keys(definition.env).length > 0
+    ) {
+      fields.push(["env", renderTomlStringRecord(definition.env)]);
     }
   } else if (
     definition.transport === "streamable-http" &&
     typeof definition.url === "string"
   ) {
     fields.push(["url", tomlString(definition.url)]);
-    if (typeof definition.bearer_token_env_var === "string") {
+    if (
+      dialect === "codex" &&
+      typeof definition.bearer_token_env_var === "string"
+    ) {
       fields.push([
         "bearer_token_env_var",
         tomlString(definition.bearer_token_env_var),
       ]);
     }
     if (
+      dialect === "codex" &&
       typeof definition.env_http_headers === "object" &&
       definition.env_http_headers !== null &&
       !Array.isArray(definition.env_http_headers) &&
@@ -548,6 +627,17 @@ function configFields(
         )
         .join(", ");
       fields.push(["env_http_headers", `{ ${headers} }`]);
+    } else if (
+      dialect === "grok" &&
+      typeof definition.headers === "object" &&
+      definition.headers !== null &&
+      !Array.isArray(definition.headers) &&
+      Object.keys(definition.headers).length > 0
+    ) {
+      fields.push([
+        "headers",
+        renderTomlStringRecord(definition.headers, true),
+      ]);
     }
   } else invalid();
   fields.push(["enabled", String(definition.enabled)]);
@@ -558,17 +648,21 @@ function renderDefinition(
   serverName: string,
   definition: Readonly<Record<string, unknown>>,
   newline: string,
+  dialect: TomlDialect,
 ): string {
   return [
     `[mcp_servers.${bareTomlKey(serverName)}]`,
-    ...configFields(definition).map(([name, value]) => `${name} = ${value}`),
+    ...configFields(definition, dialect).map(
+      ([name, value]) => `${name} = ${value}`,
+    ),
   ].join(newline);
 }
 
 function renderInlineDefinition(
   definition: Readonly<Record<string, unknown>>,
+  dialect: TomlDialect,
 ): string {
-  return `{ ${configFields(definition)
+  return `{ ${configFields(definition, dialect)
     .map(([name, value]) => `${name} = ${value}`)
     .join(", ")} }`;
 }
@@ -606,22 +700,94 @@ function insertAfterLine(
   return `${source.text.slice(0, insertion)}${line}${source.newline}${source.text.slice(insertion)}`;
 }
 
-function constructPatch(request: TargetPatchRequest): TargetPatch {
-  assertTargetInspectionConsistency(request.inspection);
-  const rawState = request.inspection[targetInspectionState];
+const environmentNamePattern = /^[A-Z_][A-Z0-9_]{0,127}$/u;
+const httpFieldNamePattern = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
+const reservedHeaderNames: ReadonlySet<string> = new Set([
+  "connection",
+  "content-length",
+  "host",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+function validateGrokDefinition(
+  definition: Readonly<Record<string, unknown>>,
+): void {
+  const stdio = definition.transport === "stdio";
+  const http = definition.transport === "streamable-http";
+  if (!stdio && !http) invalid();
+  const allowed = new Set(
+    stdio
+      ? ["transport", "command", "args", "env", "enabled"]
+      : ["transport", "url", "headers", "enabled"],
+  );
   if (
-    typeof rawState !== "object" ||
-    rawState === null ||
-    !("source" in rawState) ||
-    !("serverName" in rawState)
+    Object.keys(definition).some((key) => !allowed.has(key)) ||
+    typeof definition.enabled !== "boolean"
   ) {
     invalid();
   }
-  const state = rawState as TomlInspectionState;
+  if (stdio) {
+    if (
+      typeof definition.command !== "string" ||
+      !Array.isArray(definition.args) ||
+      definition.args.some((argument) => typeof argument !== "string") ||
+      typeof definition.env !== "object" ||
+      definition.env === null ||
+      Array.isArray(definition.env) ||
+      !Object.entries(definition.env).every(
+        ([name, placeholder]) =>
+          environmentNamePattern.test(name) && placeholder === `\${${name}}`,
+      )
+    ) {
+      invalid();
+    }
+    return;
+  }
+  if (
+    typeof definition.url !== "string" ||
+    typeof definition.headers !== "object" ||
+    definition.headers === null ||
+    Array.isArray(definition.headers) ||
+    !Object.entries(definition.headers).every(([name, placeholder]) => {
+      if (
+        name !== name.toLowerCase() ||
+        !httpFieldNamePattern.test(name) ||
+        reservedHeaderNames.has(name) ||
+        typeof placeholder !== "string"
+      ) {
+        return false;
+      }
+      return name === "authorization"
+        ? /^(?:Bearer )?\$\{[A-Z_][A-Z0-9_]{0,127}\}$/u.test(placeholder)
+        : /^\$\{[A-Z_][A-Z0-9_]{0,127}\}$/u.test(placeholder);
+    })
+  ) {
+    invalid();
+  }
+}
+
+function constructPatch(
+  request: TargetPatchRequest,
+  dialect: TomlDialect,
+  inspectionOwner: object,
+): TargetPatch {
+  assertTargetInspectionConsistency(request.inspection);
+  const state = targetInspectionStateFor<TomlInspectionState>(
+    request.inspection,
+    inspectionOwner,
+  );
+  if (state.dialect !== dialect) invalid();
   if (request.action === "install") {
     if (request.inspection.currentServer.kind === "present") {
       throw new InstallerError("CONFIG_CONFLICT");
     }
+    if (dialect === "grok") validateGrokDefinition(request.definition);
   } else {
     if (request.inspection.currentServer.kind !== "present") invalid();
     const desired = request.action === "enable";
@@ -637,7 +803,7 @@ function constructPatch(request: TargetPatchRequest): TargetPatch {
         state.source.text,
         state.parentInline,
         state.serverName,
-        renderInlineDefinition(request.definition),
+        renderInlineDefinition(request.definition, dialect),
       );
     } else {
       postText = appendSection(
@@ -646,6 +812,7 @@ function constructPatch(request: TargetPatchRequest): TargetPatch {
           state.serverName,
           request.definition,
           state.source.newline,
+          dialect,
         ),
       );
     }
@@ -685,18 +852,20 @@ function constructPatch(request: TargetPatchRequest): TargetPatch {
     state.serverName,
     request.counters,
     "post-image",
+    dialect,
+    inspectionOwner,
   );
   assertPostImageDefinition(request, postInspection);
   return { kind: "changed", postImage };
 }
 
-export function createTomlTargetAdapter(options: {
-  readonly compatibility: TargetAdapter["compatibility"];
-  readonly descriptorToDefinition: TargetAdapter["descriptorToDefinition"];
-}): TargetAdapter {
+export function createTomlTargetAdapter(
+  options: TomlTargetOptions,
+): TargetAdapter {
+  const inspectionOwner = Object.freeze({});
   return Object.freeze({
     metadata: Object.freeze({
-      targetId: "codex",
+      targetId: options.targetId,
       targetContractVersion: 1,
       format: "toml",
       parentPath: Object.freeze(["mcp_servers"]),
@@ -718,8 +887,16 @@ export function createTomlTargetAdapter(options: {
       return options.descriptorToDefinition(fake);
     },
     inspect: ({ source, serverName, counters }) =>
-      parseAndInspect(source, serverName, counters, "source"),
-    constructPatch,
+      parseAndInspect(
+        source,
+        serverName,
+        counters,
+        "source",
+        options.dialect,
+        inspectionOwner,
+      ),
+    constructPatch: (request) =>
+      constructPatch(request, options.dialect, inspectionOwner),
   } satisfies TargetAdapter);
 }
 

@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { InstallerError } from "../src/installer-error.js";
 import type { CapabilityInstallDescriptor } from "../src/registry.js";
+import { targetInspectionState } from "../src/target-adapter.js";
 import {
   configurationTargetAdapters,
   createTargetAdapterCounters,
   openClawDeniedEnvironmentNameSnapshot,
   openClawEnvironmentPolicyCommit,
-  registryCompatibilityAdapters,
 } from "../src/target-adapters.js";
 
 const encoder = new TextEncoder();
@@ -119,6 +119,12 @@ function forgeCurrentServer<T extends { readonly currentServer: unknown }>(
   return forged;
 }
 
+function unrelatedSource(format: string, value: "attacker" | "original") {
+  if (format === "toml") return encoder.encode(`title = "${value}"\n`);
+  if (format === "yaml") return encoder.encode(`title: ${value}\n`);
+  return encoder.encode(`{"title":"${value}"}\n`);
+}
+
 describe("first native-toggle target adapters", () => {
   it("publishes exact immutable metadata and deterministic placeholders", () => {
     expect(
@@ -129,6 +135,13 @@ describe("first native-toggle target adapters", () => {
         ]),
       ),
     ).toEqual({
+      antigravity: {
+        targetId: "antigravity",
+        targetContractVersion: 1,
+        format: "json",
+        parentPath: ["mcpServers"],
+        toggleStrategy: "native-disabled",
+      },
       "claude-code": {
         targetId: "claude-code",
         targetContractVersion: 1,
@@ -149,6 +162,13 @@ describe("first native-toggle target adapters", () => {
         format: "json",
         parentPath: ["mcpServers"],
         toggleStrategy: "detached",
+      },
+      "grok-build": {
+        targetId: "grok-build",
+        targetContractVersion: 1,
+        format: "toml",
+        parentPath: ["mcp_servers"],
+        toggleStrategy: "native-enabled",
       },
       hermes: {
         targetId: "hermes",
@@ -171,23 +191,104 @@ describe("first native-toggle target adapters", () => {
         parentPath: ["mcp", "servers"],
         toggleStrategy: "native-enabled",
       },
+      "opencode-v2": {
+        targetId: "opencode-v2",
+        targetContractVersion: 1,
+        format: "jsonc",
+        parentPath: ["mcp", "servers"],
+        toggleStrategy: "native-disabled",
+      },
     });
-
-    for (const targetId of [
-      "antigravity",
-      "grok-build",
-      "opencode-v2",
-    ] as const) {
-      expect(
-        registryCompatibilityAdapters[targetId](stdioDescriptor()),
-      ).toEqual({
-        supported: false,
-        reason: "target-adapter-not-implemented",
-      });
-    }
     expect(Object.isFrozen(configurationTargetAdapters.codex.metadata)).toBe(
       true,
     );
+  });
+
+  it("keeps all adapter parse state private from visible inspection symbols", () => {
+    const descriptor = stdioDescriptor([]);
+    for (const adapter of Object.values(configurationTargetAdapters)) {
+      const inspection = adapter.inspect({
+        source: unrelatedSource(adapter.metadata.format, "original"),
+        serverName: descriptor.server.name,
+      });
+      const exposed = inspection[targetInspectionState];
+      expect(typeof exposed).toBe("object");
+      expect(exposed).not.toBeNull();
+      if (typeof exposed === "object" && exposed !== null) {
+        const visibleSource = Reflect.get(exposed, "source") as unknown;
+        if (typeof visibleSource === "object" && visibleSource !== null) {
+          Reflect.set(
+            visibleSource,
+            "text",
+            decoder.decode(
+              unrelatedSource(adapter.metadata.format, "attacker"),
+            ),
+          );
+        } else {
+          Reflect.set(exposed, "source", { text: "attacker" });
+        }
+      }
+
+      const patch = adapter.constructPatch({
+        action: "install",
+        definition: adapter.descriptorToDefinition(descriptor),
+        inspection,
+      });
+      expect(patch.kind).toBe("changed");
+      if (patch.kind !== "changed") throw new Error("Expected changed patch.");
+      const postImage = decoder.decode(patch.postImage);
+      expect(postImage).toContain("original");
+      expect(postImage).not.toContain("attacker");
+    }
+  });
+
+  it("rejects inspection copies even when every visible symbol is copied", () => {
+    const descriptor = stdioDescriptor([]);
+    for (const adapter of Object.values(configurationTargetAdapters)) {
+      const inspection = adapter.inspect({
+        source: undefined,
+        serverName: descriptor.server.name,
+      });
+      const copied = Object.create(
+        Object.getPrototypeOf(inspection),
+        Object.getOwnPropertyDescriptors(inspection),
+      ) as typeof inspection;
+      expectInstallerCode(
+        () =>
+          adapter.constructPatch({
+            action: "install",
+            definition: adapter.descriptorToDefinition(descriptor),
+            inspection: copied,
+          }),
+        "HARNESS_CONFIG_INVALID",
+      );
+    }
+  });
+
+  it("rejects genuine inspections created by a different adapter", () => {
+    const descriptor = stdioDescriptor([]);
+    const adapters = Object.values(configurationTargetAdapters);
+    const inspections = adapters.map((adapter) =>
+      adapter.inspect({
+        source: undefined,
+        serverName: descriptor.server.name,
+      }),
+    );
+    for (const [index, adapter] of adapters.entries()) {
+      const foreignInspection = inspections[(index + 1) % inspections.length];
+      if (foreignInspection === undefined) {
+        throw new Error("Expected a foreign inspection.");
+      }
+      expectInstallerCode(
+        () =>
+          adapter.constructPatch({
+            action: "install",
+            definition: adapter.descriptorToDefinition(descriptor),
+            inspection: foreignInspection,
+          }),
+        "HARNESS_CONFIG_INVALID",
+      );
+    }
   });
 
   it.each(["codex", "hermes", "openclaw"] as const)(

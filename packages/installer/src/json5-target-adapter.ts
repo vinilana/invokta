@@ -25,7 +25,7 @@ import {
   inspectionPass,
   parsePass,
   patchPass,
-  targetInspectionState,
+  targetInspectionStateFor,
   type DecodedTargetSource,
   type TargetAdapter,
   type TargetAdapterCounters,
@@ -258,6 +258,7 @@ function parseAndInspect(
   serverName: string,
   counters: TargetAdapterCounters | undefined,
   phase: "source" | "post-image",
+  inspectionOwner: object,
 ): TargetConfigInspection {
   assertServerName(serverName);
   const source = decodeTargetSource(sourceBytes, counters, phase);
@@ -277,6 +278,7 @@ function parseAndInspect(
         tokens: [],
       } satisfies Json5InspectionState,
       undefined,
+      inspectionOwner,
     );
   }
   parsePass(counters, phase);
@@ -332,6 +334,7 @@ function parseAndInspect(
       tokens: document.tokens ?? [],
     } satisfies Json5InspectionState,
     finalized?.canonicals,
+    inspectionOwner,
   );
 }
 
@@ -441,18 +444,15 @@ function jsonDefinition(definition: Readonly<Record<string, unknown>>): string {
   return JSON.stringify(jsonConfigDefinition(definition));
 }
 
-function constructPatch(request: TargetPatchRequest): TargetPatch {
+function constructPatch(
+  request: TargetPatchRequest,
+  inspectionOwner: object,
+): TargetPatch {
   assertTargetInspectionConsistency(request.inspection);
-  const rawState = request.inspection[targetInspectionState];
-  if (
-    typeof rawState !== "object" ||
-    rawState === null ||
-    !("source" in rawState) ||
-    !("serverName" in rawState)
-  ) {
-    invalid();
-  }
-  const state = rawState as Json5InspectionState;
+  const state = targetInspectionStateFor<Json5InspectionState>(
+    request.inspection,
+    inspectionOwner,
+  );
   if (request.action === "install") {
     if (request.inspection.currentServer.kind === "present") {
       throw new InstallerError("CONFIG_CONFLICT");
@@ -540,6 +540,7 @@ function constructPatch(request: TargetPatchRequest): TargetPatch {
     state.serverName,
     request.counters,
     "post-image",
+    inspectionOwner,
   );
   assertPostImageDefinition(request, postInspection);
   return { kind: "changed", postImage };
@@ -549,6 +550,7 @@ export function createJson5TargetAdapter(options: {
   readonly compatibility: TargetAdapter["compatibility"];
   readonly descriptorToDefinition: TargetAdapter["descriptorToDefinition"];
 }): TargetAdapter {
+  const inspectionOwner = Object.freeze({});
   return Object.freeze({
     metadata: Object.freeze({
       targetId: "openclaw",
@@ -573,8 +575,8 @@ export function createJson5TargetAdapter(options: {
       return options.descriptorToDefinition(fake);
     },
     inspect: ({ source, serverName, counters }) =>
-      parseAndInspect(source, serverName, counters, "source"),
-    constructPatch,
+      parseAndInspect(source, serverName, counters, "source", inspectionOwner),
+    constructPatch: (request) => constructPatch(request, inspectionOwner),
   } satisfies TargetAdapter);
 }
 

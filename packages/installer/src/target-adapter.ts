@@ -1,10 +1,10 @@
+import { InstallerError } from "./installer-error.js";
+import type { SuspendedDescriptor } from "./installer-state.js";
 import {
   canonicalizeJcs,
   registerCanonicalJcs,
   type ToggleStrategy,
 } from "./jcs-fingerprint.js";
-import type { SuspendedDescriptor } from "./installer-state.js";
-import { InstallerError } from "./installer-error.js";
 import type {
   CapabilityInstallDescriptor,
   ConfigurationTargetId,
@@ -65,10 +65,19 @@ export interface TargetConfigInspection {
   readonly [targetDefinitionCanonicals]: TargetDefinitionCanonicals | undefined;
 }
 
+const opaqueTargetInspectionState = Object.freeze(
+  Object.create(null) as Record<string, never>,
+);
+const targetInspectionStates = new WeakMap<
+  TargetConfigInspection,
+  { readonly owner: object; readonly state: unknown }
+>();
+
 export function frozenTargetInspection(
   currentServer: CurrentTargetServer,
   state: unknown,
   canonicals: TargetDefinitionCanonicals | undefined,
+  owner: object,
 ): TargetConfigInspection {
   const inspection = {
     currentServer: Object.freeze(currentServer),
@@ -83,11 +92,23 @@ export function frozenTargetInspection(
     [targetInspectionState]: {
       configurable: false,
       enumerable: false,
-      value: state,
+      value: opaqueTargetInspectionState,
       writable: false,
     },
   });
+  targetInspectionStates.set(inspection, { owner, state });
   return Object.freeze(inspection);
+}
+
+export function targetInspectionStateFor<State>(
+  inspection: TargetConfigInspection,
+  owner: object,
+): State {
+  const registered = targetInspectionStates.get(inspection);
+  if (registered === undefined || registered.owner !== owner) {
+    throw new InstallerError("HARNESS_CONFIG_INVALID");
+  }
+  return registered.state as State;
 }
 
 export type TargetPatchRequest =
@@ -358,33 +379,48 @@ export function inspectedJsonRecord(
 
 function canonicalRootVariants(
   fields: ReadonlyMap<string, InspectedJsonValue>,
-  toggleStrategy: "native-enabled" | "detached",
-): TargetDefinitionCanonicals & { readonly withoutEnabled?: string } {
+  toggleStrategy: ToggleStrategy,
+): TargetDefinitionCanonicals & {
+  readonly withoutEnabled?: string;
+  readonly withoutDisabled?: string;
+} {
   const current: string[] = [];
   const enabled: string[] = [];
   const disabled: string[] = [];
-  const withoutEnabled: string[] = [];
+  const withoutToggle: string[] = [];
+  const toggleField =
+    toggleStrategy === "native-enabled"
+      ? "enabled"
+      : toggleStrategy === "native-disabled"
+        ? "disabled"
+        : undefined;
   for (const key of [...fields.keys()].sort()) {
     const field = fields.get(key) ?? invalidInspectedJson();
     if (field.canonical === undefined) invalidInspectedJson();
     const prefix = `${serializeInspectedString(key)}:`;
     current.push(`${prefix}${field.canonical}`);
-    if (toggleStrategy === "native-enabled" && key === "enabled") {
-      enabled.push(`${prefix}true`);
-      disabled.push(`${prefix}false`);
-    } else if (toggleStrategy === "native-enabled") {
+    if (key === toggleField) {
+      enabled.push(
+        `${prefix}${toggleStrategy === "native-enabled" ? "true" : "false"}`,
+      );
+      disabled.push(
+        `${prefix}${toggleStrategy === "native-enabled" ? "false" : "true"}`,
+      );
+    } else if (toggleField !== undefined) {
       enabled.push(`${prefix}${field.canonical}`);
       disabled.push(`${prefix}${field.canonical}`);
-      withoutEnabled.push(`${prefix}${field.canonical}`);
+      withoutToggle.push(`${prefix}${field.canonical}`);
     }
   }
   return Object.freeze({
     current: `{${current.join(",")}}`,
-    ...(toggleStrategy === "native-enabled"
+    ...(toggleField !== undefined
       ? {
           enabled: `{${enabled.join(",")}}`,
           disabled: `{${disabled.join(",")}}`,
-          withoutEnabled: `{${withoutEnabled.join(",")}}`,
+          ...(toggleStrategy === "native-enabled"
+            ? { withoutEnabled: `{${withoutToggle.join(",")}}` }
+            : { withoutDisabled: `{${withoutToggle.join(",")}}` }),
         }
       : {}),
   });
@@ -411,18 +447,33 @@ export function finalizeInspectedMcpDefinition(
     readonly stdioEnvironmentKind?: "array" | "object";
     readonly httpHeadersField?: string;
     readonly httpBearerTokenField?: string;
+    readonly httpUrlField?: string;
     readonly rawTransportPolicy: "reject" | "allow-openclaw-http";
-    readonly toggleStrategy?: "native-enabled" | "detached";
-    readonly typePolicy?: "none" | "claude";
+    readonly stdioCommandKind?: "string" | "array";
+    readonly toggleStrategy?: ToggleStrategy;
+    readonly typePolicy?: "none" | "claude" | "opencode";
   },
 ): {
   readonly definition: Readonly<Record<string, unknown>>;
   readonly canonicals: TargetDefinitionCanonicals;
 } {
-  const command = root.fields.get("command")?.value;
-  const url = root.fields.get("url")?.value;
-  const isStdio = typeof command === "string" && url === undefined;
-  const isHttp = typeof url === "string" && command === undefined;
+  const commandField = root.fields.get("command");
+  const command = commandField?.value;
+  const httpUrlField = options.httpUrlField ?? "url";
+  const url = root.fields.get(httpUrlField)?.value;
+  const type = root.fields.get("type")?.value;
+  const openCodeCommand =
+    commandField?.kind === "array" &&
+    commandField.allStrings &&
+    commandField.items.length > 0;
+  const isStdio =
+    options.typePolicy === "opencode"
+      ? type === "local" && openCodeCommand && url === undefined
+      : typeof command === "string" && url === undefined;
+  const isHttp =
+    options.typePolicy === "opencode"
+      ? type === "remote" && typeof url === "string" && command === undefined
+      : typeof url === "string" && command === undefined;
   if (!isStdio && !isHttp) invalidInspectedJson();
   const transport = isStdio ? "stdio" : "streamable-http";
   const existingTransport = root.fields.get("transport");
@@ -448,22 +499,44 @@ export function finalizeInspectedMcpDefinition(
       "type",
       inspectedJsonScalar(isStdio ? "stdio" : "http", true),
     );
+  } else if (options.typePolicy === "opencode") {
+    if (type !== (isStdio ? "local" : "remote")) invalidInspectedJson();
+    const oauth = root.fields.get("oauth");
+    if (
+      oauth !== undefined &&
+      typeof oauth.value !== "boolean" &&
+      oauth.kind !== "record"
+    ) {
+      invalidInspectedJson();
+    }
   }
 
   const toggleStrategy = options.toggleStrategy ?? "native-enabled";
-  if (toggleStrategy === "native-enabled") {
-    const enabled = root.fields.get("enabled");
-    if (enabled === undefined) {
-      setInspectedField(root, "enabled", inspectedJsonScalar(true, true));
-    } else if (typeof enabled.value !== "boolean") invalidInspectedJson();
+  const toggleField =
+    toggleStrategy === "native-enabled"
+      ? "enabled"
+      : toggleStrategy === "native-disabled"
+        ? "disabled"
+        : undefined;
+  if (toggleField !== undefined) {
+    const toggle = root.fields.get(toggleField);
+    if (toggle === undefined) {
+      setInspectedField(
+        root,
+        toggleField,
+        inspectedJsonScalar(toggleStrategy === "native-enabled", true),
+      );
+    } else if (typeof toggle.value !== "boolean") invalidInspectedJson();
   }
 
   if (isStdio) {
-    const args = root.fields.get("args");
-    if (args === undefined) {
-      setInspectedField(root, "args", inspectedJsonArray([], true));
-    } else if (args.kind !== "array" || !args.allStrings) {
-      invalidInspectedJson();
+    if (options.stdioCommandKind !== "array") {
+      const args = root.fields.get("args");
+      if (args === undefined) {
+        setInspectedField(root, "args", inspectedJsonArray([], true));
+      } else if (args.kind !== "array" || !args.allStrings) {
+        invalidInspectedJson();
+      }
     }
     if (options.stdioEnvironmentField !== undefined) {
       const environment = root.fields.get(options.stdioEnvironmentField);
@@ -516,6 +589,9 @@ export function finalizeInspectedMcpDefinition(
     ...(variants.withoutEnabled === undefined
       ? {}
       : { withoutEnabled: variants.withoutEnabled }),
+    ...(variants.withoutDisabled === undefined
+      ? {}
+      : { withoutDisabled: variants.withoutDisabled }),
   });
   return { definition: root.value, canonicals };
 }
@@ -523,6 +599,9 @@ export function finalizeInspectedMcpDefinition(
 export function assertTargetInspectionConsistency(
   inspection: TargetConfigInspection,
 ): TargetDefinitionCanonicals | undefined {
+  if (!targetInspectionStates.has(inspection)) {
+    throw new InstallerError("HARNESS_CONFIG_INVALID");
+  }
   const currentServer = inspection.currentServer;
   const canonicals = inspection[targetDefinitionCanonicals];
   if (currentServer.kind === "absent") {
@@ -548,7 +627,7 @@ export function assertTargetInspectionConsistency(
 export function assertPostImageDefinition(
   request: TargetPatchRequest,
   postInspection: TargetConfigInspection,
-  toggleStrategy: "native-enabled" | "detached" = "native-enabled",
+  toggleStrategy: ToggleStrategy = "native-enabled",
 ): void {
   const postCanonicals = assertTargetInspectionConsistency(postInspection);
   if (toggleStrategy === "detached" && request.action === "disable") {
