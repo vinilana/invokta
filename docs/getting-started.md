@@ -223,7 +223,58 @@ exactly matches an explicitly configured HTTP(S) origin. Host or Origin rejectio
 uses HTTP 403. By contrast, a capability authorization denial is an MCP tool
 execution error with `isError: true` inside an HTTP 200 protocol response.
 
-## 6. Verify reuse rather than duplicate it
+## 6. Load local environment files
+
+Every composition root above reads its configuration from `process.env`. To
+populate it during local development, put a `.env` file at the project root and
+apply it from the composition root before anything else reads configuration:
+
+```ts
+import { readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
+
+const parsed = parseEnv(readFileSync(".env", "utf8"));
+
+for (const [key, value] of Object.entries(parsed)) {
+  // The real environment always wins: only absent keys are filled.
+  if (process.env[key] === undefined && value !== undefined) {
+    process.env[key] = value;
+  }
+}
+```
+
+Three rules make this safe. Precedence is fixed — the process environment, then
+the file, then the composition root's own defaults — so a forgotten local file
+can never displace CI, container, or platform configuration, not even for a
+variable that is present and empty. Parsing is Node's built-in `parseEnv`, so
+there is no `dotenv` dependency and no dialect of your own. And a missing `.env`
+is a silent no-op, while a file named explicitly by `AI_ENGINE_ENV_FILE` that is
+missing or unreadable must fail startup rather than degrade silently.
+
+Check required variables after loading and fail closed, listing the missing
+names and never a value:
+
+```ts
+const missing = ["SUPPORT_API_TOKEN"].filter((name) => !process.env[name]);
+if (missing.length > 0) {
+  process.stderr.write(
+    `A required environment variable is missing. (${missing.join(", ")})\n`,
+  );
+  process.exit(1);
+}
+```
+
+Commit `.env.example`, which carries names only; never commit `.env`, and inject
+production values through your platform instead.
+
+`ai-engine-deploy init` from [`@ai-engine/deploy`](../packages/deploy/README.md)
+generates a complete loader as `src/env.ts`, along with the matching
+`.env.example`, and the deployment package it produces excludes every `.env*`
+file from the container build context. The full contract — file safety, bounds,
+and the stable startup failure messages — is in
+[engine environment file loading](./specs/engine-env-file-loading.md).
+
+## 7. Verify reuse rather than duplicate it
 
 All four entry points import the same `engine`. Only the composition roots differ:
 
