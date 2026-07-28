@@ -352,7 +352,36 @@ describe("immutable installer state transitions", () => {
     expectStateInvalid(() =>
       transition(disablePlanning, "disable", "2026-07-28T11:59:59.999Z"),
     );
+    expectStateInvalid(() =>
+      transition(disablePlanning, "disable", "2026-07-28T12:00:00.000Z"),
+    );
   });
+
+  it.each([
+    ["native", "codex"],
+    ["detached", "cursor"],
+  ] as const)(
+    "requires a strictly increasing timestamp for a real %s toggle",
+    (_strategy, targetId) => {
+      const selected = descriptor();
+      const adapter = configurationTargetAdapters[targetId];
+      const definition = adapter.descriptorToDefinition(selected);
+      const state = managedState(targetId, selected, definition, {
+        updatedAt: "2026-07-28T14:00:00.123456789Z",
+      });
+      const planning = planningInput(targetId, selected, state, {
+        kind: "present",
+        definition,
+      });
+
+      for (const timestamp of [
+        "2026-07-28T14:00:00.123456789Z",
+        "2026-07-28T14:00:00.123456788Z",
+      ]) {
+        expectStateInvalid(() => transition(planning, "disable", timestamp));
+      }
+    },
+  );
 });
 
 function orderedState(reverse: boolean): InstallerState {

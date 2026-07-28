@@ -178,4 +178,65 @@ describe("target descriptor inverse mappings", () => {
       "HARNESS_CONFIG_INVALID",
     );
   });
+
+  it.each(Object.keys(configurationTargetAdapters) as ConfigurationTargetId[])(
+    "rejects every noncanonical or credential-bearing HTTP URL for %s",
+    (targetId) => {
+      const adapter = configurationTargetAdapters[targetId];
+      const definition = adapter.descriptorToDefinition(
+        httpDescriptor(targetId),
+      );
+      const urlField = targetId === "antigravity" ? "serverUrl" : "url";
+      const adversarialUrls = [
+        `https://user:${secretSentinel}@example.com/mcp`,
+        "https://example.com/not-mcp",
+        "https://example.com/mcp?credential=hidden",
+        "https://example.com/mcp#fragment",
+        "http://example.com/mcp",
+        "http://localhost/mcp",
+        "ftp://example.com/mcp",
+        "/mcp",
+        "https://example.com/%6dcp",
+      ];
+
+      for (const url of adversarialUrls) {
+        expectInstallerCode(
+          () =>
+            adapter.definitionToSuspendedDescriptor("ai-engine-support", {
+              ...definition,
+              [urlField]: url,
+            }),
+          "HARNESS_CONFIG_INVALID",
+        );
+      }
+    },
+  );
+
+  it.each(Object.keys(configurationTargetAdapters) as ConfigurationTargetId[])(
+    "accepts only the specified insecure loopback HTTP exception for %s",
+    (targetId) => {
+      const adapter = configurationTargetAdapters[targetId];
+      for (const url of ["http://127.0.0.1/mcp", "http://[::1]/mcp"]) {
+        const source = httpDescriptor(targetId);
+        if (source.server.transport.type !== "streamable-http") {
+          throw new Error("Expected HTTP descriptor.");
+        }
+        const descriptor = {
+          ...source,
+          server: {
+            ...source.server,
+            transport: { ...source.server.transport, url },
+          },
+        };
+        const definition = adapter.descriptorToDefinition(descriptor);
+
+        expect(
+          adapter.definitionToSuspendedDescriptor(
+            descriptor.server.name,
+            definition,
+          ).transport,
+        ).toMatchObject({ type: "streamable-http", url });
+      }
+    },
+  );
 });

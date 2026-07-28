@@ -2,6 +2,7 @@ import { InstallerError } from "./installer-error.js";
 import {
   installationKey,
   type InstallerState,
+  isInstallerTimestampAfter,
   type ManagedInstallation,
   type StateTargetContracts,
   validateInstallerStateBytes,
@@ -175,6 +176,9 @@ function applyUpdate(
     plan.stateEffect !== "update" ||
     (plan.action !== "enable" && plan.action !== "disable")
   ) {
+    return invalidState();
+  }
+  if (!isInstallerTimestampAfter(occurredAt, installation.updatedAt)) {
     return invalidState();
   }
   if (planning.target.toggleStrategy !== "detached") {
