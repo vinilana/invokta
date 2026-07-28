@@ -17,7 +17,18 @@ const temporaryRoot = mkdtempSync(join(tmpdir(), "ai-engine-release-verify-"));
 const checkoutDirectory = join(temporaryRoot, "checkout");
 const artifactDirectory = join(temporaryRoot, "artifacts");
 const consumerDirectory = join(temporaryRoot, "consumer");
-const publicPackages = ["core", "cli", "mcp"];
+const distEntryFiles = ["dist/index.js", "dist/index.d.ts"];
+const publicPackages = [
+  { directory: "core", name: "@ai-engine/core", requiredFiles: distEntryFiles },
+  { directory: "cli", name: "@ai-engine/cli", requiredFiles: distEntryFiles },
+  { directory: "mcp", name: "@ai-engine/mcp", requiredFiles: distEntryFiles },
+  {
+    directory: "tooling",
+    name: "@ai-engine/tooling",
+    // The dev-only package also ships the `ai-engine` executable.
+    requiredFiles: [...distEntryFiles, "dist/cli.js"],
+  },
+];
 
 function run(command, args, options = {}) {
   const standardInput = options.input === undefined ? "inherit" : "pipe";
@@ -52,10 +63,15 @@ try {
     cwd: repositoryRoot,
     encoding: "utf8",
   }).trim();
-  const archive = execFileSync("git", ["archive", "--format=tar", indexTree], {
-    cwd: repositoryRoot,
-  });
-  run("tar", ["-xf", "-", "-C", checkoutDirectory], { input: archive });
+  // The archive is written to disk rather than buffered through Node, whose
+  // default maxBuffer would truncate it as the repository grows.
+  const archivePath = join(temporaryRoot, "checkout.tar");
+  execFileSync(
+    "git",
+    ["archive", "--format=tar", "--output", archivePath, indexTree],
+    { cwd: repositoryRoot },
+  );
+  run("tar", ["-xf", archivePath, "-C", checkoutDirectory]);
 
   run("yarn", ["install", "--frozen-lockfile", "--non-interactive"], {
     cwd: checkoutDirectory,
@@ -63,11 +79,11 @@ try {
 
   const tarballs = [];
 
-  for (const packageDirectoryName of publicPackages) {
+  for (const publicPackage of publicPackages) {
     const packageDirectory = join(
       checkoutDirectory,
       "packages",
-      packageDirectoryName,
+      publicPackage.directory,
     );
     const reportText = run(
       "npm",
@@ -78,7 +94,7 @@ try {
 
     if (!report || typeof report.filename !== "string") {
       throw new Error(
-        `npm pack did not report a ${packageDirectoryName} tarball`,
+        `npm pack did not report a ${publicPackage.directory} tarball`,
       );
     }
 
@@ -88,10 +104,10 @@ try {
         .filter((path) => typeof path === "string"),
     );
 
-    for (const requiredFile of ["dist/index.js", "dist/index.d.ts"]) {
+    for (const requiredFile of publicPackage.requiredFiles) {
       if (!fileNames.has(requiredFile)) {
         throw new Error(
-          `${packageDirectoryName} tarball is missing ${requiredFile}`,
+          `${publicPackage.directory} tarball is missing ${requiredFile}`,
         );
       }
     }
@@ -118,29 +134,33 @@ try {
     const core = await import("@ai-engine/core");
     const cli = await import("@ai-engine/cli");
     const mcp = await import("@ai-engine/mcp");
+    const tooling = await import("@ai-engine/tooling");
     if (typeof core.createEngine !== "function") throw new Error("core import failed");
     if (typeof cli.runCli !== "function") throw new Error("cli import failed");
     if (typeof mcp.serveMcpStdio !== "function") throw new Error("mcp import failed");
+    if (typeof tooling.checkCapabilities !== "function") throw new Error("tooling import failed");
   `;
   run("node", ["--input-type=module", "--eval", smokeProgram], {
     cwd: consumerDirectory,
   });
 
-  const packageNames = tarballs.map((tarball) => {
+  const packageNames = publicPackages.map((publicPackage) => {
     const packageReport = JSON.parse(
       readFileSync(
         join(
           consumerDirectory,
           "node_modules",
-          tarball.includes("core")
-            ? "@ai-engine/core/package.json"
-            : tarball.includes("cli")
-              ? "@ai-engine/cli/package.json"
-              : "@ai-engine/mcp/package.json",
+          publicPackage.name,
+          "package.json",
         ),
         "utf8",
       ),
     );
+    if (packageReport.name !== publicPackage.name) {
+      throw new Error(
+        `${publicPackage.directory} installed as ${packageReport.name}`,
+      );
+    }
     return packageReport.name;
   });
 
