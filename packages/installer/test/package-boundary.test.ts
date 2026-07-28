@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -37,6 +37,14 @@ describe("@ai-engine/installer package boundary", () => {
         name.startsWith("@ai-engine/"),
       ),
     ).toEqual([]);
+  });
+
+  it("declares the explicitly empty development registry as packed content", () => {
+    const manifest = readJson(`${packageDirectory}/package.json`);
+    const registry = readJson(`${packageDirectory}/registry/capabilities.json`);
+
+    expect(manifest.files).toEqual(["dist", "registry"]);
+    expect(registry).toEqual({ schemaVersion: 1, entries: [] });
   });
 
   it("participates in the root TypeScript project without becoming a framework dependency", () => {

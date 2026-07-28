@@ -32,7 +32,11 @@ const publicPackages = [
     directory: "installer",
     name: "@ai-engine/installer",
     // The installer is binary-first and intentionally has no import API.
-    requiredFiles: ["dist/cli.js"],
+    requiredFiles: [
+      "dist/cli.js",
+      "registry/capabilities.json",
+      "registry/README.md",
+    ],
   },
 ];
 
