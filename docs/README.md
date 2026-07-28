@@ -25,6 +25,8 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [`hello-engine`: minimal onboarding example](../examples/hello-engine/)
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)
 - [`support-harness`: private MCP consumer](../examples/support-harness/)
+- [`crawl-engine`: outbound provider integration with Firecrawl](../examples/crawl-engine/)
+- [`spec-engine`: spec-driven development workflow as domain rules](../examples/spec-engine/)
 
 ## Normative language
 
