@@ -91,13 +91,14 @@ describe("@ai-engine/installer package boundary", () => {
     const adapterSources = sources.filter(({ name }) =>
       [
         "json5-target-adapter.ts",
+        "json-target-adapter.ts",
         "target-adapter.ts",
         "target-adapters.ts",
         "toml-target-adapter.ts",
         "yaml-target-adapter.ts",
       ].includes(name),
     );
-    expect(adapterSources).toHaveLength(5);
+    expect(adapterSources).toHaveLength(6);
     for (const source of adapterSources) {
       expect(source.text, source.name).not.toMatch(
         /node:(?:child_process|fs|process)|process\.env|globalThis\.(?:fetch|WebSocket)/u,
@@ -108,6 +109,12 @@ describe("@ai-engine/installer package boundary", () => {
     );
     expect(json5Adapter?.text).not.toContain('from "json5"');
     expect(json5Adapter?.text).not.toContain("JSON5.parse");
+    const jsonAdapter = adapterSources.find(
+      ({ name }) => name === "json-target-adapter.ts",
+    );
+    expect(jsonAdapter?.text).not.toContain("JSON.parse");
+    expect(jsonAdapter?.text).not.toContain("evaluate(");
+    expect(jsonAdapter?.text).not.toContain("tokenize(");
     const tomlAdapter = adapterSources.find(
       ({ name }) => name === "toml-target-adapter.ts",
     );
@@ -117,7 +124,12 @@ describe("@ai-engine/installer package boundary", () => {
       ({ name }) => name === "yaml-target-adapter.ts",
     );
     expect(yamlAdapter?.text).not.toContain(".toJS(");
-    for (const source of [json5Adapter, tomlAdapter, yamlAdapter]) {
+    for (const source of [
+      json5Adapter,
+      jsonAdapter,
+      tomlAdapter,
+      yamlAdapter,
+    ]) {
       expect(source?.text, source?.name).not.toContain(
         "normalizedMcpDefinition",
       );

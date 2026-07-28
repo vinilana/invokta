@@ -129,6 +129,13 @@ describe("first native-toggle target adapters", () => {
         ]),
       ),
     ).toEqual({
+      "claude-code": {
+        targetId: "claude-code",
+        targetContractVersion: 1,
+        format: "json",
+        parentPath: ["mcpServers"],
+        toggleStrategy: "detached",
+      },
       codex: {
         targetId: "codex",
         targetContractVersion: 1,
@@ -136,11 +143,25 @@ describe("first native-toggle target adapters", () => {
         parentPath: ["mcp_servers"],
         toggleStrategy: "native-enabled",
       },
+      cursor: {
+        targetId: "cursor",
+        targetContractVersion: 1,
+        format: "json",
+        parentPath: ["mcpServers"],
+        toggleStrategy: "detached",
+      },
       hermes: {
         targetId: "hermes",
         targetContractVersion: 1,
         format: "yaml",
         parentPath: ["mcp_servers"],
+        toggleStrategy: "native-enabled",
+      },
+      "kimi-code": {
+        targetId: "kimi-code",
+        targetContractVersion: 1,
+        format: "json",
+        parentPath: ["mcpServers"],
         toggleStrategy: "native-enabled",
       },
       openclaw: {
@@ -154,10 +175,7 @@ describe("first native-toggle target adapters", () => {
 
     for (const targetId of [
       "antigravity",
-      "claude-code",
-      "cursor",
       "grok-build",
-      "kimi-code",
       "opencode-v2",
     ] as const) {
       expect(

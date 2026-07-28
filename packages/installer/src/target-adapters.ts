@@ -4,6 +4,10 @@ import {
   createJson5TargetAdapter,
   json5Definition,
 } from "./json5-target-adapter.js";
+import {
+  createJsonTargetAdapter,
+  jsonDefinition,
+} from "./json-target-adapter.js";
 import type {
   CapabilityInstallDescriptor,
   ConfigurationTargetId,
@@ -292,6 +296,23 @@ function placeholderHeaders(
   return headers;
 }
 
+function cursorPlaceholderHeaders(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Record<string, string> {
+  const transport = descriptor.server.transport;
+  if (transport.type !== "streamable-http") return {};
+  const headers: Record<string, string> = {};
+  if (transport.authentication.type === "bearer-env") {
+    headers.authorization = `Bearer \${env:${transport.authentication.variable}}`;
+  }
+  for (const [name, environment] of Object.entries(transport.headersFromEnv)) {
+    headers[name.toLowerCase()] = `\${env:${environment}}`;
+  }
+  return headers;
+}
+
 function hermesDefinition(
   descriptor:
     | CapabilityInstallDescriptor
@@ -366,6 +387,122 @@ function openClawDefinition(
   });
 }
 
+function claudeDefinition(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Readonly<Record<string, unknown>> {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    return jsonDefinition(
+      {
+        transport: "stdio",
+        type: "stdio",
+        command: transport.command,
+        args: [...transport.args],
+        env: Object.fromEntries(
+          transport.forwardEnv.map((name) => [name, `\${${name}}`]),
+        ),
+      },
+      "detached",
+    );
+  }
+  return jsonDefinition(
+    {
+      transport: "streamable-http",
+      type: "http",
+      url: transport.url,
+      headers: placeholderHeaders(descriptor),
+    },
+    "detached",
+  );
+}
+
+function cursorDefinition(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Readonly<Record<string, unknown>> {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    return jsonDefinition(
+      {
+        transport: "stdio",
+        command: transport.command,
+        args: [...transport.args],
+        env: Object.fromEntries(
+          transport.forwardEnv.map((name) => [name, `\${env:${name}}`]),
+        ),
+      },
+      "detached",
+    );
+  }
+  return jsonDefinition(
+    {
+      transport: "streamable-http",
+      url: transport.url,
+      headers: cursorPlaceholderHeaders(descriptor),
+    },
+    "detached",
+  );
+}
+
+function kimiCompatibility(descriptor: CapabilityInstallDescriptor) {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio" && transport.forwardEnv.length > 0) {
+    return {
+      supported: false as const,
+      reason: "kimi-code-forward-env-unsupported",
+    };
+  }
+  if (
+    transport.type === "streamable-http" &&
+    Object.keys(transport.headersFromEnv).length > 0
+  ) {
+    return {
+      supported: false as const,
+      reason: "kimi-code-http-headers-unsupported",
+    };
+  }
+  return { supported: true as const };
+}
+
+function kimiDefinition(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Readonly<Record<string, unknown>> {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    if (transport.forwardEnv.length > 0) {
+      throw new InstallerError("TARGET_UNSUPPORTED");
+    }
+    return jsonDefinition(
+      {
+        transport: "stdio",
+        command: transport.command,
+        args: [...transport.args],
+        enabled: true,
+      },
+      "native-enabled",
+    );
+  }
+  if (Object.keys(transport.headersFromEnv).length > 0) {
+    throw new InstallerError("TARGET_UNSUPPORTED");
+  }
+  return jsonDefinition(
+    {
+      transport: "streamable-http",
+      url: transport.url,
+      ...(transport.authentication.type === "bearer-env"
+        ? { bearerTokenEnvVar: transport.authentication.variable }
+        : {}),
+      enabled: true,
+    },
+    "native-enabled",
+  );
+}
+
 const codex = createTomlTargetAdapter({
   compatibility: portableCompatibility,
   descriptorToDefinition: codexDefinition,
@@ -386,9 +523,41 @@ const openclaw = createJson5TargetAdapter({
   },
 });
 
+const claudeCode = createJsonTargetAdapter({
+  targetId: "claude-code",
+  dialect: "claude",
+  toggleStrategy: "detached",
+  compatibility: portableCompatibility,
+  descriptorToDefinition: claudeDefinition,
+});
+
+const cursor = createJsonTargetAdapter({
+  targetId: "cursor",
+  dialect: "cursor",
+  toggleStrategy: "detached",
+  compatibility: portableCompatibility,
+  descriptorToDefinition: cursorDefinition,
+});
+
+const kimiCode = createJsonTargetAdapter({
+  targetId: "kimi-code",
+  dialect: "kimi",
+  toggleStrategy: "native-enabled",
+  compatibility: kimiCompatibility,
+  descriptorToDefinition: (descriptor) => {
+    if (!kimiCompatibility(descriptor).supported) {
+      throw new InstallerError("TARGET_UNSUPPORTED");
+    }
+    return kimiDefinition(descriptor);
+  },
+});
+
 export const configurationTargetAdapters = Object.freeze({
+  "claude-code": claudeCode,
   codex,
+  cursor,
   hermes,
+  "kimi-code": kimiCode,
   openclaw,
 } as const);
 
@@ -398,12 +567,12 @@ const unsupportedCompatibility = () =>
 export const registryCompatibilityAdapters: RegistryCompatibilityAdapters =
   Object.freeze({
     antigravity: unsupportedCompatibility,
-    "claude-code": unsupportedCompatibility,
+    "claude-code": claudeCode.compatibility,
     codex: codex.compatibility,
-    cursor: unsupportedCompatibility,
+    cursor: cursor.compatibility,
     "grok-build": unsupportedCompatibility,
     hermes: hermes.compatibility,
-    "kimi-code": unsupportedCompatibility,
+    "kimi-code": kimiCode.compatibility,
     openclaw: openclaw.compatibility,
     "opencode-v2": unsupportedCompatibility,
   } satisfies Record<

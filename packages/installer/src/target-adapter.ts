@@ -55,8 +55,8 @@ export const targetDefinitionCanonicals = Symbol("targetDefinitionCanonicals");
 
 export interface TargetDefinitionCanonicals {
   readonly current: string;
-  readonly enabled: string;
-  readonly disabled: string;
+  readonly enabled?: string;
+  readonly disabled?: string;
 }
 
 export interface TargetConfigInspection {
@@ -98,7 +98,13 @@ export type TargetPatchRequest =
       readonly counters?: TargetAdapterCounters;
     }
   | {
-      readonly action: "enable" | "disable";
+      readonly action: "enable";
+      readonly restoreDefinition?: Readonly<Record<string, unknown>>;
+      readonly inspection: TargetConfigInspection;
+      readonly counters?: TargetAdapterCounters;
+    }
+  | {
+      readonly action: "disable";
       readonly inspection: TargetConfigInspection;
       readonly counters?: TargetAdapterCounters;
     };
@@ -352,7 +358,8 @@ export function inspectedJsonRecord(
 
 function canonicalRootVariants(
   fields: ReadonlyMap<string, InspectedJsonValue>,
-): TargetDefinitionCanonicals & { readonly withoutEnabled: string } {
+  toggleStrategy: "native-enabled" | "detached",
+): TargetDefinitionCanonicals & { readonly withoutEnabled?: string } {
   const current: string[] = [];
   const enabled: string[] = [];
   const disabled: string[] = [];
@@ -362,10 +369,10 @@ function canonicalRootVariants(
     if (field.canonical === undefined) invalidInspectedJson();
     const prefix = `${serializeInspectedString(key)}:`;
     current.push(`${prefix}${field.canonical}`);
-    if (key === "enabled") {
+    if (toggleStrategy === "native-enabled" && key === "enabled") {
       enabled.push(`${prefix}true`);
       disabled.push(`${prefix}false`);
-    } else {
+    } else if (toggleStrategy === "native-enabled") {
       enabled.push(`${prefix}${field.canonical}`);
       disabled.push(`${prefix}${field.canonical}`);
       withoutEnabled.push(`${prefix}${field.canonical}`);
@@ -373,9 +380,13 @@ function canonicalRootVariants(
   }
   return Object.freeze({
     current: `{${current.join(",")}}`,
-    enabled: `{${enabled.join(",")}}`,
-    disabled: `{${disabled.join(",")}}`,
-    withoutEnabled: `{${withoutEnabled.join(",")}}`,
+    ...(toggleStrategy === "native-enabled"
+      ? {
+          enabled: `{${enabled.join(",")}}`,
+          disabled: `{${disabled.join(",")}}`,
+          withoutEnabled: `{${withoutEnabled.join(",")}}`,
+        }
+      : {}),
   });
 }
 
@@ -396,10 +407,13 @@ function setInspectedField(
 export function finalizeInspectedMcpDefinition(
   root: InspectedJsonRecord,
   options: {
-    readonly stdioEnvironmentField: string;
-    readonly stdioEnvironmentKind: "array" | "object";
-    readonly httpHeadersField: string;
+    readonly stdioEnvironmentField?: string;
+    readonly stdioEnvironmentKind?: "array" | "object";
+    readonly httpHeadersField?: string;
+    readonly httpBearerTokenField?: string;
     readonly rawTransportPolicy: "reject" | "allow-openclaw-http";
+    readonly toggleStrategy?: "native-enabled" | "detached";
+    readonly typePolicy?: "none" | "claude";
   },
 ): {
   readonly definition: Readonly<Record<string, unknown>>;
@@ -422,10 +436,27 @@ export function finalizeInspectedMcpDefinition(
   }
   setInspectedField(root, "transport", inspectedJsonScalar(transport, true));
 
-  const enabled = root.fields.get("enabled");
-  if (enabled === undefined) {
-    setInspectedField(root, "enabled", inspectedJsonScalar(true, true));
-  } else if (typeof enabled.value !== "boolean") invalidInspectedJson();
+  if (options.typePolicy === "claude") {
+    const type = root.fields.get("type");
+    const accepted = isStdio
+      ? type === undefined || type.value === "stdio"
+      : type !== undefined &&
+        (type.value === "http" || type.value === "streamable-http");
+    if (!accepted) invalidInspectedJson();
+    setInspectedField(
+      root,
+      "type",
+      inspectedJsonScalar(isStdio ? "stdio" : "http", true),
+    );
+  }
+
+  const toggleStrategy = options.toggleStrategy ?? "native-enabled";
+  if (toggleStrategy === "native-enabled") {
+    const enabled = root.fields.get("enabled");
+    if (enabled === undefined) {
+      setInspectedField(root, "enabled", inspectedJsonScalar(true, true));
+    } else if (typeof enabled.value !== "boolean") invalidInspectedJson();
+  }
 
   if (isStdio) {
     const args = root.fields.get("args");
@@ -434,45 +465,57 @@ export function finalizeInspectedMcpDefinition(
     } else if (args.kind !== "array" || !args.allStrings) {
       invalidInspectedJson();
     }
-    const environment = root.fields.get(options.stdioEnvironmentField);
-    if (environment === undefined) {
-      setInspectedField(
-        root,
-        options.stdioEnvironmentField,
+    if (options.stdioEnvironmentField !== undefined) {
+      const environment = root.fields.get(options.stdioEnvironmentField);
+      if (environment === undefined) {
+        setInspectedField(
+          root,
+          options.stdioEnvironmentField,
+          options.stdioEnvironmentKind === "array"
+            ? inspectedJsonArray([], true)
+            : inspectedJsonRecord(new Map(), true),
+        );
+      } else if (
         options.stdioEnvironmentKind === "array"
-          ? inspectedJsonArray([], true)
-          : inspectedJsonRecord(new Map(), true),
-      );
-    } else if (
-      options.stdioEnvironmentKind === "array"
-        ? environment.kind !== "array" || !environment.allStrings
-        : environment.kind !== "record" || !environment.allStringValues
-    ) {
-      invalidInspectedJson();
+          ? environment.kind !== "array" || !environment.allStrings
+          : environment.kind !== "record" || !environment.allStringValues
+      ) {
+        invalidInspectedJson();
+      }
     }
   } else {
-    const headers = root.fields.get(options.httpHeadersField);
-    if (headers === undefined) {
-      setInspectedField(
-        root,
-        options.httpHeadersField,
-        inspectedJsonRecord(new Map(), true),
-      );
-    } else if (headers.kind !== "record" || !headers.allStringValues) {
-      invalidInspectedJson();
+    if (options.httpHeadersField !== undefined) {
+      const headers = root.fields.get(options.httpHeadersField);
+      if (headers === undefined) {
+        setInspectedField(
+          root,
+          options.httpHeadersField,
+          inspectedJsonRecord(new Map(), true),
+        );
+      } else if (headers.kind !== "record" || !headers.allStringValues) {
+        invalidInspectedJson();
+      }
+    }
+    if (options.httpBearerTokenField !== undefined) {
+      const bearerToken = root.fields.get(options.httpBearerTokenField);
+      if (bearerToken !== undefined && typeof bearerToken.value !== "string") {
+        invalidInspectedJson();
+      }
     }
   }
 
   Object.freeze(root.value);
-  const variants = canonicalRootVariants(root.fields);
+  const variants = canonicalRootVariants(root.fields, toggleStrategy);
   const canonicals = Object.freeze({
     current: variants.current,
-    enabled: variants.enabled,
-    disabled: variants.disabled,
+    ...(variants.enabled === undefined ? {} : { enabled: variants.enabled }),
+    ...(variants.disabled === undefined ? {} : { disabled: variants.disabled }),
   });
   registerCanonicalJcs(root.value, {
     full: canonicals.current,
-    withoutEnabled: variants.withoutEnabled,
+    ...(variants.withoutEnabled === undefined
+      ? {}
+      : { withoutEnabled: variants.withoutEnabled }),
   });
   return { definition: root.value, canonicals };
 }
@@ -505,8 +548,18 @@ export function assertTargetInspectionConsistency(
 export function assertPostImageDefinition(
   request: TargetPatchRequest,
   postInspection: TargetConfigInspection,
+  toggleStrategy: "native-enabled" | "detached" = "native-enabled",
 ): void {
   const postCanonicals = assertTargetInspectionConsistency(postInspection);
+  if (toggleStrategy === "detached" && request.action === "disable") {
+    if (
+      postInspection.currentServer.kind !== "absent" ||
+      postCanonicals !== undefined
+    ) {
+      throw new InstallerError("HARNESS_CONFIG_INVALID");
+    }
+    return;
+  }
   if (
     postInspection.currentServer.kind !== "present" ||
     postCanonicals === undefined
@@ -521,6 +574,18 @@ export function assertPostImageDefinition(
     } catch (cause) {
       throw new InstallerError("HARNESS_CONFIG_INVALID", cause);
     }
+  } else if (toggleStrategy === "detached") {
+    if (
+      request.action !== "enable" ||
+      request.restoreDefinition === undefined
+    ) {
+      throw new InstallerError("HARNESS_CONFIG_INVALID");
+    }
+    try {
+      expectedCanonical = canonicalizeJcs(request.restoreDefinition);
+    } catch (cause) {
+      throw new InstallerError("HARNESS_CONFIG_INVALID", cause);
+    }
   } else {
     if (request.inspection.currentServer.kind !== "present") {
       throw new InstallerError("HARNESS_CONFIG_INVALID");
@@ -531,10 +596,14 @@ export function assertPostImageDefinition(
     if (sourceCanonicals === undefined) {
       throw new InstallerError("HARNESS_CONFIG_INVALID");
     }
-    expectedCanonical =
+    const variant =
       request.action === "enable"
         ? sourceCanonicals.enabled
         : sourceCanonicals.disabled;
+    if (variant === undefined) {
+      throw new InstallerError("HARNESS_CONFIG_INVALID");
+    }
+    expectedCanonical = variant;
   }
   if (postCanonical !== expectedCanonical) {
     throw new InstallerError("HARNESS_CONFIG_INVALID");
@@ -616,6 +685,22 @@ export function normalizedCurrentDefinition(
     enabledDescriptor === undefined
       ? Object.freeze({ ...cloned, enabled: true })
       : cloned;
+  try {
+    const canonical = canonicalizeJcs(normalized);
+    registerCanonicalJcs(normalized, { full: canonical });
+  } catch (cause) {
+    throw new InstallerError("HARNESS_CONFIG_INVALID", cause);
+  }
+  return normalized;
+}
+
+export function normalizedDetachedDefinition(
+  raw: unknown,
+): Readonly<Record<string, unknown>> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new InstallerError("HARNESS_CONFIG_INVALID");
+  }
+  const normalized = cloneJson(raw, 1) as Readonly<Record<string, unknown>>;
   try {
     const canonical = canonicalizeJcs(normalized);
     registerCanonicalJcs(normalized, { full: canonical });
@@ -712,6 +797,12 @@ export function freezeDefinition(
   definition: Record<string, unknown>,
 ): Readonly<Record<string, unknown>> {
   return normalizedCurrentDefinition(definition);
+}
+
+export function freezeDetachedDefinition(
+  definition: Record<string, unknown>,
+): Readonly<Record<string, unknown>> {
+  return normalizedDetachedDefinition(definition);
 }
 
 export function readOwn(value: unknown, key: string): unknown {
