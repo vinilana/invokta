@@ -1,8 +1,9 @@
 # Local capability MCP installer
 
-- Status: Draft
+- Status: Approved for implementation; production release gated
 - Target: Post-v0.1
 - Change type: Additive end-user package and CLI
+- Initial package version: 0.1.0
 - Date: 2026-07-28
 
 ## Summary
@@ -58,11 +59,10 @@ connection descriptors. It is not the runtime package registry, community
 library discovery, or hot capability composition deferred by ADR 0001 and the
 capability composition specification.
 
-Implementation requires a new ADR before code is added. That ADR must authorize
-the post-v0.1 `@ai-engine/installer` package, amend the package boundary in ADR
-0004, and distinguish the end-user installer from the dev-only
-`@ai-engine/tooling` package authorized by ADR 0009. The preferred package and
-binary are:
+Accepted ADR 0010 authorizes the post-v0.1 `@ai-engine/installer` package,
+amends the package boundary in ADR 0004, and distinguishes the end-user
+installer from the dev-only `@ai-engine/tooling` package authorized by ADR 0009.
+The package and binary are:
 
 | Artifact | Responsibility |
 | --- | --- |
@@ -188,11 +188,14 @@ When either is unavailable, it MUST fail without reading or writing registry,
 state, or harness configuration.
 
 `--help` writes English usage with one trailing LF to stdout and exits `0`.
-`--version` writes only the package semantic version and one trailing LF to
-stdout and exits `0`. Invalid usage and pre-interactive initialization errors
-write one sanitized diagnostic to stderr and use the exit mapping below. The
-interactive Clack session owns stdout only after TTY and initialization gates
-have passed; stack traces and cause chains never reach either user-facing stream.
+`--version` writes only the `@ai-engine/installer` manifest version and one
+trailing LF to stdout and exits `0`; its initial value is `0.1.0`. Invalid usage
+and pre-interactive initialization errors write one sanitized diagnostic to
+stderr and use the exit mapping below. Invalid usage writes exactly
+`Invalid arguments. Run "ai-engine-installer --help".` followed by one LF; it is
+a usage diagnostic, not an installer error code. The interactive Clack session
+owns stdout only after TTY and initialization gates have passed; stack traces
+and cause chains never reach either user-facing stream.
 
 ### Interactive experience with `@clack/prompts`
 
@@ -275,7 +278,7 @@ The UI uses these stable statuses for a registry entry in one harness:
 | `external` | A structurally matching entry exists without installer ownership. | Adopt |
 | `conflict` | An external entry uses the same server name with a different definition. | None |
 | `drifted` | A managed entry differs from the last applied definition. | None |
-| `outdated` | A managed, non-drifted entry matches its recorded definition, but the bundled registry now describes a different definition. | Enable or disable only |
+| `outdated` | A managed, non-drifted entry matches its recorded definition, but the bundled registry now describes a different definition. It also carries an `enabled` or `disabled` enablement substate. | Disable only when the substate is `enabled`; enable only when it is `disabled`. |
 | `invalid-config` | The target config cannot be safely parsed or patched. | None |
 | `unsupported` | The target cannot represent one or more canonical descriptor fields without embedding a secret or changing semantics. | None |
 
@@ -399,25 +402,62 @@ out of scope.
 | --- | --- | --- | --- | --- |
 | `codex` | `${CODEX_HOME:-~/.codex}/config.toml` | TOML, `mcp_servers.<server>` | `native-enabled` | Start a new Codex session or restart the active client. |
 | `hermes` | `${HERMES_HOME:-~/.hermes}/config.yaml` | YAML, `mcp_servers.<server>` | `native-enabled` | Run `/reload-mcp` or start a new Hermes session. |
-| `openclaw` | `${OPENCLAW_CONFIG_PATH:-~/.openclaw/openclaw.json}` | JSON5, `mcp.servers.<server>` | `native-enabled` | Let the gateway hot-apply the change or inspect with `openclaw mcp status`. |
-| `claude-code` | `~/.claude.json` | JSON, `mcpServers.<server>` user scope | `detached` | Start a new Claude Code session and inspect with `/mcp`. |
+| `openclaw` | Resolved OpenClaw user config, using the precedence below | JSON5, `mcp.servers.<server>` | `native-enabled` | Let an active config watcher hot-apply the change; otherwise restart the Gateway, then inspect with `openclaw mcp status`. |
+| `claude-code` | `${CLAUDE_CONFIG_DIR}/.claude.json` when set; otherwise `~/.claude.json` | JSON, `mcpServers.<server>` user scope | `detached` | Start a new Claude Code session and inspect with `/mcp`. |
 | `antigravity` | `~/.gemini/config/mcp_config.json` | JSON, `mcpServers.<server>` | `native-disabled` | In AGY use `/mcp` to reload; in the IDE refresh MCP servers or restart it. |
 | `cursor` | `~/.cursor/mcp.json` | JSON, `mcpServers.<server>` | `detached` | Start a new Cursor Agent session or restart Cursor. |
 | `kimi-code` | `${KIMI_CODE_HOME:-~/.kimi-code}/mcp.json` | JSON, `mcpServers.<server>` | `native-enabled` | Start a new Kimi session and inspect with `/mcp`. |
-| `opencode-v2` | `~/.config/opencode/opencode.json` or an existing sibling `opencode.jsonc` | JSON/JSONC, `mcp.servers.<server>` | `native-disabled` | Start a new OpenCode v2 session. |
-| `grok-build` | `~/.grok/config.toml` | TOML, `mcp_servers.<server>` | `native-enabled` | In `/mcps`, press `r` to refresh, or start a new session. |
+| `opencode-v2` | `${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-~/.config}/opencode}/opencode.json` or an existing sibling `opencode.jsonc` | JSON/JSONC, `mcp.servers.<server>` | `native-disabled` | Start a new OpenCode v2 session. |
+| `grok-build` | `${GROK_HOME:-~/.grok}/config.toml` | TOML, `mcp_servers.<server>` | `native-enabled` | In `/mcps`, press `r` to refresh, or start a new session. |
 
-`CODEX_HOME`, `HERMES_HOME`, and `KIMI_CODE_HOME` are directory overrides to
-which the documented file name is appended. `OPENCLAW_CONFIG_PATH` is a file
-override. The resulting target MUST resolve to an absolute config-file path
-inside the current user's home. Empty, relative, home-escaping, NUL-containing,
-or wrongly typed overrides make that target ineligible and produce
-`HARNESS_CONFIG_UNSAFE`.
+`CODEX_HOME`, `HERMES_HOME`, `KIMI_CODE_HOME`, `CLAUDE_CONFIG_DIR`, and
+`GROK_HOME` are directory overrides to which the documented file name is
+appended. `OPENCODE_CONFIG_DIR` selects the OpenCode directory directly;
+otherwise `XDG_CONFIG_HOME` selects the parent of its `opencode` directory.
+`OPENCLAW_CONFIG_PATH` is a file override. Every resulting target MUST resolve
+to an absolute config-file path inside the injected operating-system home.
+Empty, relative, home-escaping, NUL-containing, or wrongly typed overrides make
+that target ineligible and produce `HARNESS_CONFIG_UNSAFE`, even when a harness
+itself would treat an empty override as unset or accept a broader path.
+
+OpenClaw path resolution is finite and deterministic. A trimmed, non-empty
+`OPENCLAW_PROFILE` other than case-insensitive `default` is out of first-release
+scope and makes the target `unsupported`; the installer does not reproduce CLI
+profile projection. A present but empty path override has already failed the
+general override rule above and never reaches this precedence algorithm.
+`OPENCLAW_HOME` selects the effective home, falling back to
+the injected operating-system home, and supplies tilde expansion for every
+override and candidate. A non-empty `OPENCLAW_CONFIG_PATH` wins. Otherwise the
+adapter checks existing candidates in this order: when
+`OPENCLAW_STATE_DIR` is non-empty, its `openclaw.json` then `clawdbot.json`;
+then the effective home's `.openclaw/openclaw.json`,
+`.openclaw/clawdbot.json`, `.clawdbot/openclaw.json`, and
+`.clawdbot/clawdbot.json`. When none exists, the canonical state directory is
+the explicit state override, otherwise the first existing `.openclaw` or
+`.clawdbot` directory with `.openclaw` preferred, otherwise `.openclaw`; the
+selected file is its `openclaw.json`. Every override, effective home, candidate,
+and selected path must pass the same real-home containment and ownership checks.
+An OpenClaw configuration containing `$include` anywhere is
+`HARNESS_CONFIG_AMBIGUOUS`; resolving or mutating split configuration is
+deferred.
 
 For OpenCode v2, exactly one of `opencode.json` and `opencode.jsonc` may exist.
 The adapter uses the existing file, or creates `opencode.json` when neither
 exists. Both existing at once are `HARNESS_CONFIG_AMBIGUOUS`; the installer does
-not infer the product's merge precedence or choose one.
+not patch an effective configuration assembled from two source documents.
+OpenCode currently gives `opencode.jsonc` higher precedence, but source-aware
+ownership across both siblings is intentionally outside the first release.
+
+Claude Code accepts an omitted stdio `type` as well as `type: "stdio"`; both
+normalize to one stdio definition for adoption, drift, and fingerprints. Its
+`type: "http"` and `type: "streamable-http"` values likewise normalize to one
+Streamable HTTP definition. The adapter writes the explicit `stdio` and `http`
+forms. Claude's persistent opt-out is project-scoped rather than a user-global
+field on the selected server entry, so the user-global target remains
+`detached`. Every `projects.*.disabledMcpServers`,
+`projects.*.enabledMcpServers`, `enabledMcpjsonServers`, and
+`disabledMcpjsonServers` field is unrelated configuration and MUST remain
+unchanged.
 
 These mappings were verified against the harness documentation available on
 2026-07-28. Every adapter MUST carry fixtures for its documented shape. A later
@@ -438,6 +478,13 @@ support, and a package release.
 The installer MUST perform no DNS, HTTP, Git, package-manager, or marketplace
 operation while loading the registry. The first production release MUST include
 at least one real, runnable AI Engine MCP entry in addition to test fixtures.
+No current private example satisfies that gate. Development builds MAY use an
+empty production registry plus test-only fixtures only in the workspace and CI;
+that artifact MUST NOT be published as the first production release. The release
+gate requires a separately owned, versioned engine artifact or endpoint, an
+offline packed-installer configuration smoke test, and separate upstream MCP
+protocol evidence that lists and calls the declared capability. The installer
+itself still never launches or probes that artifact.
 
 ### Schema
 
@@ -538,9 +585,14 @@ userinfo, query, or fragment and with an exact `/mcp` path. HTTPS is required
 except when the host is exactly `127.0.0.1` or `[::1]`. Authentication defaults
 to `none`. A bearer variable and every
 `headersFromEnv` value MUST use the environment-name pattern in
-`AE-INSTALL-REG-05`. Header names MUST be valid HTTP field names. The
-`Authorization` header MUST NOT appear in `headersFromEnv` when
-`bearer-env` is selected.
+`AE-INSTALL-REG-05`. Header names MUST be valid HTTP field names and MUST be
+unique under ASCII case-insensitive comparison. Validation and fingerprints use
+their lowercase names while an adapter may preserve the declared spelling in a
+generated config. `authorization` is reserved case-insensitively when
+`bearer-env` is selected. The following transport-controlled or unsafe names
+are always rejected in `headersFromEnv`: `host`, `content-length`, `connection`,
+`keep-alive`, `proxy-authenticate`, `proxy-authorization`, `te`, `trailer`,
+`transfer-encoding`, and `upgrade`.
 
 **AE-INSTALL-REG-07 — No secret values.** The registry may contain environment
 variable names but MUST NOT contain credential values, bearer tokens, private
@@ -579,8 +631,8 @@ and produces `unsupported` for the others.
 | --- | --- | --- | --- |
 | `codex` | `command`, `args` | `env_vars = ["NAME"]` | `enabled = true/false` |
 | `hermes` | `command`, `args` | `env.NAME: "${NAME}"` | `enabled: true/false` |
-| `openclaw` | `command`, `args` | `env.NAME: "${NAME}"` | `enabled: true/false` |
-| `claude-code` | `command`, `args` | `env.NAME: "${NAME}"` | detached entry |
+| `openclaw` | `command`, `args` | `env.NAME: "${NAME}"` when the pinned OpenClaw policy permits `NAME`; otherwise unsupported | `enabled: true/false` |
+| `claude-code` | `type: "stdio"`, `command`, `args` | `env.NAME: "${NAME}"` | detached entry |
 | `antigravity` | `command`, `args` | unsupported when non-empty | `disabled: false/true` |
 | `cursor` | `command`, `args` | `env.NAME: "${env:NAME}"` | detached entry |
 | `kimi-code` | `command`, `args` | unsupported when non-empty | `enabled: true/false` |
@@ -590,6 +642,17 @@ and produces `unsupported` for the others.
 `unsupported` in this table is deliberate. Antigravity and Kimi accept literal
 environment values in their documented stdio shapes, but the installer does not
 persist a current secret value merely to make a descriptor portable.
+
+OpenClaw compatibility pins the MCP stdio environment filter from official
+commit `f308af8a344a30432e1b13fa348533e54cd190c8`. The installer ships an exact
+reviewed snapshot of that commit's MCP deny keys and rejects a forwarded name
+when its trimmed uppercase form matches the snapshot or starts with
+`BASH_FUNC_`, `DYLD_`, or `LD_`. The compatibility reason is stable and contains
+only the environment variable name. Fixtures MUST reject at least
+`NODE_OPTIONS`, `ANSIBLE_CONFIG`, `TF_CLI_CONFIG_FILE`, and `LD_PRELOAD`, and
+MUST accept `GITHUB_TOKEN`, `SUPPORT_API_TOKEN`, and `AWS_CONFIG_FILE`. A vendor
+policy update is an adapter compatibility change and requires a reviewed
+snapshot, fixtures, and installer release.
 
 The adapter checks only whether each required environment variable is present
 and non-empty in the installer process. It MUST NOT read the value into a
@@ -613,18 +676,21 @@ command blocks installation or enabling but does not block disabling.
 | `antigravity` | `serverUrl` | unsupported | unsupported when non-empty | `disabled: false/true` |
 | `cursor` | `url` | `headers.Authorization: "Bearer ${env:NAME}"` | `headers.X: "${env:NAME}"` | detached entry |
 | `kimi-code` | `url` | `bearerTokenEnvVar: "NAME"` | unsupported when non-empty | `enabled: true/false` |
-| `opencode-v2` | `type: "remote"`, `url` | `headers.Authorization: "Bearer {env:NAME}"` | `headers.X: "{env:NAME}"` | `disabled: false/true` |
+| `opencode-v2` | `type: "remote"`, `url`, `oauth: false` | `headers.Authorization: "Bearer {env:NAME}"` | `headers.X: "{env:NAME}"` | `disabled: false/true` |
 | `grok-build` | `url` | `headers.Authorization: "Bearer ${NAME}"` | `headers.X: "${NAME}"` | `enabled = true/false` |
 
 The installer validates required environment variable presence but does not
 connect to the URL. OAuth-authenticated entries are deferred because OAuth
 client behavior, token storage, and login commands differ by harness.
 
-Adapter-produced definitions MUST contain only the canonical transport fields
-and, for native-toggle targets, the native enablement field. The installer MUST
-NOT add tool filters, approval bypasses, trust flags, timeouts, parallel-call
-hints, TLS bypasses, or other harness-specific behavior that is absent from the
-registry contract.
+Adapter-produced definitions MUST contain only the mapped canonical transport
+fields, the native enablement field where applicable, and a required
+transport-control field that prevents semantics absent from the registry.
+OpenCode's `oauth: false` is the only such first-release field: it prevents an
+installer-generated remote entry from entering an OAuth flow. The installer
+MUST NOT add tool filters, approval bypasses, trust flags, timeouts,
+parallel-call hints, TLS bypasses, or other harness-specific behavior that is
+absent from the registry contract.
 
 ## Installer state and ownership
 
@@ -640,7 +706,7 @@ interface InstallerState {
 }
 
 interface ManagedInstallation {
-  readonly capabilityId: string;
+  readonly entryId: string;
   readonly registryVersion: string;
   readonly targetId:
     | "codex"
@@ -671,15 +737,20 @@ interface ManagedInstallation {
 ```
 
 The map key is the deterministic tuple
-`<capabilityId>\u0000<targetId>\u0000<configPath>`. The encoded state file MUST
-be at most 16,777,216 bytes. It contains no environment values, literal header
-values, credential-bearing URLs, or source config bytes. A
+`<entryId>\u0000<targetId>\u0000<configPath>`. `entryId` MUST equal the selected
+`CapabilityInstallDescriptor.id`; the display-only `capabilityIds` array never
+participates in ownership, keys, fingerprints, or idempotency. The encoded state
+file MUST be at most 16,777,216 bytes. It contains no environment values,
+literal header values, credential-bearing URLs, or source config bytes. A
 `suspendedDescriptor` is the minimal canonical, secret-free snapshot needed to
 restore a detached server and is not a snapshot of the harness config.
 
 The state schema is closed and may contain at most 9,000 installations. Every
-map key MUST equal the tuple derived from its value. IDs, server names, and
-absolute config paths MUST satisfy their registry and adapter constraints;
+map key MUST equal the tuple derived from its value. At most one record may
+exist for an `(entryId, targetId)` pair. A record for that pair whose
+`configPath` no longer equals the currently resolved standard path makes state
+`STATE_INVALID`; automatic relocation and repair are deferred. IDs, server
+names, and absolute config paths MUST satisfy their registry and adapter constraints;
 `definitionSha256` MUST be 64 lowercase hexadecimal characters; `installedAt`
 and `updatedAt` MUST be UTC RFC 3339 timestamps; and `updatedAt` MUST not precede
 `installedAt`. Any violation makes the state `STATE_INVALID`; the installer does
@@ -691,16 +762,30 @@ closed schema, string, transport, URL, and secret rules as the registry.
 `targetContractVersion` MUST equal numeric `1` and binds restoration to the
 mapping rules in this specification.
 
-`definitionSha256` is lowercase hexadecimal SHA-256 over canonical JSON of the
-adapter's normalized MCP definition, excluding only the native enabled or
-disabled field. Object keys are sorted lexicographically; array order is
-preserved. The normalized definition includes the transport, command or URL,
-arguments, environment variable names, header names, and every other field
-present inside the selected server entry. Installer-generated entries contain
-no such extra fields. Adding an unknown, policy, timeout, tool-filter, or auth
-field to a managed entry therefore changes the fingerprint and fails closed as
-drift instead of being lost by a detached toggle. Hash input may contain an
-existing secret value in memory, but only the digest is retained or reported.
+State validation does not require `entryId` membership in the currently bundled
+registry. A syntactically valid record may retain ownership for a historical
+entry removed by a later registry, which is why record-count boundary fixtures
+can use more IDs than the current 1,000-entry registry limit. Such an orphan is
+not shown as an installable bundle and cannot be mutated automatically; removing
+or migrating it requires the explicit migration already required for an entry
+ID change.
+
+`definitionSha256` is lowercase hexadecimal SHA-256 over the RFC 8785 JSON
+Canonicalization Scheme representation of the adapter's normalized MCP
+definition, excluding only the native enabled or disabled field. Header names
+are lowercase in the normalized value; documented transport aliases and omitted
+defaults normalize to their explicit canonical forms; array order is preserved.
+Duplicate keys, lone surrogates, non-finite numbers, or any selected entry that
+cannot be represented by RFC 8785 make the harness config invalid before a
+fingerprint is computed. The normalized definition includes the transport,
+command or URL, arguments, environment variable names, header names, required
+transport-control fields, and every other field present inside the selected
+server entry. Installer-generated entries contain no such extra fields. Adding
+an unknown, policy, timeout, tool-filter, or auth field to a managed entry
+therefore changes the fingerprint and fails closed as drift instead of being
+lost by a detached toggle. Hash input may contain an existing secret value in
+memory, but only the digest is retained or reported. Acceptance fixtures include
+a fixed Unicode definition and its expected digest.
 
 The state file is private installer data, created with mode `0600` under a
 directory created with mode `0700` on POSIX. An existing state file must be a
@@ -709,6 +794,12 @@ When `XDG_STATE_HOME` is set, it MUST be an absolute, NUL-free path whose
 existing components are owned by the current user.
 Malformed or unsafe state blocks all mutations but not read-only harness
 detection.
+
+Registry, state, and harness bytes are decoded as fatal UTF-8. Registry and
+state documents MUST NOT contain a UTF-8 BOM. An existing harness config may
+contain exactly one leading UTF-8 BOM; the adapter preserves it byte-for-byte.
+Malformed UTF-8, a misplaced or repeated BOM, or an encoded document above its
+limit fails before confirmation and before any patch is constructed.
 
 ### Ownership rules
 
@@ -723,6 +814,8 @@ rename, disable, or delete it.
 **AE-INSTALL-OWN-03 — Drift fails closed.** When the current managed definition
 fingerprint differs from state, the installer MUST NOT mutate that harness
 entry. It reports `CONFIG_DRIFT` without printing either definition.
+Fingerprint fixtures include one fixed Unicode normalized definition and its
+expected RFC 8785 SHA-256 digest.
 
 **AE-INSTALL-OWN-04 — Registry updates do not rewrite.** When the current entry
 still matches its state fingerprint but not the current registry fingerprint,
@@ -759,8 +852,19 @@ Before showing the final confirmation, each target adapter MUST:
 11. check required command and environment-variable presence for install or
     enable;
 12. build an in-memory patch and the expected post-write fingerprint;
-13. record SHA-256 content hashes for config and installer state optimistic
+13. record the config's SHA-256 content hash and path identity for optimistic
     concurrency checking.
+
+The batch preflight reads installer state once and records one rolling
+`expectedStateHash` and `expectedStateIdentity`, including the state file and
+parent device/inode when present. All target plans refer to that rolling
+baseline; they do not each own an immutable copy that becomes stale after the
+first successful state write. In target order, preflight serializes every
+prospective config post-image and each cumulative state post-image. A config
+post-image may be at most 4,194,304 bytes and a state post-image at most
+16,777,216 bytes; one byte more blocks that target before confirmation. A
+missing config or state file has a distinguished absent hash and identity rather
+than the hash of empty bytes.
 
 A failure for one selected target does not suppress clean preflight results for
 other targets. The confirmation screen MUST separate writable targets from
@@ -770,33 +874,69 @@ blocked targets. The user may proceed only with the writable subset.
 
 For one target, the installer MUST:
 
-1. acquire the installer state lock and then an adjacent target-config lock,
-   both through exclusive creation and always in that order;
-2. wait at most 2,000 milliseconds total with bounded backoff, returning
+1. from the nearest verified existing parent, create only a missing installer
+   state directory and the selected harness's standard config directory, one
+   component at a time with mode `0700`; an `EEXIST` race is accepted only after
+   the resulting component passes the same owner, directory, and no-symlink
+   checks; immediately capture every created or `EEXIST`-verified component's
+   device/inode into the rolling state identity or target plan before creating a
+   lock;
+2. acquire the installer state lock and then an adjacent target-config lock,
+   both through exclusive no-follow creation and always in that order;
+3. wait at most 2,000 milliseconds total with bounded backoff, returning
    `STATE_LOCKED` or `CONFIG_LOCKED` for the lock that could not be acquired;
-3. re-read state and config and compare both with their preflight content hashes;
-4. abort as `STATE_CHANGED` or `CONFIG_CHANGED` when another process modified
-   the corresponding file;
-5. apply a format-preserving patch to only the selected server entry;
-6. serialize and parse the result again before writing;
-7. write a private temporary regular file in the same directory;
-8. flush and atomically rename it over the target;
-9. preserve the original file's mode and ownership, or use mode `0600` for a new
-   file;
-10. atomically write the corresponding installer state;
-11. if state writing fails, restore the original config bytes before reporting
-    `STATE_WRITE_FAILED`;
-12. report `CONFIG_ROLLBACK_FAILED` when that restoration does not complete;
-13. release both locks and remove installer-owned temporary files.
+4. revalidate every existing component from the operating-system home or state
+   root through both targets, including owner, symlink status, parent identity,
+   device, and inode captured in the target plan or rolling state identity;
+5. re-read state and config, then report `HARNESS_CONFIG_UNSAFE` for an unsafe config identity,
+   `STATE_INVALID` for an unsafe state identity, `CONFIG_CHANGED` for safe config
+   bytes that differ from the target plan, or `STATE_CHANGED` for safe state
+   bytes that differ from the rolling `expectedStateHash`;
+6. parse the exact bytes read by the preceding step after those checks;
+7. apply a format-preserving patch to only the selected server entry;
+8. serialize and parse the result again and enforce the encoded-size limit before
+   writing;
+9. serialize the state post-image and enforce its encoded-size limit before
+   writing either file;
+10. create a mode-`0600` private temporary regular file in the same verified
+   directory using exclusive no-follow semantics, then verify it with `fstat`;
+11. flush the file, revalidate the parent and target identities immediately
+   before atomically renaming it over the target;
+12. preserve the original file's mode and ownership, or use mode `0600` for a
+    new file;
+13. atomically write the corresponding installer state through the same
+    exclusive temporary-file, `fstat`, flush, revalidation, and rename rules;
+14. reopen the successfully renamed state file and update both
+    `expectedStateHash` and `expectedStateIdentity` from its exact bytes,
+    parent, device, and inode;
+15. if state writing fails, re-read the config and restore the original bytes
+    only when its hash still equals the installer's exact post-image hash;
+16. preserve the current bytes and report `CONFIG_ROLLBACK_FAILED` when the
+    compare-and-swap restoration predicate is false or restoration does not
+    complete;
+17. release both locks and remove only installer-owned temporary files.
 
-Lock metadata may contain only installer PID, creation time, and target path.
-The installer never breaks or deletes a lock it did not create. A stale lock
-requires manual inspection in this release. The state-first lock order prevents
-two installer processes that target different config files from losing ownership
-records or deadlocking each other. Native harnesses do not honor installer locks;
-the content-hash check detects changes completed before the commit re-read but
-does not claim a cross-process transaction with a harness writing at the same
-instant.
+The state lock path is exactly `<statePath>.lock`; a config lock is exactly
+`<configPath>.ai-engine-installer.lock`. Each is a mode-`0600` regular file
+created exclusively with no-follow semantics. Its closed JSON metadata contains
+only `pid` as a positive safe integer, `createdAt` as a UTC RFC 3339 timestamp,
+`targetPath` as the corresponding safe absolute path, and `ownershipToken` as
+32 lowercase hexadecimal characters generated from 128 random bits. The
+installer retains its token in memory and deletes a lock only when the opened
+regular file still has the captured device/inode and its metadata contains the
+matching token. It never breaks, truncates, replaces, or deletes another lock.
+A stale lock requires manual inspection in this release.
+
+The state-first lock order prevents two installer processes that target
+different config files from losing ownership records or deadlocking each other.
+Native harnesses do not honor installer locks. The no-follow opens, identity
+checks, and content hashes protect against symlinks and substitutions that exist
+at a check or complete before the final check. Node.js does not expose the
+descriptor-relative primitives needed to claim protection from a malicious
+same-UID process that swaps a path between the final recheck and the following
+filesystem syscall; defending against that adversary is outside the first
+release. Completed changes are still detected and never intentionally
+overwritten.
 
 No persistent backup of a harness config is created because these files may
 contain credentials unrelated to the selected MCP entry. The original bytes may
@@ -838,9 +978,17 @@ config directory and file, never other harness bootstrap state.
 
 Each configuration target is an independent transaction. Targets are processed
 in lexicographic `targetId`, then `configPath`, order. The batch is not atomic
-across targets. A failure does not roll back earlier successful targets and
-does not prevent later preflight-clean targets from being attempted, unless the
-user cancels or the installer state becomes unsafe.
+across targets. After each successful state write, the next target uses the
+updated rolling `expectedStateHash`. A target-local preflight, config-lock,
+config-write, rollback, `STATE_LOCKED`, or safely rolled-back
+`STATE_WRITE_FAILED` does not roll back earlier successful targets and does not
+prevent later preflight-clean targets from being attempted when state remains
+readable and matches the rolling hash and identity. `CONFIG_ROLLBACK_FAILED` is
+also target-local under that predicate: it preserves the current config bytes,
+fails that target, and allows later targets to continue. Only an external
+`STATE_CHANGED`, invalid or unsafe state re-read, or cancellation invalidates
+every remaining plan and stops the batch; those targets are reported as blocked
+and are not committed.
 
 The final screen MUST list `changed`, `unchanged`, `adopted`, `blocked`, and
 `failed` targets separately. Exit code `1` is selected when any requested target
@@ -855,11 +1003,13 @@ details.
 | Code | Stable message | Retry |
 | --- | --- | --- |
 | `REGISTRY_INVALID` | `The local capability registry is invalid.` | No; fix and release the registry. |
+| `INSTALLER_INITIALIZATION_FAILED` | `The installer could not be initialized.` | No automatic retry. |
 | `NO_TTY` | `The installer requires an interactive terminal.` | No; rerun in a TTY. |
 | `NO_SUPPORTED_HARNESS` | `No supported AI harness was detected.` | No automatic retry. |
 | `HARNESS_CONFIG_INVALID` | `The harness configuration is invalid.` | No; repair the config. |
 | `HARNESS_CONFIG_AMBIGUOUS` | `More than one harness configuration could be selected.` | No; remove the ambiguity and rerun. |
 | `HARNESS_CONFIG_UNSAFE` | `The harness configuration path is unsafe.` | No; repair ownership or path. |
+| `HARNESS_CONFIG_READ_FAILED` | `The harness configuration could not be read.` | No automatic retry. |
 | `TARGET_UNSUPPORTED` | `This capability cannot be configured for the selected harness.` | No; choose a compatible target. |
 | `COMMAND_NOT_FOUND` | `The MCP server command was not found.` | No; install it and rerun. |
 | `REQUIRED_ENV_MISSING` | `A required environment variable is missing.` | No; set it and rerun. |
@@ -869,6 +1019,7 @@ details.
 | `CONFIG_CHANGED` | `The harness configuration changed during installation.` | No automatic retry; rerun the flow. |
 | `CONFIG_WRITE_FAILED` | `The harness configuration could not be updated.` | No automatic retry. |
 | `STATE_INVALID` | `The installer state is invalid.` | No; repair the state. |
+| `STATE_READ_FAILED` | `The installer state could not be read.` | No automatic retry. |
 | `STATE_LOCKED` | `The installer state is locked.` | One bounded lock wait only. |
 | `STATE_CHANGED` | `The installer state changed during installation.` | No automatic retry; rerun the flow. |
 | `STATE_WRITE_FAILED` | `The installer state could not be updated.` | No automatic retry; config rollback is attempted. |
@@ -886,6 +1037,34 @@ Multiple registry and preflight issues are reported in deterministic order.
 Write failures are not retried automatically because a retry could overwrite a
 concurrent user or harness change.
 
+Fatal registry read, decoding, parse, or schema failures are
+`REGISTRY_INVALID`. A filesystem failure while reading an otherwise eligible
+harness target is `HARNESS_CONFIG_READ_FAILED`; malformed bytes or structure are
+`HARNESS_CONFIG_INVALID`. The equivalent state cases are `STATE_READ_FAILED`
+and `STATE_INVALID`. An unexpected failure before a more specific boundary is
+established becomes `INSTALLER_INITIALIZATION_FAILED`. Incidental filesystem,
+parser, and `Error.message` text is retained only as an internal cause and is
+never rendered.
+
+The remaining preflight mappings are exact. Duplicate keys, invalid BOM, depth
+overflow, forbidden YAML constructs, a non-JCS selected entry, a wrong MCP
+parent type, and encoded-size overflow are `HARNESS_CONFIG_INVALID`. OpenClaw
+`$include` and simultaneous OpenCode siblings are
+`HARNESS_CONFIG_AMBIGUOUS`. A named OpenClaw profile is
+`TARGET_UNSUPPORTED`. A symlink, wrong owner, unsafe identity, invalid path, or
+unsafe override is `HARNESS_CONFIG_UNSAFE`. A missing server command is
+`COMMAND_NOT_FOUND`; a missing required variable is `REQUIRED_ENV_MISSING`.
+State uses `STATE_READ_FAILED` or `STATE_INVALID` at the equivalent read and
+validation boundaries. During commit, safe content changes are
+`CONFIG_CHANGED` or `STATE_CHANGED`, while completed unsafe path substitutions
+retain the config/state unsafe codes.
+
+Directory bootstrap has the same exact split. A safe operating-system failure
+while creating the standard config directory is `CONFIG_WRITE_FAILED`; the
+equivalent installer-state directory failure is `STATE_WRITE_FAILED`. A created
+component or `EEXIST` race that resolves to an unsafe config path is
+`HARNESS_CONFIG_UNSAFE`; the equivalent state-path race is `STATE_INVALID`.
+
 ## Security and trust
 
 The bundled registry is trusted release input, not a sandbox or signature. A
@@ -901,7 +1080,8 @@ The installer MUST satisfy these boundaries:
 - read a required environment variable only as present/non-empty and never
   interpolate its value into generated configuration;
 - never store or render credential values;
-- never follow a config or state-file symlink;
+- never intentionally follow a config, state, lock, or temporary-file symlink;
+  reject one whenever it is observed at a required check;
 - never modify a config not owned by the current user;
 - never weaken TLS verification, tool approvals, trust prompts, or harness
   policy;
@@ -952,10 +1132,22 @@ linear in the encoded config and selected registry entry size. Registry
 validation must be linear in registry size. Implementations MUST avoid recursive
 walks over untrusted parsed data that can overflow the JavaScript stack.
 
+These per-preflight-pass complexity claims are measured by counters, not elapsed
+time. A valid
+1,000-entry registry receives one closed-schema validation pass per entry and
+exactly 9,000 compatibility calls, once per `(entry, target)` pair; no adapter
+rescans the registry. A 4,194,304-byte source config is decoded once and parsed
+once, receives exactly one combined inspection/validation traversal and at most
+one patch-construction traversal, and then has its candidate post-image decoded
+and parsed exactly once for verification. Explicit work stacks perform those
+traversals. The root mapping or array has depth `1`; entering a nested mapping
+or array adds `1`; scalar members do not add depth. Depth `100` is accepted and
+depth `101` fails before patch construction.
+
 ## Versioning and compatibility
 
-- Adding `@ai-engine/installer` is additive and post-v0.1, but it requires the
-  package-boundary ADR described above.
+- Adding `@ai-engine/installer` is additive and post-v0.1 and is authorized by
+  ADR 0010.
 - Registry `schemaVersion: 1` is exact. Adding an optional field is still a
   schema change because the schema is closed; it requires a new installer
   release and compatibility decision.
@@ -990,29 +1182,29 @@ walks over untrusted parsed data that can overflow the JavaScript stack.
 | `AE-INSTALL-AC-02` | An existing config without an executable is labeled `configuration only`, may be patched after confirmation, and never authorizes creation of a missing config. | Table-driven detection and writer-spy test for all targets. |
 | `AE-INSTALL-AC-03` | A missing config for an installed surface is created only after confirmation, with the documented MCP shape and POSIX mode `0600`. | Child-process fixture for every shipping target. |
 | `AE-INSTALL-AC-04` | A stdio entry without forwarded variables maps to every shipping target; a non-empty `forwardEnv` maps exactly where documented and produces `unsupported` elsewhere. | Golden semantic assertions over TOML, YAML, JSON, JSONC, and JSON5 fixtures. |
-| `AE-INSTALL-AC-05` | A credential-free Streamable HTTP entry maps to every shipping target; bearer/header environment references map exactly where documented and produce `unsupported` elsewhere, with no network request. | Cross-target adapter tests with a network-call sentinel. |
+| `AE-INSTALL-AC-05` | A credential-free Streamable HTTP entry maps to every shipping target; bearer/header environment references map exactly where documented and produce `unsupported` elsewhere, with no network request; every OpenCode remote mapping contains `oauth: false`. | Cross-target adapter tests with semantic golden assertions and a network-call sentinel. |
 | `AE-INSTALL-AC-06` | Install, disable, and enable transition `available → enabled → disabled → enabled` without losing the transport definition for `native-enabled`, `native-disabled`, and `detached`. | End-to-end interactive test for every shipping target. |
 | `AE-INSTALL-AC-07` | Repeating install, enable, or disable on the resulting state performs no config or state write. | Writer spies plus mtime/content assertions. |
 | `AE-INSTALL-AC-08` | A matching external entry can be adopted only after explicit confirmation and adoption does not rewrite its config. | Interactive adoption test and writer spy. |
 | `AE-INSTALL-AC-09` | A same-name, different external entry is `conflict`, is never overwritten, and emits no definition content. | Table-driven conflict and diagnostic-safety tests. |
 | `AE-INSTALL-AC-10` | Manual change to a managed definition produces `drifted`; enable and disable make no write. | State fingerprint regression test. |
-| `AE-INSTALL-AC-11` | A registry descriptor change produces `outdated`; native and detached toggles preserve the installed descriptor rather than installing the new one. | Old-state/new-registry fixtures for all three toggle strategies. |
+| `AE-INSTALL-AC-11` | A registry descriptor change produces `outdated` with the current enablement substate and only its inverse action; native and detached toggles preserve the installed descriptor rather than installing the new one. | Old-state/new-registry fixtures for all three toggle strategies and both enablement substates. |
 | `AE-INSTALL-AC-12` | Comments, unrelated values, key order outside the selected entry, newline convention, trailing-newline state, mode, and ownership survive each adapter mutation. | Byte-aware preservation fixtures for TOML, YAML, JSON, JSONC, and JSON5. |
-| `AE-INSTALL-AC-13` | Malformed config, duplicate key, depth 101, YAML alias/anchor/merge, wrong MCP parent type, both OpenCode config siblings, oversized config, symlink, wrong owner, relative or home-escaping override, and unsafe state each fail before a write. | Boundary fixtures with writer spies and POSIX filesystem tests. |
-| `AE-INSTALL-AC-14` | A config changed after preflight produces `CONFIG_CHANGED` and retains the concurrent bytes. | Deterministic concurrency test with a pre-commit barrier. |
-| `AE-INSTALL-AC-15` | A second writer cannot acquire the state or adjacent config lock within the two-second total budget, cannot lose state while targeting another config, and does not alter a lock or config it does not own. | Two-process lock integration tests with a fake clock where possible. |
-| `AE-INSTALL-AC-16` | State-write failure restores the exact original config and reports `STATE_WRITE_FAILED`; restoration failure reports `CONFIG_ROLLBACK_FAILED` without exposing bytes. | Fault-injected filesystem tests. |
+| `AE-INSTALL-AC-13` | Malformed or non-UTF-8 config, invalid BOM, duplicate key, non-JCS selected entry, depth 101, YAML alias/anchor/merge, OpenClaw `$include`, active OpenClaw profile, wrong MCP parent type, both OpenCode config siblings, oversized config, read failure, symlink, wrong owner, relative or home-escaping override, and unsafe state each fail with the documented stable code before a write. | Boundary fixtures with writer spies and POSIX filesystem tests. |
+| `AE-INSTALL-AC-14` | Safe config bytes changed after preflight produce `CONFIG_CHANGED`; a changed parent, symlink, owner, device, or inode produces `HARNESS_CONFIG_UNSAFE`. Both retain the concurrent bytes; a same-UID swap inside the explicitly excluded final syscall race is not claimed. | Deterministic concurrency tests with pre-commit barriers around revalidation and rename. |
+| `AE-INSTALL-AC-15` | A second writer cannot acquire the exact mode-`0600` state or config lock within the two-second total budget, cannot lose state while targeting another config, and cannot alter or delete a lock whose device/inode or 128-bit ownership token it does not own. | Two-process lock integration tests with a fake clock where possible. |
+| `AE-INSTALL-AC-16` | State-write failure restores the exact original config and reports `STATE_WRITE_FAILED` only when the config still equals the installer post-image; a concurrent post-write change is preserved and reports `CONFIG_ROLLBACK_FAILED` without exposing bytes. | Fault-injected compare-and-swap rollback tests. |
 | `AE-INSTALL-AC-17` | Missing command or required environment blocks install/enable, while disable remains available; no environment value reaches UI, state, or captured logs. | Process-environment and diagnostic leak tests using unique secret sentinels. |
-| `AE-INSTALL-AC-18` | Registry unknown fields, duplicate IDs/names, invalid transports/URLs/env names, entries supported by no target, empty metadata, count limits, and inclusive/exclusive byte limits fail deterministically; partial target incompatibility remains valid. | Table-driven registry and cross-target compatibility tests at every boundary. |
+| `AE-INSTALL-AC-18` | Registry unknown fields, duplicate IDs/names, invalid transports/URLs/env names, case-insensitive duplicate or reserved headers, entries supported by no target, empty metadata, count limits, and inclusive/exclusive byte limits fail deterministically; partial target incompatibility remains valid. | Table-driven registry and cross-target compatibility tests at every boundary. |
 | `AE-INSTALL-AC-19` | Running without both TTYs exits `2`; negative confirmation writes nothing and Quit exits `0` unless an earlier confirmed target failed; Clack cancellation or `SIGINT` exits `130`; none corrupts config or state. | Pseudoterminal child-process tests. |
-| `AE-INSTALL-AC-20` | In a four-target operation, results are attempted in target order, prior successes remain when one target fails, later clean targets still run, and exit code is `1`. | Fault-injected multi-target integration test. |
-| `AE-INSTALL-AC-21` | A registry containing 1,000 valid entries and a depth-100, 4 MiB valid config is validated and inspected without stack overflow or superlinear adapter passes; depth 101 fails before patching. | Instrumented inclusive/exclusive limit test. |
+| `AE-INSTALL-AC-20` | In target order, a four-target batch reports target 1 `changed`, target 2 `failed` with `CONFIG_WRITE_FAILED`, and targets 3 and 4 `changed`, commits all three successes against the rolling state hash/identity, and exits `1`; a safely rolled-back `STATE_WRITE_FAILED` or target-local `CONFIG_ROLLBACK_FAILED` also permits a later clean target, while a separate external state change after target 1 fails target 2 as `STATE_CHANGED` and blocks targets 3 and 4. | Fault-injected multi-target, state-write and rollback-failure, and external-state-change integration tests. |
+| `AE-INSTALL-AC-21` | A 1,000-entry registry receives one validation pass per entry and exactly 9,000 entry-target compatibility calls. In one preflight pass, a depth-100, 4,194,304-byte source config is decoded and parsed once, receives one inspection/validation and at most one patch-construction traversal, and its post-image is decoded and parsed once; depth 101 or either post-image limit plus one byte fails before confirmation. | Counter- and spy-based inclusive/exclusive limit tests with no elapsed-time assertion. |
 | `AE-INSTALL-AC-22` | Source inspection and runtime sentinels prove the installer imports no framework package, invokes no engine, opens no network connection, and runs no harness, shell, package manager, or registry command. | Import-graph check plus child-process/network sentinels. |
-| `AE-INSTALL-AC-23` | `--help` and `--version` succeed without loading Clack, registry, harness, state, or network access; unknown arguments exit `2`. | CLI child-process tests and module-load sentinels. |
-| `AE-INSTALL-AC-24` | The published package contains the validated registry and binary, and a clean install can configure at least one real AI Engine MCP entry. | Packed-package smoke test in an isolated home and `PATH`. |
+| `AE-INSTALL-AC-23` | `--help` and `--version` succeed without loading Clack, registry, harness, state, or network access; version equals the manifest; unknown arguments exit `2`. | CLI child-process tests and module-load sentinels. |
+| `AE-INSTALL-AC-24` | The production package contains the validated registry and binary, and a clean install can configure at least one separately versioned, real AI Engine MCP entry without launching it; upstream release evidence separately lists and calls the declared capability. | Packed-package smoke test in an isolated home and `PATH`, plus referenced upstream artifact and protocol-smoke evidence. |
 | `AE-INSTALL-AC-25` | The locked `@clack/prompts` adapter supports autocomplete, multiselect, default-negative confirmation, Back/Quit, cancellation at every prompt, `NO_COLOR`, and a narrow terminal without exposing Clack types or symbols. | Port contract tests plus a real pseudoterminal smoke matrix against the locked package. |
 | `AE-INSTALL-AC-26` | When both `agy` and `antigravity` resolve, one user choice produces one preview path, lock, write, state record, result, and reload section. | Shared-target integration test with config/state writer spies. |
-| `AE-INSTALL-AC-27` | State accepts exactly 9,000 valid records and 16 MiB inclusive, rejects the next record or byte, and enforces `targetContractVersion` plus every conditional `suspendedDescriptor` invariant without retaining a secret sentinel. | Inclusive/exclusive state-schema and leak tests. |
+| `AE-INSTALL-AC-27` | State accepts exactly 9,000 unique `(entryId, targetId)` records and 16 MiB inclusive, rejects the next record or byte, a duplicate pair, path relocation, or malformed digest, and enforces `targetContractVersion` plus every conditional `suspendedDescriptor` invariant without retaining a secret sentinel. | Inclusive/exclusive state-schema, uniqueness, relocation, and leak tests. |
 
 ## Traceability
 
@@ -1052,13 +1244,26 @@ evidence, ends green, and is one cohesive commit:
 9. Implement the OpenCode v2 JSONC and Grok Build TOML targets.
 10. Add lock handling, optimistic concurrency, state rollback, cancellation,
     and independent multi-target commits.
-11. Add the full Clack flow, pseudoterminal tests, secret sentinels, package
-    smoke test, one real registry entry, and user documentation.
+11. Add the full Clack flow, pseudoterminal tests, secret sentinels, an isolated
+    packed pre-release smoke test using a test-only registry fixture, and user
+    documentation.
+12. After a separately versioned real engine artifact and upstream MCP protocol
+    evidence exist, add the reviewed production registry entry and complete the
+    production packed smoke test required by `AE-INSTALL-AC-24`.
 
 No slice may add a target by copying a raw config fragment into the registry.
 Every surface requires detection evidence; every target requires an adapter,
 current source evidence, preservation fixtures, error boundaries, and the same
 install/enable/disable acceptance path.
+
+Slices 6 through 9 deliver in-memory parsing, normalization, compatibility, and
+format-preserving patch construction with byte fixtures; no production
+confirmed-write path is enabled before slice 10 supplies the safe transaction
+coordinator. After slice 9, the full registry compatibility suite reruns the
+exact 9,000-call boundary against all nine real target adapters. Slice 11
+produces only a validated workspace/CI pre-release. Slice 12 and production
+publication remain gated on the separately versioned real engine artifact and
+upstream protocol evidence.
 
 ## Deferred and unspecified
 
@@ -1078,6 +1283,11 @@ The following require later evidence and an explicit specification update:
 - per-tool filters or capability-level enablement inside a multi-tool server;
 - automatic stale-lock recovery and crash-atomic transactions across config and
   state files;
+- OpenClaw profiles, split `$include` configuration, and source-aware mutation
+  across more than one config document;
+- descriptor-relative native filesystem primitives and protection from a
+  malicious same-UID process swapping a path between the final recheck and the
+  immediately following syscall;
 - a unified `ai-engine` launcher shared with `@ai-engine/tooling`;
 - a public programmatic API or non-interactive mutation commands;
 - telemetry, analytics, remote error reporting, and registry usage metrics.
@@ -1097,13 +1307,22 @@ be rechecked when implementation begins:
 - [Hermes Agent MCP config reference](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/reference/mcp-config-reference.md)
 - [OpenClaw MCP commands and configuration](https://docs.openclaw.ai/cli/mcp)
 - [OpenClaw configuration reference](https://docs.openclaw.ai/gateway/configuration-reference)
+- [OpenClaw environment and path overrides](https://docs.openclaw.ai/help/environment)
+- [OpenClaw pinned config-path resolver](https://github.com/openclaw/openclaw/blob/f308af8a344a30432e1b13fa348533e54cd190c8/src/config/paths.ts)
+- [OpenClaw pinned MCP environment filter](https://github.com/openclaw/openclaw/blob/f308af8a344a30432e1b13fa348533e54cd190c8/src/agents/mcp-config-shared.ts)
+- [OpenClaw pinned environment-policy snapshot](https://github.com/openclaw/openclaw/blob/f308af8a344a30432e1b13fa348533e54cd190c8/src/infra/host-env-security-policy.json)
 - [`@clack/prompts` package and interaction primitives](https://www.npmjs.com/package/@clack/prompts)
 - [Claude Code MCP scopes and configuration](https://code.claude.com/docs/en/mcp)
+- [Claude Code environment variables](https://code.claude.com/docs/en/env-vars)
+- [Claude Code configuration locations](https://code.claude.com/docs/en/configuration)
 - [Antigravity MCP configuration shared by IDE and CLI](https://antigravity.google/docs/mcp)
 - [Antigravity CLI installation and the `agy` executable](https://antigravity.google/docs/cli/install)
 - [Cursor MCP global configuration](https://docs.cursor.com/context/model-context-protocol)
 - [Kimi Code CLI MCP configuration](https://www.kimi.com/code/docs/en/kimi-code-cli/customization/mcp.html)
 - [OpenCode v2 MCP servers](https://opencode.ai/v2/docs/mcp-servers)
 - [OpenCode v2 global configuration](https://opencode.ai/v2/docs/config)
+- [OpenCode v2 pinned config loader](https://github.com/anomalyco/opencode/blob/982a9044c515482e7792039be1db9c71cb572745/packages/core/src/config.ts)
+- [OpenCode v2 pinned config-directory resolver](https://github.com/anomalyco/opencode/blob/982a9044c515482e7792039be1db9c71cb572745/packages/core/src/global.ts)
 - [Grok Build MCP servers](https://docs.x.ai/build/features/mcp-servers)
 - [Grok Build user configuration](https://docs.x.ai/build/settings)
+- [Grok Build configuration reference](https://docs.x.ai/build/settings/reference)
