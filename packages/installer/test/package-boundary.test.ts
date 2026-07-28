@@ -22,7 +22,12 @@ describe("@ai-engine/installer package boundary", () => {
       files: ["dist", "registry"],
       exports: {},
       bin: { "ai-engine-installer": "./dist/cli.js" },
-      dependencies: { "@clack/prompts": "1.7.0" },
+      dependencies: {
+        "@clack/prompts": "1.7.0",
+        "@humanwhocodes/momoa": "3.3.10",
+        "toml-eslint-parser": "1.0.3",
+        yaml: "2.9.0",
+      },
     });
     expect(manifest).not.toHaveProperty("main");
     expect(manifest).not.toHaveProperty("types");
@@ -82,5 +87,40 @@ describe("@ai-engine/installer package boundary", () => {
     expect(
       sources.find(({ name }) => name === "interactive-prompter.ts")?.text,
     ).not.toContain("@clack");
+
+    const adapterSources = sources.filter(({ name }) =>
+      [
+        "json5-target-adapter.ts",
+        "target-adapter.ts",
+        "target-adapters.ts",
+        "toml-target-adapter.ts",
+        "yaml-target-adapter.ts",
+      ].includes(name),
+    );
+    expect(adapterSources).toHaveLength(5);
+    for (const source of adapterSources) {
+      expect(source.text, source.name).not.toMatch(
+        /node:(?:child_process|fs|process)|process\.env|globalThis\.(?:fetch|WebSocket)/u,
+      );
+    }
+    const json5Adapter = adapterSources.find(
+      ({ name }) => name === "json5-target-adapter.ts",
+    );
+    expect(json5Adapter?.text).not.toContain('from "json5"');
+    expect(json5Adapter?.text).not.toContain("JSON5.parse");
+    const tomlAdapter = adapterSources.find(
+      ({ name }) => name === "toml-target-adapter.ts",
+    );
+    expect(tomlAdapter?.text).not.toContain("getStaticTOMLValue");
+    expect(tomlAdapter?.text).not.toContain("finishDraft");
+    const yamlAdapter = adapterSources.find(
+      ({ name }) => name === "yaml-target-adapter.ts",
+    );
+    expect(yamlAdapter?.text).not.toContain(".toJS(");
+    for (const source of [json5Adapter, tomlAdapter, yamlAdapter]) {
+      expect(source?.text, source?.name).not.toContain(
+        "normalizedMcpDefinition",
+      );
+    }
   });
 });

@@ -14,11 +14,11 @@ import {
 import { createNodeFileSystem } from "./node-file-system.js";
 import { runReadOnlyInventory } from "./read-only-inventory.js";
 import {
-  configurationTargetIds,
   loadBundledRegistry,
   type RegistryCompatibilityAdapters,
 } from "./registry.js";
 import type { InstallerExitCode } from "./run-installer-cli.js";
+import { registryCompatibilityAdapters } from "./target-adapters.js";
 import {
   createNodeTargetConfigEvidenceProbes,
   createProcessInstallerEnvironment,
@@ -35,21 +35,6 @@ export interface RunInteractiveSessionOptions {
   readonly environment?: InstallerEnvironment;
 }
 
-function developmentCompatibilityAdapters(): RegistryCompatibilityAdapters {
-  return Object.freeze(
-    Object.fromEntries(
-      configurationTargetIds.map((targetId) => [
-        targetId,
-        () =>
-          ({
-            supported: false,
-            reason: "target-adapter-not-implemented",
-          }) as const,
-      ]),
-    ) as unknown as RegistryCompatibilityAdapters,
-  );
-}
-
 export async function runInteractiveSession(
   options: RunInteractiveSessionOptions = {},
 ): Promise<InstallerExitCode> {
@@ -61,7 +46,7 @@ export async function runInteractiveSession(
     const fileSystem = options.fileSystem ?? createNodeFileSystem();
     await loadBundledRegistry(
       fileSystem,
-      options.compatibilityAdapters ?? developmentCompatibilityAdapters(),
+      options.compatibilityAdapters ?? registryCompatibilityAdapters,
     );
     const snapshot = await detectHarnesses({
       resolveHomeDirectory:

@@ -13,12 +13,20 @@ import type {
   InteractivePrompter,
   PromptOutcome,
 } from "../src/interactive-prompter.js";
+import type { CapabilityInstallDescriptor } from "../src/registry.js";
+import type {
+  TargetAdapter,
+  TargetAdapterCounters,
+} from "../src/target-adapter.js";
 
 declare const fileSystem: InstallerFileSystem;
 declare const prompter: InteractivePrompter;
 declare const resolveExecutable: ExecutableResolver;
 declare const resolveHomeDirectory: OperatingSystemHomeResolver;
 declare const configEvidenceProbes: TargetConfigEvidenceProbes;
+declare const targetAdapter: TargetAdapter;
+declare const targetAdapterCounters: TargetAdapterCounters;
+declare const installDescriptor: CapabilityInstallDescriptor;
 
 expectTypeOf(
   fileSystem.readFile(new URL("file:///registry.json")),
@@ -45,6 +53,22 @@ const submitted: PromptOutcome<string> = {
 expectTypeOf(submitted).toMatchTypeOf<PromptOutcome<string>>();
 
 expectTypeOf(resolveHomeDirectory()).toEqualTypeOf<string>();
+expectTypeOf(
+  targetAdapter.inspect({
+    source: new Uint8Array(),
+    serverName: "support-engine",
+    counters: targetAdapterCounters,
+  }).currentServer,
+).toMatchTypeOf<
+  | { readonly kind: "absent" }
+  | {
+      readonly kind: "present";
+      readonly definition: Readonly<Record<string, unknown>>;
+    }
+>();
+expectTypeOf(
+  targetAdapter.descriptorToDefinition(installDescriptor),
+).toEqualTypeOf<Readonly<Record<string, unknown>>>();
 expectTypeOf(resolveExecutable("codex")).toEqualTypeOf<
   Promise<
     | {

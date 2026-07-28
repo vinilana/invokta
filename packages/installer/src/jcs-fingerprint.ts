@@ -129,6 +129,21 @@ function canonicalize(value: unknown, omittedRootKey?: string): string {
   }
 }
 
+interface RegisteredCanonicalJcs {
+  readonly full: string;
+  readonly withoutEnabled?: string;
+  readonly withoutDisabled?: string;
+}
+
+const registeredCanonicalJcs = new WeakMap<object, RegisteredCanonicalJcs>();
+
+export function registerCanonicalJcs(
+  value: object,
+  canonical: RegisteredCanonicalJcs,
+): void {
+  registeredCanonicalJcs.set(value, Object.freeze({ ...canonical }));
+}
+
 function requireNativeToggle(
   definition: unknown,
   field: "enabled" | "disabled",
@@ -152,6 +167,10 @@ function requireNativeToggle(
 }
 
 export function canonicalizeJcs(value: unknown): string {
+  if (typeof value === "object" && value !== null) {
+    const registered = registeredCanonicalJcs.get(value);
+    if (registered !== undefined) return registered.full;
+  }
   return canonicalize(value);
 }
 
@@ -169,8 +188,21 @@ export function fingerprintNormalizedDefinition(
     if (omittedRootKey !== undefined) {
       requireNativeToggle(definition, omittedRootKey);
     }
+    const registered =
+      typeof definition === "object" && definition !== null
+        ? registeredCanonicalJcs.get(definition)
+        : undefined;
+    const canonicalDefinition =
+      omittedRootKey === "enabled"
+        ? registered?.withoutEnabled
+        : omittedRootKey === "disabled"
+          ? registered?.withoutDisabled
+          : registered?.full;
     return createHash("sha256")
-      .update(canonicalize(definition, omittedRootKey), "utf8")
+      .update(
+        canonicalDefinition ?? canonicalize(definition, omittedRootKey),
+        "utf8",
+      )
       .digest("hex");
   } catch (cause) {
     throw new InstallerError("HARNESS_CONFIG_INVALID", cause);
