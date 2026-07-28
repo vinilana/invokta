@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = mkdtempSync(join(tmpdir(), "ai-engine-release-verify-"));
@@ -28,6 +28,12 @@ const publicPackages = [
     // The dev-only package also ships the `ai-engine` executable.
     requiredFiles: [...distEntryFiles, "dist/cli.js"],
   },
+  {
+    directory: "installer",
+    name: "@ai-engine/installer",
+    // The installer is binary-first and intentionally has no import API.
+    requiredFiles: ["dist/cli.js"],
+  },
 ];
 
 function run(command, args, options = {}) {
@@ -35,6 +41,10 @@ function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd ?? repositoryRoot,
     encoding: "utf8",
+    env:
+      options.env === undefined
+        ? process.env
+        : { ...process.env, ...options.env },
     input: options.input,
     stdio: options.capture
       ? [standardInput, "pipe", "inherit"]
@@ -144,6 +154,46 @@ try {
     cwd: consumerDirectory,
   });
 
+  const installerCommand = join(
+    consumerDirectory,
+    "node_modules",
+    ".bin",
+    "ai-engine-installer",
+  );
+  const installerPackageDirectory = join(
+    consumerDirectory,
+    "node_modules",
+    "@ai-engine",
+    "installer",
+  );
+  const installerPackageReport = JSON.parse(
+    readFileSync(join(installerPackageDirectory, "package.json"), "utf8"),
+  );
+  const sentinelDirectory = join(
+    checkoutDirectory,
+    "packages",
+    "installer",
+    "test",
+    "fixtures",
+  );
+  const eagerLoadSentinel = pathToFileURL(
+    join(sentinelDirectory, "forbid-eager-installer-loads.mjs"),
+  ).href;
+  const networkSentinel = pathToFileURL(
+    join(sentinelDirectory, "forbid-network-access.mjs"),
+  ).href;
+  const installerVersion = run(installerCommand, ["--version"], {
+    cwd: consumerDirectory,
+    capture: true,
+    env: {
+      AI_ENGINE_INSTALLER_DIST_ROOT: join(installerPackageDirectory, "dist"),
+      NODE_OPTIONS: `--no-warnings --experimental-loader=${eagerLoadSentinel} --import=${networkSentinel}`,
+    },
+  });
+  if (installerVersion !== `${installerPackageReport.version}\n`) {
+    throw new Error("installer binary version smoke failed");
+  }
+
   const packageNames = publicPackages.map((publicPackage) => {
     const packageReport = JSON.parse(
       readFileSync(
@@ -165,7 +215,7 @@ try {
   });
 
   process.stdout.write(
-    `Verified clean release tarballs and isolated ESM imports: ${packageNames.join(", ")}\n`,
+    `Verified clean release tarballs, isolated ESM imports, and executable smoke: ${packageNames.join(", ")}\n`,
   );
 } finally {
   rmSync(temporaryRoot, { force: true, recursive: true });

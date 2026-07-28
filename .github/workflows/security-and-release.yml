@@ -41,7 +41,7 @@ jobs:
 
       - name: Dry-run public packages
         run: |
-          for package_directory in ./packages/core ./packages/cli ./packages/mcp; do
+          for package_directory in ./packages/core ./packages/cli ./packages/mcp ./packages/installer; do
             npm pack --dry-run "$package_directory"
           done
 
