@@ -74,13 +74,27 @@ export type CompositionDiagnostics<
     };
 
 /**
+ * A remap target widened to `string` must escape this gate rather than poison
+ * it: a widened target matches every literal sibling, so comparing raw value
+ * types would flag legitimate dynamic remaps as duplicates. The distributive
+ * filter keeps only literal targets on both sides of the comparison; widened
+ * targets stay a runtime concern, as everywhere else in the static gate.
+ */
+type LiteralRemapTarget<Value> = Value extends string
+  ? string extends Value
+    ? never
+    : Value
+  : never;
+
+/**
  * Remap targets are validated inside a single import as well, because a mapped
  * type collapses two default IDs pointing at one effective ID into one key.
  */
 export type DuplicateRemapTargets<Remap> = {
-  [Key in keyof Remap]: Remap[Key] extends Remap[Exclude<keyof Remap, Key>]
-    ? Remap[Key] & string
-    : never;
+  [Key in keyof Remap]: Extract<
+    LiteralRemapTarget<Remap[Key]>,
+    LiteralRemapTarget<Remap[Exclude<keyof Remap, Key>]>
+  >;
 }[keyof Remap];
 
 export type RemapDiagnostics<Remap> = [DuplicateRemapTargets<Remap>] extends [

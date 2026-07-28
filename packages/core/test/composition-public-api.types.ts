@@ -166,6 +166,23 @@ importCapabilities(supportLibrary, {
   },
 });
 
+// A remap target widened to `string` escapes the static gate instead of
+// poisoning it: neither a literal sibling nor a second widened target may be
+// flagged as a duplicate, and the runtime pass stays authoritative.
+declare const widenedTarget: string;
+importCapabilities(supportLibrary, {
+  remap: {
+    "support.classify-ticket": widenedTarget,
+    "support.summarize-ticket": "operations.summarize-ticket",
+  },
+});
+importCapabilities(supportLibrary, {
+  remap: {
+    "support.classify-ticket": widenedTarget,
+    "support.summarize-ticket": widenedTarget,
+  },
+});
+
 // AE-AC-18: local and atomic default collide.
 composeCapabilities(
   // @ts-expect-error Duplicate effective capability IDs are rejected.
