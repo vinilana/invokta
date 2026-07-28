@@ -27,8 +27,8 @@ server.
 
 The first supported harness surfaces are Codex, Hermes Agent, OpenClaw, Claude
 Code, Antigravity CLI (`agy`), Antigravity IDE, Cursor, Kimi Code CLI, OpenCode
-v2, Grok Build, and TRAE AI. Antigravity CLI and Antigravity IDE share one
-configuration target, so the release has eleven detectable surfaces and ten
+v2, and Grok Build. Antigravity CLI and Antigravity IDE share one configuration
+target, so the release has ten detectable surfaces and nine
 independently writable targets. The adapter boundary is intentionally finite and
 explicit. The installer does not guess configuration shapes for unknown agents
 or unsupported product versions.
@@ -135,7 +135,7 @@ package is native ESM and declares the repository runtime floor of Node.js
 
 **Configuration target**
 : One standard user-level MCP configuration file and dialect. Multiple harness
-  surfaces may share a target. The first release has eleven surfaces and ten
+  surfaces may share a target. The first release has ten surfaces and nine
   targets because `antigravity-cli` and `antigravity-ide` both use the
   `antigravity` target.
 
@@ -382,7 +382,6 @@ user dismisses it.
 | `kimi-code` | Kimi Code CLI | `kimi` | `kimi-code` |
 | `opencode-v2` | OpenCode v2 | `opencode2` | `opencode-v2` |
 | `grok-build` | Grok Build | `grok` | `grok-build` |
-| `trae` | TRAE AI | `trae` | `trae` |
 
 Resolving more than one executable for the same surface does not create another
 target. Detection compares resolved executable identities; an `antigravity`
@@ -407,7 +406,6 @@ out of scope.
 | `kimi-code` | `${KIMI_CODE_HOME:-~/.kimi-code}/mcp.json` | JSON, `mcpServers.<server>` | `native-enabled` | Start a new Kimi session and inspect with `/mcp`. |
 | `opencode-v2` | `~/.config/opencode/opencode.json` or an existing sibling `opencode.jsonc` | JSON/JSONC, `mcp.servers.<server>` | `native-disabled` | Start a new OpenCode v2 session. |
 | `grok-build` | `~/.grok/config.toml` | TOML, `mcp_servers.<server>` | `native-enabled` | In `/mcps`, press `r` to refresh, or start a new session. |
-| `trae` | `~/.trae/mcp.json` | JSON, `mcpServers.<server>` | `detached` | Restart TRAE or reload MCP servers from its MCP settings. |
 
 `CODEX_HOME`, `HERMES_HOME`, and `KIMI_CODE_HOME` are directory overrides to
 which the documented file name is appended. `OPENCLAW_CONFIG_PATH` is a file
@@ -419,20 +417,12 @@ or wrongly typed overrides make that target ineligible and produce
 For OpenCode v2, exactly one of `opencode.json` and `opencode.jsonc` may exist.
 The adapter uses the existing file, or creates `opencode.json` when neither
 exists. Both existing at once are `HARNESS_CONFIG_AMBIGUOUS`; the installer does
-not infer the product's merge precedence or choose one. The TRAE target covers
-the current international user-level dialect only. TRAE CN, TRAE Work/SOLO,
-macOS `Application Support` variants, and their edition-specific config roots
-remain separate product versions and are not guessed.
+not infer the product's merge precedence or choose one.
 
 These mappings were verified against the harness documentation available on
-2026-07-28, except that TRAE's public documentation does not currently provide
-a stable cross-edition user-config contract. The `trae` row is therefore an
-implementation gate: its adapter MUST NOT ship until a primary vendor source or
-a fixture captured from the supported international release confirms the
-executable, `~/.trae/mcp.json`, and `mcpServers` shape. Every other adapter MUST
-also carry fixtures for its documented shape. A later harness format change is
-an adapter compatibility change, not permission to guess or fall back to
-another path.
+2026-07-28. Every adapter MUST carry fixtures for its documented shape. A later
+harness format change is an adapter compatibility change, not permission to
+guess or fall back to another path.
 
 ## Local registry contract
 
@@ -596,11 +586,10 @@ and produces `unsupported` for the others.
 | `kimi-code` | `command`, `args` | unsupported when non-empty | `enabled: true/false` |
 | `opencode-v2` | `type: "local"`, `command: [command, ...args]` | `environment.NAME: "{env:NAME}"` | `disabled: false/true` |
 | `grok-build` | `command`, `args` | `env.NAME: "${NAME}"` | `enabled = true/false` |
-| `trae` | `command`, `args` after its implementation gate clears | unsupported when non-empty until vendor evidence exists | detached entry |
 
-`unsupported` in this table is deliberate. Antigravity, Kimi, and TRAE accept
-literal environment values in their documented stdio shapes, but the installer
-does not persist a current secret value merely to make a descriptor portable.
+`unsupported` in this table is deliberate. Antigravity and Kimi accept literal
+environment values in their documented stdio shapes, but the installer does not
+persist a current secret value merely to make a descriptor portable.
 
 The adapter checks only whether each required environment variable is present
 and non-empty in the installer process. It MUST NOT read the value into a
@@ -626,7 +615,6 @@ command blocks installation or enabling but does not block disabling.
 | `kimi-code` | `url` | `bearerTokenEnvVar: "NAME"` | unsupported when non-empty | `enabled: true/false` |
 | `opencode-v2` | `type: "remote"`, `url` | `headers.Authorization: "Bearer {env:NAME}"` | `headers.X: "{env:NAME}"` | `disabled: false/true` |
 | `grok-build` | `url` | `headers.Authorization: "Bearer ${NAME}"` | `headers.X: "${NAME}"` | `enabled = true/false` |
-| `trae` | `url` after its implementation gate clears | unsupported | unsupported when non-empty | detached entry |
 
 The installer validates required environment variable presence but does not
 connect to the URL. OAuth-authenticated entries are deferred because OAuth
@@ -663,8 +651,7 @@ interface ManagedInstallation {
     | "cursor"
     | "kimi-code"
     | "opencode-v2"
-    | "grok-build"
-    | "trae";
+    | "grok-build";
   readonly configPath: string;
   readonly serverName: string;
   readonly definitionSha256: string;
@@ -690,7 +677,7 @@ values, credential-bearing URLs, or source config bytes. A
 `suspendedDescriptor` is the minimal canonical, secret-free snapshot needed to
 restore a detached server and is not a snapshot of the harness config.
 
-The state schema is closed and may contain at most 10,000 installations. Every
+The state schema is closed and may contain at most 9,000 installations. Every
 map key MUST equal the tuple derived from its value. IDs, server names, and
 absolute config paths MUST satisfy their registry and adapter constraints;
 `definitionSha256` MUST be 64 lowercase hexadecimal characters; `installedAt`
@@ -935,15 +922,15 @@ shown once per target install or adoption, not on every enable toggle.
 
 | Dimension | First-release limit or rule |
 | --- | --- |
-| Detectable harness surfaces | Exactly 11: Codex, Hermes Agent, OpenClaw, Claude Code, Antigravity CLI, Antigravity IDE, Cursor, Kimi Code CLI, OpenCode v2, Grok Build, TRAE AI |
-| Writable configuration targets | Exactly 10; both Antigravity surfaces share `antigravity` |
+| Detectable harness surfaces | Exactly 10: Codex, Hermes Agent, OpenClaw, Claude Code, Antigravity CLI, Antigravity IDE, Cursor, Kimi Code CLI, OpenCode v2, Grok Build |
+| Writable configuration targets | Exactly 9; both Antigravity surfaces share `antigravity` |
 | Platforms | Linux, macOS, WSL |
 | Registry sources | Exactly 1 bundled local JSON document |
 | Registry size | 1 MiB encoded |
 | Registry entries | 1,000 |
 | Config size | 4 MiB encoded per target |
 | State size | 16 MiB encoded |
-| Managed installation records | 10,000 |
+| Managed installation records | 9,000 |
 | Parsed config nesting | At most 100 mapping/array levels |
 | YAML aliases, anchors, merge keys | 0 |
 | Transports | stdio and Streamable HTTP |
@@ -999,7 +986,7 @@ walks over untrusted parsed data that can overflow the JavaScript stack.
 
 | ID | Observable outcome | Minimum evidence |
 | --- | --- | --- |
-| `AE-INSTALL-AC-01` | Fake executables for all eleven surfaces are reported as installed without being executed; AGY CLI and Antigravity IDE resolve to one target. | Failing-if-invoked executable fixtures, injected path resolver, and coalescing assertions. |
+| `AE-INSTALL-AC-01` | Fake executables for all ten surfaces are reported as installed without being executed; AGY CLI and Antigravity IDE resolve to one target. | Failing-if-invoked executable fixtures, injected path resolver, and coalescing assertions. |
 | `AE-INSTALL-AC-02` | An existing config without an executable is labeled `configuration only`, may be patched after confirmation, and never authorizes creation of a missing config. | Table-driven detection and writer-spy test for all targets. |
 | `AE-INSTALL-AC-03` | A missing config for an installed surface is created only after confirmation, with the documented MCP shape and POSIX mode `0600`. | Child-process fixture for every shipping target. |
 | `AE-INSTALL-AC-04` | A stdio entry without forwarded variables maps to every shipping target; a non-empty `forwardEnv` maps exactly where documented and produces `unsupported` elsewhere. | Golden semantic assertions over TOML, YAML, JSON, JSONC, and JSON5 fixtures. |
@@ -1025,19 +1012,18 @@ walks over untrusted parsed data that can overflow the JavaScript stack.
 | `AE-INSTALL-AC-24` | The published package contains the validated registry and binary, and a clean install can configure at least one real AI Engine MCP entry. | Packed-package smoke test in an isolated home and `PATH`. |
 | `AE-INSTALL-AC-25` | The locked `@clack/prompts` adapter supports autocomplete, multiselect, default-negative confirmation, Back/Quit, cancellation at every prompt, `NO_COLOR`, and a narrow terminal without exposing Clack types or symbols. | Port contract tests plus a real pseudoterminal smoke matrix against the locked package. |
 | `AE-INSTALL-AC-26` | When both `agy` and `antigravity` resolve, one user choice produces one preview path, lock, write, state record, result, and reload section. | Shared-target integration test with config/state writer spies. |
-| `AE-INSTALL-AC-27` | The first installer release is blocked until TRAE's executable, user config path, and MCP shape satisfy the documented evidence gate and its adapter passes the common lifecycle. | Release-gate assertion plus primary-source or captured supported-release fixture review. |
-| `AE-INSTALL-AC-28` | State accepts exactly 10,000 valid records and 16 MiB inclusive, rejects the next record or byte, and enforces `targetContractVersion` plus every conditional `suspendedDescriptor` invariant without retaining a secret sentinel. | Inclusive/exclusive state-schema and leak tests. |
+| `AE-INSTALL-AC-27` | State accepts exactly 9,000 valid records and 16 MiB inclusive, rejects the next record or byte, and enforces `targetContractVersion` plus every conditional `suspendedDescriptor` invariant without retaining a secret sentinel. | Inclusive/exclusive state-schema and leak tests. |
 
 ## Traceability
 
 | Requirement | Contract surface | Acceptance evidence |
 | --- | --- | --- |
-| Detect installed AI harnesses | Finite surface list, executable/config evidence, shared-target coalescing | `AE-INSTALL-AC-01`, `AE-INSTALL-AC-02`, `AE-INSTALL-AC-26`, `AE-INSTALL-AC-27` |
+| Detect installed AI harnesses | Finite surface list, executable/config evidence, shared-target coalescing | `AE-INSTALL-AC-01`, `AE-INSTALL-AC-02`, `AE-INSTALL-AC-26` |
 | Interactive install, enable, and disable | Clack port, primary flow, status, toggle strategies, exit and cancellation | `AE-INSTALL-AC-03`, `AE-INSTALL-AC-06`, `AE-INSTALL-AC-07`, `AE-INSTALL-AC-19`, `AE-INSTALL-AC-23`, `AE-INSTALL-AC-25` |
 | Local capability registry | Closed schema, identity, transports, limits, packaged source | `AE-INSTALL-AC-18`, `AE-INSTALL-AC-21`, `AE-INSTALL-AC-24` |
 | Correct harness configuration | Surface/target matrices, compatibility, canonical MCP mapping | `AE-INSTALL-AC-04`, `AE-INSTALL-AC-05`, `AE-INSTALL-AC-18` |
 | Preserve user configuration | Preflight, atomic patch, format preservation | `AE-INSTALL-AC-12` through `AE-INSTALL-AC-16` |
-| Ownership and collision safety | State fingerprint, suspended descriptor, adopt, conflict, drift, outdated | `AE-INSTALL-AC-08` through `AE-INSTALL-AC-11`, `AE-INSTALL-AC-28` |
+| Ownership and collision safety | State fingerprint, suspended descriptor, adopt, conflict, drift, outdated | `AE-INSTALL-AC-08` through `AE-INSTALL-AC-11`, `AE-INSTALL-AC-27` |
 | Secret and execution safety | Environment references, no command/network execution, sanitized errors | `AE-INSTALL-AC-09`, `AE-INSTALL-AC-17`, `AE-INSTALL-AC-22` |
 | Determinism and bounded operation | Ordering, byte/count limits, lock timeout, independent targets | `AE-INSTALL-AC-15`, `AE-INSTALL-AC-18`, `AE-INSTALL-AC-20`, `AE-INSTALL-AC-21` |
 | Existing architecture remains unchanged | Standalone package, MCP configuration boundary, no framework imports | `AE-INSTALL-AC-22`, package dependency review |
@@ -1064,12 +1050,9 @@ evidence, ends green, and is one cohesive commit:
    toggles and compatibility tests.
 8. Implement the shared Antigravity JSON target and prove AGY/IDE coalescing.
 9. Implement the OpenCode v2 JSONC and Grok Build TOML targets.
-10. Clear the TRAE evidence gate and implement its target before declaring the
-    first adapter set complete; a release MUST NOT claim the eleven-surface
-    scope while that gate remains open.
-11. Add lock handling, optimistic concurrency, state rollback, cancellation,
+10. Add lock handling, optimistic concurrency, state rollback, cancellation,
     and independent multi-target commits.
-12. Add the full Clack flow, pseudoterminal tests, secret sentinels, package
+11. Add the full Clack flow, pseudoterminal tests, secret sentinels, package
     smoke test, one real registry entry, and user documentation.
 
 No slice may add a target by copying a raw config fragment into the registry.
@@ -1081,8 +1064,8 @@ install/enable/disable acceptance path.
 
 The following require later evidence and an explicit specification update:
 
-- Gemini CLI, VS Code, legacy OpenCode v1, TRAE CN, TRAE Work/SOLO, and other
-  harness adapters or product editions;
+- Gemini CLI, VS Code, legacy OpenCode v1, TRAE AI and its product editions, and
+  other harness adapters or product editions;
 - native Windows support;
 - project, workspace, profile, system, managed, container, and remote-host
   scopes;
@@ -1124,4 +1107,3 @@ be rechecked when implementation begins:
 - [OpenCode v2 global configuration](https://opencode.ai/v2/docs/config)
 - [Grok Build MCP servers](https://docs.x.ai/build/features/mcp-servers)
 - [Grok Build user configuration](https://docs.x.ai/build/settings)
-- [TRAE official MCP FAQ, which documents the JSON shape but not one stable cross-edition global path](https://forum.trae.cn/t/topic/65)
