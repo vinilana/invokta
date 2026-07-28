@@ -65,10 +65,19 @@ export interface TargetConfigInspection {
   readonly [targetDefinitionCanonicals]: TargetDefinitionCanonicals | undefined;
 }
 
+const opaqueTargetInspectionState = Object.freeze(
+  Object.create(null) as Record<string, never>,
+);
+const targetInspectionStates = new WeakMap<
+  TargetConfigInspection,
+  { readonly owner: object; readonly state: unknown }
+>();
+
 export function frozenTargetInspection(
   currentServer: CurrentTargetServer,
   state: unknown,
   canonicals: TargetDefinitionCanonicals | undefined,
+  owner: object,
 ): TargetConfigInspection {
   const inspection = {
     currentServer: Object.freeze(currentServer),
@@ -83,11 +92,23 @@ export function frozenTargetInspection(
     [targetInspectionState]: {
       configurable: false,
       enumerable: false,
-      value: state,
+      value: opaqueTargetInspectionState,
       writable: false,
     },
   });
+  targetInspectionStates.set(inspection, { owner, state });
   return Object.freeze(inspection);
+}
+
+export function targetInspectionStateFor<State>(
+  inspection: TargetConfigInspection,
+  owner: object,
+): State {
+  const registered = targetInspectionStates.get(inspection);
+  if (registered === undefined || registered.owner !== owner) {
+    throw new InstallerError("HARNESS_CONFIG_INVALID");
+  }
+  return registered.state as State;
 }
 
 export type TargetPatchRequest =
@@ -428,18 +449,31 @@ export function finalizeInspectedMcpDefinition(
     readonly httpBearerTokenField?: string;
     readonly httpUrlField?: string;
     readonly rawTransportPolicy: "reject" | "allow-openclaw-http";
+    readonly stdioCommandKind?: "string" | "array";
     readonly toggleStrategy?: ToggleStrategy;
-    readonly typePolicy?: "none" | "claude";
+    readonly typePolicy?: "none" | "claude" | "opencode";
   },
 ): {
   readonly definition: Readonly<Record<string, unknown>>;
   readonly canonicals: TargetDefinitionCanonicals;
 } {
-  const command = root.fields.get("command")?.value;
+  const commandField = root.fields.get("command");
+  const command = commandField?.value;
   const httpUrlField = options.httpUrlField ?? "url";
   const url = root.fields.get(httpUrlField)?.value;
-  const isStdio = typeof command === "string" && url === undefined;
-  const isHttp = typeof url === "string" && command === undefined;
+  const type = root.fields.get("type")?.value;
+  const openCodeCommand =
+    commandField?.kind === "array" &&
+    commandField.allStrings &&
+    commandField.items.length > 0;
+  const isStdio =
+    options.typePolicy === "opencode"
+      ? type === "local" && openCodeCommand && url === undefined
+      : typeof command === "string" && url === undefined;
+  const isHttp =
+    options.typePolicy === "opencode"
+      ? type === "remote" && typeof url === "string" && command === undefined
+      : typeof url === "string" && command === undefined;
   if (!isStdio && !isHttp) invalidInspectedJson();
   const transport = isStdio ? "stdio" : "streamable-http";
   const existingTransport = root.fields.get("transport");
@@ -465,6 +499,16 @@ export function finalizeInspectedMcpDefinition(
       "type",
       inspectedJsonScalar(isStdio ? "stdio" : "http", true),
     );
+  } else if (options.typePolicy === "opencode") {
+    if (type !== (isStdio ? "local" : "remote")) invalidInspectedJson();
+    const oauth = root.fields.get("oauth");
+    if (
+      oauth !== undefined &&
+      typeof oauth.value !== "boolean" &&
+      oauth.kind !== "record"
+    ) {
+      invalidInspectedJson();
+    }
   }
 
   const toggleStrategy = options.toggleStrategy ?? "native-enabled";
@@ -486,11 +530,13 @@ export function finalizeInspectedMcpDefinition(
   }
 
   if (isStdio) {
-    const args = root.fields.get("args");
-    if (args === undefined) {
-      setInspectedField(root, "args", inspectedJsonArray([], true));
-    } else if (args.kind !== "array" || !args.allStrings) {
-      invalidInspectedJson();
+    if (options.stdioCommandKind !== "array") {
+      const args = root.fields.get("args");
+      if (args === undefined) {
+        setInspectedField(root, "args", inspectedJsonArray([], true));
+      } else if (args.kind !== "array" || !args.allStrings) {
+        invalidInspectedJson();
+      }
     }
     if (options.stdioEnvironmentField !== undefined) {
       const environment = root.fields.get(options.stdioEnvironmentField);
@@ -553,6 +599,9 @@ export function finalizeInspectedMcpDefinition(
 export function assertTargetInspectionConsistency(
   inspection: TargetConfigInspection,
 ): TargetDefinitionCanonicals | undefined {
+  if (!targetInspectionStates.has(inspection)) {
+    throw new InstallerError("HARNESS_CONFIG_INVALID");
+  }
   const currentServer = inspection.currentServer;
   const canonicals = inspection[targetDefinitionCanonicals];
   if (currentServer.kind === "absent") {

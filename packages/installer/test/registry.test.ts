@@ -9,6 +9,7 @@ import {
   configurationTargetIds,
   validateRegistryBytes,
 } from "../src/registry.js";
+import { registryCompatibilityAdapters } from "../src/target-adapters.js";
 
 const encoder = new TextEncoder();
 
@@ -213,6 +214,30 @@ describe("local capability registry", () => {
     for (const adapter of Object.values(compatibility.adapters)) {
       expect(adapter).toHaveBeenCalledTimes(1_000);
     }
+  });
+
+  it("runs the 9,000-call boundary through all nine shipping adapters", () => {
+    const counters = {
+      pathLinksCreated: 0,
+      pathSegmentsRendered: 0,
+      entryValidationPasses: 0,
+      compatibilityCalls: 0,
+    };
+    const result = validateRegistryBytes(
+      bytes(
+        document(
+          Array.from({ length: 1_000 }, (_, index) => stdioEntry(index)),
+        ),
+      ),
+      registryCompatibilityAdapters,
+      counters,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(counters).toMatchObject({
+      entryValidationPasses: 1_000,
+      compatibilityCalls: 9_000,
+    });
   });
 
   it("uses linear path work for a deeply nested valid unknown subtree", () => {

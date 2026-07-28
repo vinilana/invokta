@@ -313,6 +313,23 @@ function cursorPlaceholderHeaders(
   return headers;
 }
 
+function openCodePlaceholderHeaders(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Record<string, string> {
+  const transport = descriptor.server.transport;
+  if (transport.type !== "streamable-http") return {};
+  const headers: Record<string, string> = {};
+  if (transport.authentication.type === "bearer-env") {
+    headers.authorization = `Bearer {env:${transport.authentication.variable}}`;
+  }
+  for (const [name, environment] of Object.entries(transport.headersFromEnv)) {
+    headers[name.toLowerCase()] = `{env:${environment}}`;
+  }
+  return headers;
+}
+
 function hermesDefinition(
   descriptor:
     | CapabilityInstallDescriptor
@@ -564,7 +581,67 @@ function kimiDefinition(
   );
 }
 
+function openCodeDefinition(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Readonly<Record<string, unknown>> {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    return jsonDefinition(
+      {
+        transport: "stdio",
+        type: "local",
+        command: [transport.command, ...transport.args],
+        environment: Object.fromEntries(
+          transport.forwardEnv.map((name) => [name, `{env:${name}}`]),
+        ),
+        disabled: false,
+      },
+      "native-disabled",
+    );
+  }
+  return jsonDefinition(
+    {
+      transport: "streamable-http",
+      type: "remote",
+      url: transport.url,
+      oauth: false,
+      headers: openCodePlaceholderHeaders(descriptor),
+      disabled: false,
+    },
+    "native-disabled",
+  );
+}
+
+function grokDefinition(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Readonly<Record<string, unknown>> {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    return tomlDefinition({
+      transport: "stdio",
+      command: transport.command,
+      args: [...transport.args],
+      env: Object.fromEntries(
+        transport.forwardEnv.map((name) => [name, `\${${name}}`]),
+      ),
+      enabled: true,
+    });
+  }
+  return tomlDefinition({
+    transport: "streamable-http",
+    url: transport.url,
+    headers: placeholderHeaders(descriptor),
+    enabled: true,
+  });
+}
+
 const codex = createTomlTargetAdapter({
+  targetId: "codex",
+  dialect: "codex",
   compatibility: portableCompatibility,
   descriptorToDefinition: codexDefinition,
 });
@@ -626,18 +703,32 @@ const kimiCode = createJsonTargetAdapter({
   },
 });
 
+const openCode = createJsonTargetAdapter({
+  targetId: "opencode-v2",
+  dialect: "opencode",
+  toggleStrategy: "native-disabled",
+  compatibility: portableCompatibility,
+  descriptorToDefinition: openCodeDefinition,
+});
+
+const grokBuild = createTomlTargetAdapter({
+  targetId: "grok-build",
+  dialect: "grok",
+  compatibility: portableCompatibility,
+  descriptorToDefinition: grokDefinition,
+});
+
 export const configurationTargetAdapters = Object.freeze({
   antigravity,
   "claude-code": claudeCode,
   codex,
   cursor,
+  "grok-build": grokBuild,
   hermes,
   "kimi-code": kimiCode,
   openclaw,
+  "opencode-v2": openCode,
 } as const);
-
-const unsupportedCompatibility = () =>
-  ({ supported: false, reason: "target-adapter-not-implemented" }) as const;
 
 export const registryCompatibilityAdapters: RegistryCompatibilityAdapters =
   Object.freeze({
@@ -645,11 +736,11 @@ export const registryCompatibilityAdapters: RegistryCompatibilityAdapters =
     "claude-code": claudeCode.compatibility,
     codex: codex.compatibility,
     cursor: cursor.compatibility,
-    "grok-build": unsupportedCompatibility,
+    "grok-build": grokBuild.compatibility,
     hermes: hermes.compatibility,
     "kimi-code": kimiCode.compatibility,
     openclaw: openclaw.compatibility,
-    "opencode-v2": unsupportedCompatibility,
+    "opencode-v2": openCode.compatibility,
   } satisfies Record<
     ConfigurationTargetId,
     RegistryCompatibilityAdapters[ConfigurationTargetId]
