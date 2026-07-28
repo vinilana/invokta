@@ -15,6 +15,7 @@ import type {
   PromptOutcome,
 } from "../src/interactive-prompter.js";
 import type { CapabilityInstallDescriptor } from "../src/registry.js";
+import type { SuspendedDescriptor } from "../src/installer-state.js";
 import type {
   TargetAdapter,
   TargetAdapterCounters,
@@ -87,6 +88,12 @@ expectTypeOf(
 expectTypeOf(
   targetAdapter.descriptorToDefinition(installDescriptor),
 ).toEqualTypeOf<Readonly<Record<string, unknown>>>();
+expectTypeOf(
+  targetAdapter.definitionToSuspendedDescriptor(
+    installDescriptor.server.name,
+    targetAdapter.descriptorToDefinition(installDescriptor),
+  ),
+).toEqualTypeOf<SuspendedDescriptor>();
 expectTypeOf(resolveExecutable("codex")).toEqualTypeOf<
   Promise<
     | {

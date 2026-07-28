@@ -248,6 +248,546 @@ function portableCompatibility(): { readonly supported: true } {
   return { supported: true };
 }
 
+const environmentNamePattern = /^[A-Z_][A-Z0-9_]{0,127}$/u;
+const httpFieldNamePattern = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u;
+const serverNamePattern = /^[a-z][a-z0-9_-]{0,63}$/u;
+const reservedHeaderNames: ReadonlySet<string> = new Set([
+  "connection",
+  "content-length",
+  "host",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+function invalidDefinitionInverse(): never {
+  throw new InstallerError("HARNESS_CONFIG_INVALID");
+}
+
+function inverseRecord(
+  value: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value) ||
+      (prototype !== Object.prototype && prototype !== null)
+    ) {
+      return invalidDefinitionInverse();
+    }
+    return value;
+  } catch {
+    return invalidDefinitionInverse();
+  }
+}
+
+function inverseEntries(
+  record: Readonly<Record<string, unknown>>,
+): readonly (readonly [string, unknown])[] {
+  const entries: Array<readonly [string, unknown]> = [];
+  let keys: readonly PropertyKey[];
+  try {
+    keys = Reflect.ownKeys(record);
+  } catch {
+    return invalidDefinitionInverse();
+  }
+  for (const key of keys) {
+    if (typeof key !== "string") return invalidDefinitionInverse();
+    const property = Object.getOwnPropertyDescriptor(record, key);
+    if (
+      property === undefined ||
+      property.enumerable !== true ||
+      !("value" in property)
+    ) {
+      return invalidDefinitionInverse();
+    }
+    entries.push([key, property.value]);
+  }
+  return Object.freeze(entries);
+}
+
+function inverseOwn(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): unknown {
+  let property: PropertyDescriptor | undefined;
+  try {
+    property = Object.getOwnPropertyDescriptor(record, key);
+  } catch {
+    return invalidDefinitionInverse();
+  }
+  if (
+    property === undefined ||
+    property.enumerable !== true ||
+    !("value" in property)
+  ) {
+    return invalidDefinitionInverse();
+  }
+  return property.value;
+}
+
+function inverseOptionalOwn(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): unknown {
+  let property: PropertyDescriptor | undefined;
+  try {
+    property = Object.getOwnPropertyDescriptor(record, key);
+  } catch {
+    return invalidDefinitionInverse();
+  }
+  if (property === undefined) return undefined;
+  if (property.enumerable !== true || !("value" in property)) {
+    return invalidDefinitionInverse();
+  }
+  return property.value;
+}
+
+function inverseShape(
+  record: Readonly<Record<string, unknown>>,
+  allowed: readonly string[],
+  required: readonly string[] = allowed,
+): void {
+  const keys = inverseEntries(record).map(([key]) => key);
+  const allowedKeys = new Set(allowed);
+  if (
+    keys.some((key) => !allowedKeys.has(key)) ||
+    required.some(
+      (key) => Object.getOwnPropertyDescriptor(record, key) === undefined,
+    )
+  ) {
+    invalidDefinitionInverse();
+  }
+}
+
+function inverseString(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): string {
+  const value = inverseOwn(record, key);
+  if (typeof value !== "string") return invalidDefinitionInverse();
+  return value;
+}
+
+function inverseOptionalEnvironmentName(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): string | undefined {
+  const value = inverseOptionalOwn(record, key);
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !environmentNamePattern.test(value)) {
+    return invalidDefinitionInverse();
+  }
+  return value;
+}
+
+function inverseStringArray(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+): readonly string[] {
+  const value = inverseOwn(record, key);
+  if (!Array.isArray(value)) return invalidDefinitionInverse();
+  let keys: readonly PropertyKey[];
+  try {
+    keys = Reflect.ownKeys(value);
+  } catch {
+    return invalidDefinitionInverse();
+  }
+  if (
+    keys.length !== value.length + 1 ||
+    !keys.includes("length") ||
+    keys.some(
+      (arrayKey) =>
+        arrayKey !== "length" &&
+        (typeof arrayKey !== "string" ||
+          !/^(?:0|[1-9][0-9]*)$/u.test(arrayKey) ||
+          Number(arrayKey) >= value.length),
+    )
+  ) {
+    return invalidDefinitionInverse();
+  }
+  const result: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const property = Object.getOwnPropertyDescriptor(value, String(index));
+    if (
+      property === undefined ||
+      property.enumerable !== true ||
+      !("value" in property) ||
+      typeof property.value !== "string"
+    ) {
+      return invalidDefinitionInverse();
+    }
+    result.push(property.value);
+  }
+  return Object.freeze(result);
+}
+
+type PlaceholderStyle = "plain" | "cursor" | "opencode";
+
+function barePlaceholder(name: string, style: PlaceholderStyle): string {
+  return style === "plain"
+    ? `\${${name}}`
+    : style === "cursor"
+      ? `\${env:${name}}`
+      : `{env:${name}}`;
+}
+
+function inverseEnvironmentObject(
+  value: unknown,
+  style: PlaceholderStyle,
+): readonly string[] {
+  const record = inverseRecord(value as Readonly<Record<string, unknown>>);
+  const result: string[] = [];
+  for (const [name, placeholder] of inverseEntries(record)) {
+    if (
+      !environmentNamePattern.test(name) ||
+      placeholder !== barePlaceholder(name, style)
+    ) {
+      return invalidDefinitionInverse();
+    }
+    result.push(name);
+  }
+  return Object.freeze(result);
+}
+
+function placeholderEnvironmentName(
+  value: unknown,
+  style: PlaceholderStyle,
+  bearer: boolean,
+): string {
+  if (typeof value !== "string") return invalidDefinitionInverse();
+  const prefix = bearer ? "Bearer " : "";
+  if (!value.startsWith(prefix)) return invalidDefinitionInverse();
+  const placeholder = value.slice(prefix.length);
+  const match =
+    style === "plain"
+      ? /^\$\{([A-Z_][A-Z0-9_]{0,127})\}$/u.exec(placeholder)
+      : style === "cursor"
+        ? /^\$\{env:([A-Z_][A-Z0-9_]{0,127})\}$/u.exec(placeholder)
+        : /^\{env:([A-Z_][A-Z0-9_]{0,127})\}$/u.exec(placeholder);
+  if (match?.[1] === undefined) return invalidDefinitionInverse();
+  return match[1];
+}
+
+function inversePlaceholderHeaders(
+  value: unknown,
+  style: PlaceholderStyle,
+): {
+  readonly authentication:
+    | { readonly type: "none" }
+    | { readonly type: "bearer-env"; readonly variable: string };
+  readonly headersFromEnv: Readonly<Record<string, string>>;
+} {
+  const record = inverseRecord(value as Readonly<Record<string, unknown>>);
+  const headers: Record<string, string> = {};
+  let bearerVariable: string | undefined;
+  for (const [name, placeholder] of inverseEntries(record)) {
+    if (
+      name !== name.toLowerCase() ||
+      !httpFieldNamePattern.test(name) ||
+      reservedHeaderNames.has(name)
+    ) {
+      return invalidDefinitionInverse();
+    }
+    if (
+      name === "authorization" &&
+      typeof placeholder === "string" &&
+      placeholder.startsWith("Bearer ")
+    ) {
+      if (bearerVariable !== undefined) return invalidDefinitionInverse();
+      bearerVariable = placeholderEnvironmentName(placeholder, style, true);
+    } else {
+      headers[name] = placeholderEnvironmentName(placeholder, style, false);
+    }
+  }
+  return Object.freeze({
+    authentication:
+      bearerVariable === undefined
+        ? Object.freeze({ type: "none" as const })
+        : Object.freeze({
+            type: "bearer-env" as const,
+            variable: bearerVariable,
+          }),
+    headersFromEnv: Object.freeze(headers),
+  });
+}
+
+function inverseDirectHeaders(
+  value: unknown,
+): Readonly<Record<string, string>> {
+  const record = inverseRecord(value as Readonly<Record<string, unknown>>);
+  const headers: Record<string, string> = {};
+  for (const [name, environmentName] of inverseEntries(record)) {
+    if (
+      name !== name.toLowerCase() ||
+      !httpFieldNamePattern.test(name) ||
+      reservedHeaderNames.has(name) ||
+      typeof environmentName !== "string" ||
+      !environmentNamePattern.test(environmentName)
+    ) {
+      return invalidDefinitionInverse();
+    }
+    headers[name] = environmentName;
+  }
+  return Object.freeze(headers);
+}
+
+function inverseToggle(
+  record: Readonly<Record<string, unknown>>,
+  key: "enabled" | "disabled",
+): void {
+  if (typeof inverseOwn(record, key) !== "boolean") {
+    invalidDefinitionInverse();
+  }
+}
+
+function frozenStdioTransport(
+  command: string,
+  args: readonly string[],
+  forwardEnv: readonly string[],
+) {
+  return Object.freeze({
+    type: "stdio" as const,
+    command,
+    args: Object.freeze([...args]),
+    forwardEnv: Object.freeze([...forwardEnv]),
+  });
+}
+
+function frozenHttpTransport(
+  url: string,
+  authentication:
+    | { readonly type: "none" }
+    | { readonly type: "bearer-env"; readonly variable: string },
+  headersFromEnv: Readonly<Record<string, string>>,
+) {
+  return Object.freeze({
+    type: "streamable-http" as const,
+    url,
+    authentication: Object.freeze({ ...authentication }),
+    headersFromEnv: Object.freeze({ ...headersFromEnv }),
+  });
+}
+
+function definitionToSuspendedDescriptor(
+  targetId: ConfigurationTargetId,
+  serverName: string,
+  definition: Readonly<Record<string, unknown>>,
+): SuspendedDescriptor {
+  try {
+    if (!serverNamePattern.test(serverName)) return invalidDefinitionInverse();
+    const record = inverseRecord(definition);
+    const transport = inverseString(record, "transport");
+    let canonicalTransport: SuspendedDescriptor["transport"];
+
+    if (transport === "stdio") {
+      let command: string;
+      let args: readonly string[];
+      let forwardEnv: readonly string[];
+      if (targetId === "opencode-v2") {
+        inverseShape(record, [
+          "transport",
+          "type",
+          "command",
+          "environment",
+          "disabled",
+        ]);
+        if (inverseString(record, "type") !== "local") {
+          return invalidDefinitionInverse();
+        }
+        const commandLine = inverseStringArray(record, "command");
+        if (commandLine.length === 0) return invalidDefinitionInverse();
+        command = commandLine[0] as string;
+        args = Object.freeze(commandLine.slice(1));
+        forwardEnv = inverseEnvironmentObject(
+          inverseOwn(record, "environment"),
+          "opencode",
+        );
+        inverseToggle(record, "disabled");
+      } else {
+        const environmentField =
+          targetId === "codex"
+            ? "env_vars"
+            : targetId === "antigravity" || targetId === "kimi-code"
+              ? undefined
+              : "env";
+        const typeField = targetId === "claude-code" ? "type" : undefined;
+        const toggleField =
+          targetId === "claude-code" || targetId === "cursor"
+            ? undefined
+            : targetId === "antigravity"
+              ? "disabled"
+              : "enabled";
+        inverseShape(record, [
+          "transport",
+          ...(typeField === undefined ? [] : [typeField]),
+          "command",
+          "args",
+          ...(environmentField === undefined ? [] : [environmentField]),
+          ...(toggleField === undefined ? [] : [toggleField]),
+        ]);
+        if (
+          typeField !== undefined &&
+          inverseString(record, typeField) !== "stdio"
+        ) {
+          return invalidDefinitionInverse();
+        }
+        command = inverseString(record, "command");
+        args = inverseStringArray(record, "args");
+        if (environmentField === undefined) {
+          forwardEnv = Object.freeze([]);
+        } else if (targetId === "codex") {
+          forwardEnv = inverseStringArray(record, environmentField);
+          if (
+            forwardEnv.some((name) => !environmentNamePattern.test(name)) ||
+            new Set(forwardEnv).size !== forwardEnv.length
+          ) {
+            return invalidDefinitionInverse();
+          }
+        } else {
+          forwardEnv = inverseEnvironmentObject(
+            inverseOwn(record, environmentField),
+            targetId === "cursor" ? "cursor" : "plain",
+          );
+        }
+        if (toggleField !== undefined) {
+          inverseToggle(record, toggleField as "enabled" | "disabled");
+        }
+      }
+      if (command === "" || command.includes("\0")) {
+        return invalidDefinitionInverse();
+      }
+      canonicalTransport = frozenStdioTransport(command, args, forwardEnv);
+    } else if (transport === "streamable-http") {
+      let url: string;
+      let authentication:
+        | { readonly type: "none" }
+        | { readonly type: "bearer-env"; readonly variable: string };
+      let headersFromEnv: Readonly<Record<string, string>>;
+      if (targetId === "antigravity") {
+        inverseShape(record, ["transport", "serverUrl", "disabled"]);
+        url = inverseString(record, "serverUrl");
+        inverseToggle(record, "disabled");
+        authentication = Object.freeze({ type: "none" });
+        headersFromEnv = Object.freeze({});
+      } else if (targetId === "codex") {
+        inverseShape(
+          record,
+          [
+            "transport",
+            "url",
+            "bearer_token_env_var",
+            "env_http_headers",
+            "enabled",
+          ],
+          ["transport", "url", "env_http_headers", "enabled"],
+        );
+        url = inverseString(record, "url");
+        const bearer = inverseOptionalEnvironmentName(
+          record,
+          "bearer_token_env_var",
+        );
+        authentication =
+          bearer === undefined
+            ? Object.freeze({ type: "none" })
+            : Object.freeze({ type: "bearer-env", variable: bearer });
+        headersFromEnv = inverseDirectHeaders(
+          inverseOwn(record, "env_http_headers"),
+        );
+        if (
+          authentication.type === "bearer-env" &&
+          Object.hasOwn(headersFromEnv, "authorization")
+        ) {
+          return invalidDefinitionInverse();
+        }
+        inverseToggle(record, "enabled");
+      } else if (targetId === "kimi-code") {
+        inverseShape(
+          record,
+          ["transport", "url", "bearerTokenEnvVar", "enabled"],
+          ["transport", "url", "enabled"],
+        );
+        url = inverseString(record, "url");
+        const bearer = inverseOptionalEnvironmentName(
+          record,
+          "bearerTokenEnvVar",
+        );
+        authentication =
+          bearer === undefined
+            ? Object.freeze({ type: "none" })
+            : Object.freeze({ type: "bearer-env", variable: bearer });
+        headersFromEnv = Object.freeze({});
+        inverseToggle(record, "enabled");
+      } else {
+        const headersField = "headers";
+        const typeField =
+          targetId === "claude-code" || targetId === "opencode-v2"
+            ? "type"
+            : undefined;
+        const oauthField = targetId === "opencode-v2" ? "oauth" : undefined;
+        const toggleField =
+          targetId === "claude-code" || targetId === "cursor"
+            ? undefined
+            : targetId === "opencode-v2"
+              ? "disabled"
+              : "enabled";
+        inverseShape(record, [
+          "transport",
+          ...(typeField === undefined ? [] : [typeField]),
+          "url",
+          ...(oauthField === undefined ? [] : [oauthField]),
+          headersField,
+          ...(toggleField === undefined ? [] : [toggleField]),
+        ]);
+        if (
+          typeField !== undefined &&
+          inverseString(record, typeField) !==
+            (targetId === "opencode-v2" ? "remote" : "http")
+        ) {
+          return invalidDefinitionInverse();
+        }
+        if (
+          oauthField !== undefined &&
+          inverseOwn(record, oauthField) !== false
+        ) {
+          return invalidDefinitionInverse();
+        }
+        url = inverseString(record, "url");
+        const headers = inversePlaceholderHeaders(
+          inverseOwn(record, headersField),
+          targetId === "cursor"
+            ? "cursor"
+            : targetId === "opencode-v2"
+              ? "opencode"
+              : "plain",
+        );
+        authentication = headers.authentication;
+        headersFromEnv = headers.headersFromEnv;
+        if (toggleField !== undefined) {
+          inverseToggle(record, toggleField as "enabled" | "disabled");
+        }
+      }
+      canonicalTransport = frozenHttpTransport(
+        url,
+        authentication,
+        headersFromEnv,
+      );
+    } else {
+      return invalidDefinitionInverse();
+    }
+
+    return Object.freeze({ name: serverName, transport: canonicalTransport });
+  } catch {
+    return invalidDefinitionInverse();
+  }
+}
+
 function codexDefinition(
   descriptor:
     | CapabilityInstallDescriptor
@@ -644,15 +1184,21 @@ const codex = createTomlTargetAdapter({
   dialect: "codex",
   compatibility: portableCompatibility,
   descriptorToDefinition: codexDefinition,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("codex", serverName, definition),
 });
 
 const hermes = createYamlTargetAdapter({
   compatibility: portableCompatibility,
   descriptorToDefinition: hermesDefinition,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("hermes", serverName, definition),
 });
 
 const openclaw = createJson5TargetAdapter({
   compatibility: openClawCompatibility,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("openclaw", serverName, definition),
   descriptorToDefinition: (descriptor) => {
     if (!openClawCompatibility(descriptor).supported) {
       throw new InstallerError("TARGET_UNSUPPORTED");
@@ -666,6 +1212,8 @@ const antigravity = createJsonTargetAdapter({
   dialect: "antigravity",
   toggleStrategy: "native-disabled",
   compatibility: antigravityCompatibility,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("antigravity", serverName, definition),
   descriptorToDefinition: (descriptor) => {
     if (!antigravityCompatibility(descriptor).supported) {
       throw new InstallerError("TARGET_UNSUPPORTED");
@@ -680,6 +1228,8 @@ const claudeCode = createJsonTargetAdapter({
   toggleStrategy: "detached",
   compatibility: portableCompatibility,
   descriptorToDefinition: claudeDefinition,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("claude-code", serverName, definition),
 });
 
 const cursor = createJsonTargetAdapter({
@@ -688,6 +1238,8 @@ const cursor = createJsonTargetAdapter({
   toggleStrategy: "detached",
   compatibility: portableCompatibility,
   descriptorToDefinition: cursorDefinition,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("cursor", serverName, definition),
 });
 
 const kimiCode = createJsonTargetAdapter({
@@ -695,6 +1247,8 @@ const kimiCode = createJsonTargetAdapter({
   dialect: "kimi",
   toggleStrategy: "native-enabled",
   compatibility: kimiCompatibility,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("kimi-code", serverName, definition),
   descriptorToDefinition: (descriptor) => {
     if (!kimiCompatibility(descriptor).supported) {
       throw new InstallerError("TARGET_UNSUPPORTED");
@@ -709,6 +1263,8 @@ const openCode = createJsonTargetAdapter({
   toggleStrategy: "native-disabled",
   compatibility: portableCompatibility,
   descriptorToDefinition: openCodeDefinition,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("opencode-v2", serverName, definition),
 });
 
 const grokBuild = createTomlTargetAdapter({
@@ -716,6 +1272,8 @@ const grokBuild = createTomlTargetAdapter({
   dialect: "grok",
   compatibility: portableCompatibility,
   descriptorToDefinition: grokDefinition,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("grok-build", serverName, definition),
 });
 
 export const configurationTargetAdapters = Object.freeze({
