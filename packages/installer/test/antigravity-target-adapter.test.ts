@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  createAbsentConfigEvidenceProbes,
   detectHarnesses,
+  type TargetConfigEvidenceProbes,
 } from "../src/harness-detection.js";
 import { InstallerError } from "../src/installer-error.js";
 import { fingerprintNormalizedDefinition } from "../src/jcs-fingerprint.js";
-import type { CapabilityInstallDescriptor } from "../src/registry.js";
+import {
+  type CapabilityInstallDescriptor,
+  configurationTargetIds,
+} from "../src/registry.js";
 import {
   type TargetConfigInspection,
   targetConfigByteLimit,
@@ -18,6 +21,18 @@ import {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
+
+function fixtureAbsentConfigEvidenceProbes(): TargetConfigEvidenceProbes {
+  return Object.fromEntries(
+    configurationTargetIds.map((targetId) => [
+      targetId,
+      async ({ homeDirectory }: { readonly homeDirectory: string }) => ({
+        kind: "absent" as const,
+        path: `${homeDirectory}/fixture-config/${targetId}`,
+      }),
+    ]),
+  ) as unknown as TargetConfigEvidenceProbes;
+}
 
 function stdioDescriptor(
   forwardEnv: readonly string[] = [],
@@ -126,7 +141,7 @@ describe("shared Antigravity JSON target adapter", () => {
           },
         };
       },
-      configEvidenceProbes: createAbsentConfigEvidenceProbes(),
+      configEvidenceProbes: fixtureAbsentConfigEvidenceProbes(),
     });
     const targets = snapshot.targets.filter(({ id }) => id === "antigravity");
     expect(targets).toEqual([

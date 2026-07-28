@@ -211,6 +211,7 @@ describe("Node target configuration evidence probes", () => {
   it("treats a genuinely missing intermediate directory as absent", async () => {
     const homeDirectory = "/users/tester";
     const directoryPath = join(homeDirectory, ".codex");
+    const configPath = join(directoryPath, "config.toml");
     const inspectPath = vi.fn(
       async (path: string): Promise<InstallerPathInspection> =>
         path === homeDirectory
@@ -229,7 +230,7 @@ describe("Node target configuration evidence probes", () => {
 
     await expect(
       probes.codex({ homeDirectory, targetId: "codex" }),
-    ).resolves.toEqual({ kind: "absent" });
+    ).resolves.toEqual({ kind: "absent", path: configPath });
     expect(inspectPath.mock.calls).toEqual([[homeDirectory], [directoryPath]]);
   });
 
@@ -264,6 +265,23 @@ describe("Node target configuration evidence probes", () => {
         probes[targetId]({ homeDirectory, targetId }),
       ).resolves.toEqual({
         kind: "present",
+        path: join(homeDirectory, defaultRelativePaths[targetId]),
+      });
+    }
+  });
+
+  it("reports the exact creation path for all nine absent default user configs", async () => {
+    const homeDirectory = temporaryHome();
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment(),
+      fileSystem: createNodeFileSystem(),
+    });
+
+    for (const targetId of configurationTargetIds) {
+      await expect(
+        probes[targetId]({ homeDirectory, targetId }),
+      ).resolves.toEqual({
+        kind: "absent",
         path: join(homeDirectory, defaultRelativePaths[targetId]),
       });
     }
@@ -306,10 +324,47 @@ describe("Node target configuration evidence probes", () => {
     }
   });
 
+  it("preserves every documented override as the exact absent creation path", async () => {
+    const homeDirectory = temporaryHome();
+    const overrideRoot = join(homeDirectory, "overrides");
+    const values = {
+      CLAUDE_CONFIG_DIR: join(overrideRoot, "claude"),
+      CODEX_HOME: join(overrideRoot, "codex"),
+      GROK_HOME: join(overrideRoot, "grok"),
+      HERMES_HOME: join(overrideRoot, "hermes"),
+      KIMI_CODE_HOME: join(overrideRoot, "kimi"),
+      OPENCLAW_CONFIG_PATH: join(overrideRoot, "openclaw.json"),
+      OPENCODE_CONFIG_DIR: join(overrideRoot, "opencode"),
+    };
+    const expected = {
+      "claude-code": join(values.CLAUDE_CONFIG_DIR, ".claude.json"),
+      codex: join(values.CODEX_HOME, "config.toml"),
+      "grok-build": join(values.GROK_HOME, "config.toml"),
+      hermes: join(values.HERMES_HOME, "config.yaml"),
+      "kimi-code": join(values.KIMI_CODE_HOME, "mcp.json"),
+      openclaw: values.OPENCLAW_CONFIG_PATH,
+      "opencode-v2": join(values.OPENCODE_CONFIG_DIR, "opencode.json"),
+    } as const;
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment(values),
+      fileSystem: createNodeFileSystem(),
+    });
+
+    for (const [targetId, path] of Object.entries(expected)) {
+      await expect(
+        probes[targetId as keyof typeof expected]({
+          homeDirectory,
+          targetId: targetId as keyof typeof expected,
+        }),
+      ).resolves.toEqual({ kind: "absent", path });
+    }
+  });
+
   it("honors XDG_CONFIG_HOME when OpenCode has no direct directory override", async () => {
     const homeDirectory = temporaryHome();
     const xdgHome = join(homeDirectory, "xdg");
     const path = join(xdgHome, "opencode/opencode.jsonc");
+    const absentPath = join(xdgHome, "opencode/opencode.json");
     createConfig(path);
     const probes = createNodeTargetConfigEvidenceProbes({
       environment: environment({ XDG_CONFIG_HOME: xdgHome }),
@@ -319,6 +374,12 @@ describe("Node target configuration evidence probes", () => {
     await expect(
       probes["opencode-v2"]({ homeDirectory, targetId: "opencode-v2" }),
     ).resolves.toEqual({ kind: "present", path });
+
+    rmSync(path);
+
+    await expect(
+      probes["opencode-v2"]({ homeDirectory, targetId: "opencode-v2" }),
+    ).resolves.toEqual({ kind: "absent", path: absentPath });
   });
 
   it.each([
@@ -414,6 +475,68 @@ describe("Node target configuration evidence probes", () => {
     ).resolves.toEqual({ kind: "present", path: legacyPath });
   });
 
+  it.each([
+    {
+      name: "an explicit state directory",
+      environment: (homeDirectory: string) => ({
+        OPENCLAW_STATE_DIR: join(homeDirectory, "openclaw-state"),
+      }),
+      prepare: () => undefined,
+      expected: (homeDirectory: string) =>
+        join(homeDirectory, "openclaw-state/openclaw.json"),
+    },
+    {
+      name: "an existing .openclaw directory",
+      environment: () => ({}),
+      prepare: (homeDirectory: string) =>
+        mkdirSync(join(homeDirectory, ".openclaw"), { recursive: true }),
+      expected: (homeDirectory: string) =>
+        join(homeDirectory, ".openclaw/openclaw.json"),
+    },
+    {
+      name: "an existing legacy .clawdbot directory",
+      environment: () => ({}),
+      prepare: (homeDirectory: string) =>
+        mkdirSync(join(homeDirectory, ".clawdbot"), { recursive: true }),
+      expected: (homeDirectory: string) =>
+        join(homeDirectory, ".clawdbot/openclaw.json"),
+    },
+    {
+      name: "an effective OpenClaw home",
+      environment: (homeDirectory: string) => ({
+        OPENCLAW_HOME: join(homeDirectory, "openclaw-home"),
+      }),
+      prepare: (homeDirectory: string) =>
+        mkdirSync(join(homeDirectory, "openclaw-home"), { recursive: true }),
+      expected: (homeDirectory: string) =>
+        join(homeDirectory, "openclaw-home/.openclaw/openclaw.json"),
+    },
+    {
+      name: "the preferred directory when both standard directories exist",
+      environment: () => ({}),
+      prepare: (homeDirectory: string) => {
+        mkdirSync(join(homeDirectory, ".openclaw"), { recursive: true });
+        mkdirSync(join(homeDirectory, ".clawdbot"), { recursive: true });
+      },
+      expected: (homeDirectory: string) =>
+        join(homeDirectory, ".openclaw/openclaw.json"),
+    },
+  ])("selects the exact absent OpenClaw path from $name", async (fixture) => {
+    const homeDirectory = temporaryHome();
+    fixture.prepare(homeDirectory);
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment(fixture.environment(homeDirectory)),
+      fileSystem: createNodeFileSystem(),
+    });
+
+    await expect(
+      probes.openclaw({ homeDirectory, targetId: "openclaw" }),
+    ).resolves.toEqual({
+      kind: "absent",
+      path: fixture.expected(homeDirectory),
+    });
+  });
+
   it("expands OpenClaw tilde paths against its validated effective home", async () => {
     const homeDirectory = temporaryHome();
     const effectiveHome = join(homeDirectory, "openclaw-home");
@@ -441,7 +564,10 @@ describe("Node target configuration evidence probes", () => {
 
     await expect(
       absentProbes.codex({ homeDirectory, targetId: "codex" }),
-    ).resolves.toEqual({ kind: "absent" });
+    ).resolves.toEqual({
+      kind: "absent",
+      path: join(homeDirectory, ".codex/config.toml"),
+    });
 
     const failedProbes = createNodeTargetConfigEvidenceProbes({
       environment: environment(),
@@ -456,5 +582,27 @@ describe("Node target configuration evidence probes", () => {
       kind: "blocked",
       code: "HARNESS_CONFIG_READ_FAILED",
     });
+  });
+
+  it("rechecks vanished OpenCode sibling evidence through the same probe", async () => {
+    const homeDirectory = temporaryHome();
+    const jsonPath = join(homeDirectory, ".config/opencode/opencode.json");
+    const jsoncPath = join(homeDirectory, ".config/opencode/opencode.jsonc");
+    createConfig(jsoncPath);
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment(),
+      fileSystem: createNodeFileSystem(),
+    });
+    const probe = probes["opencode-v2"];
+
+    await expect(
+      probe({ homeDirectory, targetId: "opencode-v2" }),
+    ).resolves.toEqual({ kind: "present", path: jsoncPath });
+
+    rmSync(jsoncPath);
+
+    await expect(
+      probe({ homeDirectory, targetId: "opencode-v2" }),
+    ).resolves.toEqual({ kind: "absent", path: jsonPath });
   });
 });

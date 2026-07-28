@@ -91,7 +91,7 @@ expectTypeOf(
 ).toEqualTypeOf<
   Promise<
     | { readonly kind: "present"; readonly path: string }
-    | { readonly kind: "absent" }
+    | { readonly kind: "absent"; readonly path: string }
     | {
         readonly kind: "blocked";
         readonly code:

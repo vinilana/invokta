@@ -31,9 +31,12 @@ function absentConfigProbes(events: string[]): TargetConfigEvidenceProbes {
   return Object.fromEntries(
     configurationTargetIds.map((targetId) => [
       targetId,
-      async () => {
+      async ({ homeDirectory }: { readonly homeDirectory: string }) => {
         events.push(`config:${targetId}`);
-        return { kind: "absent" } as const;
+        return {
+          kind: "absent",
+          path: join(homeDirectory, ".fixture-config", targetId),
+        } as const;
       },
     ]),
   ) as unknown as TargetConfigEvidenceProbes;
