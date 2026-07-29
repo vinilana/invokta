@@ -85,6 +85,30 @@ describe("createStarterProject", () => {
     expect(result.projectName).toBe("current-engine");
   });
 
+  it("accepts the inclusive project-name limit", async () => {
+    const cwd = createWorkingDirectory();
+    const projectName = "a".repeat(214);
+
+    const result = await createProject(cwd, projectName);
+
+    expect(result.projectName).toBe(projectName);
+    expect(existsSync(join(result.directory, "package.json"))).toBe(true);
+  });
+
+  it("accepts the inclusive path-scalar and segment limits", async () => {
+    const cwd = createWorkingDirectory();
+    const target = [
+      ...Array.from({ length: 31 }, () => "a".repeat(31)),
+      "b".repeat(32),
+    ].join("/");
+    expect([...target]).toHaveLength(1_024);
+
+    const result = await createProject(cwd, target);
+
+    expect(result.projectName).toBe("b".repeat(32));
+    expect(existsSync(join(result.directory, "package.json"))).toBe(true);
+  });
+
   it("rejects a non-empty target without changing it", async () => {
     const cwd = createWorkingDirectory();
     const target = join(cwd, "my-engine");
@@ -105,6 +129,7 @@ describe("createStarterProject", () => {
     ["a nested parent segment", "engines/../my-engine"],
     ["an invalid package name", "My Engine"],
     ["an empty name segment", "engines//my-engine"],
+    ["a project name over 214 characters", "a".repeat(215)],
     ["too many segments", `${"nested/".repeat(32)}my-engine`],
     ["too many scalars", `${"a".repeat(1_025)}-engine`],
   ])("rejects %s before creating a target", async (_label, target) => {
@@ -127,6 +152,17 @@ describe("createStarterProject", () => {
       exitCode: 1,
     });
     expect(readdirSync(outside)).toEqual([]);
+  });
+
+  it("rejects a non-directory target without replacing it", async () => {
+    const cwd = createWorkingDirectory();
+    writeFileSync(join(cwd, "my-engine"), "mine\n", "utf8");
+
+    await expect(createProject(cwd)).rejects.toMatchObject({
+      code: "TARGET_UNSAFE",
+      exitCode: 1,
+    });
+    expect(readFileSync(join(cwd, "my-engine"), "utf8")).toBe("mine\n");
   });
 
   it("rejects a symbolic-link parent without following it", async () => {

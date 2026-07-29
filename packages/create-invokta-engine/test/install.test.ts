@@ -86,4 +86,23 @@ describe("installProjectDependencies", () => {
       message: "The project dependencies could not be installed.",
     });
   });
+
+  it("normalizes a package-manager signal as an installation failure", async () => {
+    const runner = vi.fn<PackageManagerRunner>(async () => ({
+      code: null,
+      signal: "SIGINT",
+    }));
+
+    await expect(
+      installProjectDependencies({
+        directory: "/work/my-engine",
+        packageManager: "npm",
+        runner,
+      }),
+    ).rejects.toMatchObject({
+      code: "INSTALL_FAILED",
+      exitCode: 1,
+      details: ["npm"],
+    });
+  });
 });

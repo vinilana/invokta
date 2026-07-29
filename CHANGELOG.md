@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added `create-invokta-engine`, a non-interactive standalone engine creator with
+  deterministic, non-overwriting scaffolding and npm, pnpm, and Yarn installation.
+
 ## [0.1.0] - 2026-07-29
 
 ### Added

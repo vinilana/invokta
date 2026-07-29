@@ -5,7 +5,7 @@ sidebar:
   label: Overview
 ---
 
-Invokta publishes three runtime packages and three supporting packages. Each has
+Invokta publishes three runtime packages and four supporting packages. Each has
 one bounded responsibility.
 
 ## Runtime packages
@@ -26,10 +26,12 @@ API and never call capability handlers directly.
 | `@invokta/tooling` | Validate a built, tracked capability composition in development or CI | [Tooling reference](/reference/tooling/) |
 | `@invokta/installer` | Current read-only inventory of supported local MCP client targets | [Installer reference](/reference/installer/) |
 | `@invokta/deploy` | Scaffold and package HTTP deployment artifacts and probe an endpoint | [Deploy reference](/reference/deploy/) |
+| `create-invokta-engine` | Create a standalone starter engine and install its dependencies | [Creator reference](/reference/create-invokta-engine/) |
 
-Supporting packages do not create another capability execution path. Tooling
-imports a trusted composition module, the installer inventory never invokes an
-engine, and deploy generates files or makes one probe request.
+Supporting packages do not create another capability execution path. The creator
+writes a project, tooling imports a trusted composition module, the installer
+inventory never invokes an engine, and deploy generates files or makes one probe
+request.
 
 ## Shared requirements
 
@@ -39,5 +41,5 @@ engine, and deploy generates files or makes one probe request.
 - Runtime behavior remains on `engine.invoke`
 
 Use the [error reference](/reference/errors/) for capability invocation errors.
-Tooling, installer, and deploy diagnostics have separate application-specific
-contracts.
+Creator, tooling, installer, and deploy diagnostics have separate
+application-specific contracts.

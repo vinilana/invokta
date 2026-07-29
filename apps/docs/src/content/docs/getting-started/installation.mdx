@@ -16,6 +16,31 @@ install only the adapters and development tools your engine uses.
 
 The examples use Zod 4 because it implements both schema contracts.
 
+## Create a standalone engine
+
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+    ```sh
+    npm create invokta-engine@latest my-engine
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```sh
+    pnpm create invokta-engine my-engine
+    ```
+  </TabItem>
+  <TabItem label="Yarn">
+    ```sh
+    yarn create invokta-engine my-engine
+    ```
+  </TabItem>
+</Tabs>
+
+The creator installs dependencies and generates a deterministic public capability
+with direct, CLI, and MCP stdio entry points. Use `--no-install` for an offline
+scaffold. See the [`create-invokta-engine` reference](/reference/create-invokta-engine/)
+for target, package-manager, and failure behavior.
+
 ## Install the core
 
 <Tabs syncKey="package-manager">
@@ -66,6 +91,7 @@ Install the CLI or MCP adapter when the engine needs that boundary.
 | `@invokta/tooling` | Capability-composition checks during development |
 | `@invokta/installer` | Read-only inventory of supported local MCP client targets in its current release |
 | `@invokta/deploy` | Reviewable container packaging and endpoint probes |
+| `create-invokta-engine` | Standalone starter Action Engine creation |
 
 <Aside type="note" title="ESM only">
   Invokta publishes native ESM entry points. Use `import` syntax and include file

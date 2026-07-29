@@ -95,6 +95,8 @@ and delivery adapters:
   local MCP client targets without changing their configuration;
 - `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes
   deployed endpoints.
+- `create-invokta-engine` creates a standalone starter with direct, CLI, and MCP
+  stdio entry points.
 
 Invokta does not provide identity, model routing, an agent harness, a
 workflow engine, or a production observability platform. Custom engines inject
@@ -103,6 +105,16 @@ their own model, data, tool, authentication, and authorization integrations.
 ## Start here
 
 Requirements: Node.js 22.20.0 or later and Yarn 1.22.22.
+
+Create a standalone engine:
+
+```sh
+npm create invokta-engine@latest my-engine
+cd my-engine
+npm run check
+```
+
+To work on Invokta itself:
 
 ```sh
 yarn install --frozen-lockfile
