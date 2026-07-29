@@ -37,6 +37,8 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
 - [`crawl-engine`](./examples/crawl-engine/) for an outbound provider
   integration, crawling the web with Firecrawl behind a port, with target rules
   that run before authorization;
+- [`cursor-agent-routing-engine`](./examples/cursor-agent-routing-engine/) for
+  deterministic Cursor subagent and model selection by development use case;
 - [`image-engine`](./examples/image-engine/) for outcome-based routing across
   GPT Image 2, Seedream 5.0, and Nano Banana 2 behind replaceable domain ports;
 - [`obsidian-context-engine`](./examples/obsidian-context-engine/) for bounded,

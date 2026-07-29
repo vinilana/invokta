@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cursor-agent-routing": {
+      "command": "node",
+      "args": ["examples/cursor-agent-routing-engine/dist/mcp-stdio.js"]
+    }
+  }
+}

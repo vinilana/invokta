@@ -27,6 +27,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)
 - [`support-harness`: private MCP consumer](../examples/support-harness/)
 - [`crawl-engine`: outbound provider integration with Firecrawl](../examples/crawl-engine/)
+- [`cursor-agent-routing-engine`: versioned Cursor subagent and model routing policy](../examples/cursor-agent-routing-engine/)
 - [`image-engine`: multi-provider image production by use case](../examples/image-engine/)
 - [`observability-engine`: Sentry, Datadog, and New Relic incident context](../examples/observability-engine/)
 - [`obsidian-context-engine`: progressive Obsidian knowledge-graph navigation](../examples/obsidian-context-engine/)
