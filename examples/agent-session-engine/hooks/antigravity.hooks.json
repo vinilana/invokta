@@ -1,0 +1,38 @@
+{
+  "agent-session-recorder": {
+    "enabled": true,
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js antigravity PostToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js antigravity PreInvocation",
+        "timeout": 10
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js antigravity PostInvocation",
+        "timeout": 10
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js antigravity Stop",
+        "timeout": 10
+      }
+    ]
+  }
+}
