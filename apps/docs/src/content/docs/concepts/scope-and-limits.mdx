@@ -24,22 +24,6 @@ host owns identity and deployment controls.
 | AI behavior | Replaceable implementation boundary | Prompts, models, retrieval, tools, evidence, evaluations, and review |
 | Supporting tools | Composition checker, read-only client inventory, deployment artifact generator | Review, approval, execution, and operational authority |
 
-## Fixed framework limits
-
-| Dimension | Current limit |
-| --- | --- |
-| Runtime packages | 3: core, CLI, MCP |
-| Supporting packages | 3: tooling, installer, deploy |
-| Official adapters | CLI and MCP |
-| MCP transports | stdio and stateless Streamable HTTP |
-| Core primitives | Capability, Engine, Context, Principal |
-| Required capability fields | 5 |
-| Invocation stages | 6 |
-| Invocation error codes | 7 |
-| Cross-cutting hooks | 1: `onEvent` |
-| Built-in identity or PDP implementations | 0 |
-| Dependency containers or runtime plugin systems | 0 |
-
 ## Deliberately outside the runtime
 
 Invokta does not provide:
