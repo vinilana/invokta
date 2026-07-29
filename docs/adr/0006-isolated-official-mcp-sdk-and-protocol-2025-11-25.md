@@ -1,7 +1,8 @@
 # ADR 0006: Isolated official MCP SDK and protocol `2025-11-25`
 
-- Status: Accepted
+- Status: Accepted; partially superseded by ADR 0012
 - Date: 2026-07-27
+- Superseded in part by: [ADR 0012](0012-official-mcp-sdk-1-30-and-bounded-stdio.md)
 
 ## Context
 

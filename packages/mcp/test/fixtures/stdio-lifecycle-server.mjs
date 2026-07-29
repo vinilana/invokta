@@ -100,9 +100,24 @@ function listenerCounts() {
 }
 
 const initialListeners = listenerCounts();
-await serveMcpStdio(engine);
+const configuredMaxReadBufferBytes = process.env.STDIO_MAX_READ_BUFFER_BYTES;
+let failure;
+try {
+  await serveMcpStdio(
+    engine,
+    configuredMaxReadBufferBytes === undefined
+      ? {}
+      : { maxReadBufferBytes: Number(configuredMaxReadBufferBytes) },
+  );
+} catch (cause) {
+  failure = cause;
+  process.stderr.write(
+    `${cause instanceof Error ? cause.message : "The stdio adapter failed."}\n`,
+  );
+}
 const finalListeners = listenerCounts();
 if (JSON.stringify(finalListeners) !== JSON.stringify(initialListeners)) {
   throw new Error("The stdio adapter leaked process stream listeners.");
 }
 process.stderr.write("listeners-clean\n");
+if (failure !== undefined) process.exitCode = 1;

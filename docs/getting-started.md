@@ -176,6 +176,12 @@ Node to avoid package-manager status text on the protocol stream:
 node examples/hello-engine/dist/mcp-stdio.js
 ```
 
+Incoming stdio data uses a 10 MiB read-buffer limit by default. A host whose
+capability contract requires a different finite boundary may pass a positive
+safe integer as `maxReadBufferBytes`. Crossing the boundary closes the protocol
+connection and rejects `serveMcpStdio`; input exactly at the boundary remains
+accepted.
+
 An MCP client will discover `onboarding.create-welcome-message` as one tool with
 the capability's original input schema, output schema, description, and optional
 annotations.

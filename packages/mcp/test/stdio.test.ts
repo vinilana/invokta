@@ -1,3 +1,5 @@
+import process from "node:process";
+
 import {
   createEngine,
   defineCapability,
@@ -14,9 +16,19 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { serveMcpStdio } from "../src/index.js";
 import { createMcpServer } from "../src/protocol-server.js";
 
 const openClients: Client[] = [];
+
+function processListenerCounts() {
+  return {
+    stdinData: process.stdin.listenerCount("data"),
+    stdinEnd: process.stdin.listenerCount("end"),
+    stdinClose: process.stdin.listenerCount("close"),
+    stdoutError: process.stdout.listenerCount("error"),
+  };
+}
 
 afterEach(async () => {
   await Promise.all(openClients.splice(0).map((client) => client.close()));
@@ -80,6 +92,17 @@ function createEchoEngine(
 }
 
 describe("MCP stdio protocol adapter", () => {
+  it.each([0, -1, 1.5, Number.POSITIVE_INFINITY])(
+    "rejects the invalid stdio read-buffer limit %j before starting",
+    async (maxReadBufferBytes) => {
+      const initialListeners = processListenerCounts();
+      await expect(
+        serveMcpStdio(createEchoEngine(), { maxReadBufferBytes }),
+      ).rejects.toThrow("maxReadBufferBytes must be a positive safe integer.");
+      expect(processListenerCounts()).toEqual(initialListeners);
+    },
+  );
+
   it("negotiates the baseline protocol and maps each capability to one tool", async () => {
     expect(LATEST_PROTOCOL_VERSION).toBe("2025-11-25");
     const engine = createEchoEngine();
