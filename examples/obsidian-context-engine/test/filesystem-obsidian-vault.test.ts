@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -20,8 +20,12 @@ async function writeNote(
   contents: string,
 ): Promise<void> {
   const path = join(vaultPath, relativePath);
-  await mkdir(join(path, ".."), { recursive: true });
+  await mkdir(dirname(path), { recursive: true });
   await writeFile(path, contents, "utf8");
+}
+
+function signal(): AbortSignal {
+  return new AbortController().signal;
 }
 
 afterEach(async () => {
@@ -32,124 +36,380 @@ afterEach(async () => {
   );
 });
 
-describe("the filesystem Obsidian vault adapter", () => {
-  it("ranks Markdown notes, extracts headings, and excludes vault metadata and symlinks", async () => {
+describe("the filesystem Obsidian knowledge graph", () => {
+  it("lists explicit root indexes with bounded, allowlisted frontmatter", async () => {
     const vaultPath = await createVault();
     const outsidePath = join(await createVault(), "outside.md");
     await writeNote(
       vaultPath,
-      "notes/agent-architecture.md",
-      "# Agent Architecture\n\nUse explicit contracts for every agent capability.\n\nKeep adapters thin.",
+      "indexes/architecture.md",
+      `---
+id: architecture
+kind: index
+entrypoint: true
+title: Architecture
+summary: System boundaries
+topics: [architecture, agents]
+updated: 2026-07-28
+privateToken: never-return-this
+---
+# Architecture
+`,
     );
     await writeNote(
       vaultPath,
-      "notes/secondary.md",
-      "# Secondary\n\nAgent implementations are replaceable.",
+      "indexes/internal.md",
+      `---
+id: internal
+kind: index
+entrypoint: false
+---
+# Internal
+`,
     );
-    await writeNote(vaultPath, "cooking.md", "# Cooking\n\nBake bread.");
     await writeNote(
       vaultPath,
-      ".obsidian/internal.md",
-      "# Internal\n\nagent contracts secret metadata",
+      ".obsidian/metadata.md",
+      `---
+id: hidden
+kind: index
+entrypoint: true
+---
+# Hidden
+`,
     );
-    await writeFile(outsidePath, "# Outside\n\nagent contracts outside secret");
+    await writeFile(
+      outsidePath,
+      `---
+id: outside
+kind: index
+entrypoint: true
+---
+# Outside
+`,
+    );
     await symlink(outsidePath, join(vaultPath, "linked.md"));
-    const provider = createFilesystemObsidianVault({ vaultPath });
+    const graph = createFilesystemObsidianVault({ vaultPath });
 
-    const result = await provider.provide(
-      {
-        query: "agent contracts",
-        maxNotes: 2,
-        maxContextCharacters: 20_000,
-      },
-      { signal: new AbortController().signal },
+    const result = await graph.listRoots(
+      { maxRoots: 50 },
+      { signal: signal() },
     );
 
-    expect(result.sources).toEqual([
-      {
-        path: "notes/agent-architecture.md",
-        title: "Agent Architecture",
-      },
-      { path: "notes/secondary.md", title: "Secondary" },
-    ]);
-    expect(result.context).toContain(
-      "## Agent Architecture\nSource: notes/agent-architecture.md\n\nUse explicit contracts for every agent capability.",
-    );
-    expect(result.context).not.toContain("secret metadata");
-    expect(result.context).not.toContain("outside secret");
-    expect(result.truncated).toBe(false);
+    expect(result).toEqual({
+      roots: [
+        {
+          id: "architecture",
+          title: "Architecture",
+          path: "indexes/architecture.md",
+          frontmatter: {
+            id: "architecture",
+            kind: "index",
+            entrypoint: true,
+            title: "Architecture",
+            summary: "System boundaries",
+            topics: ["architecture", "agents"],
+            updated: "2026-07-28",
+          },
+        },
+      ],
+      invalidNodeCount: 0,
+      truncated: false,
+    });
   });
 
-  it("matches accents insensitively and orders equal scores by relative path", async () => {
+  it("opens a node with its content, related index frontmatter, and navigable wikilinks", async () => {
     const vaultPath = await createVault();
-    await writeNote(vaultPath, "b.md", "# B\n\nDecisões registradas.");
-    await writeNote(vaultPath, "a.md", "# A\n\nDecisões registradas.");
-    const provider = createFilesystemObsidianVault({ vaultPath });
+    await writeNote(
+      vaultPath,
+      "indexes/architecture.md",
+      `---
+id: architecture
+kind: index
+entrypoint: true
+title: Architecture
+summary: System boundaries
+---
+# Architecture
+`,
+    );
+    await writeNote(
+      vaultPath,
+      "guides/capability-contracts.md",
+      `---
+id: capability-contracts
+kind: guide
+title: Capability contracts
+status: published
+indexes: [architecture, missing-index]
+privateToken: never-return-this
+---
+# Capability contracts
 
-    const result = await provider.provide(
+Use explicit contracts. Continue with [[Next decision|the next decision]] or [[Missing note]].
+`,
+    );
+    await writeNote(
+      vaultPath,
+      "decisions/next-decision.md",
+      `---
+id: next-decision
+kind: decision
+title: Next decision
+indexes: [architecture]
+---
+# Next decision
+`,
+    );
+    const graph = createFilesystemObsidianVault({ vaultPath });
+
+    const result = await graph.openNode(
       {
-        query: "decisoes",
-        maxNotes: 1,
-        maxContextCharacters: 20_000,
+        id: "capability-contracts",
+        contentOffset: 0,
+        maxContentCharacters: 20_000,
+        maxRelatedIndexes: 20,
+        maxOutgoingLinks: 50,
       },
-      { signal: new AbortController().signal },
+      { signal: signal() },
     );
 
-    expect(result.sources).toEqual([{ path: "a.md", title: "A" }]);
-    expect(result.truncated).toBe(true);
+    expect(result).toMatchObject({
+      found: true,
+      node: {
+        id: "capability-contracts",
+        title: "Capability contracts",
+        path: "guides/capability-contracts.md",
+        frontmatter: {
+          id: "capability-contracts",
+          kind: "guide",
+          title: "Capability contracts",
+          status: "published",
+          indexes: ["architecture", "missing-index"],
+        },
+        content:
+          "# Capability contracts\n\nUse explicit contracts. Continue with [[Next decision|the next decision]] or [[Missing note]].\n",
+        contentOffset: 0,
+        contentTruncated: false,
+      },
+      relatedIndexes: [
+        {
+          id: "architecture",
+          title: "Architecture",
+          path: "indexes/architecture.md",
+          frontmatter: {
+            id: "architecture",
+            kind: "index",
+            entrypoint: true,
+            title: "Architecture",
+            summary: "System boundaries",
+          },
+        },
+      ],
+      outgoingLinks: [
+        {
+          reference: "Next decision",
+          id: "next-decision",
+          title: "Next decision",
+          path: "decisions/next-decision.md",
+        },
+      ],
+      unresolvedLinks: ["Missing note"],
+      unresolvedIndexes: ["missing-index"],
+      invalidNodeCount: 0,
+      relationsTruncated: false,
+    });
+    expect(result.node?.frontmatter).not.toHaveProperty("privateToken");
+    expect(result.node?.contentLength).toBe(result.node?.content.length);
   });
 
-  it("bounds the assembled context and reports truncation", async () => {
+  it("returns a not-found result for an unknown stable ID", async () => {
+    const vaultPath = await createVault();
+    const graph = createFilesystemObsidianVault({ vaultPath });
+
+    await expect(
+      graph.openNode(
+        {
+          id: "unknown",
+          contentOffset: 0,
+          maxContentCharacters: 20_000,
+          maxRelatedIndexes: 20,
+          maxOutgoingLinks: 50,
+        },
+        { signal: signal() },
+      ),
+    ).resolves.toEqual({
+      found: false,
+      node: null,
+      relatedIndexes: [],
+      outgoingLinks: [],
+      unresolvedLinks: [],
+      unresolvedIndexes: [],
+      invalidNodeCount: 0,
+      relationsTruncated: false,
+    });
+  });
+
+  it("pages node content without reinterpreting the frontmatter", async () => {
     const vaultPath = await createVault();
     await writeNote(
       vaultPath,
       "long.md",
-      `# Long note\n\ncontext ${"details ".repeat(100)}`,
+      `---
+id: long-note
+kind: guide
+---
+0123456789abcdef`,
     );
-    const provider = createFilesystemObsidianVault({ vaultPath });
+    const graph = createFilesystemObsidianVault({ vaultPath });
 
-    const result = await provider.provide(
-      { query: "context", maxNotes: 5, maxContextCharacters: 100 },
-      { signal: new AbortController().signal },
+    const result = await graph.openNode(
+      {
+        id: "long-note",
+        contentOffset: 4,
+        maxContentCharacters: 6,
+        maxRelatedIndexes: 20,
+        maxOutgoingLinks: 50,
+      },
+      { signal: signal() },
     );
 
-    expect(result.context.length).toBeLessThanOrEqual(100);
-    expect(result.sources).toEqual([{ path: "long.md", title: "Long note" }]);
-    expect(result.truncated).toBe(true);
-  });
-
-  it("skips an oversized note and marks an otherwise complete result as truncated", async () => {
-    const vaultPath = await createVault();
-    await writeNote(vaultPath, "large.md", "# Large\n\ncontext details");
-    await writeNote(vaultPath, "small.md", "# Small\n\ncontext");
-    const provider = createFilesystemObsidianVault({
-      vaultPath,
-      maxNoteBytes: 16,
+    expect(result.node).toMatchObject({
+      content: "456789",
+      contentOffset: 4,
+      contentLength: 16,
+      contentTruncated: true,
     });
-
-    const result = await provider.provide(
-      { query: "context", maxNotes: 5, maxContextCharacters: 20_000 },
-      { signal: new AbortController().signal },
-    );
-
-    expect(result.sources).toEqual([{ path: "small.md", title: "Small" }]);
-    expect(result.truncated).toBe(true);
   });
 
-  it("fails deterministically when the vault file-count limit is exceeded", async () => {
+  it("counts malformed frontmatter while ignoring ordinary notes without IDs", async () => {
+    const vaultPath = await createVault();
+    await writeNote(vaultPath, "ordinary.md", "# Ordinary note");
+    await writeNote(
+      vaultPath,
+      "malformed.md",
+      "---\nid: [unterminated\n---\n# Malformed",
+    );
+    const graph = createFilesystemObsidianVault({ vaultPath });
+
+    const result = await graph.listRoots(
+      { maxRoots: 50 },
+      { signal: signal() },
+    );
+
+    expect(result).toEqual({
+      roots: [],
+      invalidNodeCount: 1,
+      truncated: false,
+    });
+  });
+
+  it("fails deterministically when stable node IDs are duplicated", async () => {
+    const vaultPath = await createVault();
+    await writeNote(vaultPath, "a.md", "---\nid: duplicate\n---\n# A");
+    await writeNote(vaultPath, "b.md", "---\nid: duplicate\n---\n# B");
+    const graph = createFilesystemObsidianVault({ vaultPath });
+
+    await expect(
+      graph.listRoots({ maxRoots: 50 }, { signal: signal() }),
+    ).rejects.toMatchObject({
+      code: "EXECUTION_FAILED",
+      message: "The Obsidian vault contains duplicate node IDs.",
+      publicDetails: { id: "duplicate" },
+    });
+  });
+
+  it("gives exact stable IDs precedence over ambiguous titles", async () => {
+    const vaultPath = await createVault();
+    await writeNote(
+      vaultPath,
+      "stable.md",
+      "---\nid: stable-id\ntitle: Canonical node\n---\n# Canonical",
+    );
+    await writeNote(
+      vaultPath,
+      "collision.md",
+      "---\nid: another-node\ntitle: stable-id\n---\n# Collision",
+    );
+    await writeNote(
+      vaultPath,
+      "source.md",
+      "---\nid: source\n---\nContinue with [[stable-id]].",
+    );
+    const graph = createFilesystemObsidianVault({ vaultPath });
+
+    const opened = await graph.openNode(
+      {
+        id: "source",
+        contentOffset: 0,
+        maxContentCharacters: 20_000,
+        maxRelatedIndexes: 20,
+        maxOutgoingLinks: 50,
+      },
+      { signal: signal() },
+    );
+
+    expect(opened.outgoingLinks).toEqual([
+      {
+        reference: "stable-id",
+        id: "stable-id",
+        title: "Canonical node",
+        path: "stable.md",
+      },
+    ]);
+    expect(opened.unresolvedLinks).toEqual([]);
+  });
+
+  it("bounds roots and one-level relations deterministically", async () => {
+    const vaultPath = await createVault();
+    await writeNote(
+      vaultPath,
+      "a-index.md",
+      "---\nid: a-index\nkind: index\nentrypoint: true\n---\n# A",
+    );
+    await writeNote(
+      vaultPath,
+      "b-index.md",
+      "---\nid: b-index\nkind: index\nentrypoint: true\n---\n# B",
+    );
+    await writeNote(
+      vaultPath,
+      "node.md",
+      `---
+id: node
+indexes: [a-index, b-index]
+---
+[[A]] and [[B]]`,
+    );
+    const graph = createFilesystemObsidianVault({ vaultPath });
+
+    const roots = await graph.listRoots({ maxRoots: 1 }, { signal: signal() });
+    const opened = await graph.openNode(
+      {
+        id: "node",
+        contentOffset: 0,
+        maxContentCharacters: 20_000,
+        maxRelatedIndexes: 1,
+        maxOutgoingLinks: 1,
+      },
+      { signal: signal() },
+    );
+
+    expect(roots.roots.map(({ id }) => id)).toEqual(["a-index"]);
+    expect(roots.truncated).toBe(true);
+    expect(opened.relatedIndexes.map(({ id }) => id)).toEqual(["a-index"]);
+    expect(opened.outgoingLinks.map(({ id }) => id)).toEqual(["a-index"]);
+    expect(opened.relationsTruncated).toBe(true);
+  });
+
+  it("fails when the vault file-count limit is exceeded", async () => {
     const vaultPath = await createVault();
     await writeNote(vaultPath, "a.md", "# A");
     await writeNote(vaultPath, "b.md", "# B");
-    const provider = createFilesystemObsidianVault({
-      vaultPath,
-      maxFiles: 1,
-    });
+    const graph = createFilesystemObsidianVault({ vaultPath, maxFiles: 1 });
 
     await expect(
-      provider.provide(
-        { query: "note", maxNotes: 1, maxContextCharacters: 20_000 },
-        { signal: new AbortController().signal },
-      ),
+      graph.listRoots({ maxRoots: 50 }, { signal: signal() }),
     ).rejects.toMatchObject({
       code: "EXECUTION_FAILED",
       publicDetails: { limit: 1 },
@@ -157,17 +417,14 @@ describe("the filesystem Obsidian vault adapter", () => {
   });
 
   it("honors cancellation before touching the vault", async () => {
-    const provider = createFilesystemObsidianVault({
+    const graph = createFilesystemObsidianVault({
       vaultPath: "/path/that/does/not/exist",
     });
     const controller = new AbortController();
-    controller.abort(new Error("The caller stopped the search."));
+    controller.abort(new Error("The caller stopped graph navigation."));
 
     await expect(
-      provider.provide(
-        { query: "agent", maxNotes: 1, maxContextCharacters: 20_000 },
-        { signal: controller.signal },
-      ),
+      graph.listRoots({ maxRoots: 50 }, { signal: controller.signal }),
     ).rejects.toBe(controller.signal.reason);
   });
 });

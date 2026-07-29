@@ -6,13 +6,21 @@ import { localPrincipal } from "./local-principal.js";
 export async function main(
   args: readonly string[] = process.argv.slice(2),
 ): Promise<void> {
-  const query = args.join(" ").trim();
-  if (query === "") throw new Error("A search query is required.");
-  const result = await createConfiguredObsidianContextEngine().invoke(
-    "obsidian.provide-context",
-    { query },
-    { source: "direct", principal: localPrincipal },
-  );
+  if (args.length > 1) throw new Error("At most one node ID is accepted.");
+  const engine = createConfiguredObsidianContextEngine();
+  const nodeId = args[0];
+  const result =
+    nodeId === undefined
+      ? await engine.invoke(
+          "knowledge.list-context-roots",
+          {},
+          { source: "direct", principal: localPrincipal },
+        )
+      : await engine.invoke(
+          "knowledge.open-context-node",
+          { id: nodeId },
+          { source: "direct", principal: localPrincipal },
+        );
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

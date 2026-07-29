@@ -1,94 +1,198 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { VaultContextProvider } from "../src/application/ports.js";
+import type { VaultKnowledgeGraph } from "../src/application/ports.js";
 import { createObsidianContextEngine } from "../src/engine.js";
 
+const principal = { id: "test:reader" };
+
+function createGraph(): VaultKnowledgeGraph {
+  return {
+    listRoots: vi.fn(async () => ({
+      roots: [
+        {
+          id: "architecture",
+          title: "Architecture",
+          path: "indexes/architecture.md",
+          frontmatter: {
+            id: "architecture",
+            kind: "index",
+            entrypoint: true,
+            summary: "System boundaries",
+          },
+        },
+      ],
+      invalidNodeCount: 0,
+      truncated: false,
+    })),
+    openNode: vi.fn(async () => ({
+      found: true,
+      node: {
+        id: "capability-contracts",
+        title: "Capability contracts",
+        path: "guides/capability-contracts.md",
+        frontmatter: {
+          id: "capability-contracts",
+          kind: "guide",
+          indexes: ["architecture"],
+        },
+        content: "# Capability contracts\n\nUse explicit contracts.",
+        contentOffset: 0,
+        contentLength: 47,
+        contentTruncated: false,
+      },
+      relatedIndexes: [
+        {
+          id: "architecture",
+          title: "Architecture",
+          path: "indexes/architecture.md",
+          frontmatter: {
+            id: "architecture",
+            kind: "index",
+            entrypoint: true,
+          },
+        },
+      ],
+      outgoingLinks: [
+        {
+          reference: "Next decision",
+          id: "next-decision",
+          title: "Next decision",
+          path: "decisions/next-decision.md",
+        },
+      ],
+      unresolvedLinks: [],
+      unresolvedIndexes: [],
+      invalidNodeCount: 0,
+      relationsTruncated: false,
+    })),
+  };
+}
+
 describe("the Obsidian context engine example", () => {
-  it("provides bounded vault context through an injected dependency", async () => {
-    const context: VaultContextProvider = {
-      provide: vi.fn(async () => ({
-        context:
-          "## Agent design\nSource: notes/agent-design.md\n\nUse explicit contracts.",
-        sources: [{ path: "notes/agent-design.md", title: "Agent design" }],
-        truncated: false,
-      })),
-    };
-    const engine = createObsidianContextEngine({ context });
+  it("lists bounded context roots through an injected graph", async () => {
+    const graph = createGraph();
+    const engine = createObsidianContextEngine({ graph });
 
     const result = await engine.invoke(
-      "obsidian.provide-context",
-      { query: "  agent contracts  ", maxNotes: 2 },
-      { principal: { id: "test:reader" } },
+      "knowledge.list-context-roots",
+      {},
+      { principal },
     );
 
-    expect(result).toEqual({
-      query: "agent contracts",
-      context:
-        "## Agent design\nSource: notes/agent-design.md\n\nUse explicit contracts.",
-      sources: [{ path: "notes/agent-design.md", title: "Agent design" }],
-      truncated: false,
-    });
-    expect(context.provide).toHaveBeenCalledExactlyOnceWith(
-      { query: "agent contracts", maxNotes: 2, maxContextCharacters: 20_000 },
+    expect(result.roots).toEqual([
+      {
+        id: "architecture",
+        title: "Architecture",
+        path: "indexes/architecture.md",
+        frontmatter: {
+          id: "architecture",
+          kind: "index",
+          entrypoint: true,
+          summary: "System boundaries",
+        },
+      },
+    ]);
+    expect(graph.listRoots).toHaveBeenCalledExactlyOnceWith(
+      { maxRoots: 50 },
       { signal: expect.any(AbortSignal) },
     );
   });
 
-  it("denies anonymous callers before reading the vault", async () => {
-    const context: VaultContextProvider = { provide: vi.fn() };
-    const engine = createObsidianContextEngine({ context });
+  it("opens one node with bounded content and one level of graph context", async () => {
+    const graph = createGraph();
+    const engine = createObsidianContextEngine({ graph });
 
-    await expect(
-      engine.invoke("obsidian.provide-context", { query: "agent contracts" }),
-    ).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
-    expect(context.provide).not.toHaveBeenCalled();
+    const result = await engine.invoke(
+      "knowledge.open-context-node",
+      { id: "  capability-contracts  " },
+      { principal },
+    );
+
+    expect(result).toMatchObject({
+      found: true,
+      node: {
+        id: "capability-contracts",
+        content: "# Capability contracts\n\nUse explicit contracts.",
+      },
+      relatedIndexes: [{ id: "architecture" }],
+      outgoingLinks: [{ id: "next-decision" }],
+    });
+    expect(graph.openNode).toHaveBeenCalledExactlyOnceWith(
+      {
+        id: "capability-contracts",
+        contentOffset: 0,
+        maxContentCharacters: 20_000,
+        maxRelatedIndexes: 20,
+        maxOutgoingLinks: 50,
+      },
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it("passes content pagination to the graph", async () => {
+    const graph = createGraph();
+    const engine = createObsidianContextEngine({ graph });
+
+    await engine.invoke(
+      "knowledge.open-context-node",
+      {
+        id: "capability-contracts",
+        contentOffset: 20_000,
+        maxContentCharacters: 5_000,
+      },
+      { principal },
+    );
+
+    expect(graph.openNode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentOffset: 20_000,
+        maxContentCharacters: 5_000,
+      }),
+      expect.anything(),
+    );
   });
 
   it.each([
-    ["an empty query", { query: "   " }],
-    ["a query without searchable text", { query: "---" }],
-    ["too many requested notes", { query: "agent", maxNotes: 11 }],
-  ])("rejects %s before reading the vault", async (_description, input) => {
-    const context: VaultContextProvider = { provide: vi.fn() };
-    const engine = createObsidianContextEngine({ context });
+    ["empty node ID", { id: "   " }],
+    ["invalid node ID", { id: "Architecture note" }],
+    ["negative content offset", { id: "architecture", contentOffset: -1 }],
+    [
+      "oversized content page",
+      { id: "architecture", maxContentCharacters: 20_001 },
+    ],
+  ])("rejects %s before reading the graph", async (_description, input) => {
+    const graph = createGraph();
+    const engine = createObsidianContextEngine({ graph });
 
     await expect(
-      engine.invoke("obsidian.provide-context", input, {
-        principal: { id: "test:reader" },
-      }),
+      engine.invoke("knowledge.open-context-node", input, { principal }),
     ).rejects.toMatchObject({ code: "INPUT_INVALID" });
-    expect(context.provide).not.toHaveBeenCalled();
+    expect(graph.openNode).not.toHaveBeenCalled();
   });
 
-  it("rejects a source path that is not relative to the vault", async () => {
-    const context: VaultContextProvider = {
-      async provide() {
-        return {
-          context: "secret",
-          sources: [{ path: "/private/secret.md", title: "Secret" }],
-          truncated: false,
-        };
-      },
-    };
-    const engine = createObsidianContextEngine({ context });
+  it("denies anonymous callers before reading the graph", async () => {
+    const graph = createGraph();
+    const engine = createObsidianContextEngine({ graph });
 
     await expect(
-      engine.invoke(
-        "obsidian.provide-context",
-        { query: "secret" },
-        { principal: { id: "test:reader" } },
-      ),
-    ).rejects.toMatchObject({ code: "OUTPUT_INVALID" });
+      engine.invoke("knowledge.list-context-roots", {}),
+    ).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
+    await expect(
+      engine.invoke("knowledge.open-context-node", { id: "architecture" }),
+    ).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
+    expect(graph.listRoots).not.toHaveBeenCalled();
+    expect(graph.openNode).not.toHaveBeenCalled();
   });
 
-  it("publishes a bounded, read-only capability contract", () => {
-    const engine = createObsidianContextEngine({
-      context: { provide: vi.fn() },
-    });
+  it("publishes two read-only graph navigation contracts", () => {
+    const engine = createObsidianContextEngine({ graph: createGraph() });
 
-    expect(engine.describe("obsidian.provide-context")).toMatchObject({
-      id: "obsidian.provide-context",
-      title: "Provide Obsidian vault context",
+    expect(engine.list().map(({ id }) => id)).toEqual([
+      "knowledge.list-context-roots",
+      "knowledge.open-context-node",
+    ]);
+    expect(engine.describe("knowledge.list-context-roots")).toMatchObject({
+      title: "List context roots",
       timeoutMs: 15_000,
       annotations: {
         readOnly: true,
@@ -96,15 +200,25 @@ describe("the Obsidian context engine example", () => {
         idempotent: true,
         openWorld: false,
       },
+      inputSchema: { type: "object" },
+      outputSchema: { type: "object" },
+    });
+    expect(engine.describe("knowledge.open-context-node")).toMatchObject({
+      title: "Open context node",
+      timeoutMs: 15_000,
       inputSchema: {
         type: "object",
-        required: ["query"],
+        required: ["id"],
         properties: {
-          query: { type: "string", minLength: 1, maxLength: 500 },
-          maxNotes: { type: "integer", minimum: 1, maximum: 10 },
+          id: { type: "string", minLength: 1, maxLength: 200 },
+          contentOffset: { type: "integer", minimum: 0 },
+          maxContentCharacters: {
+            type: "integer",
+            minimum: 1,
+            maximum: 20_000,
+          },
         },
       },
-      outputSchema: { type: "object" },
     });
   });
 });

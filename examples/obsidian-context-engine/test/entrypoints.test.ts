@@ -12,20 +12,41 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const exampleRoot = fileURLToPath(new URL("..", import.meta.url));
-const capabilityId = "obsidian.provide-context";
+const listRootsId = "knowledge.list-context-roots";
+const openNodeId = "knowledge.open-context-node";
 let vaultPath: string;
 
 beforeAll(async () => {
   vaultPath = await mkdtemp(join(tmpdir(), "obsidian-entrypoint-test-"));
-  await mkdir(join(vaultPath, "notes"));
+  await mkdir(join(vaultPath, "indexes"));
+  await mkdir(join(vaultPath, "guides"));
   await writeFile(
-    join(vaultPath, "notes", "agent-architecture.md"),
-    "# Agent Architecture\n\nUse explicit contracts for every agent capability.",
+    join(vaultPath, "indexes", "architecture.md"),
+    `---
+id: architecture
+kind: index
+entrypoint: true
+title: Architecture
+summary: System boundaries
+---
+# Architecture
+
+Start with [[Capability contracts]].
+`,
     "utf8",
   );
   await writeFile(
-    join(vaultPath, "notes", "delivery.md"),
-    "# Delivery\n\nUse deterministic ranking and bounded context.",
+    join(vaultPath, "guides", "capability-contracts.md"),
+    `---
+id: capability-contracts
+kind: guide
+title: Capability contracts
+indexes: [architecture]
+---
+# Capability contracts
+
+Use explicit contracts for every capability.
+`,
     "utf8",
   );
   const build = spawnSync(
@@ -68,41 +89,58 @@ async function stopProcess(child: ReturnType<typeof spawn>): Promise<void> {
 }
 
 describe("Obsidian context engine entrypoints", () => {
-  it("provides vault context through the direct entrypoint", () => {
-    const result = run("direct", ["agent", "contracts"]);
-
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-    expect(JSON.parse(result.stdout)).toEqual({
-      query: "agent contracts",
-      context:
-        "## Agent Architecture\nSource: notes/agent-architecture.md\n\nUse explicit contracts for every agent capability.",
-      sources: [
+  it("lists roots and progressively opens a selected node directly", () => {
+    const listed = run("direct");
+    expect(listed.status).toBe(0);
+    expect(listed.stderr).toBe("");
+    expect(JSON.parse(listed.stdout)).toMatchObject({
+      roots: [
         {
-          path: "notes/agent-architecture.md",
-          title: "Agent Architecture",
+          id: "architecture",
+          frontmatter: {
+            kind: "index",
+            entrypoint: true,
+            summary: "System boundaries",
+          },
         },
       ],
-      truncated: false,
+    });
+
+    const opened = run("direct", ["capability-contracts"]);
+    expect(opened.status).toBe(0);
+    expect(opened.stderr).toBe("");
+    expect(JSON.parse(opened.stdout)).toMatchObject({
+      found: true,
+      node: {
+        id: "capability-contracts",
+        content:
+          "# Capability contracts\n\nUse explicit contracts for every capability.\n",
+      },
+      relatedIndexes: [{ id: "architecture" }],
     });
   });
 
-  it("provides the same capability through the CLI", () => {
+  it("publishes the graph navigation capabilities through the CLI", () => {
     const listed = run("cli", ["list"]);
     expect(listed.status).toBe(0);
-    expect(JSON.parse(listed.stdout)).toMatchObject([{ id: capabilityId }]);
+    expect(
+      (JSON.parse(listed.stdout) as ReadonlyArray<{ id: string }>).map(
+        ({ id }) => id,
+      ),
+    ).toEqual([listRootsId, openNodeId]);
 
     const result = run("cli", [
       "run",
-      capabilityId,
+      openNodeId,
       "--input",
-      '{"query":"deterministic ranking","maxNotes":1}',
+      '{"id":"capability-contracts"}',
     ]);
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toMatchObject({
-      query: "deterministic ranking",
-      sources: [{ path: "notes/delivery.md", title: "Delivery" }],
+      found: true,
+      node: { id: "capability-contracts" },
+      relatedIndexes: [{ id: "architecture" }],
     });
   });
 
@@ -123,7 +161,7 @@ describe("Obsidian context engine entrypoints", () => {
     });
   });
 
-  it("serves the context tool over protocol-only MCP stdio", async () => {
+  it("serves graph navigation over protocol-only MCP stdio", async () => {
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: ["dist/mcp-stdio.js"],
@@ -143,17 +181,18 @@ describe("Obsidian context engine entrypoints", () => {
     try {
       await client.connect(transport);
       await expect(client.listTools()).resolves.toMatchObject({
-        tools: [{ name: capabilityId }],
+        tools: [{ name: listRootsId }, { name: openNodeId }],
       });
       await expect(
         client.callTool({
-          name: capabilityId,
-          arguments: { query: "bounded context", maxNotes: 1 },
+          name: openNodeId,
+          arguments: { id: "capability-contracts" },
         }),
       ).resolves.toMatchObject({
         structuredContent: {
-          query: "bounded context",
-          sources: [{ path: "notes/delivery.md" }],
+          found: true,
+          node: { id: "capability-contracts" },
+          relatedIndexes: [{ id: "architecture" }],
         },
       });
     } finally {
@@ -203,7 +242,7 @@ describe("Obsidian context engine entrypoints", () => {
           jsonrpc: "2.0",
           id: "auth-boundary",
           method: "tools/call",
-          params: { name: capabilityId, arguments: { query: "agent" } },
+          params: { name: listRootsId, arguments: {} },
         }),
       });
       expect(unauthenticated.status).toBe(401);
@@ -218,14 +257,10 @@ describe("Obsidian context engine entrypoints", () => {
       );
       await client.connect(transport as unknown as Transport);
       await expect(
-        client.callTool({
-          name: capabilityId,
-          arguments: { query: "agent contracts", maxNotes: 1 },
-        }),
+        client.callTool({ name: listRootsId, arguments: {} }),
       ).resolves.toMatchObject({
         structuredContent: {
-          query: "agent contracts",
-          sources: [{ path: "notes/agent-architecture.md" }],
+          roots: [{ id: "architecture" }],
         },
       });
     } finally {

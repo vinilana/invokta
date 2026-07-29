@@ -1,7 +1,8 @@
 import { createEngine } from "@ai-engine/core";
 
 import type { ObsidianContextDependencies } from "./application/ports.js";
-import { createProvideContext } from "./capabilities/provide-context.js";
+import { createListContextRoots } from "./capabilities/list-context-roots.js";
+import { createOpenContextNode } from "./capabilities/open-context-node.js";
 import { createFilesystemObsidianVault } from "./infrastructure/filesystem-obsidian-vault.js";
 
 export function createObsidianContextEngine(
@@ -11,7 +12,8 @@ export function createObsidianContextEngine(
     name: "obsidian-context-engine",
     version: "0.1.0",
     capabilities: {
-      "obsidian.provide-context": createProvideContext(dependencies),
+      "knowledge.list-context-roots": createListContextRoots(dependencies),
+      "knowledge.open-context-node": createOpenContextNode(dependencies),
     },
   });
 }
@@ -32,6 +34,6 @@ export function createConfiguredObsidianContextEngine(
     throw new Error("OBSIDIAN_VAULT_PATH is required.");
   }
   return createObsidianContextEngine({
-    context: createFilesystemObsidianVault({ vaultPath }),
+    graph: createFilesystemObsidianVault({ vaultPath }),
   });
 }
