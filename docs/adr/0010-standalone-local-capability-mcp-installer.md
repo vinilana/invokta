@@ -11,6 +11,12 @@ neither capability execution nor a development-time composition check.
 
 ## Decision
 
+ADR 0013 extends this decision with explicit project-local and direct remote
+sources, persisted launch descriptors, lifecycle commands, and two additional
+client targets. Its source and management rules supersede the bundled-registry-
+only boundary below; the package isolation and no-execution/no-network boundary
+remain in force.
+
 `@invokta/installer` is a standalone native ESM end-user application exposing
 `invokta-installer`. It owns a bundled, immutable capability registry, finite
 detection of supported harnesses, format-preserving configuration adapters,

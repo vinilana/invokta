@@ -285,3 +285,40 @@ gives `access` and `run` independent copies. Malformed or uncloneable identity i
 
 The framework does not issue tokens, perform login, store users, validate JWTs
 from a specific provider, or implement an Authorization Server/policy engine.
+
+## MCP client installation
+
+**AE-INSTALL-01 — Static sources.** `@invokta/installer` MAY configure a
+reviewed bundled descriptor, an explicitly selected project-local
+`invokta.mcp.json` manifest, or an explicitly supplied canonical Streamable HTTP
+URL. It MUST NOT discover remote servers, download or load packages, reflect on
+or execute an engine, start a transport, call a capability, or open a network
+connection. Local manifests and persisted state contain environment variable
+names but no environment values or credentials.
+
+**AE-INSTALL-02 — Confirmed user scope.** Installation targets only the finite
+catalog of supported default user configurations. All compatible eligible
+targets are preselected, but no mutation occurs without explicit confirmation.
+Creating a missing configuration requires installed-client evidence. Project,
+profile, remote-workspace, organization-managed, and Windows configuration
+mutation are not provided by this profile.
+
+**AE-INSTALL-03 — Managed lifecycle.** New ownership records persist the
+normalized launch descriptor. `status`, `enable`, `disable`, and `remove`
+re-inspect current configuration and fail closed on conflicts, drift, an unsafe
+path, a missing runtime, or unavailable legacy metadata. Removal deletes only a
+definition whose managed identity still matches and then removes its ownership
+record.
+
+**AE-INSTALL-04 — Per-target transaction.** Each client mutation acquires the
+shared state lock before its configuration lock, revalidates after locking,
+commits same-directory atomic configuration and state post-images, and restores
+the exact configuration pre-image if state commit fails. Multi-client operations
+are ordered independent transactions, report partial results, and become
+idempotent when repeated.
+
+**AE-INSTALL-05 — Execution boundary.** A generated local launch descriptor
+uses the current absolute Node executable and the validated absolute compiled
+entry point. The configured MCP adapter continues to call only
+`engine.invoke`; installer operations never enter the capability execution
+path.
