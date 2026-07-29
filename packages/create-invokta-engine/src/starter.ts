@@ -50,8 +50,12 @@ ${commands.run}
 ${commands.stdio}
 \`\`\`
 
-MCP stdio reserves standard output for protocol messages. Configure a client to
-start the compiled \`dist/mcp-stdio.js\` file directly with Node.
+MCP stdio reserves standard output for protocol messages. Install this engine in
+all detected MCP clients with:
+
+\`\`\`sh
+${packageManager === "yarn" ? "yarn mcp:install" : `${packageManager} run mcp:install`}
+\`\`\`
 
 Add stateless HTTP only when needed. Install \`@invokta/deploy\`, run
 \`invokta-deploy init\`, and implement its fail-closed authentication hook before
@@ -79,6 +83,8 @@ function renderPackageManifest(
       direct: "node dist/direct.js",
       cli: "node dist/cli.js",
       "mcp:stdio": "node dist/mcp-stdio.js",
+      "mcp:install":
+        "tsc -p tsconfig.json --pretty false && invokta-installer install --engine .",
     },
     dependencies: {
       "@invokta/cli": invoktaVersion,
@@ -87,12 +93,33 @@ function renderPackageManifest(
       zod: "4.4.3",
     },
     devDependencies: {
+      "@invokta/installer": invoktaVersion,
       "@types/node": "26.1.2",
       typescript: "7.0.2",
       vitest: "4.1.10",
     },
   };
   return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
+function renderMcpInstallManifest(projectName: string): string {
+  return `${JSON.stringify(
+    {
+      schemaVersion: 1,
+      id: projectName,
+      version: "0.1.0",
+      title: projectName,
+      description: `MCP access to the ${projectName} Action Engine.`,
+      capabilityIds: ["onboarding.create-welcome-message"],
+      server: {
+        name: projectName,
+        entrypoint: "dist/mcp-stdio.js",
+        forwardEnv: [],
+      },
+    },
+    null,
+    2,
+  )}\n`;
 }
 
 const capabilityModule = `import { defineCapability } from "@invokta/core";
@@ -228,6 +255,10 @@ export function createStarterFiles(
     {
       path: "README.md",
       contents: renderReadme(options.projectName, options.packageManager),
+    },
+    {
+      path: "invokta.mcp.json",
+      contents: renderMcpInstallManifest(options.projectName),
     },
     {
       path: "package.json",

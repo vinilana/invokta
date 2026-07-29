@@ -5,6 +5,7 @@ import { createStarterFiles } from "../src/starter.js";
 const expectedPaths = [
   ".gitignore",
   "README.md",
+  "invokta.mcp.json",
   "package.json",
   "src/capabilities/create-welcome-message.ts",
   "src/cli.ts",
@@ -65,9 +66,39 @@ describe("createStarterFiles", () => {
         zod: "4.4.3",
       },
       devDependencies: {
+        "@invokta/installer": "1.2.3-beta.1",
         "@types/node": "26.1.2",
         typescript: "7.0.2",
         vitest: "4.1.10",
+      },
+    });
+  });
+
+  it("declares a deterministic local MCP installation source", () => {
+    const files = createStarterFiles({
+      projectName: "customer-support-engine",
+      invoktaVersion: "1.2.3",
+      packageManager: "npm",
+    });
+    const contents = new Map(files.map((file) => [file.path, file.contents]));
+    const packageManifest = JSON.parse(contents.get("package.json") ?? "") as {
+      readonly scripts: Readonly<Record<string, string>>;
+    };
+
+    expect(packageManifest.scripts["mcp:install"]).toBe(
+      "tsc -p tsconfig.json --pretty false && invokta-installer install --engine .",
+    );
+    expect(JSON.parse(contents.get("invokta.mcp.json") ?? "")).toEqual({
+      schemaVersion: 1,
+      id: "customer-support-engine",
+      version: "0.1.0",
+      title: "customer-support-engine",
+      description: "MCP access to the customer-support-engine Action Engine.",
+      capabilityIds: ["onboarding.create-welcome-message"],
+      server: {
+        name: "customer-support-engine",
+        entrypoint: "dist/mcp-stdio.js",
+        forwardEnv: [],
       },
     });
   });

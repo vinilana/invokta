@@ -2,8 +2,8 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
   type InstallerFileStat,
-  isInstallerFileSystemError,
   type InstallerTransactionFileSystem,
+  isInstallerFileSystemError,
 } from "./file-system.js";
 
 export type InstallerPathIdentityErrorCode =
@@ -38,7 +38,7 @@ export class InstallerPathIdentityError extends Error {
   }
 }
 
-export type InstallerPathRootKind = "home" | "state";
+export type InstallerPathRootKind = "engine" | "home" | "state";
 export type InstallerPathTargetKind = "directory" | "regular-file";
 
 export interface InstallerPathNodeIdentity extends InstallerFileStat {
