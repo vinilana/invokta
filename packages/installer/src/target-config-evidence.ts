@@ -31,6 +31,13 @@ function blocked(code: ConfigEvidenceCode): TargetConfigEvidence {
   return Object.freeze({ kind: "blocked", code });
 }
 
+function safeEvidence(
+  kind: "present" | "absent",
+  path: string,
+): TargetConfigEvidence {
+  return Object.freeze({ kind, path: resolve(path) });
+}
+
 function isInsideHome(
   homeDirectory: string,
   candidate: string,
@@ -132,9 +139,7 @@ async function inspectSingleConfig(
     return blocked("HARNESS_CONFIG_READ_FAILED");
   }
   if (inspection === "unsafe") return blocked("HARNESS_CONFIG_UNSAFE");
-  return inspection === "missing"
-    ? Object.freeze({ kind: "absent" })
-    : Object.freeze({ kind: "present", path: resolve(path) });
+  return safeEvidence(inspection === "missing" ? "absent" : "present", path);
 }
 
 type OwnedPathInspection = "present" | "missing" | "unsafe" | "read-failed";
@@ -267,10 +272,9 @@ function openCodeProbe(
         "opencode",
       );
     }
-    const candidates = [
-      join(directory, "opencode.json"),
-      join(directory, "opencode.jsonc"),
-    ];
+    const jsonPath = join(directory, "opencode.json");
+    const jsoncPath = join(directory, "opencode.jsonc");
+    const candidates = [jsonPath, jsoncPath];
     if (candidates.some((path) => !isInsideHome(homeDirectory, path))) {
       return blocked("HARNESS_CONFIG_UNSAFE");
     }
@@ -291,8 +295,8 @@ function openCodeProbe(
     if (existing.length > 1) return blocked("HARNESS_CONFIG_AMBIGUOUS");
     const path = existing[0];
     return path === undefined
-      ? Object.freeze({ kind: "absent" })
-      : Object.freeze({ kind: "present", path });
+      ? safeEvidence("absent", jsonPath)
+      : safeEvidence("present", path);
   };
 }
 
@@ -364,14 +368,17 @@ function openClawProbe(
       effectiveHome,
     );
     if (state.kind === "invalid") return blocked("HARNESS_CONFIG_UNSAFE");
+    const openClawDirectory = join(effectiveHome, ".openclaw");
+    const clawdbotDirectory = join(effectiveHome, ".clawdbot");
+    const standardDirectories = [openClawDirectory, clawdbotDirectory];
     const candidates = [
       ...(state.kind === "valid"
         ? [join(state.path, "openclaw.json"), join(state.path, "clawdbot.json")]
         : []),
-      join(effectiveHome, ".openclaw", "openclaw.json"),
-      join(effectiveHome, ".openclaw", "clawdbot.json"),
-      join(effectiveHome, ".clawdbot", "openclaw.json"),
-      join(effectiveHome, ".clawdbot", "clawdbot.json"),
+      ...standardDirectories.flatMap((directory) => [
+        join(directory, "openclaw.json"),
+        join(directory, "clawdbot.json"),
+      ]),
     ];
     if (candidates.some((path) => !isInsideHome(operatingSystemHome, path))) {
       return blocked("HARNESS_CONFIG_UNSAFE");
@@ -384,14 +391,32 @@ function openClawProbe(
         "regular-file",
       );
       if (inspection === "present") {
-        return Object.freeze({ kind: "present", path });
+        return safeEvidence("present", path);
       }
       if (inspection === "unsafe") return blocked("HARNESS_CONFIG_UNSAFE");
       if (inspection === "read-failed") {
         return blocked("HARNESS_CONFIG_READ_FAILED");
       }
     }
-    return Object.freeze({ kind: "absent" });
+    if (state.kind === "valid") {
+      return safeEvidence("absent", join(state.path, "openclaw.json"));
+    }
+    for (const directory of standardDirectories) {
+      const inspection = await inspectOwnedPath(
+        options,
+        operatingSystemHome,
+        directory,
+        "directory",
+      );
+      if (inspection === "present") {
+        return safeEvidence("absent", join(directory, "openclaw.json"));
+      }
+      if (inspection === "unsafe") return blocked("HARNESS_CONFIG_UNSAFE");
+      if (inspection === "read-failed") {
+        return blocked("HARNESS_CONFIG_READ_FAILED");
+      }
+    }
+    return safeEvidence("absent", join(openClawDirectory, "openclaw.json"));
   };
 }
 

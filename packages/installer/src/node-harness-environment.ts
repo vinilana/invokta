@@ -23,15 +23,15 @@ export function createNodeExecutableResolver(
     pathValue === undefined ? [] : pathValue.split(delimiter);
 
   return async (candidate) => {
-    if (
-      candidate === "" ||
-      candidate.includes("/") ||
-      candidate.includes("\\")
-    ) {
-      return undefined;
-    }
-    for (const directory of searchDirectories) {
-      const path = resolve(directory === "" ? "." : directory, candidate);
+    if (candidate === "" || candidate.includes("\0")) return undefined;
+    const paths = candidate.includes("/")
+      ? [resolve(candidate)]
+      : candidate.includes("\\")
+        ? []
+        : searchDirectories.map((directory) =>
+            resolve(directory === "" ? "." : directory, candidate),
+          );
+    for (const path of paths) {
       try {
         const metadata = await stat(path);
         if (!metadata.isFile() || (metadata.mode & 0o111) === 0) continue;

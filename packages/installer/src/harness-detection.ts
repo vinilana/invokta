@@ -34,7 +34,7 @@ export type TargetConfigEvidenceCode = Extract<
 
 export type TargetConfigEvidence =
   | { readonly kind: "present"; readonly path: string }
-  | { readonly kind: "absent" }
+  | { readonly kind: "absent"; readonly path: string }
   | {
       readonly kind: "blocked";
       readonly code: TargetConfigEvidenceCode;
@@ -159,17 +159,6 @@ function uniqueTargetExecutables(
   surfaces: readonly HarnessSurfaceSnapshot[],
 ): readonly DetectedExecutable[] {
   return uniqueExecutables(surfaces.flatMap(({ executables }) => executables));
-}
-
-export function createAbsentConfigEvidenceProbes(): TargetConfigEvidenceProbes {
-  return Object.freeze(
-    Object.fromEntries(
-      configurationTargetCatalog.map(({ id }) => [
-        id,
-        async () => ({ kind: "absent" }) as const,
-      ]),
-    ) as unknown as TargetConfigEvidenceProbes,
-  );
 }
 
 export async function detectHarnesses(
