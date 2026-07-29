@@ -26,8 +26,16 @@ expectTypeOf(serveMcpStdio(engine, { principal })).toEqualTypeOf<
 >();
 expectTypeOf(serveMcpStdio(engine)).toEqualTypeOf<Promise<void>>();
 
-const options: ServeMcpStdioOptions = { principal };
+const options: ServeMcpStdioOptions = {
+  principal,
+  maxReadBufferBytes: 10 * 1024 * 1024,
+};
 expectTypeOf(options).toEqualTypeOf<ServeMcpStdioOptions>();
+
+serveMcpStdio(engine, {
+  // @ts-expect-error The stdio read-buffer limit is measured in bytes.
+  maxReadBufferBytes: "10485760",
+});
 
 serveMcpStdio(engine, {
   principal,

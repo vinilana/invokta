@@ -12,9 +12,6 @@
     "packages/*",
     "examples/*"
   ],
-  "resolutions": {
-    "@hono/node-server": "2.0.12"
-  },
   "scripts": {
     "build": "tsc -b --pretty false",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",

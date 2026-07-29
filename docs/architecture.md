@@ -174,7 +174,7 @@ into an internal protocol error.
 
 **AE-MCP-02 — Isolated SDK.** `@ai-engine/mcp` encapsulates the official SDK and
 MUST NOT leak its types through the public API or copy it into the core. The
-baseline revision is `2025-11-25`; the approved version is recorded in ADR 0006
+baseline revision is `2025-11-25`; the approved version is recorded in ADR 0012
 and the lockfile. Valid request IDs retain their protocol identity, including
 numeric zero and the empty string, and cancellation MUST reach only the request
 identified by the notification.
@@ -190,6 +190,14 @@ POSIX, where Node performs pipe writes asynchronously, channel teardown MUST
 discard and settle pending protocol writes before error containment is removed,
 so a backpressured or late-failing write cannot keep the process alive or escape
 as an uncaught stream error.
+
+The stdio read buffer defaults to 10,485,760 bytes. A host MAY configure
+`maxReadBufferBytes` to another positive safe integer. A buffer append that keeps
+the total at or below the configured boundary is accepted. An append that would
+cross the boundary closes the protocol connection, aborts active request
+signals, removes the adapter's process-stream listeners, and rejects
+`serveMcpStdio` with a payload-free error. An invalid limit rejects before the
+transport installs process-stream listeners.
 
 [Node performs pipe writes synchronously on Windows](https://nodejs.org/api/process.html#a-note-on-process-io).
 Normal stdio protocol exchanges remain supported there, but a peer that stops

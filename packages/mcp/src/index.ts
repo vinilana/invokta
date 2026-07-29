@@ -22,14 +22,20 @@ import { preserveFalsyRequestIds } from "./request-id-transport.js";
 
 export interface ServeMcpStdioOptions {
   readonly principal?: Principal | null;
+  readonly maxReadBufferBytes?: number;
 }
+
+const DEFAULT_MAX_READ_BUFFER_BYTES = 10 * 1024 * 1024;
 
 class CallbackStdioServerTransport extends StdioServerTransport {
   private readonly pendingSends = new Set<Promise<void>>();
   private closing: Promise<void> | undefined;
 
-  constructor(private readonly output: Writable) {
-    super(process.stdin, output);
+  constructor(
+    private readonly output: Writable,
+    maxReadBufferBytes: number,
+  ) {
+    super(process.stdin, output, { maxBufferSize: maxReadBufferBytes });
   }
 
   override send(message: JSONRPCMessage): Promise<void> {
@@ -84,16 +90,25 @@ export async function serveMcpStdio<Capabilities extends CapabilityMap>(
   engine: Engine<Capabilities>,
   options: ServeMcpStdioOptions = {},
 ): Promise<void> {
+  const maxReadBufferBytes =
+    options.maxReadBufferBytes ?? DEFAULT_MAX_READ_BUFFER_BYTES;
+  if (!Number.isSafeInteger(maxReadBufferBytes) || maxReadBufferBytes <= 0) {
+    throw new TypeError("maxReadBufferBytes must be a positive safe integer.");
+  }
   const server = createMcpServer(engine, {
     principal: options.principal ?? null,
     source: "mcp-stdio",
   });
-  const transport = new CallbackStdioServerTransport(process.stdout);
+  const transport = new CallbackStdioServerTransport(
+    process.stdout,
+    maxReadBufferBytes,
+  );
   let resolveLifetime!: (failure: Error | undefined) => void;
   const lifetime = new Promise<Error | undefined>((resolve) => {
     resolveLifetime = resolve;
   });
   let closing: Promise<void> | undefined;
+  let closeRequested = false;
 
   const cleanup = (): void => {
     process.stdin.off("end", closeFromInput);
@@ -101,7 +116,8 @@ export async function serveMcpStdio<Capabilities extends CapabilityMap>(
     process.stdout.off("error", closeFromOutput);
   };
   const requestClose = (failure?: Error): void => {
-    if (closing !== undefined) return;
+    if (closeRequested) return;
+    closeRequested = true;
     closing = (async () => {
       try {
         await server.close();
@@ -125,6 +141,25 @@ export async function serveMcpStdio<Capabilities extends CapabilityMap>(
   function closeFromOutput(error: Error): void {
     requestClose(error);
   }
+
+  let readBufferFailure: Error | undefined;
+  server.onerror = (error) => {
+    if (
+      error.message ===
+      `ReadBuffer exceeded maximum size of ${maxReadBufferBytes} bytes`
+    ) {
+      readBufferFailure = new Error(
+        `The MCP stdio read buffer exceeded the configured limit of ${maxReadBufferBytes} bytes.`,
+        { cause: error },
+      );
+    }
+  };
+  server.onclose = () => {
+    requestClose(readBufferFailure);
+    if (readBufferFailure !== undefined && !process.stdin.destroyed) {
+      process.stdin.destroy();
+    }
+  };
 
   process.stdin.once("end", closeFromInput);
   process.stdin.once("close", closeFromInput);

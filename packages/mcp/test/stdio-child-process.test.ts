@@ -66,10 +66,18 @@ function captureText(stream: Readable): TextCapture {
 
 function spawnLifecycleServer(
   mode?: "backpressure" | "delayed-epipe" | "pre-ended",
+  maxReadBufferBytes?: number,
 ): ChildProcessWithoutNullStreams {
   const child = spawn(process.execPath, [lifecycleFixturePath], {
     cwd: repositoryRoot,
-    env: { ...process.env, STDIO_LIFECYCLE_MODE: mode },
+    env: {
+      ...process.env,
+      STDIO_LIFECYCLE_MODE: mode,
+      STDIO_MAX_READ_BUFFER_BYTES:
+        maxReadBufferBytes === undefined
+          ? undefined
+          : String(maxReadBufferBytes),
+    },
     stdio: "pipe",
   });
   child.stdin.on("error", () => undefined);
@@ -299,6 +307,71 @@ it("closes when stdin had already ended before the adapter starts", async () => 
 
   await expect(exited).resolves.toEqual({ code: 0, signal: null });
   expect(stderr.value()).toBe("listeners-clean\n");
+});
+
+it("accepts a stdio frame exactly at the configured read-buffer limit", async () => {
+  const initializeMessage = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "stdio-limit-test", version: "0.0.0-test" },
+    },
+  } as const;
+  const frame = `${JSON.stringify(initializeMessage)}\n`;
+  const child = spawnLifecycleServer(undefined, Buffer.byteLength(frame));
+  const stdout = captureText(child.stdout);
+  const stderr = captureText(child.stderr);
+  const exited = waitForExit(child);
+
+  child.stdin.write(frame);
+  await stdout.waitFor('"id":1');
+  child.stdin.end();
+
+  await expect(exited).resolves.toEqual({ code: 0, signal: null });
+  expect(stderr.value()).toBe("listeners-clean\n");
+});
+
+it("closes cleanly when a stdio frame exceeds the configured read-buffer limit", async () => {
+  const maxReadBufferBytes = 256;
+  const child = spawnLifecycleServer(undefined, maxReadBufferBytes);
+  const stdout = captureText(child.stdout);
+  const stderr = captureText(child.stderr);
+  const exited = waitForExit(child);
+
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "stdio-overflow-test", version: "0.0.0-test" },
+    },
+  });
+  await stdout.waitFor('"id":1');
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    method: "notifications/initialized",
+  });
+  sendMessage(child, {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: { name: "example.wait", arguments: {} },
+  });
+  await stderr.waitFor("started\n");
+  child.stdin.write("x".repeat(maxReadBufferBytes + 1));
+
+  await expect(exited).resolves.toEqual({ code: 1, signal: null });
+  for (const line of stdout.value().trim().split("\n")) {
+    expect(() => JSON.parse(line)).not.toThrow();
+  }
+  expect(stderr.value()).toBe(
+    `started\ncancelled\nThe MCP stdio read buffer exceeded the configured limit of ${maxReadBufferBytes} bytes.\nlisteners-clean\n`,
+  );
 });
 
 it("round trips and cancels concurrent request IDs including falsy IDs", async () => {

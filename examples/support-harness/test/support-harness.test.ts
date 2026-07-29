@@ -103,7 +103,7 @@ describe("the private support harness", () => {
     };
     expect(manifest.private).toBe(true);
     expect(manifest.dependencies).toEqual({
-      "@modelcontextprotocol/sdk": "1.29.0",
+      "@modelcontextprotocol/sdk": "1.30.0",
     });
 
     const sourceDirectory = new URL("../src/", import.meta.url);
