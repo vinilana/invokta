@@ -36,7 +36,9 @@ unit of versioning and ownership.
 A product may combine these responsibilities, but Invokta's core MUST NOT couple
 them. Prompts and skills may guide an invocation, rules may constrain it, and
 loops or graphs may coordinate it. The Action Engine remains the independently
-owned boundary for the requested domain outcome.
+owned boundary for the requested domain outcome. CLI, MCP, HTTP, and direct APIs
+are delivery paths to that boundary and MUST NOT become separate implementations
+of the domain action.
 
 A model wrapper, prompt collection, multi-model gateway, server that merely
 mirrors APIs, harness, or workflow engine is not an Action Engine by itself.

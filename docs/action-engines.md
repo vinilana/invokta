@@ -33,11 +33,29 @@ A compact definition suitable for reuse is:
 
 ## Why the category matters
 
+Teams already build Action Engines even when they call them MCP servers, tools,
+commands, automations, or agent features. A component that accepts a request,
+applies domain rules, uses models or data, and returns a useful domain outcome
+already contains the essential action.
+
+The MCP endpoint, command, or HTTP route is a delivery path. The durable value is
+the outcome behind it: a reviewed specification, relevant project context, the
+next safe workflow step, a classified support ticket, or an approved code
+change. Naming the Action Engine boundary makes that outcome independently
+reusable and ownable.
+
 Prompts, rules, skills, loops, and graphs are effective places to describe or
 coordinate AI behavior. Problems appear when a domain action that began inside
 one of those artifacts must serve another consumer. The new consumer often gets
 a copied prompt, handler, schema, or policy, and the copies begin to disagree
 about valid input, authorization, failures, or what the action actually returns.
+
+AI can make the first transport integration quick to generate, but the team owns
+its maintenance. Authentication, schema compatibility, cancellation, error
+mapping, protocol upgrades, tests, and observability remain engineering work.
+The first additional consumer often exposes assumptions shaped around the
+original interface. Teams then have to revisit schemas, authorization, errors,
+and business rules, sometimes rebuilding the action around a stable contract.
 
 An Action Engine creates an ownership boundary around the domain outcome. A
 support classification action, for example, can keep one contract and one
@@ -211,6 +229,18 @@ Its `createEngine` and `engine.invoke` contracts, runtime validation, access
 rules, CLI adapter, and MCP adapters are one concrete implementation of this
 definition. Invokta does not own the category, and an Action Engine does not need
 to be compatible with Invokta.
+
+Invokta supplies the reusable framework mechanics so engine authors can focus on
+the domain outcome. A capability declares its input, output, access rule, and
+execution behavior once, then the same invocation pipeline serves application
+code, CLI, MCP stdio, and MCP HTTP. Engine authors keep control of prompts,
+models, retrieval, data sources, tools, domain rules, evaluations, and quality.
+
+This makes Invokta suitable for Action Engines that create and review
+specifications, retrieve bounded context, guide development workflows, route
+work, assess code readiness, or publish another reusable domain action. Each
+engine gets the shared contracts and adapters without maintaining a separate
+framework implementation for that use case.
 
 Invokta's stricter versioned contracts and limits are documented separately in
 [Vision and invariants](./vision-and-invariants.md),

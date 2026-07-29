@@ -10,10 +10,23 @@ stdio, or stateless MCP Streamable HTTP.
 
 ## Why Action Engines matter
 
-AI systems often begin with domain behavior embedded in a prompt, skill, loop,
-or graph. That works while one agent owns the whole path. As soon as another
-agent, application, or team needs the same behavior, each copy can acquire a
-different input shape, access check, failure mode, or implementation.
+> If your MCP tool or CLI command creates a specification, retrieves project
+> context, guides a workflow, reviews code, or classifies a ticket, you are
+> already building an Action Engine.
+
+The result of that action is the durable asset. MCP, CLI, HTTP, and direct APIs
+are delivery paths that let consumers reach it.
+
+Many projects still begin with the delivery path. Each use case gets its own MCP
+server, CLI parsing, schema conversion, authentication, error mapping,
+cancellation, and logging. AI makes the first integration faster to build, while
+long-term ownership still includes security, tests, protocol upgrades, and
+keeping every interface consistent.
+
+We keep seeing the same pattern: the first integration ships quickly, then a
+second agent or interface exposes decisions shaped around the original
+transport. Teams revisit schemas, authorization, errors, and business rules, and
+sometimes rebuild the feature around a stable domain boundary.
 
 An Action Engine gives that behavior its own boundary. For example,
 `support.classify-ticket` can validate the same request, enforce the same access
@@ -56,7 +69,19 @@ can change its AI implementation without rewriting its consumers. See the
 [framework-neutral category definition](./docs/action-engines.md) for the full
 conceptual model.
 
-Invokta keeps capability execution in a compact hexagonal kernel:
+## What Invokta provides
+
+Invokta makes the action contract the starting point and provides the reusable
+framework layer around it. Define the capability once with its input, output,
+access rule, and execution behavior; Invokta runs it through the same validated
+pipeline from application code, the CLI, or MCP.
+
+Use that boundary to build engines for spec-driven development (creating and
+reviewing specifications), context retrieval, workflow guidance, code review,
+image production, support operations, or another domain outcome. Your team owns
+the domain contract, business rules, prompts, model and data integrations,
+evaluations, and outcome quality. Invokta supplies the shared runtime mechanics
+and delivery adapters:
 
 - `@invokta/core` defines capabilities, validates Standard Schema input and
   output, enforces access rules, propagates cancellation, and emits minimal
