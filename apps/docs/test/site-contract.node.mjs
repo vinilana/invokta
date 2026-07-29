@@ -189,7 +189,7 @@ test("the examples catalog covers every documented repository example", async ()
     assert.match(
       source,
       new RegExp(
-        `https://github\\.com/vinilana/ai-engines/tree/main/examples/${directory}`,
+        `https://github\\.com/vinilana/invokta/tree/main/examples/${directory}`,
         "u",
       ),
       directory,
@@ -388,7 +388,7 @@ test("recipes provide runnable commands, verification, and full examples", async
     assert.match(source, /^## Verify it$/mu, relative(appRoot, path));
     assert.match(
       source,
-      /https:\/\/github\.com\/vinilana\/ai-engines\/tree\/main\/examples\//u,
+      /https:\/\/github\.com\/vinilana\/invokta\/tree\/main\/examples\//u,
       relative(appRoot, path),
     );
   }

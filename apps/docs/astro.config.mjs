@@ -21,11 +21,11 @@ export default defineConfig({
         {
           icon: "github",
           label: "Invokta on GitHub",
-          href: "https://github.com/vinilana/ai-engines",
+          href: "https://github.com/vinilana/invokta",
         },
       ],
       editLink: {
-        baseUrl: "https://github.com/vinilana/ai-engines/edit/main/apps/docs/",
+        baseUrl: "https://github.com/vinilana/invokta/edit/main/apps/docs/",
       },
       lastUpdated: true,
       customCss: ["./src/styles/global.css"],
