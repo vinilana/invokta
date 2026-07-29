@@ -8,6 +8,54 @@ applications, and interfaces that invoke them. Define a capability once with
 Invokta, then invoke the same runtime through application code, the CLI, MCP
 stdio, or stateless MCP Streamable HTTP.
 
+## Why Action Engines matter
+
+AI systems often begin with domain behavior embedded in a prompt, skill, loop,
+or graph. That works while one agent owns the whole path. As soon as another
+agent, application, or team needs the same behavior, each copy can acquire a
+different input shape, access check, failure mode, or implementation.
+
+An Action Engine gives that behavior its own boundary. For example,
+`support.classify-ticket` can validate the same request, enforce the same access
+rule, and return the same result whether it is called by an agent, a workflow,
+application code, the CLI, or MCP. The model, prompt, retrieval strategy, and
+provider can change inside the engine without forcing every consumer to change.
+
+This boundary makes a domain action:
+
+- reusable across consumers and execution channels;
+- testable without running a complete agent or workflow;
+- governed by explicit input, output, access, and failure contracts; and
+- independently owned and versioned as its implementation evolves.
+
+## Where Action Engines fit
+
+Prompts, rules, and skills guide behavior, while loops and graphs coordinate it.
+Action Engines give the domain behavior they invoke a stable execution boundary.
+
+```text
+agent, application, or automation
+  guided by prompts, rules, and skills
+  coordinated by loops and graphs
+  invokes Action Engines
+    which use models, prompts, data, tools, and services internally
+```
+
+| Concept | What it owns | Relationship to an Action Engine |
+| --- | --- | --- |
+| Prompt | Instructions and context for a model call | May help a consumer choose an action or implement part of a capability inside the engine |
+| Rule | A constraint, permission, or deterministic decision | May govern when an action is selected or be enforced by the engine as access or domain policy |
+| Skill | Packaged instructions, knowledge, and resources for an agent | Teaches an agent when and how to invoke an action without owning the action's runtime contract |
+| Loop | The decision to continue, stop, or choose the next action | Invokes Action Engines while retaining control of iteration and stopping conditions |
+| Graph | Nodes, dependencies, branches, and execution order | Uses Action Engines as contracted nodes without absorbing their domain implementation |
+| Action Engine | A reusable domain outcome with runtime-validated contracts, access, execution, and stable failures | Provides the callable boundary shared by agents, applications, loops, graphs, and interfaces |
+
+The same system can use all six concepts. The separation lets orchestration and
+agent behavior change without duplicating the domain action, while the engine
+can change its AI implementation without rewriting its consumers. See the
+[framework-neutral category definition](./docs/action-engines.md) for the full
+conceptual model.
+
 Invokta keeps capability execution in a compact hexagonal kernel:
 
 - `@invokta/core` defines capabilities, validates Standard Schema input and

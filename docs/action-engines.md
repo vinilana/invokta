@@ -31,6 +31,35 @@ A compact definition suitable for reuse is:
 > contracts, independently of the agents, applications, and interfaces that
 > invoke them.
 
+## Why the category matters
+
+Prompts, rules, skills, loops, and graphs are effective places to describe or
+coordinate AI behavior. Problems appear when a domain action that began inside
+one of those artifacts must serve another consumer. The new consumer often gets
+a copied prompt, handler, schema, or policy, and the copies begin to disagree
+about valid input, authorization, failures, or what the action actually returns.
+
+An Action Engine creates an ownership boundary around the domain outcome. A
+support classification action, for example, can keep one contract and one
+implementation while serving an agent, a graph node, an application endpoint,
+a command-line tool, or a protocol tool. Consumers decide why and when to call
+it; the engine owns how the action is validated, authorized, executed, and
+reported.
+
+That boundary matters when teams need to:
+
+- reuse one domain action across independent consumers;
+- test domain behavior without running an entire agent or orchestration system;
+- replace models, prompts, retrieval, providers, or deterministic code behind a
+  stable contract;
+- review access rules and public failures in one place; and
+- assign ownership and version compatibility to the action itself.
+
+An Action Engine is useful when a domain outcome needs to outlive the first
+prompt, agent, workflow, or interface that used it. A one-off model call does not
+need this boundary unless reuse, independent ownership, or contract stability
+becomes valuable.
+
 ## Vocabulary
 
 - **Action:** a named, domain-oriented operation with an explicit input, output,
@@ -70,22 +99,42 @@ A component is an Action Engine when all of the following statements are true:
 An implementation may satisfy these properties with a library, local process,
 service, embedded runtime, or another deployment model.
 
-## What an Action Engine is not
+## Relationship to adjacent concepts
 
 | Concept | Primary responsibility | Relationship to an Action Engine |
 | --- | --- | --- |
+| Prompt | Supplies instructions and context to a model | May guide a consumer or remain a private implementation detail of a capability; it does not define the engine's stable runtime contract |
+| Rule | Expresses a constraint, permission, transformation, or deterministic decision | May control action selection or be enforced as engine access or domain policy; it does not own the complete domain outcome |
+| Skill | Packages instructions, knowledge, resources, and sometimes helper scripts for an agent | Can teach an agent when and how to invoke an action while the engine owns validation, access, execution, and failures |
+| Loop | Chooses a next step, repeats work, and evaluates a stopping condition | May invoke one or more Action Engines during each iteration while retaining orchestration state and control |
+| Graph | Defines nodes, dependencies, branches, and execution order | May use Action Engines as nodes; the graph owns topology while each engine owns its domain action |
 | Function | Executes a local code unit | May implement part of a capability but does not by itself establish a reusable versioned boundary |
 | Tool | Gives a model or client a callable interface | May expose one action; the engine owns the domain contract and behavior behind it |
-| Skill | Provides instructions, knowledge, or resources | May teach an agent when and how to invoke an action |
 | Agent | Chooses goals, actions, and next steps | Consumes Action Engines; it does not need to own their domain behavior |
 | Harness | Runs an agent with tools, context, memory, and environment | Hosts or connects consumers to Action Engines |
-| Loop | Repeats decisions and work until a stop condition | May invoke actions during each iteration |
 | Workflow | Coordinates a predefined sequence or graph | May compose actions but should not duplicate their implementation |
 | Model gateway | Normalizes access to models or providers | Is infrastructure unless it publishes contracted domain outcomes |
 
 A product can combine several of these responsibilities. The distinction is
 architectural: an Action Engine keeps its domain action usable when the agent,
 harness, workflow, transport, or AI implementation changes.
+
+### A practical placement test
+
+Use the question the component answers:
+
+- **What should the model know or do?** Put instructions and context in a prompt
+  or skill.
+- **What is allowed or required?** Express the constraint as a rule.
+- **What should happen next, and should execution continue?** Put coordination
+  in a graph or loop.
+- **What reusable domain outcome can a consumer request?** Publish it through an
+  Action Engine.
+
+These are complementary responsibilities. A loop can use a skill to decide that
+it should invoke `support.classify-ticket`; the Action Engine then validates the
+request, enforces access, performs the classification, and returns the contracted
+result. The loop still decides what happens next.
 
 ## Portable model
 

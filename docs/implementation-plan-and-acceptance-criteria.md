@@ -49,8 +49,8 @@ isolated consumer smoke test.
 
 ## Release gates
 
-- Documentation distinguishes the framework, engine, harness, loop, and shared
-  Action Engine category.
+- Documentation distinguishes prompts, rules, skills, loops, graphs, harnesses,
+  the Invokta framework, and the shared Action Engine category.
 - The core public API remains small, with required schemas and access rules.
 - The same capability works directly, through CLI, MCP stdio, and MCP HTTP.
 - CLI and MCP call only `engine.invoke`; the official MCP SDK remains isolated.

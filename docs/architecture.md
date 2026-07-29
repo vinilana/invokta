@@ -174,7 +174,7 @@ into an internal protocol error.
 
 **AE-MCP-02 — Isolated SDK.** `@invokta/mcp` encapsulates the official SDK and
 MUST NOT leak its types through the public API or copy it into the core. The
-baseline revision is `2025-11-25`; the approved version is recorded in ADR 0012
+baseline revision is `2025-11-25`; the approved version is recorded in ADR 0006
 and the lockfile. Valid request IDs retain their protocol identity, including
 numeric zero and the empty string, and cancellation MUST reach only the request
 identified by the notification.

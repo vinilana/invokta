@@ -21,14 +21,23 @@ unit of versioning and ownership.
 ## Distinct responsibilities
 
 - **Action Engine:** delivers reusable domain capabilities governed by contracts.
+- **Prompt:** gives a model instructions and context for one part of a task or
+  capability implementation.
+- **Rule:** expresses a constraint, permission, or deterministic decision.
+- **Skill:** packages guidance, knowledge, and resources that help an agent use
+  an action correctly.
 - **Harness:** manages an agent's messages, tools, memory, environment, and
   execution.
 - **Loop:** decides the next step, repeats work, and stops when it reaches a goal.
+- **Graph:** owns nodes, dependencies, branches, and execution order.
 - **Invokta:** provides contracts, a runtime, and adapters; it is not a domain
   engine.
 
 A product may combine these responsibilities, but Invokta's core MUST NOT couple
-them.
+them. Prompts and skills may guide an invocation, rules may constrain it, and
+loops or graphs may coordinate it. The Action Engine remains the independently
+owned boundary for the requested domain outcome.
+
 A model wrapper, prompt collection, multi-model gateway, server that merely
 mirrors APIs, harness, or workflow engine is not an Action Engine by itself.
 
