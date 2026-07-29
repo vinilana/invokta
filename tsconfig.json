@@ -10,8 +10,10 @@
     { "path": "./examples/community-capabilities" },
     { "path": "./examples/composed-engine" },
     { "path": "./examples/crawl-engine" },
+    { "path": "./examples/agent-session-engine" },
     { "path": "./examples/hello-engine" },
     { "path": "./examples/observability-engine" },
+    { "path": "./examples/obsidian-context-engine" },
     { "path": "./examples/spec-engine" },
     { "path": "./examples/support-engine" },
     { "path": "./examples/support-harness" }

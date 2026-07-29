@@ -546,6 +546,19 @@ function compareTimestamps(
       : 1;
 }
 
+export function isInstallerTimestampAfter(
+  candidate: string,
+  previous: string,
+): boolean {
+  const candidateTimestamp = parseTimestamp(candidate);
+  const previousTimestamp = parseTimestamp(previous);
+  return (
+    candidateTimestamp !== undefined &&
+    previousTimestamp !== undefined &&
+    compareTimestamps(candidateTimestamp, previousTimestamp) > 0
+  );
+}
+
 function normalizeTransport(
   value: JsonRecord,
 ): StdioTransport | StreamableHttpTransport {

@@ -82,7 +82,10 @@ function absentConfigProbes(
       targetId,
       async ({ homeDirectory }: { readonly homeDirectory: string }) => {
         onProbe(targetId, homeDirectory);
-        return { kind: "absent" } as const;
+        return {
+          kind: "absent",
+          path: `${homeDirectory}/fixture-config/${targetId}`,
+        } as const;
       },
     ]),
   ) as unknown as TargetConfigEvidenceProbes;
@@ -171,6 +174,17 @@ describe("harness detection snapshot", () => {
         ({ mayCreateConfiguration }) => mayCreateConfiguration,
       ),
     ).toBe(true);
+    expect(
+      snapshot.targets.map(({ id, configuration }) => ({ id, configuration })),
+    ).toEqual(
+      configurationTargetIds.map((targetId) => ({
+        id: targetId,
+        configuration: {
+          kind: "absent",
+          path: `/users/tester/fixture-config/${targetId}`,
+        },
+      })),
+    );
 
     const antigravity = snapshot.targets.find(({ id }) => id === "antigravity");
     expect(antigravity).toMatchObject({
@@ -281,7 +295,10 @@ describe("harness detection snapshot", () => {
                     kind: "present",
                     path: `/users/tester/config/${targetId}`,
                   } as const)
-                : ({ kind: "absent" } as const),
+                : ({
+                    kind: "absent",
+                    path: `/users/tester/config/${targetId}`,
+                  } as const),
           ]),
         ) as unknown as TargetConfigEvidenceProbes,
       });
@@ -323,7 +340,10 @@ describe("harness detection snapshot", () => {
                   kind: "blocked",
                   code: "HARNESS_CONFIG_UNSAFE",
                 } as const)
-              : ({ kind: "absent" } as const),
+              : ({
+                  kind: "absent",
+                  path: `/users/tester/config/${targetId}`,
+                } as const),
         ]),
       ) as unknown as TargetConfigEvidenceProbes,
     });
@@ -337,5 +357,54 @@ describe("harness detection snapshot", () => {
         code: "HARNESS_CONFIG_UNSAFE",
       },
     });
+  });
+
+  it("rechecks vanished executable and configuration facts through the same probes", async () => {
+    let executablePresent = true;
+    let configurationPresent = true;
+    const configPath = "/users/tester/.codex/config.toml";
+    const resolveExecutable = vi.fn(async (candidate: string) =>
+      executablePresent && candidate === "codex"
+        ? executable(candidate)
+        : undefined,
+    );
+    const codexProbe = vi.fn(async () =>
+      configurationPresent
+        ? ({ kind: "present", path: configPath } as const)
+        : ({ kind: "absent", path: configPath } as const),
+    );
+    const configEvidenceProbes = {
+      ...absentConfigProbes(),
+      codex: codexProbe,
+    };
+    const options = {
+      resolveHomeDirectory: () => "/users/tester",
+      resolveExecutable,
+      configEvidenceProbes,
+    };
+
+    const initial = await detectHarnesses(options);
+    expect(initial.targets.find(({ id }) => id === "codex")).toMatchObject({
+      evidence: "installed",
+      configuration: { kind: "present", path: configPath },
+      mayCreateConfiguration: true,
+    });
+
+    executablePresent = false;
+    configurationPresent = false;
+
+    const rechecked = await detectHarnesses(options);
+    expect(rechecked.targets.find(({ id }) => id === "codex")).toMatchObject({
+      evidence: "absent",
+      configuration: { kind: "absent", path: configPath },
+      eligible: false,
+      mayCreateConfiguration: false,
+    });
+    expect(codexProbe).toHaveBeenCalledTimes(2);
+    expect(resolveExecutable).toHaveBeenCalledTimes(
+      expectedSurfaces.flatMap(
+        ({ executableCandidates }) => executableCandidates,
+      ).length * 2,
+    );
   });
 });

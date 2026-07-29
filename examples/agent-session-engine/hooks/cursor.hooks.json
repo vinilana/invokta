@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "hooks": {
+    "workspaceOpen": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "sessionStart": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "afterAgentResponse": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "afterAgentThought": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "beforeReadFile": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "beforeTabFileRead": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "afterTabFileEdit": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "subagentStart": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "subagentStop": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "preCompact": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ],
+    "stop": [
+      {
+        "type": "command",
+        "command": "node examples/agent-session-engine/dist/hook-cli.js cursor",
+        "timeout": 10
+      }
+    ]
+  }
+}

@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -62,5 +62,32 @@ describe("Node PATH executable resolver", () => {
     await expect(resolveExecutable("directory-tool")).resolves.toBeUndefined();
     await expect(resolveExecutable("missing")).resolves.toBeUndefined();
     expect(existsSync(marker)).toBe(false);
+  });
+
+  it("resolves relative and absolute path commands to executable regular-file evidence", async () => {
+    const directory = temporaryDirectory();
+    const executablePath = join(directory, "path-tool");
+    const nonExecutablePath = join(directory, "path-data");
+    writeFileSync(executablePath, "#!/bin/sh\nexit 97\n");
+    chmodSync(executablePath, 0o755);
+    writeFileSync(nonExecutablePath, "fixture\n");
+    chmodSync(nonExecutablePath, 0o644);
+    const resolveExecutable = createNodeExecutableResolver({ pathValue: "" });
+
+    await expect(resolveExecutable(executablePath)).resolves.toMatchObject({
+      path: executablePath,
+      identity: { realPath: executablePath },
+    });
+    await expect(
+      resolveExecutable(relative(process.cwd(), executablePath)),
+    ).resolves.toMatchObject({
+      path: executablePath,
+      identity: { realPath: executablePath },
+    });
+    await expect(
+      resolveExecutable(join(directory, "missing")),
+    ).resolves.toBeUndefined();
+    await expect(resolveExecutable(nonExecutablePath)).resolves.toBeUndefined();
+    await expect(resolveExecutable(directory)).resolves.toBeUndefined();
   });
 });
