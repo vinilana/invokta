@@ -12,6 +12,7 @@
     { "path": "./examples/crawl-engine" },
     { "path": "./examples/agent-session-engine" },
     { "path": "./examples/hello-engine" },
+    { "path": "./examples/review-engine" },
     { "path": "./examples/observability-engine" },
     { "path": "./examples/obsidian-context-engine" },
     { "path": "./examples/spec-engine" },

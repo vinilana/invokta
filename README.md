@@ -45,7 +45,10 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
   rather than in a workflow engine;
 - [`agent-session-engine`](./examples/agent-session-engine/) for durable task,
   phase, checkpoint, and handoff state plus CLI-backed hooks for Cursor,
-  Antigravity, Claude Code, and Codex.
+  Antigravity, Claude Code, and Codex;
+- [`review-engine`](./examples/review-engine/) for a fail-closed code review,
+  acceptance-eval, and adversarial-review gate that tells an agent whether a
+  task is ready to be declared complete.
 
 ## Documentation
 
