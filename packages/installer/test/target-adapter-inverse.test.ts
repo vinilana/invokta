@@ -79,6 +79,42 @@ function expectInstallerCode(
 
 describe("target descriptor inverse mappings", () => {
   it.each(Object.keys(configurationTargetAdapters) as ConfigurationTargetId[])(
+    "removes a generated installation for %s",
+    (targetId) => {
+      const adapter = configurationTargetAdapters[targetId];
+      const descriptor = stdioDescriptor(targetId);
+      const empty = adapter.inspect({
+        source: undefined,
+        serverName: descriptor.server.name,
+      });
+      const installed = adapter.constructPatch({
+        action: "install",
+        definition: adapter.descriptorToDefinition(descriptor),
+        inspection: empty,
+      });
+      if (installed.kind !== "changed") throw new Error("Expected install.");
+      const present = adapter.inspect({
+        source: installed.postImage,
+        serverName: descriptor.server.name,
+      });
+
+      const removed = adapter.constructPatch({
+        action: "remove",
+        inspection: present,
+      });
+
+      expect(removed.kind).toBe("changed");
+      if (removed.kind !== "changed") throw new Error("Expected removal.");
+      expect(
+        adapter.inspect({
+          source: removed.postImage,
+          serverName: descriptor.server.name,
+        }).currentServer,
+      ).toEqual({ kind: "absent" });
+    },
+  );
+
+  it.each(Object.keys(configurationTargetAdapters) as ConfigurationTargetId[])(
     "round-trips installed stdio and HTTP definitions for %s",
     (targetId) => {
       const adapter = configurationTargetAdapters[targetId];

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { InstallerError } from "../src/installer-error.js";
 import {
   createEmptyInstallerState,
-  installationKey,
   type InstallerState,
+  installationKey,
   type ManagedInstallation,
   type StateTargetContracts,
 } from "../src/installer-state.js";
@@ -19,8 +19,8 @@ import {
 } from "../src/ownership-planner.js";
 import {
   type CapabilityInstallDescriptor,
-  configurationTargetIds,
   type ConfigurationTargetId,
+  configurationTargetIds,
 } from "../src/registry.js";
 import { configurationTargetAdapters } from "../src/target-adapters.js";
 
@@ -199,6 +199,7 @@ describe("immutable installer state transitions", () => {
           definition,
           "native-enabled",
         ),
+        launchDescriptor: selected.server,
       });
       expect(Object.isFrozen(result)).toBe(true);
       expect(Object.isFrozen(result.state)).toBe(true);

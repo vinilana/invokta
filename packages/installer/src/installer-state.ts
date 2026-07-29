@@ -39,6 +39,7 @@ export interface ManagedInstallation {
   readonly definitionSha256: string;
   readonly targetContractVersion: 1;
   readonly toggleStrategy: ToggleStrategy;
+  readonly launchDescriptor?: SuspendedDescriptor;
   readonly suspendedDescriptor?: SuspendedDescriptor;
   readonly adopted: boolean;
   readonly installedAt: string;
@@ -127,6 +128,7 @@ const installationKeys = new Set([
   "definitionSha256",
   "targetContractVersion",
   "toggleStrategy",
+  "launchDescriptor",
   "suspendedDescriptor",
   "adopted",
   "installedAt",
@@ -595,6 +597,14 @@ function normalizeTransport(
 }
 
 function normalizeInstallation(value: JsonRecord): ManagedInstallation {
+  const rawLaunch = value.launchDescriptor as JsonRecord | undefined;
+  const launchDescriptor =
+    rawLaunch === undefined
+      ? undefined
+      : Object.freeze({
+          name: rawLaunch.name as string,
+          transport: normalizeTransport(rawLaunch.transport as JsonRecord),
+        });
   const rawSuspended = value.suspendedDescriptor as JsonRecord | undefined;
   const suspendedDescriptor =
     rawSuspended === undefined
@@ -612,6 +622,7 @@ function normalizeInstallation(value: JsonRecord): ManagedInstallation {
     definitionSha256: value.definitionSha256 as string,
     targetContractVersion: 1,
     toggleStrategy: value.toggleStrategy as ToggleStrategy,
+    ...(launchDescriptor === undefined ? {} : { launchDescriptor }),
     ...(suspendedDescriptor === undefined ? {} : { suspendedDescriptor }),
     adopted: value.adopted as boolean,
     installedAt: value.installedAt as string,
@@ -848,6 +859,14 @@ function validateInstallation(
     validateSuspendedDescriptor(
       value.suspendedDescriptor,
       childPointer(pointer, "suspendedDescriptor"),
+      value.serverName,
+      issues,
+    );
+  }
+  if (value.launchDescriptor !== undefined) {
+    validateSuspendedDescriptor(
+      value.launchDescriptor,
+      childPointer(pointer, "launchDescriptor"),
       value.serverName,
       issues,
     );

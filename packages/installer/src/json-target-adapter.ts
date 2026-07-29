@@ -780,6 +780,14 @@ function constructPatch(
     }
     validateMappedDefinition(request.definition, options.dialect);
     insertedDefinition = request.definition;
+  } else if (request.action === "remove") {
+    if (
+      request.inspection.currentServer.kind !== "present" ||
+      state.servers === undefined ||
+      state.serverMember === undefined
+    ) {
+      invalid();
+    }
   } else if (options.toggleStrategy === "detached") {
     if (request.action === "disable") {
       if (request.inspection.currentServer.kind === "absent") {
@@ -874,6 +882,16 @@ function constructPatch(
         state.tokens,
       );
     }
+  } else if (request.action === "remove") {
+    if (state.servers === undefined || state.serverMember === undefined) {
+      invalid();
+    }
+    postText = removeMember(
+      source.text,
+      state,
+      state.servers,
+      state.serverMember,
+    );
   } else if (options.toggleStrategy === "detached") {
     if (
       state.servers === undefined ||

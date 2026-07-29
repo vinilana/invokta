@@ -5,9 +5,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { HarnessDetectionSnapshot } from "../src/harness-detection.js";
+import { inspectManagedInstallations } from "../src/managed-installations.js";
 import {
   installDescriptorAcrossTargets,
   type MutationCoordinatorDependencies,
+  mutateDescriptorAcrossTargets,
 } from "../src/mutation-coordinator.js";
 import { createNodeFileSystem } from "../src/node-file-system.js";
 import type { CapabilityInstallDescriptor } from "../src/registry.js";
@@ -127,8 +129,15 @@ describe("installer mutation coordinator", () => {
         join(homeDirectory, ".local/state/invokta/installer.json"),
         "utf8",
       ),
-    ) as { readonly installations: Readonly<Record<string, unknown>> };
+    ) as {
+      readonly installations: Readonly<
+        Record<string, { readonly launchDescriptor?: unknown }>
+      >;
+    };
     expect(Object.keys(state.installations)).toHaveLength(2);
+    expect(Object.values(state.installations)[0]?.launchDescriptor).toEqual(
+      descriptor().server,
+    );
   });
 
   it("keeps successful targets when a later target conflicts", async () => {
@@ -163,5 +172,99 @@ describe("installer mutation coordinator", () => {
 
     expect(results[0]).toMatchObject({ targetId: "codex", outcome: "failed" });
     expect(results[1]).toEqual({ targetId: "cursor", outcome: "installed" });
+  });
+
+  it("disables and re-enables native and detached installations", async () => {
+    const homeDirectory = mkdtempSync(join(tmpdir(), "invokta-mutation-"));
+    temporaryDirectories.push(homeDirectory);
+    const detected = snapshot(homeDirectory);
+    const deps = dependencies();
+    await installDescriptorAcrossTargets({
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: detected,
+      targetIds: ["codex", "cursor"],
+    });
+
+    const disabled = await mutateDescriptorAcrossTargets({
+      action: "disable",
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: detected,
+      targetIds: ["codex", "cursor"],
+    });
+
+    expect(disabled).toEqual([
+      { targetId: "codex", outcome: "disabled" },
+      { targetId: "cursor", outcome: "disabled" },
+    ]);
+    expect(
+      readFileSync(join(homeDirectory, ".codex/config.toml"), "utf8"),
+    ).toContain("enabled = false");
+    expect(
+      JSON.parse(readFileSync(join(homeDirectory, ".cursor/mcp.json"), "utf8")),
+    ).toEqual({ mcpServers: {} });
+    const views = await inspectManagedInstallations({
+      dependencies: deps,
+      registry: { schemaVersion: 1, entries: [] },
+      snapshot: detected,
+    });
+    expect(
+      views.map(({ installation, status }) => ({
+        targetId: installation.targetId,
+        status,
+      })),
+    ).toEqual([
+      { targetId: "codex", status: "disabled" },
+      { targetId: "cursor", status: "disabled" },
+    ]);
+    expect(
+      views.every(({ descriptor: selected }) => selected !== undefined),
+    ).toBe(true);
+
+    const enabled = await mutateDescriptorAcrossTargets({
+      action: "enable",
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: detected,
+      targetIds: ["codex", "cursor"],
+    });
+
+    expect(enabled).toEqual([
+      { targetId: "codex", outcome: "enabled" },
+      { targetId: "cursor", outcome: "enabled" },
+    ]);
+    expect(
+      readFileSync(join(homeDirectory, ".codex/config.toml"), "utf8"),
+    ).toContain("enabled = true");
+    expect(
+      JSON.parse(readFileSync(join(homeDirectory, ".cursor/mcp.json"), "utf8")),
+    ).toHaveProperty("mcpServers.support-engine.command", process.execPath);
+
+    const removed = await mutateDescriptorAcrossTargets({
+      action: "remove",
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: detected,
+      targetIds: ["codex", "cursor"],
+    });
+
+    expect(removed).toEqual([
+      { targetId: "codex", outcome: "removed" },
+      { targetId: "cursor", outcome: "removed" },
+    ]);
+    expect(
+      readFileSync(join(homeDirectory, ".codex/config.toml"), "utf8"),
+    ).not.toContain("support-engine");
+    expect(
+      JSON.parse(readFileSync(join(homeDirectory, ".cursor/mcp.json"), "utf8")),
+    ).toEqual({ mcpServers: {} });
+    const finalState = JSON.parse(
+      readFileSync(
+        join(homeDirectory, ".local/state/invokta/installer.json"),
+        "utf8",
+      ),
+    ) as { readonly installations: Readonly<Record<string, unknown>> };
+    expect(finalState.installations).toEqual({});
   });
 });

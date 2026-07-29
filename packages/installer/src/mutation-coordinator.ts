@@ -16,6 +16,8 @@ import {
   type InstallerLockDependencies,
 } from "./installer-lock.js";
 import {
+  installationKey,
+  isInstallerTimestampAfter,
   loadInstallerState,
   type StateTargetContracts,
 } from "./installer-state.js";
@@ -23,7 +25,11 @@ import {
   applyInstallerStatePlan,
   serializeInstallerState,
 } from "./installer-state-transition.js";
-import { planInstallerAction } from "./ownership-planner.js";
+import {
+  type InstallerAction,
+  planInstallerAction,
+  planOwnership,
+} from "./ownership-planner.js";
 import {
   bootstrapPrivateDirectory,
   capturePathIdentity,
@@ -35,7 +41,11 @@ import type {
   CapabilityInstallDescriptor,
   ConfigurationTargetId,
 } from "./registry.js";
-import { type TargetAdapter, targetConfigByteLimit } from "./target-adapter.js";
+import {
+  type TargetAdapter,
+  type TargetPatch,
+  targetConfigByteLimit,
+} from "./target-adapter.js";
 import type { InstallerEnvironment } from "./target-config-evidence.js";
 
 export interface MutationCoordinatorDependencies {
@@ -50,7 +60,12 @@ export interface MutationCoordinatorDependencies {
 export type TargetMutationResult =
   | {
       readonly targetId: ConfigurationTargetId;
-      readonly outcome: "installed" | "unchanged";
+      readonly outcome:
+        | "disabled"
+        | "enabled"
+        | "installed"
+        | "removed"
+        | "unchanged";
     }
   | {
       readonly targetId: ConfigurationTargetId;
@@ -65,6 +80,13 @@ export interface InstallDescriptorAcrossTargetsInput {
   readonly targetIds: readonly ConfigurationTargetId[];
 }
 
+export interface MutateDescriptorAcrossTargetsInput
+  extends InstallDescriptorAcrossTargetsInput {
+  readonly action:
+    | Extract<InstallerAction, "disable" | "enable" | "install">
+    | "remove";
+}
+
 const temporaryTokenBytes = 12;
 
 function inside(root: string, candidate: string): boolean {
@@ -77,7 +99,7 @@ function inside(root: string, candidate: string): boolean {
   );
 }
 
-function targetContracts(
+export function buildStateTargetContracts(
   snapshot: HarnessDetectionSnapshot,
   adapters: MutationCoordinatorDependencies["adapters"],
 ): StateTargetContracts {
@@ -254,11 +276,26 @@ function findTarget(
   };
 }
 
-async function installTarget(
-  input: InstallDescriptorAcrossTargetsInput,
+function nextTimestamp(
+  candidate: string,
+  previous: string | undefined,
+): string {
+  if (
+    previous === undefined ||
+    isInstallerTimestampAfter(candidate, previous)
+  ) {
+    return candidate;
+  }
+  const milliseconds = Date.parse(previous);
+  if (!Number.isFinite(milliseconds)) throw new InstallerError("STATE_INVALID");
+  return new Date(milliseconds + 1).toISOString();
+}
+
+async function mutateTarget(
+  input: MutateDescriptorAcrossTargetsInput,
   targetId: ConfigurationTargetId,
   contracts: StateTargetContracts,
-): Promise<"installed" | "unchanged"> {
+): Promise<"disabled" | "enabled" | "installed" | "removed" | "unchanged"> {
   const { dependencies, descriptor, snapshot } = input;
   const target = findTarget(snapshot, targetId);
   const configPath = target.configuration.path;
@@ -340,50 +377,116 @@ async function installTarget(
       serverName: descriptor.server.name,
     });
     const registryDefinition = adapter.descriptorToDefinition(descriptor);
+    const managedInstallation =
+      loaded.state.installations[
+        installationKey(descriptor.id, targetId, configPath)
+      ];
     const planning = {
       descriptor,
       targetId,
       target: contracts[targetId],
       state: loaded.state,
       registryDefinition,
+      ...(managedInstallation?.suspendedDescriptor === undefined
+        ? {}
+        : {
+            normalizedSuspendedDefinition:
+              adapter.suspendedDescriptorToDefinition(
+                managedInstallation.suspendedDescriptor,
+              ),
+          }),
       currentServer: inspection.currentServer,
     } as const;
-    const plan = planInstallerAction(planning, "install");
-    if (plan.outcome === "blocked") throw new InstallerError(plan.code);
-    if (plan.outcome === "unchanged") return "unchanged";
-    const transition = applyInstallerStatePlan({
-      adapter,
-      occurredAt: dependencies.now(),
-      plan,
-      planning,
-      targetContracts: contracts,
-    });
-    if (transition === undefined) throw new InstallerError("STATE_INVALID");
-    const patch = adapter.constructPatch({
-      action: "install",
-      definition: registryDefinition,
-      inspection,
-    });
-    if (patch.kind !== "changed") throw new InstallerError("STATE_INVALID");
+    let stateBytes: Uint8Array;
+    let patch: TargetPatch;
+    if (input.action === "remove") {
+      if (managedInstallation === undefined) {
+        throw new InstallerError("INSTALLATION_UNAVAILABLE");
+      }
+      const ownership = planOwnership(planning);
+      if (ownership.status === "drifted") {
+        throw new InstallerError("CONFIG_DRIFT");
+      }
+      if (ownership.status === "conflict") {
+        throw new InstallerError("CONFIG_CONFLICT");
+      }
+      const nextInstallations = { ...loaded.state.installations };
+      delete nextInstallations[
+        installationKey(descriptor.id, targetId, configPath)
+      ];
+      stateBytes = serializeInstallerState(
+        { schemaVersion: 1, installations: nextInstallations },
+        contracts,
+      );
+      patch =
+        inspection.currentServer.kind === "absent"
+          ? ({ kind: "unchanged" } as const)
+          : adapter.constructPatch({ action: "remove", inspection });
+    } else {
+      const plan = planInstallerAction(planning, input.action);
+      if (plan.outcome === "blocked") throw new InstallerError(plan.code);
+      if (plan.outcome === "unchanged") return "unchanged";
+      const transition = applyInstallerStatePlan({
+        adapter,
+        occurredAt: nextTimestamp(
+          dependencies.now(),
+          managedInstallation?.updatedAt,
+        ),
+        plan,
+        planning,
+        targetContracts: contracts,
+      });
+      if (transition === undefined) throw new InstallerError("STATE_INVALID");
+      stateBytes = serializeInstallerState(transition.state, contracts);
+      patch =
+        input.action === "install"
+          ? adapter.constructPatch({
+              action: "install",
+              definition: registryDefinition,
+              inspection,
+            })
+          : input.action === "enable"
+            ? adapter.constructPatch({
+                action: "enable",
+                ...(transition.restoreDefinition === undefined
+                  ? {}
+                  : { restoreDefinition: transition.restoreDefinition }),
+                inspection,
+              })
+            : adapter.constructPatch({ action: "disable", inspection });
+      if (patch.kind !== "changed") throw new InstallerError("STATE_INVALID");
+    }
 
-    await atomicReplace(
-      dependencies,
-      configIdentity,
-      patch.postImage,
-      "CONFIG_WRITE_FAILED",
-    );
+    const configPostImage =
+      patch.kind === "changed" ? patch.postImage : undefined;
+    if (configPostImage !== undefined) {
+      await atomicReplace(
+        dependencies,
+        configIdentity,
+        configPostImage,
+        "CONFIG_WRITE_FAILED",
+      );
+    }
     try {
       await atomicReplace(
         dependencies,
         stateIdentity,
-        serializeInstallerState(transition.state, contracts),
+        stateBytes,
         "STATE_WRITE_FAILED",
       );
     } catch (cause) {
-      await rollbackConfig(dependencies, homeRoot, configPath, source);
+      if (configPostImage !== undefined) {
+        await rollbackConfig(dependencies, homeRoot, configPath, source);
+      }
       throw cause;
     }
-    return "installed";
+    return input.action === "remove"
+      ? "removed"
+      : input.action === "install"
+        ? "installed"
+        : input.action === "enable"
+          ? "enabled"
+          : "disabled";
   } catch (cause) {
     primaryError = cause;
     throw cause;
@@ -395,7 +498,13 @@ async function installTarget(
 export async function installDescriptorAcrossTargets(
   input: InstallDescriptorAcrossTargetsInput,
 ): Promise<readonly TargetMutationResult[]> {
-  const contracts = targetContracts(
+  return mutateDescriptorAcrossTargets({ ...input, action: "install" });
+}
+
+export async function mutateDescriptorAcrossTargets(
+  input: MutateDescriptorAcrossTargetsInput,
+): Promise<readonly TargetMutationResult[]> {
+  const contracts = buildStateTargetContracts(
     input.snapshot,
     input.dependencies.adapters,
   );
@@ -405,7 +514,7 @@ export async function installDescriptorAcrossTargets(
     if (seen.has(targetId)) continue;
     seen.add(targetId);
     try {
-      const outcome = await installTarget(input, targetId, contracts);
+      const outcome = await mutateTarget(input, targetId, contracts);
       results.push(Object.freeze({ targetId, outcome }));
     } catch (cause) {
       const error =

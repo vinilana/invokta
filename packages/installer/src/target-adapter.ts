@@ -128,6 +128,11 @@ export type TargetPatchRequest =
       readonly action: "disable";
       readonly inspection: TargetConfigInspection;
       readonly counters?: TargetAdapterCounters;
+    }
+  | {
+      readonly action: "remove";
+      readonly inspection: TargetConfigInspection;
+      readonly counters?: TargetAdapterCounters;
     };
 
 export type TargetPatch =
@@ -634,7 +639,10 @@ export function assertPostImageDefinition(
   toggleStrategy: ToggleStrategy = "native-enabled",
 ): void {
   const postCanonicals = assertTargetInspectionConsistency(postInspection);
-  if (toggleStrategy === "detached" && request.action === "disable") {
+  if (
+    request.action === "remove" ||
+    (toggleStrategy === "detached" && request.action === "disable")
+  ) {
     if (
       postInspection.currentServer.kind !== "absent" ||
       postCanonicals !== undefined

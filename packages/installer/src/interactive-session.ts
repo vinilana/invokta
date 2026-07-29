@@ -15,6 +15,8 @@ import {
 import { runInstallSession } from "./install-session.js";
 import { InstallerError } from "./installer-error.js";
 import type { InteractivePrompter } from "./interactive-prompter.js";
+import { runManagementSession } from "./management-session.js";
+import type { MutationCoordinatorDependencies } from "./mutation-coordinator.js";
 import { createNodeFileSystem } from "./node-file-system.js";
 import {
   createNodeExecutableResolver,
@@ -62,12 +64,17 @@ export async function runInteractiveSession(
     const command = options.command ?? { kind: "inventory" as const };
     const nodeFileSystem = createNodeFileSystem();
     const fileSystem = options.fileSystem ?? nodeFileSystem;
-    if (command.kind === "inventory") {
-      await loadBundledRegistry(
-        fileSystem,
-        options.compatibilityAdapters ?? registryCompatibilityAdapters,
-      );
-    }
+    const registry =
+      command.kind === "inventory" ||
+      command.kind === "status" ||
+      command.kind === "enable" ||
+      command.kind === "disable" ||
+      command.kind === "remove"
+        ? await loadBundledRegistry(
+            fileSystem,
+            options.compatibilityAdapters ?? registryCompatibilityAdapters,
+          )
+        : undefined;
     const environment =
       options.environment ?? createProcessInstallerEnvironment();
     const resolveExecutable =
@@ -96,7 +103,44 @@ export async function runInteractiveSession(
         nodeExecutable: process.execPath,
         projectDirectory: command.projectDirectory,
       });
+      const dependencies: MutationCoordinatorDependencies = {
+        adapters: configurationTargetAdapters,
+        currentUserId: process.getuid?.() ?? -1,
+        environment,
+        fileSystem: transactionFileSystem,
+        lock: {
+          clock: {
+            monotonicNow: () => performance.now(),
+            now: () => Date.now(),
+            wait: (milliseconds) =>
+              new Promise((resolveWait) =>
+                setTimeout(resolveWait, milliseconds),
+              ),
+          },
+          processId: process.pid,
+          randomBytes: (length) => randomBytes(length),
+        },
+        now: () => new Date().toISOString(),
+      };
       return await runInstallSession({
+        dependencies,
+        descriptor: source.descriptor,
+        prompter,
+        resolveExecutable,
+        snapshot,
+      });
+    }
+    if (
+      (command.kind === "status" ||
+        command.kind === "enable" ||
+        command.kind === "disable" ||
+        command.kind === "remove") &&
+      registry !== undefined
+    ) {
+      const transactionFileSystem =
+        options.transactionFileSystem ?? nodeFileSystem;
+      return await runManagementSession({
+        action: command.kind,
         dependencies: {
           adapters: configurationTargetAdapters,
           currentUserId: process.getuid?.() ?? -1,
@@ -116,8 +160,8 @@ export async function runInteractiveSession(
           },
           now: () => new Date().toISOString(),
         },
-        descriptor: source.descriptor,
         prompter,
+        registry,
         resolveExecutable,
         snapshot,
       });

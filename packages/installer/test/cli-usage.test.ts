@@ -8,6 +8,10 @@ import { runInstallerCli } from "../src/run-installer-cli.js";
 const helpText = `Usage:
   invokta-installer
   invokta-installer install --engine <project-directory>
+  invokta-installer status
+  invokta-installer enable
+  invokta-installer disable
+  invokta-installer remove
   invokta-installer --help
   invokta-installer --version
 `;
@@ -198,6 +202,23 @@ describe("runInstallerCli", () => {
     expect(output.stdout).toEqual([]);
     expect(output.stderr).toEqual([]);
   });
+
+  it.each(["status", "enable", "disable", "remove"] as const)(
+    "parses the %s lifecycle command",
+    async (kind) => {
+      const output = createIo();
+      const loadInteractiveSession = vi.fn(async () => 0 as const);
+
+      const result = await runInstallerCli({
+        argv: [kind],
+        io: output.io,
+        loadInteractiveSession,
+      });
+
+      expect(result).toBe(0);
+      expect(loadInteractiveSession).toHaveBeenCalledWith({ kind });
+    },
+  );
 
   it("maps a stable operational failure to exit code 1", async () => {
     const output = createIo();

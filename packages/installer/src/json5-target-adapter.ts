@@ -1,9 +1,9 @@
 import {
-  parse,
   type ArrayNode,
   type DocumentNode,
   type MemberNode,
   type ObjectNode,
+  parse,
   type Token,
   type ValueNode,
 } from "@humanwhocodes/momoa";
@@ -14,25 +14,25 @@ import {
   assertPostImageDefinition,
   assertServerName,
   assertTargetInspectionConsistency,
+  type DecodedTargetSource,
   decodeTargetSource,
   encodeTargetPostImage,
   finalizeInspectedMcpDefinition,
   freezeDefinition,
   frozenTargetInspection,
+  type InspectedJsonValue,
   inspectedJsonArray,
   inspectedJsonRecord,
   inspectedJsonScalar,
   inspectionPass,
   parsePass,
   patchPass,
-  targetInspectionStateFor,
-  type DecodedTargetSource,
   type TargetAdapter,
   type TargetAdapterCounters,
   type TargetConfigInspection,
   type TargetPatch,
   type TargetPatchRequest,
-  type InspectedJsonValue,
+  targetInspectionStateFor,
   unsupportedDefinition,
 } from "./target-adapter.js";
 
@@ -42,6 +42,7 @@ interface Json5InspectionState {
   readonly root: ObjectNode | undefined;
   readonly mcp: ObjectNode | undefined;
   readonly servers: ObjectNode | undefined;
+  readonly serverMember: MemberNode | undefined;
   readonly server: ObjectNode | undefined;
   readonly enabled: ValueNode | undefined;
   readonly members: ReadonlyMap<ObjectNode, ReadonlyMap<string, MemberNode>>;
@@ -272,6 +273,7 @@ function parseAndInspect(
         root: undefined,
         mcp: undefined,
         servers: undefined,
+        serverMember: undefined,
         server: undefined,
         enabled: undefined,
         members: new Map(),
@@ -302,7 +304,8 @@ function parseAndInspect(
   };
   const mcp = objectNode(objectValue(state, root, "mcp"));
   const servers = objectNode(objectValue(state, mcp, "servers"));
-  const server = objectNode(objectValue(state, servers, serverName));
+  const serverMember = objectMember(state, servers, serverName);
+  const server = objectNode(serverMember?.value);
 
   const inspectedServer =
     server === undefined ? undefined : astInspection.values.get(server);
@@ -328,6 +331,7 @@ function parseAndInspect(
       root,
       mcp,
       servers,
+      serverMember,
       server,
       enabled,
       members: astInspection.members,
@@ -403,6 +407,34 @@ function replaceRange(
   return `${text.slice(0, start)}${replacement}${text.slice(end)}`;
 }
 
+function removeMember(
+  text: string,
+  state: Json5InspectionState,
+  object: ObjectNode,
+  member: MemberNode,
+): string {
+  const index = object.members.indexOf(member);
+  if (index < 0) invalid();
+  const [memberStart, memberEnd] = range(member);
+  if (object.members.length === 1) {
+    return `${text.slice(0, memberStart)}${text.slice(memberEnd)}`;
+  }
+  if (index < object.members.length - 1) {
+    const [nextStart] = range(object.members[index + 1] as MemberNode);
+    return `${text.slice(0, memberStart)}${text.slice(nextStart)}`;
+  }
+  const previous = object.members[index - 1] as MemberNode;
+  const [, previousEnd] = range(previous);
+  const comma = state.tokens.find((token) => {
+    if (token.type !== "Comma") return false;
+    const [start, end] = range(token);
+    return start >= previousEnd && end <= memberStart;
+  });
+  if (comma === undefined) invalid();
+  const [commaStart] = range(comma);
+  return `${text.slice(0, commaStart)}${text.slice(memberEnd)}`;
+}
+
 function jsonConfigDefinition(
   definition: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> {
@@ -456,6 +488,14 @@ function constructPatch(
   if (request.action === "install") {
     if (request.inspection.currentServer.kind === "present") {
       throw new InstallerError("CONFIG_CONFLICT");
+    }
+  } else if (request.action === "remove") {
+    if (
+      request.inspection.currentServer.kind !== "present" ||
+      state.servers === undefined ||
+      state.serverMember === undefined
+    ) {
+      invalid();
     }
   } else {
     if (
@@ -516,6 +556,16 @@ function constructPatch(
         source.newline,
       );
     }
+  } else if (request.action === "remove") {
+    if (state.servers === undefined || state.serverMember === undefined) {
+      invalid();
+    }
+    postText = removeMember(
+      source.text,
+      state,
+      state.servers,
+      state.serverMember,
+    );
   } else {
     const desired = request.action === "enable";
     postText =

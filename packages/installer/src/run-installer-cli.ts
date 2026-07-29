@@ -7,7 +7,8 @@ export type InstallerExitCode = 0 | 1 | 2 | 130;
 
 export type InstallerCommand =
   | { readonly kind: "inventory" }
-  | { readonly kind: "install-engine"; readonly projectDirectory: string };
+  | { readonly kind: "install-engine"; readonly projectDirectory: string }
+  | { readonly kind: "disable" | "enable" | "remove" | "status" };
 
 export interface InstallerCliIo {
   readonly inputIsTTY: () => boolean;
@@ -28,6 +29,10 @@ export interface RunInstallerCliOptions {
 const helpText = `Usage:
   invokta-installer
   invokta-installer install --engine <project-directory>
+  invokta-installer status
+  invokta-installer enable
+  invokta-installer disable
+  invokta-installer remove
   invokta-installer --help
   invokta-installer --version
 `;
@@ -68,6 +73,15 @@ function parseCommand(argv: readonly string[]): InstallerCommand | undefined {
       kind: "install-engine",
       projectDirectory: argv[2] as string,
     });
+  }
+  if (
+    argv.length === 1 &&
+    (argv[0] === "status" ||
+      argv[0] === "enable" ||
+      argv[0] === "disable" ||
+      argv[0] === "remove")
+  ) {
+    return Object.freeze({ kind: argv[0] });
   }
   return undefined;
 }

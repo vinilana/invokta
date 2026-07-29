@@ -1,7 +1,7 @@
 import { InstallerError } from "./installer-error.js";
 import {
-  installationKey,
   type InstallerState,
+  installationKey,
   isInstallerTimestampAfter,
   type ManagedInstallation,
   type StateTargetContracts,
@@ -135,6 +135,7 @@ function createInstallation(
     ),
     targetContractVersion: planning.target.targetContractVersion,
     toggleStrategy: planning.target.toggleStrategy,
+    launchDescriptor: planning.descriptor.server,
     adopted: plan.action === "adopt",
     installedAt: occurredAt,
     updatedAt: occurredAt,
@@ -155,6 +156,9 @@ function updatedInstallation(
     definitionSha256: installation.definitionSha256,
     targetContractVersion: installation.targetContractVersion,
     toggleStrategy: installation.toggleStrategy,
+    ...(installation.launchDescriptor === undefined
+      ? {}
+      : { launchDescriptor: installation.launchDescriptor }),
     ...(suspendedDescriptor === undefined ? {} : { suspendedDescriptor }),
     adopted: installation.adopted,
     installedAt: installation.installedAt,
