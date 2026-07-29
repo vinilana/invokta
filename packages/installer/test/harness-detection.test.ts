@@ -31,6 +31,12 @@ const expectedSurfaces = [
     targetId: "claude-code",
   },
   {
+    id: "claude-desktop",
+    displayName: "Claude Desktop",
+    executableCandidates: ["Claude"],
+    targetId: "claude-desktop",
+  },
+  {
     id: "codex",
     displayName: "Codex",
     executableCandidates: ["codex"],
@@ -72,6 +78,12 @@ const expectedSurfaces = [
     executableCandidates: ["opencode2"],
     targetId: "opencode-v2",
   },
+  {
+    id: "vscode",
+    displayName: "Visual Studio Code",
+    executableCandidates: ["code"],
+    targetId: "vscode",
+  },
 ] as const;
 
 function absentConfigProbes(
@@ -108,19 +120,19 @@ function executable(
 }
 
 describe("first-release harness catalog", () => {
-  it("defines the exact ten surfaces in deterministic surface-ID order", () => {
+  it("defines the exact twelve surfaces in deterministic surface-ID order", () => {
     expect(harnessSurfaceCatalog).toEqual(expectedSurfaces);
-    expect(harnessSurfaceCatalog).toHaveLength(10);
+    expect(harnessSurfaceCatalog).toHaveLength(12);
     expect(harnessSurfaceCatalog.map(({ id }) => id)).toEqual(
       [...harnessSurfaceCatalog.map(({ id }) => id)].sort(),
     );
   });
 
-  it("defines exactly one catalog record and reload hint for all nine targets", () => {
+  it("defines exactly one catalog record and reload hint for all eleven targets", () => {
     expect(configurationTargetCatalog.map(({ id }) => id)).toEqual(
       configurationTargetIds,
     );
-    expect(configurationTargetCatalog).toHaveLength(9);
+    expect(configurationTargetCatalog).toHaveLength(11);
     expect(
       configurationTargetCatalog.every(
         ({ displayName, reloadHint }) =>
@@ -131,7 +143,7 @@ describe("first-release harness catalog", () => {
 });
 
 describe("harness detection snapshot", () => {
-  it("reports all ten executable surfaces without executing them and coalesces them into nine targets", async () => {
+  it("reports all twelve executable surfaces without executing them and coalesces them into eleven targets", async () => {
     const candidateCalls: string[] = [];
     const probeCalls: Array<{ targetId: string; homeDirectory: string }> = [];
 
@@ -146,7 +158,7 @@ describe("harness detection snapshot", () => {
       ),
     });
 
-    expect(snapshot.surfaces).toHaveLength(10);
+    expect(snapshot.surfaces).toHaveLength(12);
     expect(snapshot.surfaces.map(({ id, evidence }) => [id, evidence])).toEqual(
       expectedSurfaces.map(({ id }) => [id, "installed"]),
     );
@@ -161,7 +173,7 @@ describe("harness detection snapshot", () => {
         homeDirectory: "/users/tester",
       })),
     );
-    expect(snapshot.targets).toHaveLength(9);
+    expect(snapshot.targets).toHaveLength(11);
     expect(snapshot.targets.map(({ id }) => id)).toEqual(
       configurationTargetIds,
     );

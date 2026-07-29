@@ -127,7 +127,7 @@ describe("interactive detection session", () => {
     expect(spinner.error).not.toHaveBeenCalled();
   });
 
-  it("uses the production config probes to inventory all nine config-only targets", async () => {
+  it("uses the production config probes to inventory all eleven config-only targets", async () => {
     const homeDirectory = mkdtempSync(
       join(tmpdir(), "invokta-interactive-configs-"),
     );
@@ -135,6 +135,7 @@ describe("interactive detection session", () => {
     for (const relativePath of [
       ".gemini/config/mcp_config.json",
       ".claude.json",
+      "Library/Application Support/Claude/claude_desktop_config.json",
       ".codex/config.toml",
       ".cursor/mcp.json",
       ".grok/config.toml",
@@ -142,6 +143,7 @@ describe("interactive detection session", () => {
       ".kimi-code/mcp.json",
       ".openclaw/openclaw.json",
       ".config/opencode/opencode.json",
+      "Library/Application Support/Code/User/mcp.json",
     ]) {
       const path = join(homeDirectory, relativePath);
       mkdirSync(dirname(path), { recursive: true });
@@ -175,6 +177,7 @@ describe("interactive detection session", () => {
     const exitCode = await runInteractiveSession({
       prompter,
       environment: { get: () => undefined },
+      platform: "darwin",
       resolveHomeDirectory: () => homeDirectory,
       resolveExecutable: async () => undefined,
     });

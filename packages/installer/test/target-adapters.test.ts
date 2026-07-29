@@ -149,6 +149,13 @@ describe("first native-toggle target adapters", () => {
         parentPath: ["mcpServers"],
         toggleStrategy: "detached",
       },
+      "claude-desktop": {
+        targetId: "claude-desktop",
+        targetContractVersion: 1,
+        format: "json",
+        parentPath: ["mcpServers"],
+        toggleStrategy: "detached",
+      },
       codex: {
         targetId: "codex",
         targetContractVersion: 1,
@@ -197,6 +204,13 @@ describe("first native-toggle target adapters", () => {
         format: "jsonc",
         parentPath: ["mcp", "servers"],
         toggleStrategy: "native-disabled",
+      },
+      vscode: {
+        targetId: "vscode",
+        targetContractVersion: 1,
+        format: "jsonc",
+        parentPath: ["servers"],
+        toggleStrategy: "detached",
       },
     });
     expect(Object.isFrozen(configurationTargetAdapters.codex.metadata)).toBe(

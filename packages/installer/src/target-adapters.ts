@@ -667,9 +667,17 @@ function definitionToSuspendedDescriptor(
             : targetId === "antigravity" || targetId === "kimi-code"
               ? undefined
               : "env";
-        const typeField = targetId === "claude-code" ? "type" : undefined;
+        const typeField =
+          targetId === "claude-code" ||
+          targetId === "claude-desktop" ||
+          targetId === "vscode"
+            ? "type"
+            : undefined;
         const toggleField =
-          targetId === "claude-code" || targetId === "cursor"
+          targetId === "claude-code" ||
+          targetId === "claude-desktop" ||
+          targetId === "cursor" ||
+          targetId === "vscode"
             ? undefined
             : targetId === "antigravity"
               ? "disabled"
@@ -703,7 +711,7 @@ function definitionToSuspendedDescriptor(
         } else {
           forwardEnv = inverseEnvironmentObject(
             inverseOwn(record, environmentField),
-            targetId === "cursor" ? "cursor" : "plain",
+            targetId === "cursor" || targetId === "vscode" ? "cursor" : "plain",
           );
         }
         if (toggleField !== undefined) {
@@ -777,12 +785,18 @@ function definitionToSuspendedDescriptor(
       } else {
         const headersField = "headers";
         const typeField =
-          targetId === "claude-code" || targetId === "opencode-v2"
+          targetId === "claude-code" ||
+          targetId === "claude-desktop" ||
+          targetId === "vscode" ||
+          targetId === "opencode-v2"
             ? "type"
             : undefined;
         const oauthField = targetId === "opencode-v2" ? "oauth" : undefined;
         const toggleField =
-          targetId === "claude-code" || targetId === "cursor"
+          targetId === "claude-code" ||
+          targetId === "claude-desktop" ||
+          targetId === "cursor" ||
+          targetId === "vscode"
             ? undefined
             : targetId === "opencode-v2"
               ? "disabled"
@@ -811,7 +825,7 @@ function definitionToSuspendedDescriptor(
         url = inverseString(record, "url");
         const headers = inversePlaceholderHeaders(
           inverseOwn(record, headersField),
-          targetId === "cursor"
+          targetId === "cursor" || targetId === "vscode"
             ? "cursor"
             : targetId === "opencode-v2"
               ? "opencode"
@@ -1055,6 +1069,37 @@ function cursorDefinition(
   );
 }
 
+function vscodeDefinition(
+  descriptor:
+    | CapabilityInstallDescriptor
+    | { readonly server: SuspendedDescriptor },
+): Readonly<Record<string, unknown>> {
+  const transport = descriptor.server.transport;
+  if (transport.type === "stdio") {
+    return jsonDefinition(
+      {
+        transport: "stdio",
+        type: "stdio",
+        command: transport.command,
+        args: [...transport.args],
+        env: Object.fromEntries(
+          transport.forwardEnv.map((name) => [name, `\${env:${name}}`]),
+        ),
+      },
+      "detached",
+    );
+  }
+  return jsonDefinition(
+    {
+      transport: "streamable-http",
+      type: "http",
+      url: transport.url,
+      headers: cursorPlaceholderHeaders(descriptor),
+    },
+    "detached",
+  );
+}
+
 function antigravityCompatibility(descriptor: CapabilityInstallDescriptor) {
   const transport = descriptor.server.transport;
   if (transport.type === "stdio") {
@@ -1283,6 +1328,26 @@ const claudeCode = createJsonTargetAdapter({
     definitionToSuspendedDescriptor("claude-code", serverName, definition),
 });
 
+const claudeDesktop = createJsonTargetAdapter({
+  targetId: "claude-desktop",
+  dialect: "claude",
+  toggleStrategy: "detached",
+  compatibility: portableCompatibility,
+  descriptorToDefinition: claudeDefinition,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("claude-desktop", serverName, definition),
+});
+
+const vscode = createJsonTargetAdapter({
+  targetId: "vscode",
+  dialect: "vscode",
+  toggleStrategy: "detached",
+  compatibility: portableCompatibility,
+  descriptorToDefinition: vscodeDefinition,
+  definitionToSuspendedDescriptor: (serverName, definition) =>
+    definitionToSuspendedDescriptor("vscode", serverName, definition),
+});
+
 const cursor = createJsonTargetAdapter({
   targetId: "cursor",
   dialect: "cursor",
@@ -1330,6 +1395,7 @@ const grokBuild = createTomlTargetAdapter({
 export const configurationTargetAdapters = Object.freeze({
   antigravity,
   "claude-code": claudeCode,
+  "claude-desktop": claudeDesktop,
   codex,
   cursor,
   "grok-build": grokBuild,
@@ -1337,12 +1403,14 @@ export const configurationTargetAdapters = Object.freeze({
   "kimi-code": kimiCode,
   openclaw,
   "opencode-v2": openCode,
+  vscode,
 } as const);
 
 export const registryCompatibilityAdapters: RegistryCompatibilityAdapters =
   Object.freeze({
     antigravity: antigravity.compatibility,
     "claude-code": claudeCode.compatibility,
+    "claude-desktop": claudeDesktop.compatibility,
     codex: codex.compatibility,
     cursor: cursor.compatibility,
     "grok-build": grokBuild.compatibility,
@@ -1350,6 +1418,7 @@ export const registryCompatibilityAdapters: RegistryCompatibilityAdapters =
     "kimi-code": kimiCode.compatibility,
     openclaw: openclaw.compatibility,
     "opencode-v2": openCode.compatibility,
+    vscode: vscode.compatibility,
   } satisfies Record<
     ConfigurationTargetId,
     RegistryCompatibilityAdapters[ConfigurationTargetId]

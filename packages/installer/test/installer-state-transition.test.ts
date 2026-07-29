@@ -482,8 +482,8 @@ describe("deterministic installer state serialization", () => {
     expect(Object.isFrozen(reverse.installations)).toBe(false);
   });
 
-  it("accepts exactly 9,000 records and 16,777,216 bytes, then rejects either successor", () => {
-    const base = boundaryState(9_000);
+  it("accepts exactly 11,000 records and 16,777,216 bytes, then rejects either successor", () => {
+    const base = boundaryState(11_000);
     const baseBytes = serializeInstallerState(base, targetContracts);
     const exact = withVersionPadding(
       base,
@@ -491,7 +491,7 @@ describe("deterministic installer state serialization", () => {
     );
     const exactBytes = serializeInstallerState(exact, targetContracts);
 
-    expect(Object.keys(exact.installations)).toHaveLength(9_000);
+    expect(Object.keys(exact.installations)).toHaveLength(11_000);
     expect(exactBytes.byteLength).toBe(stateByteLimit);
 
     const firstEntry = Object.entries(exact.installations)[0];
@@ -513,7 +513,7 @@ describe("deterministic installer state serialization", () => {
       ),
     );
     expectStateInvalid(() =>
-      serializeInstallerState(boundaryState(9_001), targetContracts),
+      serializeInstallerState(boundaryState(11_001), targetContracts),
     );
   }, 60_000);
 });

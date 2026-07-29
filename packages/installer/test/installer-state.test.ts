@@ -566,14 +566,14 @@ describe("installer state validation", () => {
     },
   );
 
-  it("accepts exactly 9,000 records and rejects record 9,001", () => {
-    const records = Array.from({ length: 9_001 }, (_, index) =>
+  it("accepts exactly 11,000 records and rejects record 11,001", () => {
+    const records = Array.from({ length: 11_001 }, (_, index) =>
       record({ entryId: `historical-${index}` }),
     );
 
     expect(
       validateInstallerStateBytes(
-        stateBytes(records.slice(0, 9_000)),
+        stateBytes(records.slice(0, 11_000)),
         targetContracts,
       ).ok,
     ).toBe(true);

@@ -52,6 +52,7 @@ export interface RunInteractiveSessionOptions {
   readonly resolveExecutable?: ExecutableResolver;
   readonly configEvidenceProbes?: TargetConfigEvidenceProbes;
   readonly environment?: InstallerEnvironment;
+  readonly platform?: NodeJS.Platform;
 }
 
 export async function runInteractiveSession(
@@ -89,6 +90,9 @@ export async function runInteractiveSession(
         createNodeTargetConfigEvidenceProbes({
           environment,
           fileSystem,
+          ...(options.platform === undefined
+            ? {}
+            : { platform: options.platform }),
         }),
     });
     progress.stop("Harness detection complete");

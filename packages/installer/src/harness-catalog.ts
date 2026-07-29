@@ -5,13 +5,15 @@ export interface HarnessSurfaceDefinition {
     | "antigravity-cli"
     | "antigravity-ide"
     | "claude-code"
+    | "claude-desktop"
     | "codex"
     | "cursor"
     | "grok-build"
     | "hermes"
     | "kimi-code"
     | "openclaw"
-    | "opencode-v2";
+    | "opencode-v2"
+    | "vscode";
   readonly displayName: string;
   readonly executableCandidates: readonly string[];
   readonly targetId: ConfigurationTargetId;
@@ -58,6 +60,12 @@ export const harnessSurfaceCatalog = Object.freeze([
     targetId: "claude-code",
   }),
   surface({
+    id: "claude-desktop",
+    displayName: "Claude Desktop",
+    executableCandidates: ["Claude"],
+    targetId: "claude-desktop",
+  }),
+  surface({
     id: "codex",
     displayName: "Codex",
     executableCandidates: ["codex"],
@@ -99,6 +107,12 @@ export const harnessSurfaceCatalog = Object.freeze([
     executableCandidates: ["opencode2"],
     targetId: "opencode-v2",
   }),
+  surface({
+    id: "vscode",
+    displayName: "Visual Studio Code",
+    executableCandidates: ["code"],
+    targetId: "vscode",
+  }),
 ] as const satisfies readonly HarnessSurfaceDefinition[]);
 
 export type HarnessSurfaceId = (typeof harnessSurfaceCatalog)[number]["id"];
@@ -114,6 +128,11 @@ export const configurationTargetCatalog = Object.freeze([
     id: "claude-code",
     displayName: "Claude Code",
     reloadHint: "Start a new Claude Code session and inspect with /mcp.",
+  }),
+  target({
+    id: "claude-desktop",
+    displayName: "Claude Desktop",
+    reloadHint: "Restart Claude Desktop, then inspect its MCP integrations.",
   }),
   target({
     id: "codex",
@@ -150,5 +169,10 @@ export const configurationTargetCatalog = Object.freeze([
     id: "opencode-v2",
     displayName: "OpenCode v2",
     reloadHint: "Start a new OpenCode v2 session.",
+  }),
+  target({
+    id: "vscode",
+    displayName: "Visual Studio Code",
+    reloadHint: "Run MCP: List Servers and restart the configured server.",
   }),
 ] as const satisfies readonly ConfigurationTargetDefinition[]);

@@ -56,6 +56,8 @@ function fileSystemWithInspection(
 const defaultRelativePaths = {
   antigravity: ".gemini/config/mcp_config.json",
   "claude-code": ".claude.json",
+  "claude-desktop":
+    "Library/Application Support/Claude/claude_desktop_config.json",
   codex: ".codex/config.toml",
   cursor: ".cursor/mcp.json",
   "grok-build": ".grok/config.toml",
@@ -63,6 +65,7 @@ const defaultRelativePaths = {
   "kimi-code": ".kimi-code/mcp.json",
   openclaw: ".openclaw/openclaw.json",
   "opencode-v2": ".config/opencode/opencode.json",
+  vscode: "Library/Application Support/Code/User/mcp.json",
 } as const;
 
 describe("Node target configuration evidence probes", () => {
@@ -250,7 +253,7 @@ describe("Node target configuration evidence probes", () => {
     });
   });
 
-  it("reports all nine documented default user configs as present", async () => {
+  it("reports all eleven documented macOS user configs as present", async () => {
     const homeDirectory = temporaryHome();
     for (const relativePath of Object.values(defaultRelativePaths)) {
       createConfig(join(homeDirectory, relativePath));
@@ -258,6 +261,7 @@ describe("Node target configuration evidence probes", () => {
     const probes = createNodeTargetConfigEvidenceProbes({
       environment: environment(),
       fileSystem: createNodeFileSystem(),
+      platform: "darwin",
     });
 
     for (const targetId of configurationTargetIds) {
@@ -270,11 +274,12 @@ describe("Node target configuration evidence probes", () => {
     }
   });
 
-  it("reports the exact creation path for all nine absent default user configs", async () => {
+  it("reports the exact creation path for all eleven absent macOS user configs", async () => {
     const homeDirectory = temporaryHome();
     const probes = createNodeTargetConfigEvidenceProbes({
       environment: environment(),
       fileSystem: createNodeFileSystem(),
+      platform: "darwin",
     });
 
     for (const targetId of configurationTargetIds) {
@@ -284,6 +289,47 @@ describe("Node target configuration evidence probes", () => {
         kind: "absent",
         path: join(homeDirectory, defaultRelativePaths[targetId]),
       });
+    }
+  });
+
+  it("supports the VS Code Linux user config and blocks Claude Desktop", async () => {
+    const homeDirectory = temporaryHome();
+    const vscodePath = join(homeDirectory, ".config/Code/User/mcp.json");
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment(),
+      fileSystem: createNodeFileSystem(),
+      platform: "linux",
+    });
+
+    await expect(
+      probes.vscode({ homeDirectory, targetId: "vscode" }),
+    ).resolves.toEqual({ kind: "absent", path: vscodePath });
+    await expect(
+      probes["claude-desktop"]({
+        homeDirectory,
+        targetId: "claude-desktop",
+      }),
+    ).resolves.toEqual({ kind: "blocked", code: "TARGET_UNSUPPORTED" });
+
+    createConfig(vscodePath);
+
+    await expect(
+      probes.vscode({ homeDirectory, targetId: "vscode" }),
+    ).resolves.toEqual({ kind: "present", path: vscodePath });
+  });
+
+  it("blocks unsupported Windows mutations for VS Code and Claude Desktop", async () => {
+    const homeDirectory = temporaryHome();
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment(),
+      fileSystem: createNodeFileSystem(),
+      platform: "win32",
+    });
+
+    for (const targetId of ["claude-desktop", "vscode"] as const) {
+      await expect(
+        probes[targetId]({ homeDirectory, targetId }),
+      ).resolves.toEqual({ kind: "blocked", code: "TARGET_UNSUPPORTED" });
     }
   });
 

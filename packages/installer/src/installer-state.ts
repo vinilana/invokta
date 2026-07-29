@@ -109,7 +109,7 @@ export interface LoadedInstallerState {
 type JsonRecord = Record<string, unknown>;
 
 const stateByteLimit = 16_777_216;
-const installationLimit = 9_000;
+const installationLimit = 11_000;
 const stringLimit = 4_096;
 const idPattern = /^[a-z][a-z0-9-]{0,127}$/u;
 const serverNamePattern = /^[a-z][a-z0-9_-]{0,63}$/u;
