@@ -27,6 +27,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)
 - [`support-harness`: private MCP consumer](../examples/support-harness/)
 - [`crawl-engine`: outbound provider integration with Firecrawl](../examples/crawl-engine/)
+- [`observability-engine`: Sentry, Datadog, and New Relic incident context](../examples/observability-engine/)
 - [`spec-engine`: spec-driven development workflow as domain rules](../examples/spec-engine/)
 - [`community-capabilities`: atomic and library capability publication fixture](../examples/community-capabilities/)
 - [`composed-engine`: local, atomic, and library capability composition](../examples/composed-engine/)
