@@ -27,6 +27,7 @@ import {
   loadBundledRegistry,
   type RegistryCompatibilityAdapters,
 } from "./registry.js";
+import { createRemoteInstallDescriptor } from "./remote-install-source.js";
 import type {
   InstallerCommand,
   InstallerExitCode,
@@ -94,15 +95,20 @@ export async function runInteractiveSession(
     if (command.kind === "inventory") {
       return await runReadOnlyInventory(snapshot, prompter);
     }
-    if (command.kind === "install-engine") {
+    if (command.kind === "install-engine" || command.kind === "install-http") {
       const transactionFileSystem =
         options.transactionFileSystem ?? nodeFileSystem;
-      const source = await loadEngineInstallManifest({
-        currentUserId: process.getuid?.() ?? -1,
-        fileSystem: transactionFileSystem,
-        nodeExecutable: process.execPath,
-        projectDirectory: command.projectDirectory,
-      });
+      const descriptor =
+        command.kind === "install-engine"
+          ? (
+              await loadEngineInstallManifest({
+                currentUserId: process.getuid?.() ?? -1,
+                fileSystem: transactionFileSystem,
+                nodeExecutable: process.execPath,
+                projectDirectory: command.projectDirectory,
+              })
+            ).descriptor
+          : createRemoteInstallDescriptor(command);
       const dependencies: MutationCoordinatorDependencies = {
         adapters: configurationTargetAdapters,
         currentUserId: process.getuid?.() ?? -1,
@@ -124,7 +130,7 @@ export async function runInteractiveSession(
       };
       return await runInstallSession({
         dependencies,
-        descriptor: source.descriptor,
+        descriptor,
         prompter,
         resolveExecutable,
         snapshot,

@@ -8,6 +8,7 @@ import { runInstallerCli } from "../src/run-installer-cli.js";
 const helpText = `Usage:
   invokta-installer
   invokta-installer install --engine <project-directory>
+  invokta-installer install --http <server-name> <url> [--bearer-token-env <NAME>] [--header-env <HEADER=NAME>]...
   invokta-installer status
   invokta-installer enable
   invokta-installer disable
@@ -201,6 +202,37 @@ describe("runInstallerCli", () => {
     });
     expect(output.stdout).toEqual([]);
     expect(output.stderr).toEqual([]);
+  });
+
+  it("parses a remote HTTP installation with environment-only credentials", async () => {
+    const output = createIo();
+    const loadInteractiveSession = vi.fn(async () => 0 as const);
+
+    const result = await runInstallerCli({
+      argv: [
+        "install",
+        "--http",
+        "support-api",
+        "https://support.example.com/mcp",
+        "--bearer-token-env",
+        "SUPPORT_TOKEN",
+        "--header-env",
+        "X-Tenant=SUPPORT_TENANT",
+        "--header-env",
+        "X-Key=SUPPORT_KEY",
+      ],
+      io: output.io,
+      loadInteractiveSession,
+    });
+
+    expect(result).toBe(0);
+    expect(loadInteractiveSession).toHaveBeenCalledWith({
+      kind: "install-http",
+      serverName: "support-api",
+      url: "https://support.example.com/mcp",
+      bearerTokenEnvironment: "SUPPORT_TOKEN",
+      headerEnvironment: ["X-Tenant=SUPPORT_TENANT", "X-Key=SUPPORT_KEY"],
+    });
   });
 
   it.each(["status", "enable", "disable", "remove"] as const)(

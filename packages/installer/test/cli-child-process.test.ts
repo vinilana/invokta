@@ -72,6 +72,7 @@ describe("invokta-installer executable", () => {
     expect(result.stdout).toBe(`Usage:
   invokta-installer
   invokta-installer install --engine <project-directory>
+  invokta-installer install --http <server-name> <url> [--bearer-token-env <NAME>] [--header-env <HEADER=NAME>]...
   invokta-installer status
   invokta-installer enable
   invokta-installer disable

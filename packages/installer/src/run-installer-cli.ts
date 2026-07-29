@@ -8,6 +8,13 @@ export type InstallerExitCode = 0 | 1 | 2 | 130;
 export type InstallerCommand =
   | { readonly kind: "inventory" }
   | { readonly kind: "install-engine"; readonly projectDirectory: string }
+  | {
+      readonly kind: "install-http";
+      readonly serverName: string;
+      readonly url: string;
+      readonly bearerTokenEnvironment?: string;
+      readonly headerEnvironment: readonly string[];
+    }
   | { readonly kind: "disable" | "enable" | "remove" | "status" };
 
 export interface InstallerCliIo {
@@ -29,6 +36,7 @@ export interface RunInstallerCliOptions {
 const helpText = `Usage:
   invokta-installer
   invokta-installer install --engine <project-directory>
+  invokta-installer install --http <server-name> <url> [--bearer-token-env <NAME>] [--header-env <HEADER=NAME>]...
   invokta-installer status
   invokta-installer enable
   invokta-installer disable
@@ -72,6 +80,35 @@ function parseCommand(argv: readonly string[]): InstallerCommand | undefined {
     return Object.freeze({
       kind: "install-engine",
       projectDirectory: argv[2] as string,
+    });
+  }
+  if (argv[0] === "install" && argv[1] === "--http") {
+    const serverName = argv[2];
+    const url = argv[3];
+    if (serverName === undefined || url === undefined) return undefined;
+    let bearerTokenEnvironment: string | undefined;
+    const headerEnvironment: string[] = [];
+    for (let index = 4; index < argv.length; index += 2) {
+      const flag = argv[index];
+      const value = argv[index + 1];
+      if (value === undefined) return undefined;
+      if (flag === "--bearer-token-env") {
+        if (bearerTokenEnvironment !== undefined) return undefined;
+        bearerTokenEnvironment = value;
+      } else if (flag === "--header-env") {
+        headerEnvironment.push(value);
+      } else {
+        return undefined;
+      }
+    }
+    return Object.freeze({
+      kind: "install-http",
+      serverName,
+      url,
+      ...(bearerTokenEnvironment === undefined
+        ? {}
+        : { bearerTokenEnvironment }),
+      headerEnvironment: Object.freeze(headerEnvironment),
     });
   }
   if (
