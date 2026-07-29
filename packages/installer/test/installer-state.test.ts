@@ -35,6 +35,7 @@ const supportedAdapters = Object.freeze(
 const toggleStrategies = {
   antigravity: "native-disabled",
   "claude-code": "detached",
+  "claude-desktop": "detached",
   codex: "native-enabled",
   cursor: "detached",
   "grok-build": "native-enabled",
@@ -42,6 +43,7 @@ const toggleStrategies = {
   "kimi-code": "native-enabled",
   openclaw: "native-enabled",
   "opencode-v2": "native-disabled",
+  vscode: "detached",
 } as const;
 
 const targetContracts = Object.freeze(
