@@ -1,10 +1,11 @@
-import { spawn } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { join } from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { HttpDeployManifest } from "../src/manifest.js";
+import { probeProtocolVersion } from "../src/probe-contract.js";
 import {
   createScaffoldFiles,
   environmentModuleTemplate,
@@ -17,9 +18,14 @@ import {
   checkScaffoldProject,
   compileScaffoldProject,
   createScaffoldProject,
+  environmentOverrideLostStatus,
   removeScaffoldProject,
+  reserveLoopbackPort,
   runCompiledModule,
+  runCompiledModuleWithReplacedEnv,
   type ScaffoldProject,
+  startCompiledModule,
+  type StartedModule,
 } from "./support/init-scaffold-project.js";
 
 const requiredName = "SCAFFOLD_TEST_TOKEN";
@@ -38,11 +44,23 @@ export const engine = createEngine({
 });
 `;
 
+// The delay is what makes a request observably in flight: the hook announces
+// that the adapter has handed it a request and then holds it, so a signal can
+// arrive while the exchange is open. Without the variable the hook answers
+// immediately, exactly as an implemented one would.
 const implementedAuthModule = `import type { McpHttpAuthOptions } from "@ai-engine/mcp";
+
+const holdMs = Number(process.env.SCAFFOLD_TEST_AUTH_HOLD_MS ?? "0");
 
 export const httpAuth: McpHttpAuthOptions = {
   mode: "required",
-  authenticate() {
+  async authenticate() {
+    if (holdMs > 0) {
+      process.stderr.write("auth-hook: holding\\n");
+      await new Promise((resolve) => {
+        setTimeout(resolve, holdMs);
+      });
+    }
     return { id: "scaffold-fixture" };
   },
 };
@@ -74,51 +92,94 @@ afterAll(() => {
   removeScaffoldProject(implemented);
 });
 
-interface RunningProcess {
-  readonly stderr: string;
-  readonly exitCode: number | null;
+const token = "fixture-token";
+
+/** The environment every started fixture needs, and nothing else. */
+function baseEnvironment(): Record<string, string> {
+  return { [requiredName]: token };
 }
 
-/** Starts the compiled composition root, waits for its announcement, then stops it. */
-async function startThenTerminate(
-  project: ScaffoldProject,
-): Promise<RunningProcess> {
-  const child = spawn(process.execPath, ["dist/mcp-http.js"], {
-    cwd: project.directory,
-    env: { PATH: process.env.PATH ?? "" },
+function start(
+  environment: Readonly<Record<string, string>>,
+): Promise<StartedModule> {
+  return startCompiledModule(implemented, "dist/mcp-http.js", {
+    ...baseEnvironment(),
+    ...environment,
   });
-  child.stderr.setEncoding("utf8");
-  let stderr = "";
+}
 
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error("The composition root did not announce.")),
-        20_000,
-      );
-      const settle = (error?: Error): void => {
-        clearTimeout(timer);
-        if (error === undefined) resolve();
-        else reject(error);
-      };
-      child.stderr.on("data", (chunk: string) => {
-        stderr += chunk;
-        if (stderr.includes("MCP endpoint:")) settle();
-      });
-      child.once("exit", () => {
-        settle(new Error(`The composition root exited: ${stderr}`));
-      });
-    });
-  } catch (error) {
-    child.kill("SIGKILL");
-    throw error;
+interface Exchange {
+  readonly outcome: "response" | "aborted";
+  /** The HTTP status, or the transport error code when the socket closed. */
+  readonly detail: string;
+}
+
+interface ExchangeOptions {
+  readonly hostHeader?: string;
+  readonly bearer?: string;
+  readonly padding?: number;
+}
+
+/**
+ * Sends one MCP `initialize` over a private connection and reports whether the
+ * endpoint answered or the connection was closed under it.
+ */
+function postInitialize(
+  port: number,
+  options: ExchangeOptions = {},
+): Promise<Exchange> {
+  const message: Record<string, unknown> = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: probeProtocolVersion,
+      capabilities: {},
+      clientInfo: { name: "scaffold-test", version: "0" },
+      ...(options.padding === undefined
+        ? {}
+        : { padding: "x".repeat(options.padding) }),
+    },
+  };
+  const body = JSON.stringify(message);
+  const headers: Record<string, string> = {
+    accept: "application/json, text/event-stream",
+    "content-type": "application/json",
+    "content-length": String(Buffer.byteLength(body)),
+    host: options.hostHeader ?? `127.0.0.1:${String(port)}`,
+  };
+  if (options.bearer !== undefined) {
+    headers.authorization = `Bearer ${options.bearer}`;
   }
 
-  const exitCode = await new Promise<number | null>((resolve) => {
-    child.once("exit", (code) => resolve(code));
-    child.kill("SIGTERM");
+  return new Promise<Exchange>((resolve) => {
+    const clientRequest = httpRequest(
+      {
+        agent: false,
+        headers,
+        host: "127.0.0.1",
+        method: "POST",
+        path: "/mcp",
+        port,
+      },
+      (response) => {
+        response.resume();
+        response.once("end", () => {
+          resolve({
+            outcome: "response",
+            detail: String(response.statusCode ?? 0),
+          });
+        });
+        response.once("error", () => {
+          resolve({ outcome: "aborted", detail: "response-error" });
+        });
+      },
+    );
+    clientRequest.once("error", (error: NodeJS.ErrnoException) => {
+      resolve({ outcome: "aborted", detail: error.code ?? error.message });
+    });
+    clientRequest.end(body);
   });
-  return { stderr, exitCode };
 }
 
 describe("the scaffolded sources", () => {
@@ -198,19 +259,281 @@ describe("the scaffolded composition root", () => {
   it("binds the port the environment file supplies and exits 0 on SIGTERM", async () => {
     writeFileSync(
       join(implemented.directory, ".env"),
-      `${requiredName}=fixture-token\nAI_ENGINE_HTTP_PORT=0\n`,
+      `${requiredName}=${token}\nAI_ENGINE_HTTP_PORT=0\n`,
       "utf8",
     );
 
-    const result = await startThenTerminate(implemented);
+    const started = await startCompiledModule(implemented, "dist/mcp-http.js");
+    started.signal("SIGTERM");
+    const exited = await started.exit();
 
-    expect(result.stderr).toMatch(
+    expect(started.stderr()).toMatch(
       /MCP endpoint: http:\/\/127\.0\.0\.1:\d+\/mcp/,
     );
-    expect(result.stderr).not.toContain("fixture-token");
-    expect(result.exitCode).toBe(0);
+    expect(started.stderr()).not.toContain(token);
+    expect(exited.code).toBe(0);
   }, 30_000);
 });
+
+/**
+ * The contract table of `AE-DEPLOY-ENV-01`, exercised by running the compiled
+ * composition root once per case. Each row proves that the named variable
+ * aborts startup rather than falling back to a default, and that the
+ * diagnostic names the variable and carries no value.
+ */
+const invalidValueCases = [
+  [
+    "AI_ENGINE_HTTP_HOST",
+    "an empty host",
+    { AI_ENGINE_HTTP_HOST: "" },
+    "AI_ENGINE_HTTP_HOST must not be empty.",
+  ],
+  [
+    "AI_ENGINE_HTTP_HOST",
+    "a non-loopback host with no allowlist",
+    { AI_ENGINE_HTTP_HOST: "10.0.0.5" },
+    "AI_ENGINE_HTTP_ALLOWED_HOSTS is required when AI_ENGINE_HTTP_HOST is not a loopback address.",
+  ],
+  [
+    "AI_ENGINE_HTTP_PORT",
+    "an empty port",
+    { AI_ENGINE_HTTP_PORT: "" },
+    "AI_ENGINE_HTTP_PORT must not be empty.",
+  ],
+  [
+    "AI_ENGINE_HTTP_PORT",
+    "a non-integer port",
+    { AI_ENGINE_HTTP_PORT: "3000.5" },
+    "AI_ENGINE_HTTP_PORT must be an integer between 0 and 65535.",
+  ],
+  [
+    "AI_ENGINE_HTTP_PORT",
+    "a port above the range",
+    { AI_ENGINE_HTTP_PORT: "70000" },
+    "AI_ENGINE_HTTP_PORT must be an integer between 0 and 65535.",
+  ],
+  [
+    "AI_ENGINE_HTTP_PORT",
+    "a negative port",
+    { AI_ENGINE_HTTP_PORT: "-1" },
+    "AI_ENGINE_HTTP_PORT must be an integer between 0 and 65535.",
+  ],
+  ["PORT", "an empty fallback port", { PORT: "" }, "PORT must not be empty."],
+  [
+    "PORT",
+    "a fallback port above the range",
+    { PORT: "70000" },
+    "PORT must be an integer between 0 and 65535.",
+  ],
+  [
+    "AI_ENGINE_HTTP_ALLOWED_HOSTS",
+    "an empty host allowlist",
+    { AI_ENGINE_HTTP_ALLOWED_HOSTS: "" },
+    "AI_ENGINE_HTTP_ALLOWED_HOSTS must not be empty.",
+  ],
+  [
+    "AI_ENGINE_HTTP_ALLOWED_HOSTS",
+    "a host allowlist of separators only",
+    { AI_ENGINE_HTTP_ALLOWED_HOSTS: " , , " },
+    "AI_ENGINE_HTTP_ALLOWED_HOSTS must list at least one entry.",
+  ],
+  [
+    "AI_ENGINE_HTTP_ALLOWED_ORIGINS",
+    "an empty origin allowlist",
+    { AI_ENGINE_HTTP_ALLOWED_ORIGINS: "" },
+    "AI_ENGINE_HTTP_ALLOWED_ORIGINS must not be empty.",
+  ],
+  [
+    "AI_ENGINE_HTTP_ALLOWED_ORIGINS",
+    "an origin allowlist of separators only",
+    { AI_ENGINE_HTTP_ALLOWED_ORIGINS: ",," },
+    "AI_ENGINE_HTTP_ALLOWED_ORIGINS must list at least one entry.",
+  ],
+  [
+    "AI_ENGINE_HTTP_MAX_BODY_BYTES",
+    "an empty body limit",
+    { AI_ENGINE_HTTP_MAX_BODY_BYTES: "" },
+    "AI_ENGINE_HTTP_MAX_BODY_BYTES must not be empty.",
+  ],
+  [
+    "AI_ENGINE_HTTP_MAX_BODY_BYTES",
+    "a zero body limit",
+    { AI_ENGINE_HTTP_MAX_BODY_BYTES: "0" },
+    "AI_ENGINE_HTTP_MAX_BODY_BYTES must be an integer between 1 and 9007199254740991.",
+  ],
+  [
+    "AI_ENGINE_HTTP_MAX_BODY_BYTES",
+    "a fractional body limit",
+    { AI_ENGINE_HTTP_MAX_BODY_BYTES: "1.5" },
+    "AI_ENGINE_HTTP_MAX_BODY_BYTES must be an integer between 1 and 9007199254740991.",
+  ],
+] as const;
+
+const nulCarryingVariables = [
+  "AI_ENGINE_HTTP_HOST",
+  "AI_ENGINE_HTTP_PORT",
+  "PORT",
+  "AI_ENGINE_HTTP_ALLOWED_HOSTS",
+  "AI_ENGINE_HTTP_ALLOWED_ORIGINS",
+  "AI_ENGINE_HTTP_MAX_BODY_BYTES",
+] as const;
+
+describe("the environment contract of the scaffolded composition root", () => {
+  beforeEach(() => {
+    // No environment file, so every case reads exactly what it declares.
+    rmSync(join(implemented.directory, ".env"), { force: true });
+  });
+
+  it.each(invalidValueCases)(
+    "aborts startup for %s given %s",
+    (variable, _label, environment, expected) => {
+      const result = runCompiledModule(implemented, "dist/mcp-http.js", {
+        ...baseEnvironment(),
+        ...environment,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe(`${expected}\n`);
+      expect(result.stderr).toContain(variable);
+      expect(result.stderr).not.toContain(token);
+    },
+  );
+
+  // A POSIX environment block is NUL-terminated, so a NUL reaches the
+  // composition root only through an environment object the harness supplies.
+  // The harness refuses to continue when the value did not survive, so this
+  // case cannot degrade into a run that never carried a NUL at all.
+  it.each(nulCarryingVariables)(
+    "aborts startup for a NUL in %s",
+    (variable) => {
+      const result = runCompiledModuleWithReplacedEnv(
+        implemented,
+        "dist/mcp-http.js",
+        { [variable]: "a\u0000b" },
+        baseEnvironment(),
+      );
+
+      expect(result.status).not.toBe(environmentOverrideLostStatus);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe(
+        `${variable} must not contain a NUL character.\n`,
+      );
+    },
+  );
+
+  it("binds the port AI_ENGINE_HTTP_PORT names when PORT is also set", async () => {
+    const fallbackPort = await reserveLoopbackPort();
+    const preferredPort = await reserveLoopbackPort();
+    const started = await start({
+      AI_ENGINE_HTTP_HOST: "localhost",
+      PORT: String(fallbackPort),
+      AI_ENGINE_HTTP_PORT: String(preferredPort),
+    });
+
+    try {
+      // The announced port is the port the listener really bound, so this is
+      // the precedence rule observed rather than the source text inspected.
+      expect(started.port).toBe(preferredPort);
+      expect(started.port).not.toBe(fallbackPort);
+      expect(started.host).toBe("localhost");
+      expect(started.stderr()).not.toContain(token);
+    } finally {
+      started.signal("SIGTERM");
+      const exited = await started.exit();
+      expect(exited.code).toBe(0);
+    }
+  }, 30_000);
+
+  it("falls back to PORT when AI_ENGINE_HTTP_PORT is absent", async () => {
+    const fallbackPort = await reserveLoopbackPort();
+    const started = await start({ PORT: String(fallbackPort) });
+
+    try {
+      expect(started.port).toBe(fallbackPort);
+    } finally {
+      started.signal("SIGTERM");
+      expect((await started.exit()).code).toBe(0);
+    }
+  }, 30_000);
+
+  it("passes the allowlist and the body limit through to the adapter", async () => {
+    const started = await start({
+      AI_ENGINE_HTTP_PORT: "0",
+      AI_ENGINE_HTTP_ALLOWED_HOSTS: "engine.example, engine.example:443",
+      AI_ENGINE_HTTP_ALLOWED_ORIGINS: "https://app.example",
+      AI_ENGINE_HTTP_MAX_BODY_BYTES: "256",
+    });
+
+    try {
+      // A Host outside the allowlist is refused, which only happens when the
+      // parsed list reached serveMcpHttp.
+      const refused = await postInitialize(started.port);
+      expect(refused).toEqual({ outcome: "response", detail: "403" });
+
+      // An allowed Host reaches the engine and is served.
+      const served = await postInitialize(started.port, {
+        hostHeader: "engine.example",
+      });
+      expect(served).toEqual({ outcome: "response", detail: "200" });
+
+      // And the declared limit is the limit the adapter enforces.
+      const oversize = await postInitialize(started.port, {
+        hostHeader: "engine.example",
+        padding: 512,
+      });
+      expect(oversize).toEqual({ outcome: "response", detail: "413" });
+    } finally {
+      started.signal("SIGTERM");
+      expect((await started.exit()).code).toBe(0);
+    }
+  }, 30_000);
+});
+
+describe.each(["SIGTERM", "SIGINT"] as const)(
+  "the scaffolded composition root on %s",
+  (signalName) => {
+    beforeEach(() => {
+      rmSync(join(implemented.directory, ".env"), { force: true });
+    });
+
+    it("aborts the request it is holding and exits 0", async () => {
+      const started = await start({
+        AI_ENGINE_HTTP_PORT: "0",
+        // Far longer than the test's own deadline: if the shutdown did not
+        // abort the exchange, this test would time out rather than pass.
+        SCAFFOLD_TEST_AUTH_HOLD_MS: "60000",
+      });
+
+      try {
+        const inFlight = postInitialize(started.port, { bearer: token });
+        await started.waitForStderr("auth-hook: holding");
+
+        started.signal(signalName);
+        const exchange = await inFlight;
+        const exited = await started.exit();
+
+        expect(exchange.outcome).toBe("aborted");
+        expect(exited.code).toBe(0);
+        expect(exited.signal).toBeNull();
+        expect(started.stderr()).not.toContain(token);
+      } finally {
+        started.kill();
+      }
+    }, 45_000);
+
+    it("exits 0 with nothing in flight", async () => {
+      const started = await start({ AI_ENGINE_HTTP_PORT: "0" });
+
+      started.signal(signalName);
+      const exited = await started.exit();
+
+      expect(exited.code).toBe(0);
+      expect(exited.signal).toBeNull();
+    }, 30_000);
+  },
+);
 
 describe("the scaffold templates", () => {
   const templates = {

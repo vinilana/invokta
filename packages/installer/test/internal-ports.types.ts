@@ -3,6 +3,7 @@ import { expectTypeOf } from "vitest";
 import type {
   InstallerFileSystem,
   InstallerPathInspection,
+  InstallerTransactionFileSystem,
 } from "../src/file-system.js";
 import type {
   ExecutableResolver,
@@ -14,12 +15,14 @@ import type {
   PromptOutcome,
 } from "../src/interactive-prompter.js";
 import type { CapabilityInstallDescriptor } from "../src/registry.js";
+import type { SuspendedDescriptor } from "../src/installer-state.js";
 import type {
   TargetAdapter,
   TargetAdapterCounters,
 } from "../src/target-adapter.js";
 
 declare const fileSystem: InstallerFileSystem;
+declare const transactionFileSystem: InstallerTransactionFileSystem;
 declare const prompter: InteractivePrompter;
 declare const resolveExecutable: ExecutableResolver;
 declare const resolveHomeDirectory: OperatingSystemHomeResolver;
@@ -33,6 +36,22 @@ expectTypeOf(
 ).toEqualTypeOf<Promise<Uint8Array>>();
 expectTypeOf(fileSystem.inspectPath("/users/tester/config.json")).toEqualTypeOf<
   Promise<InstallerPathInspection>
+>();
+expectTypeOf(
+  transactionFileSystem.openReadNoFollow("/users/tester/config.json"),
+).toMatchTypeOf<Promise<{ readAll(maxBytes: number): Promise<Uint8Array> }>>();
+expectTypeOf(
+  transactionFileSystem.createExclusiveNoFollow(
+    "/users/tester/config.json.lock",
+    0o600,
+  ),
+).toMatchTypeOf<
+  Promise<{
+    writeAll(bytes: Uint8Array): Promise<void>;
+    chmod(mode: number): Promise<void>;
+    chown(uid: number, gid: number): Promise<void>;
+    sync(): Promise<void>;
+  }>
 >();
 
 expectTypeOf(prompter.confirm("Apply changes?")).toEqualTypeOf<
@@ -69,6 +88,12 @@ expectTypeOf(
 expectTypeOf(
   targetAdapter.descriptorToDefinition(installDescriptor),
 ).toEqualTypeOf<Readonly<Record<string, unknown>>>();
+expectTypeOf(
+  targetAdapter.definitionToSuspendedDescriptor(
+    installDescriptor.server.name,
+    targetAdapter.descriptorToDefinition(installDescriptor),
+  ),
+).toEqualTypeOf<SuspendedDescriptor>();
 expectTypeOf(resolveExecutable("codex")).toEqualTypeOf<
   Promise<
     | {
@@ -91,7 +116,7 @@ expectTypeOf(
 ).toEqualTypeOf<
   Promise<
     | { readonly kind: "present"; readonly path: string }
-    | { readonly kind: "absent" }
+    | { readonly kind: "absent"; readonly path: string }
     | {
         readonly kind: "blocked";
         readonly code:
