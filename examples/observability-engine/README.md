@@ -152,9 +152,9 @@ No capability, schema, CLI command, or MCP tool changes.
 ## Verify the example
 
 ```sh
-yarn workspace @ai-engine/example-observability test
-yarn workspace @ai-engine/example-observability typecheck
-yarn workspace @ai-engine/example-observability build
+yarn workspace @invokta/example-observability test
+yarn workspace @invokta/example-observability typecheck
+yarn workspace @invokta/example-observability build
 ```
 
 Provider contract references:

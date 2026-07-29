@@ -16,7 +16,7 @@ capability with Zod 4, direct invocation, `public`/`authenticated` access, and a
 least five tests. Prove DI without a container, rejection of invalid input/output,
 and denial before `run`.
 
-### M1 — `@ai-engine/core`
+### M1 — `@invokta/core`
 
 Deliver public types, Standard Schema + Standard JSON Schema, `EngineError`,
 `ExecutionContext`, cancellation/timeout, `onEvent`, inference in `invoke`, an ESM

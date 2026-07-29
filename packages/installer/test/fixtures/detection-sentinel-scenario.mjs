@@ -6,9 +6,9 @@ import {
   createProcessInstallerEnvironment,
 } from "../../dist/target-config-evidence.js";
 
-const homeDirectory = process.env.AI_ENGINE_INSTALLER_TEST_HOME;
+const homeDirectory = process.env.INVOKTA_INSTALLER_TEST_HOME;
 if (homeDirectory === undefined) {
-  throw new Error("AI_ENGINE_INSTALLER_TEST_HOME is required.");
+  throw new Error("INVOKTA_INSTALLER_TEST_HOME is required.");
 }
 const snapshot = await detectHarnesses({
   resolveHomeDirectory: () => homeDirectory,

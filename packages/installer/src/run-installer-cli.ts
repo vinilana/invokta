@@ -20,13 +20,12 @@ export interface RunInstallerCliOptions {
 }
 
 const helpText = `Usage:
-  ai-engine-installer
-  ai-engine-installer --help
-  ai-engine-installer --version
+  invokta-installer
+  invokta-installer --help
+  invokta-installer --version
 `;
 
-const invalidUsageText =
-  'Invalid arguments. Run "ai-engine-installer --help".\n';
+const invalidUsageText = 'Invalid arguments. Run "invokta-installer --help".\n';
 
 const defaultIo: InstallerCliIo = {
   inputIsTTY: () => process.stdin.isTTY === true,

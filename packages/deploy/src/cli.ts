@@ -21,17 +21,17 @@ export interface RunDeployCliOptions {
 }
 
 const helpText = `Usage:
-  ai-engine-deploy init
-  ai-engine-deploy package
-  ai-engine-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
+  invokta-deploy init
+  invokta-deploy package
+  invokta-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
                          [--host-header HOST] [--timeout-ms N]
-  ai-engine-deploy --help
-  ai-engine-deploy --version
+  invokta-deploy --help
+  invokta-deploy --version
 `;
 
 // Nothing about a rejected argument is echoed, so a crafted argument can
 // neither forge a diagnostic line nor reach a log.
-const invalidUsageText = 'Invalid arguments. Run "ai-engine-deploy --help".\n';
+const invalidUsageText = 'Invalid arguments. Run "invokta-deploy --help".\n';
 const unexpectedFailureText = "The command could not be completed.\n";
 
 const commandNames: readonly DeployCommandName[] = ["init", "package", "probe"];
@@ -89,7 +89,7 @@ async function runSelectedCommand(
 }
 
 /**
- * Dispatches one `ai-engine-deploy` invocation and resolves with its exit
+ * Dispatches one `invokta-deploy` invocation and resolves with its exit
  * code. Nothing is written to `stdout` except the usage and version output,
  * and the process status is never set here.
  */

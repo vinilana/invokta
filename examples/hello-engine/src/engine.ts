@@ -1,4 +1,4 @@
-import { createEngine, type Principal } from "@ai-engine/core";
+import { createEngine, type Principal } from "@invokta/core";
 
 import {
   createWelcomeMessage,
@@ -12,7 +12,7 @@ export const localPrincipal: Principal = Object.freeze({
 const templateGreetingWriter: GreetingWriter = {
   async write({ name, signal }) {
     signal.throwIfAborted();
-    return `Hello, ${name}! Welcome to your first AI Engine.`;
+    return `Hello, ${name}! Welcome to your first Action Engine.`;
   },
 };
 

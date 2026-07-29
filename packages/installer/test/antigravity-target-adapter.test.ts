@@ -44,7 +44,7 @@ function stdioDescriptor(
     description: "Classify and route support tickets.",
     capabilityIds: ["support.classify-ticket"],
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "stdio",
         command: "support-engine-mcp",
@@ -62,7 +62,7 @@ function httpDescriptor(options?: {
   return {
     ...stdioDescriptor(),
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "streamable-http",
         url: "https://support.example.com/mcp",
@@ -248,7 +248,7 @@ describe("shared Antigravity JSON target adapter", () => {
       expect(text.endsWith("\n")).toBe(true);
       expect(text).not.toContain('"transport"');
       expect(JSON.parse(text)).toEqual({
-        mcpServers: { "ai-engine-support": expected },
+        mcpServers: { "invokta-support": expected },
       });
       expect(
         adapter.inspect({
@@ -267,7 +267,7 @@ describe("shared Antigravity JSON target adapter", () => {
         '  "future": {"__proto__":{"polluted":false}},',
         '  "mcpServers": {',
         '    "other": {"command":"keep","args":[]},',
-        '    "ai-engine-support": {"command":"support-engine-mcp","args":[],"future":{"nested":[1,true,null]}}',
+        '    "invokta-support": {"command":"support-engine-mcp","args":[],"future":{"nested":[1,true,null]}}',
         "  },",
         '  "tail": true',
         "}",
@@ -275,7 +275,7 @@ describe("shared Antigravity JSON target adapter", () => {
     );
     const inspection = adapter.inspect({
       source,
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     expect(inspection.currentServer).toEqual({
       kind: "present",
@@ -321,7 +321,7 @@ describe("shared Antigravity JSON target adapter", () => {
       action: "enable",
       inspection: adapter.inspect({
         source: disabled.postImage,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }),
     });
     expect(enabled.kind).toBe("changed");
@@ -333,7 +333,7 @@ describe("shared Antigravity JSON target adapter", () => {
     expect(
       adapter.inspect({
         source: enabled.postImage,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toEqual({
       kind: "present",
@@ -354,7 +354,7 @@ describe("shared Antigravity JSON target adapter", () => {
         source: encoder.encode(
           JSON.stringify({
             mcpServers: {
-              "ai-engine-support": {
+              "invokta-support": {
                 command: "support-engine-mcp",
                 args: [],
                 disabled,
@@ -362,7 +362,7 @@ describe("shared Antigravity JSON target adapter", () => {
             },
           }),
         ),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
     const enabled = inspect(false);
     const disabled = inspect(true);
@@ -410,26 +410,26 @@ describe("shared Antigravity JSON target adapter", () => {
       "[]",
       '{"mcpServers":null}',
       '{"mcpServers":[]}',
-      '{"mcpServers":{"ai-engine-support":null}}',
+      '{"mcpServers":{"invokta-support":null}}',
       "{mcpServers:{}}",
       '{"mcpServers":{},}',
       '{"mcpServers":{/* comment */}}',
       '{"mcpServers":{},"mcpServers":{}}',
       '{"mcpServers":{},"\\u006dcpServers":{}}',
       '{"unrelated":{"same":1,"same":2},"mcpServers":{}}',
-      '{"mcpServers":{"ai-engine-support":{"command":"one","command":"two"}}}',
-      '{"mcpServers":{"ai-engine-support":{"command":"x","serverUrl":"https://example.com"}}}',
-      '{"mcpServers":{"ai-engine-support":{"disabled":false}}}',
-      '{"mcpServers":{"ai-engine-support":{"command":"x","disabled":"false"}}}',
-      '{"mcpServers":{"ai-engine-support":{"command":"x","transport":"stdio"}}}',
-      '{"mcpServers":{"ai-engine-support":{"command":"x","future":"\\ud800"}}}',
+      '{"mcpServers":{"invokta-support":{"command":"one","command":"two"}}}',
+      '{"mcpServers":{"invokta-support":{"command":"x","serverUrl":"https://example.com"}}}',
+      '{"mcpServers":{"invokta-support":{"disabled":false}}}',
+      '{"mcpServers":{"invokta-support":{"command":"x","disabled":"false"}}}',
+      '{"mcpServers":{"invokta-support":{"command":"x","transport":"stdio"}}}',
+      '{"mcpServers":{"invokta-support":{"command":"x","future":"\\ud800"}}}',
     ]) {
       const counters = createTargetAdapterCounters();
       expectInstallerCode(
         () =>
           adapter.inspect({
             source: encoder.encode(source),
-            serverName: "ai-engine-support",
+            serverName: "invokta-support",
             counters,
           }),
         "HARNESS_CONFIG_INVALID",
@@ -445,7 +445,7 @@ describe("shared Antigravity JSON target adapter", () => {
       new Uint8Array([0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf, 0x7b, 0x7d]),
     ]) {
       expectInstallerCode(
-        () => adapter.inspect({ source, serverName: "ai-engine-support" }),
+        () => adapter.inspect({ source, serverName: "invokta-support" }),
         "HARNESS_CONFIG_INVALID",
       );
     }
@@ -460,7 +460,7 @@ describe("shared Antigravity JSON target adapter", () => {
     expect(
       adapter.inspect({
         source: nested(99),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toEqual({ kind: "absent" });
     const tooDeep = createTargetAdapterCounters();
@@ -468,7 +468,7 @@ describe("shared Antigravity JSON target adapter", () => {
       () =>
         adapter.inspect({
           source: nested(100),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
           counters: tooDeep,
         }),
       "HARNESS_CONFIG_INVALID",
@@ -482,7 +482,7 @@ describe("shared Antigravity JSON target adapter", () => {
     expect(
       adapter.inspect({
         source: exact,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
         counters: sourceCounters,
       }).currentServer,
     ).toEqual({ kind: "absent" });
@@ -500,7 +500,7 @@ describe("shared Antigravity JSON target adapter", () => {
       () =>
         adapter.inspect({
           source: new Uint8Array(targetConfigByteLimit + 1),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
           counters: oversizedCounters,
         }),
       "HARNESS_CONFIG_INVALID",
@@ -515,7 +515,7 @@ describe("shared Antigravity JSON target adapter", () => {
       definition,
       inspection: adapter.inspect({
         source: encoder.encode('{"mcpServers":{}}'),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
         counters,
       }),
       counters,
@@ -551,7 +551,7 @@ describe("shared Antigravity JSON target adapter", () => {
     expect(
       adapter.inspect({
         source: exactWithBom,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toEqual({ kind: "absent" });
 
@@ -562,7 +562,7 @@ describe("shared Antigravity JSON target adapter", () => {
       definition,
       inspection: adapter.inspect({
         source: baseSource,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }),
     });
     expect(basePatch.kind).toBe("changed");
@@ -582,7 +582,7 @@ describe("shared Antigravity JSON target adapter", () => {
       definition,
       inspection: adapter.inspect({
         source: exactSource,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }),
       counters: exactCounters,
     });
@@ -604,7 +604,7 @@ describe("shared Antigravity JSON target adapter", () => {
     expect(source.byteLength + growth).toBe(targetConfigByteLimit + 1);
     const inspection = adapter.inspect({
       source,
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     const counters = createTargetAdapterCounters();
     expectInstallerCode(

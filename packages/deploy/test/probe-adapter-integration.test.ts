@@ -1,5 +1,5 @@
-import { createEngine, defineCapability } from "@ai-engine/core";
-import { type McpHttpServerHandle, serveMcpHttp } from "@ai-engine/mcp";
+import { createEngine, defineCapability } from "@invokta/core";
+import { type McpHttpServerHandle, serveMcpHttp } from "@invokta/mcp";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -7,7 +7,7 @@ import { runProbe } from "../src/probe.js";
 import { createTestContext } from "./support/test-context.js";
 
 /**
- * `@ai-engine/deploy` must never depend on a runtime package, so these imports
+ * `@invokta/deploy` must never depend on a runtime package, so these imports
  * exist only in this test file and resolve through the workspace. They prove
  * the probe contract against the adapter the toolkit targets, not through a
  * stub that could drift from it.

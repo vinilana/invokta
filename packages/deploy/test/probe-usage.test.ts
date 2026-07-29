@@ -4,7 +4,7 @@ import { runProbe } from "../src/probe.js";
 import { reserveClosedPort } from "./support/probe-server.js";
 import { createTestContext } from "./support/test-context.js";
 
-const invalidUsageText = 'Invalid arguments. Run "ai-engine-deploy --help".\n';
+const invalidUsageText = 'Invalid arguments. Run "invokta-deploy --help".\n';
 const secret = "sentinel-token-that-must-never-be-echoed";
 
 let closedUrl = "";

@@ -25,7 +25,7 @@ declare a task complete.
 - Node.js 22.20.0 or later;
 - Yarn 1.22.22 for this repository;
 - an ESM TypeScript project;
-- `@ai-engine/core`, and the adapter packages needed by the chosen entry points;
+- `@invokta/core`, and the adapter packages needed by the chosen entry points;
 - a compatible schema implementation, such as Zod 4.
 
 When working in this repository, install and build from its root:
@@ -40,7 +40,7 @@ yarn build
 Create `src/engine.ts`:
 
 ```ts
-import { createEngine, defineCapability } from "@ai-engine/core";
+import { createEngine, defineCapability } from "@invokta/core";
 import { z } from "zod";
 
 const createWelcomeMessage = defineCapability({
@@ -118,7 +118,7 @@ node examples/hello-engine/dist/direct.js Ada
 Create `src/cli.ts`:
 
 ```ts
-import { runCli } from "@ai-engine/cli";
+import { runCli } from "@invokta/cli";
 
 import { engine } from "./engine.js";
 
@@ -152,7 +152,7 @@ result; diagnostics belong on standard error.
 Create `src/mcp-stdio.ts`:
 
 ```ts
-import { serveMcpStdio } from "@ai-engine/mcp";
+import { serveMcpStdio } from "@invokta/mcp";
 
 import { engine } from "./engine.js";
 
@@ -192,7 +192,7 @@ For a local-only first connection, create `src/mcp-http.ts` with the explicit
 development opt-out:
 
 ```ts
-import { serveMcpHttp } from "@ai-engine/mcp";
+import { serveMcpHttp } from "@invokta/mcp";
 
 import { engine } from "./engine.js";
 
@@ -263,7 +263,7 @@ the file, then the composition root's own defaults — so a forgotten local file
 can never displace CI, container, or platform configuration, not even for a
 variable that is present and empty. Parsing is Node's built-in `parseEnv`, so
 there is no `dotenv` dependency and no dialect of your own. And a missing `.env`
-is a silent no-op, while a file named explicitly by `AI_ENGINE_ENV_FILE` that is
+is a silent no-op, while a file named explicitly by `INVOKTA_ENV_FILE` that is
 missing or unreadable must fail startup rather than degrade silently.
 
 Check required variables after loading and fail closed, listing the missing
@@ -282,7 +282,7 @@ if (missing.length > 0) {
 Commit `.env.example`, which carries names only; never commit `.env`, and inject
 production values through your platform instead.
 
-`ai-engine-deploy init` from [`@ai-engine/deploy`](../packages/deploy/README.md)
+`invokta-deploy init` from [`@invokta/deploy`](../packages/deploy/README.md)
 generates a complete loader as `src/env.ts`, along with the matching
 `.env.example`, and the deployment package it produces excludes every `.env*`
 file from the container build context. The full contract — file safety, bounds,

@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 function temporaryHome(): string {
-  const directory = mkdtempSync(join(tmpdir(), "ai-engine-config-evidence-"));
+  const directory = mkdtempSync(join(tmpdir(), "invokta-config-evidence-"));
   temporaryDirectories.push(directory);
   return directory;
 }

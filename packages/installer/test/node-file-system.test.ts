@@ -32,11 +32,11 @@ describe("Node installer filesystem adapter", () => {
       readonly name: string;
     };
 
-    expect(manifest.name).toBe("@ai-engine/installer");
+    expect(manifest.name).toBe("@invokta/installer");
   });
 
   it("classifies paths without following symbolic links", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "ai-engine-file-system-"));
+    const directory = mkdtempSync(join(tmpdir(), "invokta-file-system-"));
     temporaryDirectories.push(directory);
     const regularFile = join(directory, "config.json");
     const childDirectory = join(directory, "configs");

@@ -1,4 +1,4 @@
-import { createEngine } from "@ai-engine/core";
+import { createEngine } from "@invokta/core";
 
 import type { OperationsDependencies } from "./application/ports.js";
 import { capabilities, createOperationsCapabilities } from "./capabilities.js";

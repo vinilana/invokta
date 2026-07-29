@@ -1,8 +1,8 @@
 # Production registry review
 
 `capabilities.json` is deliberately empty during workspace and CI development.
-The first production release of `@ai-engine/installer` is blocked until a real
-AI Engine MCP artifact or endpoint satisfies the gate below. A private example,
+The first production release of `@invokta/installer` is blocked until a real
+Action Engine MCP artifact or endpoint satisfies the gate below. A private example,
 test fixture, placeholder command, or unverified URL is not a production entry.
 
 For every proposed production entry, the reviewer must record:

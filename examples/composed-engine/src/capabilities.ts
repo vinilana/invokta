@@ -2,10 +2,10 @@ import {
   composeCapabilities,
   importCapabilities,
   importCapability,
-} from "@ai-engine/core";
-import { createScoreTicketPriorityExport } from "@ai-engine/example-community-capabilities";
-import { createClassifyTicketExport } from "@ai-engine/example-community-capabilities/classify-ticket";
-import { createCommunitySupportLibrary } from "@ai-engine/example-community-capabilities/library";
+} from "@invokta/core";
+import { createScoreTicketPriorityExport } from "@invokta/example-community-capabilities";
+import { createClassifyTicketExport } from "@invokta/example-community-capabilities/classify-ticket";
+import { createCommunitySupportLibrary } from "@invokta/example-community-capabilities/library";
 
 import type { OperationsDependencies } from "./application/ports.js";
 import { createGenerateReport } from "./capabilities/generate-report.js";
@@ -13,7 +13,7 @@ import { createDefaultOperationsDependencies } from "./infrastructure/default-de
 
 /**
  * This module is the composition root the build gate inspects. It creates no
- * engine and starts no adapter, so `ai-engine check-capabilities` can import it
+ * engine and starts no adapter, so `invokta check-capabilities` can import it
  * without running the application.
  */
 export function createOperationsCapabilities(

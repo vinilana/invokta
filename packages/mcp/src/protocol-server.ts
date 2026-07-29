@@ -7,7 +7,7 @@ import {
   type EngineJsonSchema,
   type ExecutionSource,
   type Principal,
-} from "@ai-engine/core";
+} from "@invokta/core";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,

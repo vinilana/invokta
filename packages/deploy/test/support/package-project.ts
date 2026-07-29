@@ -52,12 +52,12 @@ export function writeProjectFile(
 }
 
 export function createProject(options: ProjectOptions = {}): string {
-  const root = mkdtempSync(join(tmpdir(), "ai-engine-package-"));
+  const root = mkdtempSync(join(tmpdir(), "invokta-package-"));
   createdRoots.push(root);
 
   const manifest = options.manifest ?? defaultManifest;
   if (options.omitManifest !== true) {
-    writeProjectFile(root, "ai-engine.deploy.json", encode(manifest));
+    writeProjectFile(root, "invokta.deploy.json", encode(manifest));
   }
   if (options.omitPackageJson !== true) {
     writeProjectFile(

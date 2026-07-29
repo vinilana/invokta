@@ -51,11 +51,11 @@ describe("runPackage usage", () => {
     expect(exitCode).toBe(2);
     expect(harness.stdout).toEqual([]);
     expect(harness.stderr).toEqual([
-      'Invalid arguments. Run "ai-engine-deploy --help".\n',
+      'Invalid arguments. Run "invokta-deploy --help".\n',
     ]);
     expect(readdirSync(root).sort()).toEqual([
-      "ai-engine.deploy.json",
       "dist",
+      "invokta.deploy.json",
       "package-lock.json",
       "package.json",
     ]);
@@ -187,7 +187,7 @@ describe("runPackage validation order", () => {
     await run(root);
 
     expect(readdirSync(root).sort()).toEqual([
-      "ai-engine.deploy.json",
+      "invokta.deploy.json",
       "package-lock.json",
       "package.json",
     ]);
@@ -223,9 +223,9 @@ describe("runPackage generation", () => {
     expect(readdirSync(root).sort()).toEqual([
       ".dockerignore",
       "Dockerfile",
-      "ai-engine.deploy.json",
       "deploy",
       "dist",
+      "invokta.deploy.json",
       "package-lock.json",
       "package.json",
     ]);
@@ -258,7 +258,7 @@ describe("runPackage generation", () => {
     const before = modifiedAt(root, ".dockerignore");
     writeProjectFile(
       root,
-      "ai-engine.deploy.json",
+      "invokta.deploy.json",
       `${JSON.stringify({
         schemaVersion: 1,
         entry: "dist/mcp-http.js",

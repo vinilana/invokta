@@ -1,4 +1,4 @@
-import type { Principal } from "@ai-engine/core";
+import type { Principal } from "@invokta/core";
 
 /**
  * Trusted local configuration. The host allowlist keeps this example's

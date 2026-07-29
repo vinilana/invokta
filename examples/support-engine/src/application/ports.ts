@@ -1,4 +1,4 @@
-import type { Principal } from "@ai-engine/core";
+import type { Principal } from "@invokta/core";
 
 import type { Ticket, TicketClassification } from "../domain/ticket.js";
 

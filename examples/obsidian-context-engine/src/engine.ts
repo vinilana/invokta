@@ -1,4 +1,4 @@
-import { createEngine } from "@ai-engine/core";
+import { createEngine } from "@invokta/core";
 
 import type { ObsidianContextDependencies } from "./application/ports.js";
 import { createListContextRoots } from "./capabilities/list-context-roots.js";

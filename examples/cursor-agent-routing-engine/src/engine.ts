@@ -1,4 +1,4 @@
-import { createEngine } from "@ai-engine/core";
+import { createEngine } from "@invokta/core";
 
 import { createRouteCursorTask } from "./capabilities/route-cursor-task.js";
 

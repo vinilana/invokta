@@ -1,4 +1,4 @@
-import { createEngine } from "@ai-engine/core";
+import { createEngine } from "@invokta/core";
 
 import type { SupportDependencies } from "./application/ports.js";
 import { createClassifyTicket } from "./capabilities/classify-ticket.js";

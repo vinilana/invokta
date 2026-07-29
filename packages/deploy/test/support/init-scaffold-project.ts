@@ -40,7 +40,7 @@ export interface RunResult {
 export function createScaffoldProject(
   sources: Readonly<Record<string, string>>,
 ): ScaffoldProject {
-  const directory = mkdtempSync(join(tmpdir(), "ai-engine-scaffold-"));
+  const directory = mkdtempSync(join(tmpdir(), "invokta-scaffold-"));
   symlinkSync(
     join(repositoryRoot, "node_modules"),
     join(directory, "node_modules"),

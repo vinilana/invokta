@@ -1,7 +1,7 @@
 import type {
   TicketCategory,
   TicketClassifier,
-} from "@ai-engine/example-community-capabilities";
+} from "@invokta/example-community-capabilities";
 
 const categoryTerms: ReadonlyArray<
   readonly [TicketCategory, ReadonlyArray<string>]

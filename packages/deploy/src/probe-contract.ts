@@ -1,5 +1,5 @@
 /**
- * The values `ai-engine-deploy probe` and the generated `deploy/healthcheck.mjs`
+ * The values `invokta-deploy probe` and the generated `deploy/healthcheck.mjs`
  * must agree on, because they implement one semantic contract against the same
  * endpoint. Both read them from here, so no release can ship a probe and a
  * health check that pin different revisions or deadlines.

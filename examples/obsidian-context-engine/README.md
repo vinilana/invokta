@@ -43,7 +43,7 @@ title: Capability contracts
 status: published
 indexes:
   - architecture
-  - ai-engines
+  - invokta
 ---
 ```
 
@@ -91,8 +91,8 @@ Point the process at the vault or a narrower folder inside it:
 
 ```sh
 export OBSIDIAN_VAULT_PATH='/absolute/path/to/your/vault'
-yarn workspace @ai-engine/example-obsidian-context build
-yarn workspace @ai-engine/example-obsidian-context test
+yarn workspace @invokta/example-obsidian-context build
+yarn workspace @invokta/example-obsidian-context test
 ```
 
 The adapter reads `.md` files only. It ignores every `.obsidian` directory and
@@ -201,7 +201,7 @@ A generic MCP host configuration looks like this after the example is built:
     "obsidian-context": {
       "command": "node",
       "args": [
-        "/absolute/path/to/ai-engines/examples/obsidian-context-engine/dist/mcp-stdio.js"
+        "/absolute/path/to/invokta/examples/obsidian-context-engine/dist/mcp-stdio.js"
       ],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/absolute/path/to/your/vault"

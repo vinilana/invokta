@@ -1,8 +1,8 @@
 import { createNodeExecutableResolver } from "../../dist/node-harness-environment.js";
 import { resolveRuntimeRequirements } from "../../dist/runtime-requirements.js";
 
-const executablePath = process.env.AI_ENGINE_INSTALLER_RUNTIME_EXECUTABLE;
-const secret = process.env.AI_ENGINE_INSTALLER_RUNTIME_SECRET;
+const executablePath = process.env.INVOKTA_INSTALLER_RUNTIME_EXECUTABLE;
+const secret = process.env.INVOKTA_INSTALLER_RUNTIME_SECRET;
 if (executablePath === undefined || secret === undefined) {
   throw new Error("Runtime sentinel inputs are required.");
 }
@@ -22,7 +22,7 @@ const environment = {
 const stdio = await resolveRuntimeRequirements({
   action: "install",
   descriptor: {
-    name: "ai-engine-support",
+    name: "invokta-support",
     transport: {
       type: "stdio",
       command: executablePath,
@@ -36,7 +36,7 @@ const stdio = await resolveRuntimeRequirements({
 const http = await resolveRuntimeRequirements({
   action: "enable",
   descriptor: {
-    name: "ai-engine-support",
+    name: "invokta-support",
     transport: {
       type: "streamable-http",
       url: "https://support.example/mcp",

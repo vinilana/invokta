@@ -67,7 +67,7 @@ function stdioDescriptor(
     description: "Classify and route support tickets.",
     capabilityIds: ["support.classify-ticket"],
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "stdio",
         command: "support-engine-mcp",
@@ -86,7 +86,7 @@ function httpDescriptor(
   return {
     ...stdioDescriptor(),
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "streamable-http",
         url: "https://support.example.com/mcp",
@@ -106,7 +106,7 @@ function credentialFreeHttpDescriptor(
   return {
     ...httpDescriptor({}),
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "streamable-http",
         url: "https://support.example.com/mcp",
@@ -175,7 +175,7 @@ function parseGrokNativeDocument(source: string) {
   if (table?.type !== "TOMLTable") {
     throw new Error("Expected one native Grok MCP table.");
   }
-  expect(table.resolvedKey).toEqual(["mcp_servers", "ai-engine-support"]);
+  expect(table.resolvedKey).toEqual(["mcp_servers", "invokta-support"]);
   return {
     keys: table.body.map((pair) =>
       pair.key.keys
@@ -247,7 +247,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       expect(
         selected.inspect({
           source: postImage,
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }).currentServer,
       ).toEqual({ kind: "present", definition });
     }
@@ -303,7 +303,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     expect(stdio).toEqual({
       mcp: {
         servers: {
-          "ai-engine-support": {
+          "invokta-support": {
             type: "local",
             command: ["support-engine-mcp", "serve", "--stdio"],
             environment: {
@@ -323,7 +323,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     expect(http).toEqual({
       mcp: {
         servers: {
-          "ai-engine-support": {
+          "invokta-support": {
             type: "remote",
             url: "https://support.example.com/mcp",
             oauth: false,
@@ -345,7 +345,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     expect(stdio.keys).toEqual(["command", "args", "env", "enabled"]);
     expect(stdio.semantic).toEqual({
       mcp_servers: {
-        "ai-engine-support": {
+        "invokta-support": {
           command: "support-engine-mcp",
           args: ["serve", "--stdio"],
           env: { SUPPORT_API_TOKEN: `\${SUPPORT_API_TOKEN}` },
@@ -360,7 +360,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     expect(http.keys).toEqual(["url", "headers", "enabled"]);
     expect(http.semantic).toEqual({
       mcp_servers: {
-        "ai-engine-support": {
+        "invokta-support": {
           url: "https://support.example.com/mcp",
           headers: {
             Authorization: `Bearer \${SUPPORT_API_TOKEN}`,
@@ -422,7 +422,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       const installed = install(targetId, stdioDescriptor());
       const installedInspection = selected.inspect({
         source: installed,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       expect(
         selected.constructPatch({
@@ -438,7 +438,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       if (disabled.kind !== "changed") return;
       const disabledInspection = selected.inspect({
         source: disabled.postImage,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       expect(disabledInspection.currentServer).toMatchObject({
         kind: "present",
@@ -460,7 +460,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       expect(
         selected.inspect({
           source: reenabled.postImage,
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }).currentServer,
       ).toEqual({ kind: "present", definition });
     },
@@ -499,16 +499,16 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     expect(
       selected.inspect({
         source: postImage,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer.kind,
     ).toBe("present");
 
     expect(
       selected.inspect({
         source: encoder.encode(
-          '{"mcp":{"servers":{"ai-engine-support":{"type":"local","command":["x"]}}}}',
+          '{"mcp":{"servers":{"invokta-support":{"type":"local","command":["x"]}}}}',
         ),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toMatchObject({
       kind: "present",
@@ -519,11 +519,11 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
   it("inserts OpenCode disabled beside a trailing comma without producing a double comma", () => {
     const selected = adapter("opencode-v2");
     const source = encoder.encode(
-      '{\n  "mcp": {\n    "servers": {\n      "ai-engine-support": {\n        "type": "local",\n        "command": ["support-engine-mcp"],\n        // preserve footer\n      },\n    },\n  },\n}',
+      '{\n  "mcp": {\n    "servers": {\n      "invokta-support": {\n        "type": "local",\n        "command": ["support-engine-mcp"],\n        // preserve footer\n      },\n    },\n  },\n}',
     );
     const inspection = selected.inspect({
       source,
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     const disabled = selected.constructPatch({
       action: "disable",
@@ -537,7 +537,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     expect(
       selected.inspect({
         source: disabled.postImage,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toMatchObject({ kind: "present", definition: { disabled: true } });
   });
@@ -555,7 +555,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     expect(
       adapter("opencode-v2").inspect({
         source: postImage,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer.kind,
     ).toBe("present");
   });
@@ -565,9 +565,9 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     const inspect = (oauth: string) =>
       selected.inspect({
         source: encoder.encode(
-          `{"mcp":{"servers":{"ai-engine-support":{"type":"remote","url":"https://support.example.com/mcp"${oauth}}}}}`,
+          `{"mcp":{"servers":{"invokta-support":{"type":"remote","url":"https://support.example.com/mcp"${oauth}}}}}`,
         ),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
     const omitted = inspect("");
     const enabled = inspect(',"oauth":true');
@@ -625,26 +625,26 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       '{"mcp":{},"m\\u0063p":{}}',
       '{"mcp":false}',
       '{"mcp":{"servers":[]}}',
-      '{"mcp":{"servers":{"ai-engine-support":[]}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"local","command":[]}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"local","command":["x",false]}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"stdio","command":["x"]}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"local","command":["x"],"environment":[]}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"remote","url":"x","headers":[]}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"remote","url":"x","oauth":"false"}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"remote","url":"x","oauth":1}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"remote","url":"x","oauth":null}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"remote","url":"x","oauth":[]}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"local","command":["x"],"url":"x"}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"remote","url":"x","headers":{"X":"1","x":"2"}}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"local","command":["x"],"disabled":"false"}}}}',
-      '{"mcp":{"servers":{"ai-engine-support":{"type":"local","command":["x"],"transport":"stdio"}}}}',
+      '{"mcp":{"servers":{"invokta-support":[]}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"local","command":[]}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"local","command":["x",false]}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"stdio","command":["x"]}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"local","command":["x"],"environment":[]}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"remote","url":"x","headers":[]}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"remote","url":"x","oauth":"false"}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"remote","url":"x","oauth":1}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"remote","url":"x","oauth":null}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"remote","url":"x","oauth":[]}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"local","command":["x"],"url":"x"}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"remote","url":"x","headers":{"X":"1","x":"2"}}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"local","command":["x"],"disabled":"false"}}}}',
+      '{"mcp":{"servers":{"invokta-support":{"type":"local","command":["x"],"transport":"stdio"}}}}',
     ]) {
       expectInstallerCode(
         () =>
           selected.inspect({
             source: encoder.encode(source),
-            serverName: "ai-engine-support",
+            serverName: "invokta-support",
           }),
         "HARNESS_CONFIG_INVALID",
       );
@@ -654,15 +654,15 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
   it("patches Grok explicit, dotted, and inline TOML locally with its native fields", () => {
     const selected = adapter("grok-build");
     for (const source of [
-      `[mcp_servers.ai-engine-support]\ncommand = "support-engine-mcp"\nargs = []\nenv = { SUPPORT_API_TOKEN = "\${SUPPORT_API_TOKEN}" }\nenabled = false\n`,
-      'mcp_servers.ai-engine-support.command = "support-engine-mcp"\nmcp_servers.ai-engine-support.args = []\nmcp_servers.ai-engine-support.enabled = false\n',
-      'mcp_servers = { ai-engine-support = { command = "support-engine-mcp", args = [], enabled = false }, other = { command = "old", args = [] } }\n',
+      `[mcp_servers.invokta-support]\ncommand = "support-engine-mcp"\nargs = []\nenv = { SUPPORT_API_TOKEN = "\${SUPPORT_API_TOKEN}" }\nenabled = false\n`,
+      'mcp_servers.invokta-support.command = "support-engine-mcp"\nmcp_servers.invokta-support.args = []\nmcp_servers.invokta-support.enabled = false\n',
+      'mcp_servers = { invokta-support = { command = "support-engine-mcp", args = [], enabled = false }, other = { command = "old", args = [] } }\n',
     ]) {
       const enabled = selected.constructPatch({
         action: "enable",
         inspection: selected.inspect({
           source: encoder.encode(source),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       });
       expect(enabled.kind).toBe("changed");
@@ -670,7 +670,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       expect(
         selected.inspect({
           source: enabled.postImage,
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }).currentServer,
       ).toMatchObject({ kind: "present", definition: { enabled: true } });
     }
@@ -681,7 +681,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     const source = [
       "# preserved top",
       'ordinary = "enabled = false"',
-      "[mcp_servers.ai-engine-support]",
+      "[mcp_servers.invokta-support]",
       'command = "support-engine-mcp"',
       "args = []",
       'note = """',
@@ -696,7 +696,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       action: "enable",
       inspection: selected.inspect({
         source: encoder.encode(source),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }),
     });
     expect(patch.kind).toBe("changed");
@@ -716,19 +716,19 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     const selected = adapter("grok-build");
     for (const source of [
       "mcp_servers = false\n",
-      "mcp_servers.ai-engine-support = 1979-05-27T07:32:00Z\n",
-      '[mcp_servers.ai-engine-support]\ncommand = "x"\nenv = []\n',
-      '[mcp_servers.ai-engine-support]\nurl = "x"\nheaders = []\n',
-      '[mcp_servers.ai-engine-support]\ncommand = "x"\nenabled = "true"\n',
-      '[mcp_servers.ai-engine-support]\ncommand = "x"\ntransport = "stdio"\n',
-      '[mcp_servers.ai-engine-support]\ncommand = "x"\ncommand = "y"\n',
-      '[mcp_servers.ai-engine-support]\nurl = "x"\nheaders = { X = "1", x = "2" }\n',
+      "mcp_servers.invokta-support = 1979-05-27T07:32:00Z\n",
+      '[mcp_servers.invokta-support]\ncommand = "x"\nenv = []\n',
+      '[mcp_servers.invokta-support]\nurl = "x"\nheaders = []\n',
+      '[mcp_servers.invokta-support]\ncommand = "x"\nenabled = "true"\n',
+      '[mcp_servers.invokta-support]\ncommand = "x"\ntransport = "stdio"\n',
+      '[mcp_servers.invokta-support]\ncommand = "x"\ncommand = "y"\n',
+      '[mcp_servers.invokta-support]\nurl = "x"\nheaders = { X = "1", x = "2" }\n',
     ]) {
       expectInstallerCode(
         () =>
           selected.inspect({
             source: encoder.encode(source),
-            serverName: "ai-engine-support",
+            serverName: "invokta-support",
           }),
         "HARNESS_CONFIG_INVALID",
       );
@@ -742,7 +742,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       const definition = selected.descriptorToDefinition(stdioDescriptor([]));
       const absent = selected.inspect({
         source: undefined,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       expectInstallerCode(
         () =>
@@ -757,7 +757,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       const installed = install(targetId, stdioDescriptor([]));
       const present = selected.inspect({
         source: installed,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       expectInstallerCode(
         () =>
@@ -794,7 +794,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       expect(
         adapter(targetId).inspect({
           source: source(100),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }).currentServer,
       ).toEqual({ kind: "absent" });
       const counters = createTargetAdapterCounters();
@@ -802,7 +802,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
         () =>
           adapter(targetId).inspect({
             source: source(101),
-            serverName: "ai-engine-support",
+            serverName: "invokta-support",
             counters,
           }),
         "HARNESS_CONFIG_INVALID",
@@ -828,7 +828,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
           () =>
             selected.inspect({
               source,
-              serverName: "ai-engine-support",
+              serverName: "invokta-support",
             }),
           "HARNESS_CONFIG_INVALID",
         );
@@ -845,7 +845,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       const counters = createTargetAdapterCounters();
       const inspection = selected.inspect({
         source,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
         counters,
       });
       expectInstallerCode(
@@ -871,8 +871,8 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       const baseText = targetId === "opencode-v2" ? "{}" : "theme = true";
       const toggleText =
         targetId === "opencode-v2"
-          ? '{"mcp":{"servers":{"ai-engine-support":{"type":"local","command":["support-engine-mcp","serve","--stdio"],"environment":{},"disabled":false}}}}'
-          : '[mcp_servers.ai-engine-support]\ncommand = "support-engine-mcp"\nargs = ["serve", "--stdio"]\nenabled = false\n';
+          ? '{"mcp":{"servers":{"invokta-support":{"type":"local","command":["support-engine-mcp","serve","--stdio"],"environment":{},"disabled":false}}}}'
+          : '[mcp_servers.invokta-support]\ncommand = "support-engine-mcp"\nargs = ["serve", "--stdio"]\nenabled = false\n';
       const toggleAction = targetId === "opencode-v2" ? "disable" : "enable";
       const exactSource = encoder.encode(
         toggleText.padEnd(targetConfigByteLimit, " "),
@@ -881,7 +881,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       const exactSourceCounters = createTargetAdapterCounters();
       const exactSourceInspection = selected.inspect({
         source: exactSource,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
         counters: exactSourceCounters,
       });
       const exactSourcePatch = selected.constructPatch({
@@ -901,7 +901,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       const exactPostCounters = createTargetAdapterCounters();
       const exactPostInspection = selected.inspect({
         source: exactPostSource,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
         counters: exactPostCounters,
       });
       const exactPostPatch = selected.constructPatch({
@@ -926,7 +926,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       const exactBomCounters = createTargetAdapterCounters();
       const exactBomInspection = selected.inspect({
         source: exactWithBom,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
         counters: exactBomCounters,
       });
       const exactBomPatch = selected.constructPatch({
@@ -953,7 +953,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       const counters = createTargetAdapterCounters();
       const inspection = selected.inspect({
         source,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
         counters,
       });
       const disabled = selected.constructPatch({
@@ -974,7 +974,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       if (disabled.kind !== "changed") return;
       const disabledInspection = selected.inspect({
         source: disabled.postImage,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       const unchangedCounters = createTargetAdapterCounters();
       expect(
@@ -989,13 +989,13 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
   );
 
   it("feeds OpenCode JSONC and GROK_HOME evidence into their matching adapters", async () => {
-    const homeDirectory = mkdtempSync(join(tmpdir(), "ai-engine-opencode-"));
+    const homeDirectory = mkdtempSync(join(tmpdir(), "invokta-opencode-"));
     temporaryDirectories.push(homeDirectory);
     const configPath = join(homeDirectory, ".config/opencode/opencode.jsonc");
     mkdirSync(dirname(configPath), { recursive: true });
     writeFileSync(
       configPath,
-      '{// selected sibling\n"mcp":{"servers":{"ai-engine-support":{"type":"local","command":["x"],},},},}',
+      '{// selected sibling\n"mcp":{"servers":{"invokta-support":{"type":"local","command":["x"],},},},}',
     );
     const probes = createNodeTargetConfigEvidenceProbes({
       environment: { get: () => undefined },
@@ -1010,7 +1010,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     expect(
       adapter("opencode-v2").inspect({
         source: readFileSync(evidence.path),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toMatchObject({
       kind: "present",
@@ -1022,7 +1022,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     mkdirSync(grokHome, { recursive: true });
     writeFileSync(
       grokPath,
-      '[mcp_servers.ai-engine-support]\ncommand = "x"\nargs = []\n',
+      '[mcp_servers.invokta-support]\ncommand = "x"\nargs = []\n',
     );
     const grokProbes = createNodeTargetConfigEvidenceProbes({
       environment: {
@@ -1039,7 +1039,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
     expect(
       adapter("grok-build").inspect({
         source: readFileSync(grokEvidence.path),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toMatchObject({
       kind: "present",

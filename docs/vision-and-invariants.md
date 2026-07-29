@@ -2,27 +2,35 @@
 
 ## Definition
 
-An **AI Engine** is a versioned software component that publishes reusable,
+An **Action Engine** is a versioned software component that publishes reusable,
 AI-supported domain capabilities through stable contracts. Models, prompts, data,
 retrieval, and tools remain replaceable internal details.
 
-An implementation is an AI Engine when it publishes at least one domain-oriented
-operation, validates input and output, encapsulates the AI implementation, can be
-reused through more than one channel, and has a clear unit of versioning and
-ownership.
+This is Invokta's normative specialization of the framework-neutral
+[Action Engines community definition](./action-engines.md). Invokta is the
+framework; Action Engine is the architectural category.
+
+In Invokta, a capability is the implementation unit behind a published domain
+action. The capability key is the action's public ID.
+
+An implementation is an Action Engine when it publishes at least one
+domain-oriented operation, validates input and output, encapsulates the AI
+implementation, can be reused through more than one channel, and has a clear
+unit of versioning and ownership.
 
 ## Distinct responsibilities
 
-- **AI Engine:** delivers reusable domain capabilities governed by contracts.
+- **Action Engine:** delivers reusable domain capabilities governed by contracts.
 - **Harness:** manages an agent's messages, tools, memory, environment, and
   execution.
 - **Loop:** decides the next step, repeats work, and stops when it reaches a goal.
-- **Framework:** provides contracts, a runtime, and adapters; it is not a domain
+- **Invokta:** provides contracts, a runtime, and adapters; it is not a domain
   engine.
 
-A product may combine these responsibilities, but the core MUST NOT couple them.
+A product may combine these responsibilities, but Invokta's core MUST NOT couple
+them.
 A model wrapper, prompt collection, multi-model gateway, server that merely
-mirrors APIs, harness, or workflow engine is not an AI Engine by itself.
+mirrors APIs, harness, or workflow engine is not an Action Engine by itself.
 
 ## Invariants
 

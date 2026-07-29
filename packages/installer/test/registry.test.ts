@@ -21,7 +21,7 @@ function stdioEntry(index = 0) {
     description: "Classify and route support tickets.",
     capabilityIds: [`support.classify-ticket-${index}`],
     server: {
-      name: `ai-engine-support-${index}`,
+      name: `invokta-support-${index}`,
       transport: {
         type: "stdio",
         command: "support-engine-mcp",
@@ -34,7 +34,7 @@ function httpEntry(index = 0) {
   return {
     ...stdioEntry(index),
     server: {
-      name: `ai-engine-support-${index}`,
+      name: `invokta-support-${index}`,
       transport: {
         type: "streamable-http",
         url: "https://support.example.com/mcp",

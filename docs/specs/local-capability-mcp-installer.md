@@ -8,7 +8,7 @@
 
 ## Summary
 
-AI Engine users need one local interface that can find supported AI harnesses on
+Action Engine users need one local interface that can find supported AI harnesses on
 their machine and make an engine's MCP server available to those harnesses. The
 installer provides an interactive terminal UI backed by a versioned local
 registry. A user selects an installable capability bundle, selects one or more
@@ -21,7 +21,7 @@ does not download packages, clone repositories, run package managers, start MCP
 servers, probe endpoints, perform OAuth, or execute capabilities.
 
 The atomic installation unit is one registry entry backed by one MCP server. The
-server may expose one or more AI Engine capability IDs. Because MCP client
+server may expose one or more Action Engine capability IDs. Because MCP client
 configuration is server-scoped, the installer enables and disables the whole
 entry; it does not claim to toggle individual MCP tools within a multi-capability
 server.
@@ -47,11 +47,11 @@ The installer is an external configuration application:
 - it never calls a capability handler and does not create another capability
   execution path;
 - it configures an engine only through the MCP server boundary already owned by
-  `@ai-engine/mcp`;
+  `@invokta/mcp`;
 - it does not add a registry, discovery service, plugin loader, or mutable state
-  to `@ai-engine/core`;
+  to `@invokta/core`;
 - it does not discover ESM exports or compose capabilities inside an engine;
-- it does not change the responsibility of `@ai-engine/cli`, whose commands
+- it does not change the responsibility of `@invokta/cli`, whose commands
   continue to execute capabilities only through `engine.invoke`.
 
 The local installation registry described here is a catalog of MCP launch or
@@ -59,21 +59,21 @@ connection descriptors. It is not the runtime package registry, community
 library discovery, or hot capability composition deferred by ADR 0001 and the
 capability composition specification.
 
-Accepted ADR 0010 authorizes the post-v0.1 `@ai-engine/installer` package,
+Accepted ADR 0010 authorizes the post-v0.1 `@invokta/installer` package,
 amends the package boundary in ADR 0004, and distinguishes the end-user
-installer from the dev-only `@ai-engine/tooling` package authorized by ADR 0009.
+installer from the dev-only `@invokta/tooling` package authorized by ADR 0009.
 The package and binary are:
 
 | Artifact | Responsibility |
 | --- | --- |
-| `packages/installer` / `@ai-engine/installer` | Registry validation, harness detection, safe configuration mutation, state, and interactive UI |
-| `ai-engine-installer` | Interactive executable; owns no capability execution command |
+| `packages/installer` / `@invokta/installer` | Registry validation, harness detection, safe configuration mutation, state, and interactive UI |
+| `invokta-installer` | Interactive executable; owns no capability execution command |
 
 No existing runtime or tooling package may depend on the installer. The
 installer MUST depend directly on `@clack/prompts` for its production
 interactive experience and may use format-preserving configuration libraries
-and Node built-ins. It must not depend on `@ai-engine/core`, `@ai-engine/cli`,
-`@ai-engine/mcp`, or `@ai-engine/tooling`. `@clack/prompts` is contained behind
+and Node built-ins. It must not depend on `@invokta/core`, `@invokta/cli`,
+`@invokta/mcp`, or `@invokta/tooling`. `@clack/prompts` is contained behind
 an installer-owned terminal port; its types do not appear in a public API. The
 package is native ESM and declares the repository runtime floor of Node.js
 `>=22.20.0`.
@@ -171,9 +171,9 @@ package is native ESM and declares the repository runtime floor of Node.js
 The public command surface is deliberately small:
 
 ```text
-ai-engine-installer
-ai-engine-installer --help
-ai-engine-installer --version
+invokta-installer
+invokta-installer --help
+invokta-installer --version
 ```
 
 Running without arguments starts the interactive interface. Any other argument
@@ -188,11 +188,11 @@ When either is unavailable, it MUST fail without reading or writing registry,
 state, or harness configuration.
 
 `--help` writes English usage with one trailing LF to stdout and exits `0`.
-`--version` writes only the `@ai-engine/installer` manifest version and one
+`--version` writes only the `@invokta/installer` manifest version and one
 trailing LF to stdout and exits `0`; its initial value is `0.1.0`. Invalid usage
 and pre-interactive initialization errors write one sanitized diagnostic to
 stderr and use the exit mapping below. Invalid usage writes exactly
-`Invalid arguments. Run "ai-engine-installer --help".` followed by one LF; it is
+`Invalid arguments. Run "invokta-installer --help".` followed by one LF; it is
 a usage diagnostic, not an installer error code. The interactive Clack session
 owns stdout only after TTY and initialization gates have passed; stack traces
 and cause chains never reach either user-facing stream.
@@ -477,7 +477,7 @@ support, and a package release.
 
 The installer MUST perform no DNS, HTTP, Git, package-manager, or marketplace
 operation while loading the registry. The first production release MUST include
-at least one real, runnable AI Engine MCP entry in addition to test fixtures.
+at least one real, runnable Action Engine MCP entry in addition to test fixtures.
 No current private example satisfies that gate. Development builds MAY use an
 empty production registry plus test-only fixtures only in the workspace and CI;
 that artifact MUST NOT be published as the first production release. The release
@@ -539,7 +539,7 @@ Example:
       "description": "Classify and route support tickets.",
       "capabilityIds": ["support.classify-ticket"],
       "server": {
-        "name": "ai-engine-support",
+        "name": "invokta-support",
         "transport": {
           "type": "stdio",
           "command": "support-engine-mcp",
@@ -697,7 +697,7 @@ absent from the registry contract.
 ### State file
 
 The installer records ownership in
-`${XDG_STATE_HOME:-~/.local/state}/ai-engine/installer.json`:
+`${XDG_STATE_HOME:-~/.local/state}/invokta/installer.json`:
 
 ```ts
 interface InstallerState {
@@ -917,7 +917,7 @@ For one target, the installer MUST:
 17. release both locks and remove only installer-owned temporary files.
 
 The state lock path is exactly `<statePath>.lock`; a config lock is exactly
-`<configPath>.ai-engine-installer.lock`. Each is a mode-`0600` regular file
+`<configPath>.invokta-installer.lock`. Each is a mode-`0600` regular file
 created exclusively with no-follow semantics. Its closed JSON metadata contains
 only `pid` as a positive safe integer, `createdAt` as a UTC RFC 3339 timestamp,
 `targetPath` as the corresponding safe absolute path, and `ownershipToken` as
@@ -1146,7 +1146,7 @@ depth `101` fails before patch construction.
 
 ## Versioning and compatibility
 
-- Adding `@ai-engine/installer` is additive and post-v0.1 and is authorized by
+- Adding `@invokta/installer` is additive and post-v0.1 and is authorized by
   ADR 0010.
 - Registry `schemaVersion: 1` is exact. Adding an optional field is still a
   schema change because the schema is closed; it requires a new installer
@@ -1201,7 +1201,7 @@ depth `101` fails before patch construction.
 | `AE-INSTALL-AC-21` | A 1,000-entry registry receives one validation pass per entry and exactly 9,000 entry-target compatibility calls. In one preflight pass, a depth-100, 4,194,304-byte source config is decoded and parsed once, receives one inspection/validation and at most one patch-construction traversal, and its post-image is decoded and parsed once; depth 101 or either post-image limit plus one byte fails before confirmation. | Counter- and spy-based inclusive/exclusive limit tests with no elapsed-time assertion. |
 | `AE-INSTALL-AC-22` | Source inspection and runtime sentinels prove the installer imports no framework package, invokes no engine, opens no network connection, and runs no harness, shell, package manager, or registry command. | Import-graph check plus child-process/network sentinels. |
 | `AE-INSTALL-AC-23` | `--help` and `--version` succeed without loading Clack, registry, harness, state, or network access; version equals the manifest; unknown arguments exit `2`. | CLI child-process tests and module-load sentinels. |
-| `AE-INSTALL-AC-24` | The production package contains the validated registry and binary, and a clean install can configure at least one separately versioned, real AI Engine MCP entry without launching it; upstream release evidence separately lists and calls the declared capability. | Packed-package smoke test in an isolated home and `PATH`, plus referenced upstream artifact and protocol-smoke evidence. |
+| `AE-INSTALL-AC-24` | The production package contains the validated registry and binary, and a clean install can configure at least one separately versioned, real Action Engine MCP entry without launching it; upstream release evidence separately lists and calls the declared capability. | Packed-package smoke test in an isolated home and `PATH`, plus referenced upstream artifact and protocol-smoke evidence. |
 | `AE-INSTALL-AC-25` | The locked `@clack/prompts` adapter supports autocomplete, multiselect, default-negative confirmation, Back/Quit, cancellation at every prompt, `NO_COLOR`, and a narrow terminal without exposing Clack types or symbols. | Port contract tests plus a real pseudoterminal smoke matrix against the locked package. |
 | `AE-INSTALL-AC-26` | When both `agy` and `antigravity` resolve, one user choice produces one preview path, lock, write, state record, result, and reload section. | Shared-target integration test with config/state writer spies. |
 | `AE-INSTALL-AC-27` | State accepts exactly 9,000 unique `(entryId, targetId)` records and 16 MiB inclusive, rejects the next record or byte, a duplicate pair, path relocation, or malformed digest, and enforces `targetContractVersion` plus every conditional `suspendedDescriptor` invariant without retaining a secret sentinel. | Inclusive/exclusive state-schema, uniqueness, relocation, and leak tests. |
@@ -1227,7 +1227,7 @@ evidence, ends green, and is one cohesive commit:
 
 1. Record the package and architectural boundary in a new ADR, including the
    relationship with ADRs 0001, 0004, 0005, and 0009.
-2. Add the `@ai-engine/installer` package skeleton, injectable filesystem and
+2. Add the `@invokta/installer` package skeleton, injectable filesystem and
    `InteractivePrompter` boundaries, the direct `@clack/prompts` dependency,
    stable installer errors, and CLI usage behavior.
 3. Add the closed registry schema, limits, source packaging, normalization, and
@@ -1288,7 +1288,7 @@ The following require later evidence and an explicit specification update:
 - descriptor-relative native filesystem primitives and protection from a
   malicious same-UID process swapping a path between the final recheck and the
   immediately following syscall;
-- a unified `ai-engine` launcher shared with `@ai-engine/tooling`;
+- a unified `invokta` launcher shared with `@invokta/tooling`;
 - a public programmatic API or non-interactive mutation commands;
 - telemetry, analytics, remote error reporting, and registry usage metrics.
 

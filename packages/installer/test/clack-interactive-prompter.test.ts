@@ -106,7 +106,7 @@ describe("Clack InteractivePrompter adapter", () => {
   it("delegates session, note, log, and spinner rendering", () => {
     const prompter = createClackInteractivePrompter();
 
-    prompter.intro("AI Engine installer");
+    prompter.intro("Invokta installer");
     prompter.note("Review", "Planned changes");
     prompter.log("warn", "One target is blocked.");
     const spinner = prompter.spinner();
@@ -119,7 +119,7 @@ describe("Clack InteractivePrompter adapter", () => {
     prompter.outro("Done");
     prompter.cancel("Cancelled");
 
-    expect(clack.intro).toHaveBeenCalledWith("AI Engine installer");
+    expect(clack.intro).toHaveBeenCalledWith("Invokta installer");
     expect(clack.note).toHaveBeenCalledWith("Review", "Planned changes");
     expect(clack.log.warn).toHaveBeenCalledWith("One target is blocked.");
     expect(clack.spinner).toHaveBeenCalledTimes(1);

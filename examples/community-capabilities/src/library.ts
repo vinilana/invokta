@@ -1,4 +1,4 @@
-import { defineCapabilityLibrary } from "@ai-engine/core";
+import { defineCapabilityLibrary } from "@invokta/core";
 
 import type { CommunityLibraryDependencies } from "./application/ports.js";
 import { createDraftReply } from "./capabilities/draft-reply.js";
@@ -14,7 +14,7 @@ export function createCommunitySupportLibrary(
   dependencies: CommunityLibraryDependencies,
 ) {
   return defineCapabilityLibrary({
-    name: "@ai-engine/example-community-capabilities/library",
+    name: "@invokta/example-community-capabilities/library",
     version: "1.4.0",
     capabilities: {
       "community.summarize-thread": createSummarizeThread(dependencies),

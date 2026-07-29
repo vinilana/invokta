@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import { serveMcpStdio } from "@ai-engine/mcp";
+import { serveMcpStdio } from "@invokta/mcp";
 
 import { engine } from "./engine.js";
 

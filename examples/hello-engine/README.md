@@ -1,6 +1,6 @@
 # Hello Engine
 
-This is the smallest complete AI Engine example. It defines
+This is the smallest complete Action Engine example. It defines
 `onboarding.create-welcome-message` once and exposes it through direct
 invocation, the CLI, MCP stdio, and stateless MCP HTTP.
 
@@ -13,8 +13,8 @@ without changing the capability contract or any adapter.
 From the repository root:
 
 ```bash
-yarn workspace @ai-engine/example-hello build
-yarn workspace @ai-engine/example-hello test
+yarn workspace @invokta/example-hello build
+yarn workspace @invokta/example-hello test
 ```
 
 ## Direct invocation
@@ -82,11 +82,11 @@ The response contains the validated result in `result.structuredContent`:
     "content": [
       {
         "type": "text",
-        "text": "{\"message\":\"Hello, Ada! Welcome to your first AI Engine.\"}"
+        "text": "{\"message\":\"Hello, Ada! Welcome to your first Action Engine.\"}"
       }
     ],
     "structuredContent": {
-      "message": "Hello, Ada! Welcome to your first AI Engine."
+      "message": "Hello, Ada! Welcome to your first Action Engine."
     }
   }
 }

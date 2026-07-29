@@ -65,7 +65,7 @@ function record(
     registryVersion: "1.0.0",
     targetId: "codex",
     configPath: targetContracts.codex.configPath,
-    serverName: "ai-engine-support",
+    serverName: "invokta-support",
     definitionSha256: "a".repeat(64),
     targetContractVersion: 1,
     toggleStrategy: "native-enabled",
@@ -103,7 +103,7 @@ function expectInvalid(bytes: Uint8Array, code?: string): void {
 }
 
 function pathInspection(path: string) {
-  const filePath = join(homeDirectory, ".local/state/ai-engine/installer.json");
+  const filePath = join(homeDirectory, ".local/state/invokta/installer.json");
   return {
     kind:
       path === filePath ? ("regular-file" as const) : ("directory" as const),
@@ -376,7 +376,7 @@ describe("installer state validation", () => {
 
   it("enforces native and detached suspended descriptor structure", () => {
     const suspendedDescriptor = {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "streamable-http" as const,
         url: "https://example.com/mcp",
@@ -449,7 +449,7 @@ describe("installer state validation", () => {
       configPath: targetContracts.cursor.configPath,
       toggleStrategy: "detached",
       suspendedDescriptor: {
-        name: "ai-engine-support",
+        name: "invokta-support",
         transport: {
           type: "stdio",
           command: "support-mcp",
@@ -467,7 +467,7 @@ describe("installer state validation", () => {
         {
           ...base,
           suspendedDescriptor: {
-            name: "ai-engine-support",
+            name: "invokta-support",
             transport: {
               type: "stdio",
               command: "support-mcp",
@@ -492,7 +492,7 @@ describe("installer state validation", () => {
         configPath: targetContracts.cursor.configPath,
         toggleStrategy: "detached",
         suspendedDescriptor: {
-          name: "ai-engine-support",
+          name: "invokta-support",
           transport: {
             type: "streamable-http",
             url: "https://example.com/mcp",
@@ -534,7 +534,7 @@ describe("installer state validation", () => {
               description: "Support tools.",
               capabilityIds: ["support.classify"],
               server: {
-                name: "ai-engine-support",
+                name: "invokta-support",
                 transport: { type: "streamable-http", url },
               },
             },
@@ -546,7 +546,7 @@ describe("installer state validation", () => {
         configPath: targetContracts.cursor.configPath,
         toggleStrategy: "detached",
         suspendedDescriptor: {
-          name: "ai-engine-support",
+          name: "invokta-support",
           transport: {
             type: "streamable-http",
             url,
@@ -631,7 +631,7 @@ describe("read-only installer state loading", () => {
     });
 
     expect(loaded.path).toBe(
-      "/home/tester/.local/state/ai-engine/installer.json",
+      "/home/tester/.local/state/invokta/installer.json",
     );
     expect(loaded.state.schemaVersion).toBe(1);
     expect(fileSystem.inspectPath).toHaveBeenCalledTimes(5);
@@ -659,7 +659,7 @@ describe("read-only installer state loading", () => {
     });
 
     expect(loaded).toEqual({
-      path: "/var/user-state/ai-engine/installer.json",
+      path: "/var/user-state/invokta/installer.json",
       state: createEmptyInstallerState(),
     });
     expect(fileSystem.readFile).not.toHaveBeenCalled();

@@ -1,4 +1,4 @@
-import type { EngineError } from "@ai-engine/core";
+import type { EngineError } from "@invokta/core";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ReferenceImage } from "../src/application/ports.js";

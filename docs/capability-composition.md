@@ -24,7 +24,7 @@ A module that publishes a single capability wraps it with
 engine-owned ports, never from `ExecutionContext` or a global:
 
 ```ts
-import { defineExportedCapability } from "@ai-engine/core";
+import { defineExportedCapability } from "@invokta/core";
 
 import type { ClassifyTicketDependencies } from "./application/ports.js";
 import { createClassifyTicket } from "./capabilities/classify-ticket.js";
@@ -34,7 +34,7 @@ export function createClassifyTicketExport(
 ) {
   return defineExportedCapability({
     source: {
-      name: "@ai-engine/example-community-capabilities/classify-ticket",
+      name: "@invokta/example-community-capabilities/classify-ticket",
       version: "1.4.0",
     },
     defaultId: "community.classify-ticket",
@@ -66,13 +66,13 @@ it — statically when its type is known, and as a composition issue otherwise.
 A package that publishes a related set of capabilities exposes a library value:
 
 ```ts
-import { defineCapabilityLibrary } from "@ai-engine/core";
+import { defineCapabilityLibrary } from "@invokta/core";
 
 export function createCommunitySupportLibrary(
   dependencies: CommunityLibraryDependencies,
 ) {
   return defineCapabilityLibrary({
-    name: "@ai-engine/example-community-capabilities/library",
+    name: "@invokta/example-community-capabilities/library",
     version: "1.4.0",
     capabilities: {
       "community.summarize-thread": createSummarizeThread(dependencies),
@@ -117,13 +117,13 @@ import {
   composeCapabilities,
   createEngine,
   importCapability,
-} from "@ai-engine/core";
+} from "@invokta/core";
 import {
   createScoreTicketPriorityExport,
-} from "@ai-engine/example-community-capabilities";
+} from "@invokta/example-community-capabilities";
 import {
   createClassifyTicketExport,
-} from "@ai-engine/example-community-capabilities/classify-ticket";
+} from "@invokta/example-community-capabilities/classify-ticket";
 
 export const capabilities = composeCapabilities({
   local: {
@@ -146,10 +146,10 @@ requires two explicit import descriptors with two distinct effective IDs.
 ## Consume a library
 
 ```ts
-import { composeCapabilities, importCapabilities } from "@ai-engine/core";
+import { composeCapabilities, importCapabilities } from "@invokta/core";
 import {
   createCommunitySupportLibrary,
-} from "@ai-engine/example-community-capabilities/library";
+} from "@invokta/example-community-capabilities/library";
 
 export const capabilities = composeCapabilities({
   imports: [
@@ -218,7 +218,7 @@ registered, and nothing failed. Composition cannot recover what the spread threw
 away, so raw spread must never be presented as safe composition. Pass the
 imported values to `composeCapabilities` instead and let it own the flattening.
 
-For the same reason, `ai-engine check-capabilities` rejects an unbranded,
+For the same reason, `invokta check-capabilities` rejects an unbranded,
 already-flattened map presented as an imported composition rather than
 reporting it as valid. `isComposedCapabilities(value)` reports whether a value
 carries the framework's composition provenance.
@@ -231,7 +231,7 @@ does not extend the seven-code invocation taxonomy: a composition failure has no
 request ID, no event, and no transport mapping.
 
 ```ts
-import { isCapabilityCompositionError } from "@ai-engine/core";
+import { isCapabilityCompositionError } from "@invokta/core";
 
 try {
   createEngine({ name, version, capabilities: composeCapabilities(plan) });
@@ -273,7 +273,7 @@ or credential — so a composition failure can be logged in full. Use `code` and
 and must not be parsed.
 
 `isCapabilityCompositionError` is duck-typed rather than an `instanceof` check,
-so it still works when a build resolves two copies of `@ai-engine/core`.
+so it still works when a build resolves two copies of `@invokta/core`.
 
 ## Keep the composition in a dedicated module and gate the build
 
@@ -301,8 +301,8 @@ export const capabilities = createOperationsCapabilities(
 Then run the checker over the built module in CI:
 
 ```sh
-ai-engine check-capabilities ./dist/capabilities.js
-ai-engine check-capabilities ./dist/capabilities.js --export capabilities
+invokta check-capabilities ./dist/capabilities.js
+invokta check-capabilities ./dist/capabilities.js --export capabilities
 ```
 
 The command imports the module without starting an adapter, verifies that the

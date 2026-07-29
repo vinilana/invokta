@@ -84,7 +84,7 @@ function scriptFor(document: Readonly<Record<string, unknown>> = {}): string {
 async function loadScript(
   document: Readonly<Record<string, unknown>> = {},
 ): Promise<HealthcheckModule> {
-  const root = mkdtempSync(join(tmpdir(), "ai-engine-healthcheck-"));
+  const root = mkdtempSync(join(tmpdir(), "invokta-healthcheck-"));
   roots.push(root);
   const file = join(root, "healthcheck.mjs");
   writeFileSync(file, scriptFor(document));
@@ -158,9 +158,7 @@ function jsonReply(
   };
 }
 
-function initializeResult(
-  id: unknown = "ai-engine-deploy-healthcheck",
-): unknown {
+function initializeResult(id: unknown = "invokta-deploy-healthcheck"): unknown {
   return {
     id,
     jsonrpc: "2.0",
@@ -183,7 +181,7 @@ describe("generated health-check script", () => {
     for (const specifier of specifiers) {
       expect(specifier?.startsWith("node:")).toBe(true);
     }
-    expect(script).not.toContain("@ai-engine/");
+    expect(script).not.toContain("@invokta/");
     expect(script).not.toContain("require(");
   });
 
@@ -192,7 +190,7 @@ describe("generated health-check script", () => {
     const script = await loadScript();
 
     const exitCode = await script.runHealthcheck({
-      AI_ENGINE_HTTP_PORT: String(stub.port),
+      INVOKTA_HTTP_PORT: String(stub.port),
     });
 
     expect(exitCode).toBe(0);
@@ -204,7 +202,7 @@ describe("generated health-check script", () => {
     expect(request.headers["content-type"]).toBe("application/json");
     expect(request.headers.authorization).toBeUndefined();
     expect(JSON.parse(request.body)).toEqual({
-      id: "ai-engine-deploy-healthcheck",
+      id: "invokta-deploy-healthcheck",
       jsonrpc: "2.0",
       method: "initialize",
       params: {
@@ -220,8 +218,8 @@ describe("generated health-check script", () => {
     const script = await loadScript();
 
     const exitCode = await script.runHealthcheck({
-      AI_ENGINE_HTTP_ALLOWED_HOSTS: " engine.example.com , backup.example.com ",
-      AI_ENGINE_HTTP_PORT: String(stub.port),
+      INVOKTA_HTTP_ALLOWED_HOSTS: " engine.example.com , backup.example.com ",
+      INVOKTA_HTTP_PORT: String(stub.port),
     });
 
     expect(exitCode).toBe(0);
@@ -234,20 +232,20 @@ describe("generated health-check script", () => {
     const stub = await startStub(jsonReply(200, initializeResult()));
     const script = await loadScript();
 
-    await script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) });
+    await script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) });
 
     expect((stub.requests[0] as RecordedRequest).headers.host).toBe(
       `127.0.0.1:${stub.port}`,
     );
   });
 
-  it("prefers AI_ENGINE_HTTP_PORT over PORT and falls back to the manifest port", async () => {
+  it("prefers INVOKTA_HTTP_PORT over PORT and falls back to the manifest port", async () => {
     const stub = await startStub(jsonReply(200, initializeResult()));
     const script = await loadScript({ image: { port: stub.port } });
 
     await expect(
       script.runHealthcheck({
-        AI_ENGINE_HTTP_PORT: String(stub.port),
+        INVOKTA_HTTP_PORT: String(stub.port),
         PORT: "1",
       }),
     ).resolves.toBe(0);
@@ -264,7 +262,7 @@ describe("generated health-check script", () => {
     vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
     await expect(
-      script.runHealthcheck({ AI_ENGINE_HTTP_PORT: "not-a-port" }),
+      script.runHealthcheck({ INVOKTA_HTTP_PORT: "not-a-port" }),
     ).resolves.toBe(1);
     expect(stub.requests).toHaveLength(0);
   });
@@ -277,7 +275,7 @@ describe("generated health-check script", () => {
       const script = await loadScript();
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
       ).resolves.toBe(0);
       expect(stub.requests).toHaveLength(1);
     });
@@ -293,7 +291,7 @@ describe("generated health-check script", () => {
       const script = await loadScript();
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
       ).resolves.toBe(0);
     });
 
@@ -307,7 +305,7 @@ describe("generated health-check script", () => {
         const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
         await expect(
-          script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+          script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
         ).resolves.toBe(1);
         expect(stderr).toHaveBeenCalled();
       },
@@ -318,7 +316,7 @@ describe("generated health-check script", () => {
       const script = await loadScript();
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
       ).resolves.toBe(0);
     });
 
@@ -333,7 +331,7 @@ describe("generated health-check script", () => {
       const script = await loadScript();
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
       ).resolves.toBe(0);
     });
 
@@ -342,14 +340,14 @@ describe("generated health-check script", () => {
         "a JSON-RPC error",
         {
           error: { code: -32_600, message: "no" },
-          id: "ai-engine-deploy-healthcheck",
+          id: "invokta-deploy-healthcheck",
           jsonrpc: "2.0",
         },
       ],
       [
         "a missing protocol version",
         {
-          id: "ai-engine-deploy-healthcheck",
+          id: "invokta-deploy-healthcheck",
           jsonrpc: "2.0",
           result: { serverInfo: {} },
         },
@@ -357,7 +355,7 @@ describe("generated health-check script", () => {
       [
         "an empty protocol version",
         {
-          id: "ai-engine-deploy-healthcheck",
+          id: "invokta-deploy-healthcheck",
           jsonrpc: "2.0",
           result: { protocolVersion: "", serverInfo: {} },
         },
@@ -365,7 +363,7 @@ describe("generated health-check script", () => {
       [
         "a foreign JSON-RPC version",
         {
-          id: "ai-engine-deploy-healthcheck",
+          id: "invokta-deploy-healthcheck",
           jsonrpc: "1.0",
           result: { protocolVersion: "2025-11-25", serverInfo: {} },
         },
@@ -377,7 +375,7 @@ describe("generated health-check script", () => {
       vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
       ).resolves.toBe(1);
     });
 
@@ -389,7 +387,7 @@ describe("generated health-check script", () => {
       vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
       ).resolves.toBe(1);
     });
 
@@ -401,7 +399,7 @@ describe("generated health-check script", () => {
       vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
       ).resolves.toBe(1);
       expect(stub.requests).toHaveLength(1);
     });
@@ -414,7 +412,7 @@ describe("generated health-check script", () => {
       vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
       ).resolves.toBe(1);
       expect(stub.requests).toHaveLength(1);
     });
@@ -427,7 +425,7 @@ describe("generated health-check script", () => {
       vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(port) }),
       ).resolves.toBe(1);
     });
 
@@ -442,7 +440,7 @@ describe("generated health-check script", () => {
       const started = Date.now();
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
       ).resolves.toBe(1);
 
       const elapsed = Date.now() - started;
@@ -464,7 +462,7 @@ describe("generated health-check script", () => {
 
       await expect(
         script.runHealthcheck({
-          AI_ENGINE_HTTP_PORT: String(stub.port),
+          INVOKTA_HTTP_PORT: String(stub.port),
           SUPPORT_API_TOKEN: secret,
         }),
       ).resolves.toBe(0);
@@ -482,7 +480,7 @@ describe("generated health-check script", () => {
 
       await expect(
         script.runHealthcheck({
-          AI_ENGINE_HTTP_PORT: String(stub.port),
+          INVOKTA_HTTP_PORT: String(stub.port),
           SUPPORT_API_TOKEN: secret,
         }),
       ).resolves.toBe(1);
@@ -497,7 +495,7 @@ describe("generated health-check script", () => {
       const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 
       await expect(
-        script.runHealthcheck({ AI_ENGINE_HTTP_PORT: String(stub.port) }),
+        script.runHealthcheck({ INVOKTA_HTTP_PORT: String(stub.port) }),
       ).resolves.toBe(1);
       expect(stub.requests).toHaveLength(0);
       expect(String(stderr.mock.calls[0]?.[0])).toContain("SUPPORT_API_TOKEN");
@@ -512,7 +510,7 @@ describe("generated health-check script", () => {
 
       await expect(
         script.runHealthcheck({
-          AI_ENGINE_HTTP_PORT: String(stub.port),
+          INVOKTA_HTTP_PORT: String(stub.port),
           SUPPORT_API_TOKEN: secret,
         }),
       ).resolves.toBe(1);
@@ -532,14 +530,14 @@ describe("generated health-check script", () => {
       port: number,
       allowedHosts: string,
     ): Promise<number> {
-      const root = mkdtempSync(join(tmpdir(), "ai-engine-healthcheck-run-"));
+      const root = mkdtempSync(join(tmpdir(), "invokta-healthcheck-run-"));
       roots.push(root);
       const file = join(root, "healthcheck.mjs");
       writeFileSync(file, scriptFor());
       const child = spawn(process.execPath, [file], {
         env: {
-          AI_ENGINE_HTTP_ALLOWED_HOSTS: allowedHosts,
-          AI_ENGINE_HTTP_PORT: String(port),
+          INVOKTA_HTTP_ALLOWED_HOSTS: allowedHosts,
+          INVOKTA_HTTP_PORT: String(port),
           PATH: process.env.PATH ?? "",
         },
         stdio: "ignore",

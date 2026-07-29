@@ -22,7 +22,7 @@ function stdioDescriptor(
     description: "Classify and route support tickets.",
     capabilityIds: ["support.classify-ticket"],
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "stdio",
         command: "support-engine-mcp",
@@ -41,7 +41,7 @@ function httpDescriptor(
   return {
     ...stdioDescriptor(),
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "streamable-http",
         url: "https://support.example.com/mcp",
@@ -172,7 +172,7 @@ describe("strict JSON target adapters", () => {
         source: encoder.encode(
           '{"projects":{"p":{"disabledMcpServers":["keep"],"enabledMcpServers":["also-keep"]}},"mcpServers":{}}\n',
         ),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       const installed = adapter.constructPatch({
         action: "install",
@@ -188,7 +188,7 @@ describe("strict JSON target adapters", () => {
 
       const present = adapter.inspect({
         source: installed.postImage,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       const disabled = adapter.constructPatch({
         action: "disable",
@@ -200,7 +200,7 @@ describe("strict JSON target adapters", () => {
 
       const absent = adapter.inspect({
         source: disabled.postImage,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       const enabled = adapter.constructPatch({
         action: "enable",
@@ -218,7 +218,7 @@ describe("strict JSON target adapters", () => {
         source: encoder.encode(
           JSON.stringify({
             mcpServers: {
-              "ai-engine-support": {
+              "invokta-support": {
                 ...(type === undefined ? {} : { type }),
                 command: "support-engine-mcp",
                 future: { visible: true },
@@ -226,7 +226,7 @@ describe("strict JSON target adapters", () => {
             },
           }),
         ),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
     expect(stdio(undefined).currentServer).toEqual(
       stdio("stdio").currentServer,
@@ -234,16 +234,16 @@ describe("strict JSON target adapters", () => {
     expect(
       adapter.inspect({
         source: encoder.encode(
-          '{"mcpServers":{"ai-engine-support":{"type":"streamable-http","url":"https://support.example.com/mcp"}}}',
+          '{"mcpServers":{"invokta-support":{"type":"streamable-http","url":"https://support.example.com/mcp"}}}',
         ),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toEqual(
       adapter.inspect({
         source: encoder.encode(
-          '{"mcpServers":{"ai-engine-support":{"type":"http","url":"https://support.example.com/mcp"}}}',
+          '{"mcpServers":{"invokta-support":{"type":"http","url":"https://support.example.com/mcp"}}}',
         ),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     );
     expectInstallerCode(() => stdio("http"), "HARNESS_CONFIG_INVALID");
@@ -254,7 +254,7 @@ describe("strict JSON target adapters", () => {
     const counters = createTargetAdapterCounters();
     const inspection = adapter.inspect({
       source: encoder.encode('{"mcpServers":{}}'),
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
       counters,
     });
     const patch = adapter.constructPatch({
@@ -283,14 +283,14 @@ describe("strict JSON target adapters", () => {
         "{mcpServers:{}}",
         '{"mcpServers":{},}',
         '{"mcpServers":{/* comment */}}',
-        '{"mcpServers":{"ai-engine-support":{"command":"x","transport":"stdio"}}}',
-        '{"mcpServers":{"ai-engine-support":{"url":"x","headers":{"X-A":"1","x-a":"2"}}}}',
+        '{"mcpServers":{"invokta-support":{"command":"x","transport":"stdio"}}}',
+        '{"mcpServers":{"invokta-support":{"url":"x","headers":{"X-A":"1","x-a":"2"}}}}',
       ]) {
         expectInstallerCode(
           () =>
             adapter.inspect({
               source: encoder.encode(source),
-              serverName: "ai-engine-support",
+              serverName: "invokta-support",
             }),
           "HARNESS_CONFIG_INVALID",
         );
@@ -300,9 +300,9 @@ describe("strict JSON target adapters", () => {
     const cursor = configurationTargetAdapters.cursor;
     const inspection = cursor.inspect({
       source: encoder.encode(
-        '{"mcpServers":{"ai-engine-support":{"command":"different"}}}',
+        '{"mcpServers":{"invokta-support":{"command":"different"}}}',
       ),
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     expectInstallerCode(
       () =>
@@ -322,14 +322,14 @@ describe("strict JSON target adapters", () => {
         source: encoder.encode(
           JSON.stringify({
             mcpServers: {
-              "ai-engine-support": {
+              "invokta-support": {
                 url: "https://support.example.com/mcp",
                 headers: { [header]: `Bearer \${env:SUPPORT_API_TOKEN}` },
               },
             },
           }),
         ),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer;
     const titleCase = inspect("Authorization");
     const lowerCase = inspect("authorization");
@@ -354,7 +354,7 @@ describe("strict JSON target adapters", () => {
     const cursor = configurationTargetAdapters.cursor;
     const absent = cursor.inspect({
       source: encoder.encode('{"mcpServers":{}}'),
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     const counters = createTargetAdapterCounters();
     expect(
@@ -387,7 +387,7 @@ describe("strict JSON target adapters", () => {
       "claude-code"
     ].inspect({
       source: encoder.encode('{"mcpServers":{}}'),
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     expectInstallerCode(
       () =>
@@ -401,7 +401,7 @@ describe("strict JSON target adapters", () => {
     const claude = configurationTargetAdapters["claude-code"];
     const claudeAbsent = claude.inspect({
       source: encoder.encode('{"mcpServers":{}}'),
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     expectInstallerCode(
       () =>
@@ -425,7 +425,7 @@ describe("strict JSON target adapters", () => {
       const adapter = configurationTargetAdapters[targetId];
       const absent = adapter.inspect({
         source: encoder.encode('{"mcpServers":{}}'),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       const definition = adapter.descriptorToDefinition(httpDescriptor());
       const bare =
@@ -478,11 +478,11 @@ describe("strict JSON target adapters", () => {
       reason: "kimi-code-http-headers-unsupported",
     });
     const source = encoder.encode(
-      '{"mcpServers":{"ai-engine-support":{"command":"support-engine-mcp","enabled":true}}}',
+      '{"mcpServers":{"invokta-support":{"command":"support-engine-mcp","enabled":true}}}',
     );
     const inspection = adapter.inspect({
       source,
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     const disabled = adapter.constructPatch({
       action: "disable",
@@ -530,7 +530,7 @@ describe("strict JSON target adapters", () => {
       if (patch.kind !== "changed") continue;
       expect(decoder.decode(patch.postImage).endsWith("\n")).toBe(true);
       expect(JSON.parse(decoder.decode(patch.postImage))).toEqual({
-        mcpServers: { "ai-engine-support": expected },
+        mcpServers: { "invokta-support": expected },
       });
     }
   });
@@ -545,7 +545,7 @@ describe("strict JSON target adapters", () => {
     source.set(payload, 3);
     const inspection = adapter.inspect({
       source,
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     const patch = adapter.constructPatch({
       action: "install",
@@ -570,9 +570,9 @@ describe("strict JSON target adapters", () => {
   it("preserves unknown selected fields in the normalized fingerprint-visible definition", () => {
     const current = configurationTargetAdapters.cursor.inspect({
       source: encoder.encode(
-        '{"mcpServers":{"ai-engine-support":{"command":"support-engine-mcp","future":{"nested":[1,true,null]}}}}',
+        '{"mcpServers":{"invokta-support":{"command":"support-engine-mcp","future":{"nested":[1,true,null]}}}}',
       ),
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     }).currentServer;
     expect(current).toEqual({
       kind: "present",
@@ -593,22 +593,22 @@ describe("strict JSON target adapters", () => {
     const adapter = configurationTargetAdapters.cursor;
     for (const [source, remaining] of [
       [
-        '{"mcpServers":{"ai-engine-support":{"command":"x"},"b":{"command":"b"}}}',
+        '{"mcpServers":{"invokta-support":{"command":"x"},"b":{"command":"b"}}}',
         ["b"],
       ],
       [
-        '{"mcpServers":{"a":{"command":"a"},"ai-engine-support":{"command":"x"},"b":{"command":"b"}}}',
+        '{"mcpServers":{"a":{"command":"a"},"invokta-support":{"command":"x"},"b":{"command":"b"}}}',
         ["a", "b"],
       ],
       [
-        '{"mcpServers":{"a":{"command":"a"},"ai-engine-support":{"command":"x"}}}',
+        '{"mcpServers":{"a":{"command":"a"},"invokta-support":{"command":"x"}}}',
         ["a"],
       ],
-      ['{"mcpServers":{"ai-engine-support":{"command":"x"}}}', []],
+      ['{"mcpServers":{"invokta-support":{"command":"x"}}}', []],
     ] as const) {
       const inspection = adapter.inspect({
         source: encoder.encode(source),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       const patch = adapter.constructPatch({ action: "disable", inspection });
       expect(patch.kind).toBe("changed");
@@ -626,7 +626,7 @@ describe("strict JSON target adapters", () => {
       () =>
         adapter.inspect({
           source: new Uint8Array([0xff]),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -634,7 +634,7 @@ describe("strict JSON target adapters", () => {
       () =>
         adapter.inspect({
           source: new Uint8Array(targetConfigByteLimit + 1),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -650,7 +650,7 @@ describe("strict JSON target adapters", () => {
     expect(
       adapter.inspect({
         source: exactLimit,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toEqual({ kind: "absent" });
 
@@ -658,7 +658,7 @@ describe("strict JSON target adapters", () => {
     const baseSource = encoder.encode('{"padding":"","mcpServers":{}}');
     const baseInspection = adapter.inspect({
       source: baseSource,
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     const basePatch = adapter.constructPatch({
       action: "install",
@@ -679,7 +679,7 @@ describe("strict JSON target adapters", () => {
     );
     const inspection = adapter.inspect({
       source: atLimitAfterPatch,
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     });
     const counters = createTargetAdapterCounters();
     expectInstallerCode(
@@ -707,14 +707,14 @@ describe("strict JSON target adapters", () => {
     expect(
       adapter.inspect({
         source: encoder.encode(nested(99)),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toEqual({ kind: "absent" });
     expectInstallerCode(
       () =>
         adapter.inspect({
           source: encoder.encode(nested(100)),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -724,7 +724,7 @@ describe("strict JSON target adapters", () => {
           source: encoder.encode(
             '{"unrelated":{"duplicate":1,"duplicate":2},"mcpServers":{}}',
           ),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );

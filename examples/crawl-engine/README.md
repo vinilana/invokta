@@ -157,7 +157,7 @@ The tests never reach the public Firecrawl API. A local Firecrawl-compatible
 stub server (`test/firecrawl-stub.ts`) serves the adapter and entrypoint tests.
 
 ```sh
-yarn workspace @ai-engine/example-crawl test
-yarn workspace @ai-engine/example-crawl typecheck
-yarn workspace @ai-engine/example-crawl build
+yarn workspace @invokta/example-crawl test
+yarn workspace @invokta/example-crawl typecheck
+yarn workspace @invokta/example-crawl build
 ```

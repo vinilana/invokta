@@ -1,4 +1,4 @@
-import { defineExportedCapability } from "@ai-engine/core";
+import { defineExportedCapability } from "@invokta/core";
 
 import type { TicketAccessDependencies } from "./application/ports.js";
 import { createScoreTicketPriority } from "./capabilities/score-ticket-priority.js";
@@ -32,7 +32,7 @@ export function createScoreTicketPriorityExport(
 ) {
   return defineExportedCapability({
     source: {
-      name: "@ai-engine/example-community-capabilities",
+      name: "@invokta/example-community-capabilities",
       version: "1.4.0",
     },
     defaultId: "community.score-ticket-priority",

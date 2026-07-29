@@ -1,9 +1,9 @@
 ---
-name: ai-engine-delivery
-description: "Deliver AI Engine milestones and work items with TDD, adherence to versioned contracts and architecture, complete validation, and one cohesive commit per work item. Use when developing features, fixing bugs, executing roadmap milestones, or completing acceptance criteria in this repository."
+name: invokta-delivery
+description: "Deliver Invokta milestones and work items with TDD, adherence to versioned contracts and architecture, complete validation, and one cohesive commit per work item. Use when developing features, fixing bugs, executing roadmap milestones, or completing acceptance criteria in this repository."
 ---
 
-# AI Engine Delivery
+# Invokta Delivery
 
 ## Prepare the delivery
 
@@ -21,7 +21,7 @@ Stop and request a decision when authoritative documents conflict, acceptance cr
 - Map each acceptance criterion to at least one observable test.
 - Confirm inputs, outputs, errors, invariants, and limits before changing the implementation.
 - Preserve public contract compatibility. Require an explicit decision for any breaking change.
-- Apply `$ai-engine-contract-review` before coding when the milestone creates or changes an API, schema, port, event, public error, or operational limit.
+- Apply `$invokta-contract-review` before coding when the milestone creates or changes an API, schema, port, event, public error, or operational limit.
 
 ### Gate 2 — RED
 

@@ -11,8 +11,8 @@ capability's behavior depend on how it was called.
 
 ## Decision
 
-Every `@ai-engine/cli` command that executes a capability must construct
-the invocation and call the public `invoke` API from `@ai-engine/core`. The CLI
+Every `@invokta/cli` command that executes a capability must construct
+the invocation and call the public `invoke` API from `@invokta/core`. The CLI
 must not import handlers to execute them, reproduce the pipeline, or apply
 business rules before or after `invoke`.
 

@@ -55,7 +55,7 @@ function repeat(unit: string, count: number): string {
 
 describe("manifest constants", () => {
   it("pins the specified file name, limits, and defaults", () => {
-    expect(deployManifestFileName).toBe("ai-engine.deploy.json");
+    expect(deployManifestFileName).toBe("invokta.deploy.json");
     expect(deployManifestLimits).toEqual({
       maxEncodedBytes: 65_536,
       maxEnvironmentNames: 64,
@@ -274,7 +274,7 @@ describe("parseDeployManifest entry", () => {
 });
 
 describe("parseDeployManifest environment names", () => {
-  it.each([["A"], ["_"], ["_A0"], ["AI_ENGINE_HTTP_PORT"], [repeat("A", 128)]])(
+  it.each([["A"], ["_"], ["_A0"], ["INVOKTA_HTTP_PORT"], [repeat("A", 128)]])(
     "accepts the name %j",
     (name) => {
       expect(

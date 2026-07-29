@@ -124,7 +124,7 @@ reaches `delivered` only when every task carries evidence.
 ## Verify the example
 
 ```sh
-yarn workspace @ai-engine/example-spec test
-yarn workspace @ai-engine/example-spec typecheck
-yarn workspace @ai-engine/example-spec build
+yarn workspace @invokta/example-spec test
+yarn workspace @invokta/example-spec typecheck
+yarn workspace @invokta/example-spec build
 ```

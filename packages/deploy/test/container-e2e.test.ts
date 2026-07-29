@@ -16,7 +16,7 @@ import { createTestContext } from "./support/test-context.js";
 const bearerVariable = "E2E_BEARER_TOKEN";
 const bearerToken = "e2e-container-token-sentinel";
 const imagePort = 3000;
-const containerName = `ai-engine-deploy-e2e-${process.pid.toString(36)}`;
+const containerName = `invokta-deploy-e2e-${process.pid.toString(36)}`;
 const imageTag = `${containerName}:test`;
 
 interface CommandResult {
@@ -118,9 +118,9 @@ copyFileSync("server.mjs", "dist/mcp-http.js");
  */
 const serverModule = `import { createServer } from "node:http";
 
-const host = process.env.AI_ENGINE_HTTP_HOST ?? "127.0.0.1";
+const host = process.env.INVOKTA_HTTP_HOST ?? "127.0.0.1";
 const port = Number(
-  process.env.AI_ENGINE_HTTP_PORT ?? process.env.PORT ?? "${imagePort}",
+  process.env.INVOKTA_HTTP_PORT ?? process.env.PORT ?? "${imagePort}",
 );
 const token = process.env.${bearerVariable} ?? "";
 
@@ -189,10 +189,10 @@ function encode(document: unknown): string {
 }
 
 function createEngineProject(): string {
-  const root = mkdtempSync(join(tmpdir(), "ai-engine-container-"));
+  const root = mkdtempSync(join(tmpdir(), "invokta-container-"));
   writeProjectFile(root, "package.json", encode(projectPackage));
   writeProjectFile(root, "package-lock.json", encode(projectLockfile));
-  writeProjectFile(root, "ai-engine.deploy.json", encode(deployManifest));
+  writeProjectFile(root, "invokta.deploy.json", encode(deployManifest));
   writeProjectFile(root, "build.mjs", buildScript);
   writeProjectFile(root, "server.mjs", serverModule);
   writeProjectFile(

@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
-This directory contains the normative architectural decisions for the AI Engines
-project. Each ADR records the context, the accepted decision, and its
+This directory contains the normative architectural decisions for Invokta. Each
+ADR records the context, the accepted decision, and its
 consequences. Changes that invalidate an accepted decision must be documented in
 a new ADR that explicitly references and supersedes the previous one.
 
@@ -19,3 +19,4 @@ a new ADR that explicitly references and supersedes the previous one.
 | [0010](0010-post-v0.1-standalone-local-capability-mcp-installer.md) | Post-v0.1 standalone local capability MCP installer | Accepted | 2026-07-28 |
 | [0011](0011-post-v0.1-http-engine-deploy-toolkit.md) | Post-v0.1 HTTP engine deploy toolkit | Accepted | 2026-07-28 |
 | [0012](0012-official-mcp-sdk-1-30-and-bounded-stdio.md) | Official MCP SDK 1.30.0 and bounded stdio reads | Accepted | 2026-07-29 |
+| [0013](0013-invokta-framework-and-action-engine-terminology.md) | Invokta framework and Action Engine terminology | Accepted | 2026-07-29 |

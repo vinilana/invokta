@@ -10,18 +10,18 @@ function readJson(path: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
 }
 
-describe("@ai-engine/installer package boundary", () => {
+describe("@invokta/installer package boundary", () => {
   it("publishes only the standalone executable on the repository runtime floor", () => {
     const manifest = readJson(`${packageDirectory}/package.json`);
 
     expect(manifest).toMatchObject({
-      name: "@ai-engine/installer",
+      name: "@invokta/installer",
       version: "0.1.0",
       type: "module",
       engines: { node: ">=22.20.0" },
       files: ["dist", "registry"],
       exports: {},
-      bin: { "ai-engine-installer": "./dist/cli.js" },
+      bin: { "invokta-installer": "./dist/cli.js" },
       dependencies: {
         "@clack/prompts": "1.7.0",
         "@humanwhocodes/momoa": "3.3.10",
@@ -33,14 +33,12 @@ describe("@ai-engine/installer package boundary", () => {
     expect(manifest).not.toHaveProperty("types");
   });
 
-  it("has no dependency on an AI Engine framework or tooling package", () => {
+  it("has no dependency on an Invokta framework or tooling package", () => {
     const manifest = readJson(`${packageDirectory}/package.json`);
     const dependencies = manifest.dependencies as Record<string, string>;
 
     expect(
-      Object.keys(dependencies).filter((name) =>
-        name.startsWith("@ai-engine/"),
-      ),
+      Object.keys(dependencies).filter((name) => name.startsWith("@invokta/")),
     ).toEqual([]);
   });
 
@@ -72,7 +70,7 @@ describe("@ai-engine/installer package boundary", () => {
 
     for (const source of sources) {
       expect(source.text, source.name).not.toMatch(
-        /["']@ai-engine\/(?:core|cli|mcp|tooling)["']/u,
+        /["']@invokta\/(?:core|cli|mcp|tooling)["']/u,
       );
       expect(source.text, source.name).not.toMatch(
         /["']node:(?:child_process|dns|http|https|net|tls)["']/u,

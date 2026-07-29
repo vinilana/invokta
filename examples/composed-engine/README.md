@@ -42,7 +42,7 @@ direct / CLI / MCP stdio / MCP HTTP
 ```
 
 - `src/capabilities.ts` is the composition module. It is side-effect free,
-  creates no engine, and starts nothing, so `ai-engine check-capabilities` can
+  creates no engine, and starts nothing, so `invokta check-capabilities` can
   import it as a build gate.
 - `src/engine.ts` imports `capabilities` from that module and calls
   `createEngine`. `createOperationsEngine` recomposes with injected ports for
@@ -119,7 +119,7 @@ this engine imported.
 ## Check the composition in CI
 
 ```sh
-yarn workspace @ai-engine/example-composed check:capabilities
+yarn workspace @invokta/example-composed check:capabilities
 ```
 
 The command imports the built composition module and validates it with the same
@@ -130,9 +130,9 @@ a load failure, a missing export, or an untracked raw map.
 ## Verify the example
 
 ```sh
-yarn workspace @ai-engine/example-composed test
-yarn workspace @ai-engine/example-composed typecheck
-yarn workspace @ai-engine/example-composed build
+yarn workspace @invokta/example-composed test
+yarn workspace @invokta/example-composed typecheck
+yarn workspace @invokta/example-composed build
 ```
 
 [The composition guide](../../docs/capability-composition.md) explains the

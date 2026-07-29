@@ -39,8 +39,8 @@ RUN ${packageManager.prune}
 
 FROM ${image} AS runtime
 ENV NODE_ENV=production
-ENV AI_ENGINE_HTTP_HOST=0.0.0.0
-ENV AI_ENGINE_HTTP_PORT=${port}
+ENV INVOKTA_HTTP_HOST=0.0.0.0
+ENV INVOKTA_HTTP_PORT=${port}
 WORKDIR /app
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/node_modules ./node_modules

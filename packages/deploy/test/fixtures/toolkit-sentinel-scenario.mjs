@@ -14,8 +14,8 @@ import {
   runProbe,
 } from "../../dist/index.js";
 
-const processAttempts = globalThis.__AI_ENGINE_DEPLOY_PROCESS_ATTEMPTS__;
-const networkAttempts = globalThis.__AI_ENGINE_DEPLOY_NETWORK_ATTEMPTS__;
+const processAttempts = globalThis.__INVOKTA_DEPLOY_PROCESS_ATTEMPTS__;
+const networkAttempts = globalThis.__INVOKTA_DEPLOY_NETWORK_ATTEMPTS__;
 
 if (!Array.isArray(processAttempts) || !Array.isArray(networkAttempts)) {
   throw new Error("SENTINELS_NOT_INSTALLED");
@@ -44,7 +44,7 @@ function expectExitCode(label, actual, expected) {
 
 const project = join(
   tmpdir(),
-  `ai-engine-deploy-sentinel-${process.pid.toString(36)}`,
+  `invokta-deploy-sentinel-${process.pid.toString(36)}`,
 );
 rmSync(project, { force: true, recursive: true });
 mkdirSync(project, { recursive: true });

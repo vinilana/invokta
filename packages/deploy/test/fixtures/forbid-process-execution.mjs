@@ -6,7 +6,7 @@ import childProcess from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 
 const attempts = [];
-globalThis.__AI_ENGINE_DEPLOY_PROCESS_ATTEMPTS__ = attempts;
+globalThis.__INVOKTA_DEPLOY_PROCESS_ATTEMPTS__ = attempts;
 
 function guard(name) {
   return function forbidProcessExecution() {

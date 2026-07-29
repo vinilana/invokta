@@ -1,4 +1,4 @@
-import { createEngine, type EngineEvent } from "@ai-engine/core";
+import { createEngine, type EngineEvent } from "@invokta/core";
 
 import type { AgentSessionDependencies } from "./application/ports.js";
 import { createCheckpointSession } from "./capabilities/checkpoint-session.js";

@@ -53,10 +53,10 @@ code. That repetition is observable but does not require a framework concept.
 
 ### MCP SDK isolation
 
-Custom engines use the neutral `@ai-engine/mcp` server API and do not depend on
+Custom engines use the neutral `@invokta/mcp` server API and do not depend on
 SDK server types. The private harness depends on the official SDK because it is
 an MCP client, while the SDK version and protocol compatibility remain isolated
-from the core. The support harness has no dependency on any `@ai-engine/*`
+from the core. The support harness has no dependency on any `@invokta/*`
 package, which demonstrates that the published protocol is sufficient for an
 independent consumer.
 

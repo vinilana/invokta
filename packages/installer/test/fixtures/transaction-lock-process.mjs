@@ -15,7 +15,7 @@ if (
   throw new Error("Invalid transaction lock fixture invocation.");
 }
 
-const audit = globalThis.__AI_ENGINE_TRANSACTION_LOCK_IO_AUDIT__;
+const audit = globalThis.__INVOKTA_TRANSACTION_LOCK_IO_AUDIT__;
 if (audit === undefined) {
   throw new Error("The transaction lock I/O sentinel was not installed.");
 }

@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import { runCli } from "@ai-engine/cli";
+import { runCli } from "@invokta/cli";
 
 import { createConfiguredImageEngine } from "./engine.js";
 import { localPrincipal } from "./local-principal.js";

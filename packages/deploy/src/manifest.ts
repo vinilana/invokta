@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { DeployError } from "./errors.js";
 
-export const deployManifestFileName = "ai-engine.deploy.json";
+export const deployManifestFileName = "invokta.deploy.json";
 
 export const deployManifestLimits = Object.freeze({
   maxEncodedBytes: 65_536,

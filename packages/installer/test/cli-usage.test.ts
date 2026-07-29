@@ -5,9 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import { runInstallerCli } from "../src/run-installer-cli.js";
 
 const helpText = `Usage:
-  ai-engine-installer
-  ai-engine-installer --help
-  ai-engine-installer --version
+  invokta-installer
+  invokta-installer --help
+  invokta-installer --version
 `;
 const manifest = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -121,7 +121,7 @@ describe("runInstallerCli", () => {
     expect(result).toBe(2);
     expect(output.stdout).toEqual([]);
     expect(output.stderr).toEqual([
-      'Invalid arguments. Run "ai-engine-installer --help".\n',
+      'Invalid arguments. Run "invokta-installer --help".\n',
     ]);
     expect(output.inputIsTTY).not.toHaveBeenCalled();
     expect(output.outputIsTTY).not.toHaveBeenCalled();

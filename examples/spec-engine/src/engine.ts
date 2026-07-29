@@ -1,4 +1,4 @@
-import { createEngine } from "@ai-engine/core";
+import { createEngine } from "@invokta/core";
 
 import type { SpecDependencies } from "./application/ports.js";
 import { createBreakDownTasks } from "./capabilities/break-down-tasks.js";

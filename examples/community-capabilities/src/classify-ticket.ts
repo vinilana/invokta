@@ -1,4 +1,4 @@
-import { defineExportedCapability } from "@ai-engine/core";
+import { defineExportedCapability } from "@invokta/core";
 
 import type { ClassifyTicketDependencies } from "./application/ports.js";
 import { createClassifyTicket } from "./capabilities/classify-ticket.js";
@@ -13,7 +13,7 @@ export function createClassifyTicketExport(
 ) {
   return defineExportedCapability({
     source: {
-      name: "@ai-engine/example-community-capabilities/classify-ticket",
+      name: "@invokta/example-community-capabilities/classify-ticket",
       version: "1.4.0",
     },
     defaultId: "community.classify-ticket",

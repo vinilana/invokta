@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { EngineError, EngineEvent, Principal } from "@ai-engine/core";
+import type { EngineError, EngineEvent, Principal } from "@invokta/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createAgentSessionEngine } from "../src/engine.js";
@@ -63,7 +63,7 @@ describe("the agent session engine example", () => {
       {
         sessionId: "delivery-42",
         objective: "Deliver the portable agent session example.",
-        workspaceRoot: "/workspace/ai-engines",
+        workspaceRoot: "/workspace/invokta",
       },
       invocation,
     );

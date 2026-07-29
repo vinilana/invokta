@@ -1,4 +1,4 @@
-import { isComposedCapabilities } from "@ai-engine/core";
+import { isComposedCapabilities } from "@invokta/core";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { capabilities } from "../src/capabilities.js";

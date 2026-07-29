@@ -13,24 +13,24 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const temporaryRoot = mkdtempSync(join(tmpdir(), "ai-engine-release-verify-"));
+const temporaryRoot = mkdtempSync(join(tmpdir(), "invokta-release-verify-"));
 const checkoutDirectory = join(temporaryRoot, "checkout");
 const artifactDirectory = join(temporaryRoot, "artifacts");
 const consumerDirectory = join(temporaryRoot, "consumer");
 const distEntryFiles = ["dist/index.js", "dist/index.d.ts"];
 const publicPackages = [
-  { directory: "core", name: "@ai-engine/core", requiredFiles: distEntryFiles },
-  { directory: "cli", name: "@ai-engine/cli", requiredFiles: distEntryFiles },
-  { directory: "mcp", name: "@ai-engine/mcp", requiredFiles: distEntryFiles },
+  { directory: "core", name: "@invokta/core", requiredFiles: distEntryFiles },
+  { directory: "cli", name: "@invokta/cli", requiredFiles: distEntryFiles },
+  { directory: "mcp", name: "@invokta/mcp", requiredFiles: distEntryFiles },
   {
     directory: "tooling",
-    name: "@ai-engine/tooling",
-    // The dev-only package also ships the `ai-engine` executable.
+    name: "@invokta/tooling",
+    // The dev-only package also ships the `invokta` executable.
     requiredFiles: [...distEntryFiles, "dist/cli.js"],
   },
   {
     directory: "installer",
-    name: "@ai-engine/installer",
+    name: "@invokta/installer",
     // The installer is binary-first and intentionally has no import API.
     requiredFiles: [
       "dist/cli.js",
@@ -40,8 +40,8 @@ const publicPackages = [
   },
   {
     directory: "deploy",
-    name: "@ai-engine/deploy",
-    // The toolkit ships both an import API and the `ai-engine-deploy` executable.
+    name: "@invokta/deploy",
+    // The toolkit ships both an import API and the `invokta-deploy` executable.
     requiredFiles: [...distEntryFiles, "dist/bin.js"],
   },
 ];
@@ -138,7 +138,7 @@ try {
   writeFileSync(
     join(consumerDirectory, "package.json"),
     `${JSON.stringify(
-      { name: "ai-engine-release-smoke", private: true, type: "module" },
+      { name: "invokta-release-smoke", private: true, type: "module" },
       null,
       2,
     )}\n`,
@@ -151,11 +151,11 @@ try {
   );
 
   const smokeProgram = `
-    const core = await import("@ai-engine/core");
-    const cli = await import("@ai-engine/cli");
-    const mcp = await import("@ai-engine/mcp");
-    const tooling = await import("@ai-engine/tooling");
-    const deploy = await import("@ai-engine/deploy");
+    const core = await import("@invokta/core");
+    const cli = await import("@invokta/cli");
+    const mcp = await import("@invokta/mcp");
+    const tooling = await import("@invokta/tooling");
+    const deploy = await import("@invokta/deploy");
     if (typeof core.createEngine !== "function") throw new Error("core import failed");
     if (typeof cli.runCli !== "function") throw new Error("cli import failed");
     if (typeof mcp.serveMcpStdio !== "function") throw new Error("mcp import failed");
@@ -170,12 +170,12 @@ try {
     consumerDirectory,
     "node_modules",
     ".bin",
-    "ai-engine-installer",
+    "invokta-installer",
   );
   const installerPackageDirectory = join(
     consumerDirectory,
     "node_modules",
-    "@ai-engine",
+    "@invokta",
     "installer",
   );
   const installerPackageReport = JSON.parse(
@@ -198,7 +198,7 @@ try {
     cwd: consumerDirectory,
     capture: true,
     env: {
-      AI_ENGINE_INSTALLER_DIST_ROOT: join(installerPackageDirectory, "dist"),
+      INVOKTA_INSTALLER_DIST_ROOT: join(installerPackageDirectory, "dist"),
       NODE_OPTIONS: `--no-warnings --experimental-loader=${eagerLoadSentinel} --import=${networkSentinel}`,
     },
   });
@@ -210,14 +210,14 @@ try {
     consumerDirectory,
     "node_modules",
     ".bin",
-    "ai-engine-deploy",
+    "invokta-deploy",
   );
   const deployPackageReport = JSON.parse(
     readFileSync(
       join(
         consumerDirectory,
         "node_modules",
-        "@ai-engine",
+        "@invokta",
         "deploy",
         "package.json",
       ),

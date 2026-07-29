@@ -22,7 +22,7 @@ import {
 } from "./support/init-scaffold-project.js";
 
 const secretSentinel = "fixture-secret-payload-marker";
-const overrideVariable = "AI_ENGINE_ENV_FILE";
+const overrideVariable = "INVOKTA_ENV_FILE";
 
 type Environment = Record<string, string | undefined>;
 
@@ -48,7 +48,7 @@ let loader: LoaderModule;
 const directories: string[] = [];
 
 function createDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), "ai-engine-env-"));
+  const directory = mkdtempSync(join(tmpdir(), "invokta-env-"));
   directories.push(directory);
   return directory;
 }
@@ -463,7 +463,7 @@ describe("importing the generated loader", () => {
   it("applies the environment file as an import side effect", async () => {
     const directory = createDirectory();
     const file = join(directory, "startup.env");
-    writeFileSync(file, "AI_ENGINE_SCAFFOLD_IMPORT_PROBE=applied\n", "utf8");
+    writeFileSync(file, "INVOKTA_SCAFFOLD_IMPORT_PROBE=applied\n", "utf8");
     const copy = join(project.outputDirectory, "env-import-probe.mjs");
     copyFileSync(loaderPath, copy);
     const previousOverride = process.env[overrideVariable];
@@ -471,9 +471,9 @@ describe("importing the generated loader", () => {
 
     try {
       await import(pathToFileURL(copy).href);
-      expect(process.env.AI_ENGINE_SCAFFOLD_IMPORT_PROBE).toBe("applied");
+      expect(process.env.INVOKTA_SCAFFOLD_IMPORT_PROBE).toBe("applied");
     } finally {
-      delete process.env.AI_ENGINE_SCAFFOLD_IMPORT_PROBE;
+      delete process.env.INVOKTA_SCAFFOLD_IMPORT_PROBE;
       if (previousOverride === undefined) delete process.env[overrideVariable];
       else process.env[overrideVariable] = previousOverride;
     }

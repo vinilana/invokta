@@ -2,7 +2,7 @@ import type { Dirent, Stats } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 
-import { EngineError } from "@ai-engine/core";
+import { EngineError } from "@invokta/core";
 import { parseDocument } from "yaml";
 
 import type {

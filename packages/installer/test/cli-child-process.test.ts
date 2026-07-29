@@ -35,7 +35,7 @@ function runCommand(...args: readonly string[]) {
       encoding: "utf8",
       env: {
         ...process.env,
-        AI_ENGINE_INSTALLER_DIST_ROOT: distDirectory,
+        INVOKTA_INSTALLER_DIST_ROOT: distDirectory,
         NODE_NO_WARNINGS: "1",
       },
     },
@@ -58,7 +58,7 @@ beforeAll(() => {
   );
 });
 
-describe("ai-engine-installer executable", () => {
+describe("invokta-installer executable", () => {
   it("retains its Node shebang", () => {
     expect(readFileSync(commandFile, "utf8").split("\n")[0]).toBe(
       "#!/usr/bin/env node",
@@ -70,9 +70,9 @@ describe("ai-engine-installer executable", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toBe(`Usage:
-  ai-engine-installer
-  ai-engine-installer --help
-  ai-engine-installer --version
+  invokta-installer
+  invokta-installer --help
+  invokta-installer --version
 `);
     expect(result.stderr).toBe("");
   });
@@ -91,7 +91,7 @@ describe("ai-engine-installer executable", () => {
     expect(result.status).toBe(2);
     expect(result.stdout).toBe("");
     expect(result.stderr).toBe(
-      'Invalid arguments. Run "ai-engine-installer --help".\n',
+      'Invalid arguments. Run "invokta-installer --help".\n',
     );
   });
 
@@ -118,7 +118,7 @@ describe("ai-engine-installer executable", () => {
         encoding: "utf8",
         env: {
           ...process.env,
-          AI_ENGINE_INSTALLER_DIST_ROOT: distDirectory,
+          INVOKTA_INSTALLER_DIST_ROOT: distDirectory,
           NODE_NO_WARNINGS: "1",
         },
       },

@@ -13,7 +13,7 @@ import net from "node:net";
 import tls from "node:tls";
 
 const attempts = [];
-globalThis.__AI_ENGINE_DEPLOY_NETWORK_ATTEMPTS__ = attempts;
+globalThis.__INVOKTA_DEPLOY_NETWORK_ATTEMPTS__ = attempts;
 
 function guard(name) {
   return function forbidNetworkAccess() {

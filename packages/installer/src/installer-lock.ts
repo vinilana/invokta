@@ -59,7 +59,7 @@ export function stateLockPath(statePath: string): string {
 }
 
 export function configLockPath(configPath: string): string {
-  return `${configPath}.ai-engine-installer.lock`;
+  return `${configPath}.invokta-installer.lock`;
 }
 
 function throwIfCancelled(signal: AbortSignal | undefined): void {

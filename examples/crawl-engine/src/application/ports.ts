@@ -1,4 +1,4 @@
-import type { Principal } from "@ai-engine/core";
+import type { Principal } from "@invokta/core";
 
 import type { CrawlTarget } from "../domain/crawl-target.js";
 import type { DiscoveredLink, ScrapedPage, SiteCrawl } from "../domain/page.js";

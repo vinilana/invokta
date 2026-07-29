@@ -158,7 +158,7 @@ installGuard(
 
 syncBuiltinESMExports();
 
-Object.defineProperty(globalThis, "__AI_ENGINE_TRANSACTION_LOCK_IO_AUDIT__", {
+Object.defineProperty(globalThis, "__INVOKTA_TRANSACTION_LOCK_IO_AUDIT__", {
   configurable: false,
   enumerable: false,
   value: {

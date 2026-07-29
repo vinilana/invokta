@@ -9,7 +9,7 @@ const header = `# Environment values for local development.
 
 const noDeclaredNames = `
 # This engine declares no environment variable names. Declare them under
-# "env" in ai-engine.deploy.json.
+# "env" in invokta.deploy.json.
 `;
 
 function renderGroup(comment: string, names: readonly string[]): string {

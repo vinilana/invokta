@@ -19,8 +19,8 @@ export const healthcheckTimeoutText = probeTimeoutText;
 // The body is raw so its escape sequences reach the generated file unchanged.
 const healthcheckBody = String.raw`
 const requestPath = "/mcp";
-const requestId = "ai-engine-deploy-healthcheck";
-const clientName = "ai-engine-deploy-healthcheck";
+const requestId = "invokta-deploy-healthcheck";
+const clientName = "invokta-deploy-healthcheck";
 const maxResponseBytes = 65536;
 
 function isRecord(value) {
@@ -29,7 +29,7 @@ function isRecord(value) {
 
 function readPort(environment) {
   const declared = (
-    environment.AI_ENGINE_HTTP_PORT ??
+    environment.INVOKTA_HTTP_PORT ??
     environment.PORT ??
     ""
   ).trim();
@@ -43,7 +43,7 @@ function readPort(environment) {
 // container that binds every interface only admits its public hosts. The first
 // allowed host is therefore the Host this loopback request must present.
 function readHostHeader(environment, port) {
-  const declared = environment.AI_ENGINE_HTTP_ALLOWED_HOSTS ?? "";
+  const declared = environment.INVOKTA_HTTP_ALLOWED_HOSTS ?? "";
   const first = declared
     .split(",")
     .map((item) => item.trim())

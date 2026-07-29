@@ -1,4 +1,4 @@
-import { createEngine, defineCapability } from "@ai-engine/core";
+import { createEngine, defineCapability } from "@invokta/core";
 import { z } from "zod";
 import { serveMcpStdio } from "../../dist/index.js";
 

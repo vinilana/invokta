@@ -1,0 +1,4 @@
+interface:
+  display_name: "Invokta Contract Review"
+  short_description: "Review Invokta contracts and limits"
+  default_prompt: "Use $invokta-contract-review to review the next Invokta milestone's API, acceptance criteria, and operational limits."

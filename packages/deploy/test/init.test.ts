@@ -26,7 +26,7 @@ import { createTestContext } from "./support/test-context.js";
 
 const scaffoldPaths = [
   ".env.example",
-  "ai-engine.deploy.json",
+  "invokta.deploy.json",
   "src/env.ts",
   "src/http-auth.ts",
   "src/mcp-http.ts",
@@ -35,14 +35,14 @@ const scaffoldPaths = [
 const projects: string[] = [];
 
 function createProject(): string {
-  const directory = mkdtempSync(join(tmpdir(), "ai-engine-init-"));
+  const directory = mkdtempSync(join(tmpdir(), "invokta-init-"));
   projects.push(directory);
   return directory;
 }
 
 function writeManifest(directory: string, document: unknown): void {
   writeFileSync(
-    join(directory, "ai-engine.deploy.json"),
+    join(directory, "invokta.deploy.json"),
     `${JSON.stringify(document, null, 2)}\n`,
     "utf8",
   );
@@ -69,7 +69,7 @@ describe("runInit", () => {
     expect(harness.stdout).toEqual([]);
     expect(harness.stderr).toEqual([
       "created .env.example\n",
-      "created ai-engine.deploy.json\n",
+      "created invokta.deploy.json\n",
       "created src/env.ts\n",
       "created src/http-auth.ts\n",
       "created src/mcp-http.ts\n",
@@ -98,7 +98,7 @@ describe("runInit", () => {
     const cwd = createProject();
 
     await runInit([], createTestContext({ cwd }).context);
-    const result = parseDeployManifest(read(cwd, "ai-engine.deploy.json"));
+    const result = parseDeployManifest(read(cwd, "invokta.deploy.json"));
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -136,7 +136,7 @@ describe("runInit", () => {
     expect(harness.stdout).toEqual([]);
     expect(harness.stderr).toEqual([
       "skipped .env.example\n",
-      "skipped ai-engine.deploy.json\n",
+      "skipped invokta.deploy.json\n",
       "skipped src/env.ts\n",
       "skipped src/http-auth.ts\n",
       "skipped src/mcp-http.ts\n",
@@ -158,7 +158,7 @@ describe("runInit", () => {
     expect(exitCode).toBe(0);
     expect(harness.stderr).toEqual([
       "created .env.example\n",
-      "created ai-engine.deploy.json\n",
+      "created invokta.deploy.json\n",
       "created src/env.ts\n",
       "created src/http-auth.ts\n",
       "skipped src/mcp-http.ts\n",
@@ -173,7 +173,7 @@ describe("runInit", () => {
       entry: "dist/mcp-http.js",
       env: {
         required: ["SUPPORT_API_TOKEN", "SUPPORT_API_URL"],
-        optional: ["AI_ENGINE_HTTP_ALLOWED_ORIGINS"],
+        optional: ["INVOKTA_HTTP_ALLOWED_ORIGINS"],
       },
     });
     const harness = createTestContext({ cwd });
@@ -181,12 +181,12 @@ describe("runInit", () => {
     const exitCode = await runInit([], harness.context);
 
     expect(exitCode).toBe(0);
-    expect(harness.stderr[1]).toBe("skipped ai-engine.deploy.json\n");
+    expect(harness.stderr[1]).toBe("skipped invokta.deploy.json\n");
     expect(read(cwd, ".env.example")).toContain(
       "SUPPORT_API_TOKEN=\nSUPPORT_API_URL=\n",
     );
     expect(read(cwd, ".env.example")).toContain(
-      "AI_ENGINE_HTTP_ALLOWED_ORIGINS=\n",
+      "INVOKTA_HTTP_ALLOWED_ORIGINS=\n",
     );
     expect(read(cwd, ".env.example").indexOf("SUPPORT_API_TOKEN")).toBeLessThan(
       read(cwd, ".env.example").indexOf("ALLOWED_ORIGINS"),
@@ -229,7 +229,7 @@ describe("runInit", () => {
     expect(exitCode).toBe(2);
     expect(harness.stdout).toEqual([]);
     expect(harness.stderr).toEqual([
-      'Invalid arguments. Run "ai-engine-deploy --help".\n',
+      'Invalid arguments. Run "invokta-deploy --help".\n',
     ]);
     expect(existsSync(join(cwd, ".env.example"))).toBe(false);
     expect(existsSync(join(cwd, "src"))).toBe(false);

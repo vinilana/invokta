@@ -1,4 +1,4 @@
-import { EngineError } from "@ai-engine/core";
+import { EngineError } from "@invokta/core";
 
 import type { WebCrawler } from "../application/ports.js";
 import type { DiscoveredLink, ScrapedPage } from "../domain/page.js";

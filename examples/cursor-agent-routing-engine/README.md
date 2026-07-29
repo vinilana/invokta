@@ -71,8 +71,8 @@ returned subagent. Cursor still enforces account and organization availability.
 From the repository root:
 
 ```sh
-yarn workspace @ai-engine/example-cursor-agent-routing build
-yarn workspace @ai-engine/example-cursor-agent-routing test
+yarn workspace @invokta/example-cursor-agent-routing build
+yarn workspace @invokta/example-cursor-agent-routing test
 ```
 
 Before using the templates, authenticate the Cursor CLI and inspect the models

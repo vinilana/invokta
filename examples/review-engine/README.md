@@ -150,7 +150,7 @@ demonstration, not production identity validation.
 ## Verify the example
 
 ```sh
-yarn workspace @ai-engine/example-review test
-yarn workspace @ai-engine/example-review typecheck
-yarn workspace @ai-engine/example-review build
+yarn workspace @invokta/example-review test
+yarn workspace @invokta/example-review typecheck
+yarn workspace @invokta/example-review build
 ```

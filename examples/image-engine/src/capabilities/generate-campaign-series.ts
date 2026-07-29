@@ -1,4 +1,4 @@
-import { EngineError, defineCapability } from "@ai-engine/core";
+import { EngineError, defineCapability } from "@invokta/core";
 import { z } from "zod";
 
 import type { CampaignImageGenerator } from "../application/ports.js";

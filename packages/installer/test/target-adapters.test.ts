@@ -23,7 +23,7 @@ function stdioDescriptor(
     description: "Classify and route support tickets.",
     capabilityIds: ["support.classify-ticket"],
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "stdio",
         command: "support-engine-mcp",
@@ -38,7 +38,7 @@ function httpDescriptor(): CapabilityInstallDescriptor {
   return {
     ...stdioDescriptor(),
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "streamable-http",
         url: "https://support.example.com/mcp",
@@ -332,17 +332,17 @@ describe("first native-toggle target adapters", () => {
     {
       targetId: "codex" as const,
       source: (transport: string) =>
-        `[mcp_servers.ai-engine-support]\ncommand = "support-engine-mcp"\ntransport = "${transport}"\nfuture_field = "preserved"\n`,
+        `[mcp_servers.invokta-support]\ncommand = "support-engine-mcp"\ntransport = "${transport}"\nfuture_field = "preserved"\n`,
     },
     {
       targetId: "hermes" as const,
       source: (transport: string) =>
-        `mcp_servers:\n  ai-engine-support:\n    command: support-engine-mcp\n    transport: ${transport}\n    future_field: preserved\n`,
+        `mcp_servers:\n  invokta-support:\n    command: support-engine-mcp\n    transport: ${transport}\n    future_field: preserved\n`,
     },
     {
       targetId: "openclaw" as const,
       source: (transport: string) =>
-        `{mcp:{servers:{"ai-engine-support":{command:"support-engine-mcp",transport:"${transport}",future_field:"preserved"}}}}`,
+        `{mcp:{servers:{"invokta-support":{command:"support-engine-mcp",transport:"${transport}",future_field:"preserved"}}}}`,
     },
   ])(
     "rejects raw selected-entry stdio transport fields for $targetId without collapsing them into the canonical transport",
@@ -353,7 +353,7 @@ describe("first native-toggle target adapters", () => {
           () =>
             adapter.inspect({
               source: encoder.encode(source(transport)),
-              serverName: "ai-engine-support",
+              serverName: "invokta-support",
             }),
           "HARNESS_CONFIG_INVALID",
         );
@@ -365,11 +365,11 @@ describe("first native-toggle target adapters", () => {
     const adapter = configurationTargetAdapters.openclaw;
     const source = (transport: string) =>
       encoder.encode(
-        `{mcp:{servers:{"ai-engine-support":{url:"https://support.example.com/mcp",transport:"${transport}",future_field:{nested:"preserved"}}}}}`,
+        `{mcp:{servers:{"invokta-support":{url:"https://support.example.com/mcp",transport:"${transport}",future_field:{nested:"preserved"}}}}}`,
       );
     const current = adapter.inspect({
       source: source("streamable-http"),
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     }).currentServer;
     expect(current).toEqual({
       kind: "present",
@@ -385,7 +385,7 @@ describe("first native-toggle target adapters", () => {
       () =>
         adapter.inspect({
           source: source("stdio"),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -476,9 +476,9 @@ describe("first native-toggle target adapters", () => {
     const adapter = configurationTargetAdapters.codex;
     const source = encoder.encode(
       [
-        "# [mcp_servers.ai-engine-support]",
-        'ordinary = "[mcp_servers.ai-engine-support] enabled = false"',
-        "[mcp_servers.ai-engine-support]",
+        "# [mcp_servers.invokta-support]",
+        'ordinary = "[mcp_servers.invokta-support] enabled = false"',
+        "[mcp_servers.invokta-support]",
         'command = "support-engine-mcp"',
         "args = []",
         'note = """',
@@ -493,7 +493,7 @@ describe("first native-toggle target adapters", () => {
       action: "enable",
       inspection: adapter.inspect({
         source,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }),
     });
     expect(patch.kind).toBe("changed");
@@ -504,7 +504,7 @@ describe("first native-toggle target adapters", () => {
     );
     const current = adapter.inspect({
       source: patch.postImage,
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     }).currentServer;
     expect(current.kind).toBe("present");
     if (current.kind !== "present") throw new Error("Expected server.");
@@ -515,7 +515,7 @@ describe("first native-toggle target adapters", () => {
     const adapter = configurationTargetAdapters.codex;
     const source = encoder.encode(
       [
-        "[mcp_servers.ai-engine-support]",
+        "[mcp_servers.invokta-support]",
         'command = "support-engine-mcp"',
         "args = []",
         'note = """enabled = false"""',
@@ -528,7 +528,7 @@ describe("first native-toggle target adapters", () => {
       action: "enable",
       inspection: adapter.inspect({
         source,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
         counters,
       }),
       counters,
@@ -552,7 +552,7 @@ describe("first native-toggle target adapters", () => {
 
     for (const source of [dotted(100), inlineDotted(99)]) {
       expect(
-        adapter.inspect({ source, serverName: "ai-engine-support" })
+        adapter.inspect({ source, serverName: "invokta-support" })
           .currentServer,
       ).toEqual({ kind: "absent" });
     }
@@ -563,7 +563,7 @@ describe("first native-toggle target adapters", () => {
       inlineDotted(1_000),
     ]) {
       expectInstallerCode(
-        () => adapter.inspect({ source, serverName: "ai-engine-support" }),
+        () => adapter.inspect({ source, serverName: "invokta-support" }),
         "HARNESS_CONFIG_INVALID",
       );
     }
@@ -579,14 +579,14 @@ describe("first native-toggle target adapters", () => {
     expect(
       adapter.inspect({
         source: arrayOfTables(98),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toEqual({ kind: "absent" });
     expectInstallerCode(
       () =>
         adapter.inspect({
           source: arrayOfTables(99),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -596,17 +596,17 @@ describe("first native-toggle target adapters", () => {
     {
       name: "explicit table",
       source:
-        '[mcp_servers.ai-engine-support]\ncommand = "support-engine-mcp"\nargs = []\nenabled = false\n',
+        '[mcp_servers.invokta-support]\ncommand = "support-engine-mcp"\nargs = []\nenabled = false\n',
     },
     {
       name: "dotted keys",
       source:
-        'mcp_servers.ai-engine-support.command = "support-engine-mcp"\nmcp_servers.ai-engine-support.args = []\nmcp_servers.ai-engine-support.enabled = false\n',
+        'mcp_servers.invokta-support.command = "support-engine-mcp"\nmcp_servers.invokta-support.args = []\nmcp_servers.invokta-support.enabled = false\n',
     },
     {
       name: "inline table",
       source:
-        'mcp_servers = { ai-engine-support = { command = "support-engine-mcp", args = [], enabled = false }, other = { command = "old", args = [] } }\n',
+        'mcp_servers = { invokta-support = { command = "support-engine-mcp", args = [], enabled = false }, other = { command = "old", args = [] } }\n',
     },
   ])("toggles a TOML $name representation locally", ({ source }) => {
     const adapter = configurationTargetAdapters.codex;
@@ -615,14 +615,14 @@ describe("first native-toggle target adapters", () => {
       action: "enable",
       inspection: adapter.inspect({
         source: before,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }),
     });
     expect(patch.kind).toBe("changed");
     if (patch.kind !== "changed") throw new Error("Expected change.");
     const current = adapter.inspect({
       source: patch.postImage,
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     }).currentServer;
     expect(current.kind).toBe("present");
     if (current.kind !== "present") throw new Error("Expected server.");
@@ -672,13 +672,13 @@ describe("first native-toggle target adapters", () => {
 
   it.each([
     "mcp_servers = 1979-05-27T07:32:00Z\n",
-    "mcp_servers.ai-engine-support = 1979-05-27T07:32:00Z\n",
+    "mcp_servers.invokta-support = 1979-05-27T07:32:00Z\n",
   ])("rejects a TOML datetime at an MCP object boundary", (source) => {
     expectInstallerCode(
       () =>
         configurationTargetAdapters.codex.inspect({
           source: encoder.encode(source),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -725,7 +725,7 @@ describe("first native-toggle target adapters", () => {
       expect(
         adapter.inspect({
           source: encoder.encode(source),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }).currentServer,
       ).toEqual({ kind: "absent" });
     }
@@ -733,7 +733,7 @@ describe("first native-toggle target adapters", () => {
       () =>
         adapter.inspect({
           source: encoder.encode("object:\n  <<: { inherited: true }\n"),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -747,7 +747,7 @@ describe("first native-toggle target adapters", () => {
       () =>
         configurationTargetAdapters.hermes.inspect({
           source: encoder.encode(source),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -757,7 +757,7 @@ describe("first native-toggle target adapters", () => {
     expect(
       configurationTargetAdapters.hermes.inspect({
         source: encoder.encode("!!str <<: ordinary\n"),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toEqual({ kind: "absent" });
   });
@@ -767,14 +767,14 @@ describe("first native-toggle target adapters", () => {
     "true: boolean\n",
     "? { complex: key }\n: value\n",
     "? [duplicate]\n: one\n? [duplicate]\n: two\n",
-    'mcp_servers:\n  ai-engine-support:\n    command: support-engine-mcp\n    args: []\n    1: "lost"\n',
-    'mcp_servers:\n  ai-engine-support:\n    url: https://support.example.com/mcp\n    headers:\n      true: "lost"\n',
+    'mcp_servers:\n  invokta-support:\n    command: support-engine-mcp\n    args: []\n    1: "lost"\n',
+    'mcp_servers:\n  invokta-support:\n    url: https://support.example.com/mcp\n    headers:\n      true: "lost"\n',
   ])("rejects every non-string YAML mapping key: %s", (source) => {
     expectInstallerCode(
       () =>
         configurationTargetAdapters.hermes.inspect({
           source: encoder.encode(source),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -847,13 +847,13 @@ describe("first native-toggle target adapters", () => {
   it.each([
     "!!set {value: null}\n",
     "mcp_servers: !!set {value: null}\n",
-    "mcp_servers:\n  ai-engine-support: !!set {value: null}\n",
+    "mcp_servers:\n  invokta-support: !!set {value: null}\n",
   ])("rejects a nonstandard YAML collection tag: %s", (source) => {
     expectInstallerCode(
       () =>
         configurationTargetAdapters.hermes.inspect({
           source: encoder.encode(source),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -867,10 +867,10 @@ describe("first native-toggle target adapters", () => {
     "preserves and traverses an unrelated tagged YAML collection while toggling: %s",
     (unrelated) => {
       const adapter = configurationTargetAdapters.hermes;
-      const source = `${unrelated}mcp_servers:\n  ai-engine-support:\n    command: support-engine-mcp\n    args: []\n    enabled: false\n`;
+      const source = `${unrelated}mcp_servers:\n  invokta-support:\n    command: support-engine-mcp\n    args: []\n    enabled: false\n`;
       const inspection = adapter.inspect({
         source: encoder.encode(source),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       const patch = adapter.constructPatch({
         action: "enable",
@@ -888,19 +888,19 @@ describe("first native-toggle target adapters", () => {
     const adapter = configurationTargetAdapters.hermes;
     const source = (wrappers: number) =>
       encoder.encode(
-        `theme: ${"[".repeat(wrappers)}!!omap [{key: value}]${"]".repeat(wrappers)}\nmcp_servers:\n  ai-engine-support:\n    command: support-engine-mcp\n    args: []\n`,
+        `theme: ${"[".repeat(wrappers)}!!omap [{key: value}]${"]".repeat(wrappers)}\nmcp_servers:\n  invokta-support:\n    command: support-engine-mcp\n    args: []\n`,
       );
     expect(
       adapter.inspect({
         source: source(97),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer.kind,
     ).toBe("present");
     expectInstallerCode(
       () =>
         adapter.inspect({
           source: source(98),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -909,9 +909,9 @@ describe("first native-toggle target adapters", () => {
   it("accepts explicit standard YAML map, sequence, and string tags", () => {
     const current = configurationTargetAdapters.hermes.inspect({
       source: encoder.encode(
-        "!!map {mcp_servers: !!map {ai-engine-support: !!map {command: !!str support-engine-mcp, args: !!seq []}}}\n",
+        "!!map {mcp_servers: !!map {invokta-support: !!map {command: !!str support-engine-mcp, args: !!seq []}}}\n",
       ),
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
     }).currentServer;
     expect(current.kind).toBe("present");
     if (current.kind !== "present") throw new Error("Expected server.");
@@ -954,11 +954,11 @@ describe("first native-toggle target adapters", () => {
       const adapter = configurationTargetAdapters[targetId];
       const selected = (integer: string) =>
         targetId === "codex"
-          ? `[mcp_servers.ai-engine-support]\ncommand = "support-engine-mcp"\nargs = []\nunknown_integer = ${integer}\n`
-          : `mcp_servers:\n  ai-engine-support:\n    command: support-engine-mcp\n    args: []\n    unknown_integer: ${integer}\n`;
+          ? `[mcp_servers.invokta-support]\ncommand = "support-engine-mcp"\nargs = []\nunknown_integer = ${integer}\n`
+          : `mcp_servers:\n  invokta-support:\n    command: support-engine-mcp\n    args: []\n    unknown_integer: ${integer}\n`;
       const current = adapter.inspect({
         source: encoder.encode(selected("9007199254740991")),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer;
       expect(current.kind).toBe("present");
       if (current.kind !== "present") throw new Error("Expected server.");
@@ -969,7 +969,7 @@ describe("first native-toggle target adapters", () => {
           () =>
             adapter.inspect({
               source: encoder.encode(selected(integer)),
-              serverName: "ai-engine-support",
+              serverName: "invokta-support",
             }),
           "HARNESS_CONFIG_INVALID",
         );
@@ -1202,7 +1202,7 @@ describe("first native-toggle target adapters", () => {
         '# keep top\r\ntheme = "dark"\r\n\r\n[mcp_servers.other]\r\ncommand = "old"',
       top: '# keep top\r\ntheme = "dark"',
       preserved: '[mcp_servers.other]\r\ncommand = "old"',
-      inserted: "[mcp_servers.ai-engine-support]",
+      inserted: "[mcp_servers.invokta-support]",
     },
     {
       targetId: "hermes" as const,
@@ -1210,14 +1210,14 @@ describe("first native-toggle target adapters", () => {
         "# keep top\r\nmcp_servers:\r\n  other:\r\n    command: old\r\ntheme: dark",
       top: "# keep top\r\nmcp_servers:",
       preserved: "  other:\r\n    command: old",
-      inserted: "  ai-engine-support:",
+      inserted: "  invokta-support:",
     },
     {
       targetId: "openclaw" as const,
       source: "{ theme:'dark', mcp:{servers:{other:{command:'old',args:[]}}}}",
       top: "{ theme:'dark'",
       preserved: "other:{command:'old',args:[]}",
-      inserted: '"ai-engine-support":',
+      inserted: '"invokta-support":',
     },
   ])(
     "adds only the selected server and preserves existing bytes for $targetId",
@@ -1249,19 +1249,19 @@ describe("first native-toggle target adapters", () => {
     {
       targetId: "codex" as const,
       source:
-        '# keep top\r\ntheme = "dark"\r\n\r\n[mcp_servers.ai-engine-support]\r\ncommand = "support-engine-mcp"\r\nargs = []\r\n# keep selected\r\nenabled = true',
+        '# keep top\r\ntheme = "dark"\r\n\r\n[mcp_servers.invokta-support]\r\ncommand = "support-engine-mcp"\r\nargs = []\r\n# keep selected\r\nenabled = true',
       disabled: "enabled = false",
     },
     {
       targetId: "hermes" as const,
       source:
-        "# keep top\r\ntheme: dark\r\nmcp_servers:\r\n  ai-engine-support:\r\n    command: support-engine-mcp\r\n    args: []\r\n    # keep selected\r\n    enabled: true",
+        "# keep top\r\ntheme: dark\r\nmcp_servers:\r\n  invokta-support:\r\n    command: support-engine-mcp\r\n    args: []\r\n    # keep selected\r\n    enabled: true",
       disabled: "enabled: false",
     },
     {
       targetId: "openclaw" as const,
       source:
-        "{\r\n  // keep top\r\n  theme: 'dark',\r\n  mcp: { servers: {\r\n    'ai-engine-support': { command: 'support-engine-mcp', args: [], enabled: true }\r\n  } }\r\n}",
+        "{\r\n  // keep top\r\n  theme: 'dark',\r\n  mcp: { servers: {\r\n    'invokta-support': { command: 'support-engine-mcp', args: [], enabled: true }\r\n  } }\r\n}",
       disabled: "enabled: false",
     },
   ])(
@@ -1271,7 +1271,7 @@ describe("first native-toggle target adapters", () => {
       const sourceBytes = encoder.encode(`\ufeff${source}`);
       const inspected = adapter.inspect({
         source: sourceBytes,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       const patch = adapter.constructPatch({
         action: "disable",
@@ -1292,7 +1292,7 @@ describe("first native-toggle target adapters", () => {
         action: "disable",
         inspection: adapter.inspect({
           source: patch.postImage,
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       });
       expect(repeat).toEqual({ kind: "unchanged" });
@@ -1310,7 +1310,7 @@ describe("first native-toggle target adapters", () => {
       );
       const inspection = adapter.inspect({
         source: withoutEnabled,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       });
       expect(
         inspection.currentServer.kind === "present" &&
@@ -1329,7 +1329,7 @@ describe("first native-toggle target adapters", () => {
         action: "enable",
         inspection: adapter.inspect({
           source: disabled.postImage,
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       });
       expect(reenabled.kind).toBe("changed");
@@ -1359,14 +1359,14 @@ describe("first native-toggle target adapters", () => {
       {
         adapter: configurationTargetAdapters.codex,
         source: encoder.encode(
-          '[mcp_servers.ai-engine-support]\nurl = "https://support.example.com/mcp"\nenv_http_headers.Authorization = "ONE"\nenv_http_headers.authorization = "TWO"\n',
+          '[mcp_servers.invokta-support]\nurl = "https://support.example.com/mcp"\nenv_http_headers.Authorization = "ONE"\nenv_http_headers.authorization = "TWO"\n',
         ),
         code: "HARNESS_CONFIG_INVALID" as const,
       },
       {
         adapter: configurationTargetAdapters.codex,
         source: encoder.encode(
-          '[mcp_servers.ai-engine-support]\ncommand = "support-engine-mcp"\nargs = []\nunknown_date = 1979-05-27T07:32:00Z\n',
+          '[mcp_servers.invokta-support]\ncommand = "support-engine-mcp"\nargs = []\nunknown_date = 1979-05-27T07:32:00Z\n',
         ),
         code: "HARNESS_CONFIG_INVALID" as const,
       },
@@ -1393,7 +1393,7 @@ describe("first native-toggle target adapters", () => {
       {
         adapter: configurationTargetAdapters.hermes,
         source: encoder.encode(
-          "mcp_servers:\n  ai-engine-support:\n    url: https://support.example.com/mcp\n    headers: { Authorization: ONE, authorization: TWO }\n",
+          "mcp_servers:\n  invokta-support:\n    url: https://support.example.com/mcp\n    headers: { Authorization: ONE, authorization: TWO }\n",
         ),
         code: "HARNESS_CONFIG_INVALID" as const,
       },
@@ -1410,7 +1410,7 @@ describe("first native-toggle target adapters", () => {
       {
         adapter: configurationTargetAdapters.openclaw,
         source: encoder.encode(
-          "{ mcp: { servers: { 'ai-engine-support': { url: 'https://support.example.com/mcp', headers: { Authorization: 'ONE', authorization: 'TWO' } } } } }",
+          "{ mcp: { servers: { 'invokta-support': { url: 'https://support.example.com/mcp', headers: { Authorization: 'ONE', authorization: 'TWO' } } } } }",
         ),
         code: "HARNESS_CONFIG_INVALID" as const,
       },
@@ -1427,7 +1427,7 @@ describe("first native-toggle target adapters", () => {
     ];
     for (const { adapter, source, code } of cases) {
       expectInstallerCode(
-        () => adapter.inspect({ source, serverName: "ai-engine-support" }),
+        () => adapter.inspect({ source, serverName: "invokta-support" }),
         code,
       );
     }
@@ -1435,7 +1435,7 @@ describe("first native-toggle target adapters", () => {
       () =>
         configurationTargetAdapters.openclaw.inspect({
           source: new Uint8Array([0x7b, 0x22, 0x78, 0x22, 0x3a, 0xff, 0x7d]),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -1443,7 +1443,7 @@ describe("first native-toggle target adapters", () => {
       () =>
         configurationTargetAdapters.codex.inspect({
           source: encoder.encode('theme = "x\ufeffy"\n'),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -1451,7 +1451,7 @@ describe("first native-toggle target adapters", () => {
       () =>
         configurationTargetAdapters.codex.inspect({
           source: new Uint8Array([0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf]),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
         }),
       "HARNESS_CONFIG_INVALID",
     );
@@ -1469,7 +1469,7 @@ describe("first native-toggle target adapters", () => {
     expect(
       adapter.inspect({
         source: nested(100),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
         counters,
       }).currentServer,
     ).toEqual({ kind: "absent" });
@@ -1488,7 +1488,7 @@ describe("first native-toggle target adapters", () => {
       () =>
         adapter.inspect({
           source: nested(101),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
           counters: rejected,
         }),
       "HARNESS_CONFIG_INVALID",
@@ -1516,7 +1516,7 @@ describe("first native-toggle target adapters", () => {
     expect(
       adapter.inspect({
         source: source(100),
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
       }).currentServer,
     ).toEqual({ kind: "absent" });
     const counters = createTargetAdapterCounters();
@@ -1524,7 +1524,7 @@ describe("first native-toggle target adapters", () => {
       () =>
         adapter.inspect({
           source: source(101),
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
           counters,
         }),
       "HARNESS_CONFIG_INVALID",
@@ -1542,7 +1542,7 @@ describe("first native-toggle target adapters", () => {
     expect(
       adapter.inspect({
         source: exact,
-        serverName: "ai-engine-support",
+        serverName: "invokta-support",
         counters,
       }).currentServer,
     ).toEqual({ kind: "absent" });
@@ -1555,7 +1555,7 @@ describe("first native-toggle target adapters", () => {
       () =>
         adapter.inspect({
           source: over,
-          serverName: "ai-engine-support",
+          serverName: "invokta-support",
           counters: rejected,
         }),
       "HARNESS_CONFIG_INVALID",
@@ -1567,7 +1567,7 @@ describe("first native-toggle target adapters", () => {
   it("rejects a 4 MiB plus one post-image before post-image decoding", () => {
     const adapter = configurationTargetAdapters.codex;
     const prefix = encoder.encode(
-      '[mcp_servers.ai-engine-support]\ncommand = "support-engine-mcp"\nargs = []\nenabled = true\n',
+      '[mcp_servers.invokta-support]\ncommand = "support-engine-mcp"\nargs = []\nenabled = true\n',
     );
     const source = new Uint8Array(4_194_304);
     source.fill(0x20);
@@ -1575,7 +1575,7 @@ describe("first native-toggle target adapters", () => {
     const counters = createTargetAdapterCounters();
     const inspection = adapter.inspect({
       source,
-      serverName: "ai-engine-support",
+      serverName: "invokta-support",
       counters,
     });
     expectInstallerCode(

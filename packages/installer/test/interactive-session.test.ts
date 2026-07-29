@@ -109,7 +109,7 @@ describe("interactive detection session", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(events[0]).toBe("intro:AI Engine capability installer");
+    expect(events[0]).toBe("intro:Invokta capability installer");
     expect(events[1]).toBe("start:Detecting supported AI harnesses");
     expect(events[2]).toBe("registry");
     expect(events.indexOf("home")).toBeGreaterThan(events.indexOf("registry"));
@@ -129,7 +129,7 @@ describe("interactive detection session", () => {
 
   it("uses the production config probes to inventory all nine config-only targets", async () => {
     const homeDirectory = mkdtempSync(
-      join(tmpdir(), "ai-engine-interactive-configs-"),
+      join(tmpdir(), "invokta-interactive-configs-"),
     );
     temporaryDirectories.push(homeDirectory);
     for (const relativePath of [

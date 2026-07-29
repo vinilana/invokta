@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import { type McpHttpServerHandle, serveMcpHttp } from "@ai-engine/mcp";
+import { type McpHttpServerHandle, serveMcpHttp } from "@invokta/mcp";
 
 import { engine } from "./engine.js";
 

@@ -39,7 +39,7 @@ export async function runInteractiveSession(
   options: RunInteractiveSessionOptions = {},
 ): Promise<InstallerExitCode> {
   const prompter = options.prompter ?? createClackInteractivePrompter();
-  prompter.intro("AI Engine capability installer");
+  prompter.intro("Invokta capability installer");
   const progress = prompter.spinner();
   progress.start("Detecting supported AI harnesses");
   try {

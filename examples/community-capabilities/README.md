@@ -50,10 +50,10 @@ the default ID and the diagnostic source metadata used for composition.
 ## Consume it
 
 ```ts
-import { composeCapabilities, importCapability } from "@ai-engine/core";
+import { composeCapabilities, importCapability } from "@invokta/core";
 import {
   createClassifyTicketExport,
-} from "@ai-engine/example-community-capabilities/classify-ticket";
+} from "@invokta/example-community-capabilities/classify-ticket";
 
 export const capabilities = composeCapabilities({
   imports: [
@@ -71,9 +71,9 @@ authoring and consuming workflow.
 ## Verify the fixture
 
 ```sh
-yarn workspace @ai-engine/example-community-capabilities test
-yarn workspace @ai-engine/example-community-capabilities typecheck
-yarn workspace @ai-engine/example-community-capabilities build
+yarn workspace @invokta/example-community-capabilities test
+yarn workspace @invokta/example-community-capabilities typecheck
+yarn workspace @invokta/example-community-capabilities build
 ```
 
 The tests build `dist/` first, then import the package by its real specifiers

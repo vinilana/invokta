@@ -1,6 +1,6 @@
 # Integrating an identity provider at the HTTP boundary
 
-`@ai-engine/mcp` accepts a pluggable authentication hook, converts a valid
+`@invokta/mcp` accepts a pluggable authentication hook, converts a valid
 request identity into the framework's minimal `Principal`, and passes that
 principal to `engine.invoke`. When OAuth metadata is configured, the framework
 acts only as a Resource Server boundary. It does not perform login or consent,
@@ -19,11 +19,11 @@ provider-neutral example assumes an injected verifier that distinguishes
 invalid credentials from infrastructure failure:
 
 ```ts
-import type { Principal } from "@ai-engine/core";
+import type { Principal } from "@invokta/core";
 import {
   type McpHttpHeaderView,
   serveMcpHttp,
-} from "@ai-engine/mcp";
+} from "@invokta/mcp";
 
 import { engine } from "./engine.js";
 

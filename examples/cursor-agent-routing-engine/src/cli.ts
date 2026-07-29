@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import { runCli } from "@ai-engine/cli";
+import { runCli } from "@invokta/cli";
 
 import { engine } from "./engine.js";
 

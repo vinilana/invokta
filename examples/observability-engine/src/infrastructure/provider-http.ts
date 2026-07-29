@@ -1,4 +1,4 @@
-import { EngineError } from "@ai-engine/core";
+import { EngineError } from "@invokta/core";
 
 export type ProviderName = "sentry" | "datadog" | "new-relic";
 

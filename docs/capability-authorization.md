@@ -25,7 +25,7 @@ capability factory:
 import {
   type AccessRule,
   defineCapability,
-} from "@ai-engine/core";
+} from "@invokta/core";
 import { z } from "zod";
 
 declare function classifyByDomainRules(ticketId: string): string;

@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureDirectory = fileURLToPath(new URL("./fixtures", import.meta.url));
-const temporaryRoot = mkdtempSync(join(tmpdir(), "ai-engine-surfaces-"));
+const temporaryRoot = mkdtempSync(join(tmpdir(), "invokta-surfaces-"));
 const executableDirectory = join(temporaryRoot, "bin");
 const emptyExecutableDirectory = join(temporaryRoot, "empty-bin");
 const homeWithoutConfigs = join(temporaryRoot, "home-without-configs");
@@ -114,7 +114,7 @@ describe("harness detection safety sentinels", () => {
         encoding: "utf8",
         env: {
           ...environment,
-          AI_ENGINE_INSTALLER_TEST_HOME: homeDirectory,
+          INVOKTA_INSTALLER_TEST_HOME: homeDirectory,
           PATH: pathValue,
         },
       },

@@ -404,7 +404,7 @@ describe("composition resolution", () => {
     const composed = composeCapabilities({
       local: { "operations.generate-report": plainCapability() },
     });
-    const brand = Symbol.for("@ai-engine/core.composedCapabilities");
+    const brand = Symbol.for("@invokta/core.composedCapabilities");
 
     expect(Object.isFrozen(composed)).toBe(true);
     expect(Object.keys(composed)).toEqual(["operations.generate-report"]);

@@ -1,4 +1,4 @@
-import type { Engine } from "@ai-engine/core";
+import type { Engine } from "@invokta/core";
 import { expectTypeOf } from "vitest";
 
 import { type CliIo, type RunCliOptions, runCli } from "../src/index.js";

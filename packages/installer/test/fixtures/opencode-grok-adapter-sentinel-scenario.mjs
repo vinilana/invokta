@@ -13,7 +13,7 @@ const descriptor = Object.freeze({
   description: "Classify support tickets.",
   capabilityIds: Object.freeze(["support.classify-ticket"]),
   server: Object.freeze({
-    name: "ai-engine-support",
+    name: "invokta-support",
     transport: Object.freeze({
       type: "streamable-http",
       url: "https://support.example.com/mcp",

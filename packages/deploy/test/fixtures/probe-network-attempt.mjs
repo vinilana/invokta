@@ -3,7 +3,7 @@
 // that nothing tried, not evidence that the sentinel cannot see the probe path.
 import { createDeployContext, runProbe } from "../../dist/index.js";
 
-const attempts = globalThis.__AI_ENGINE_DEPLOY_NETWORK_ATTEMPTS__;
+const attempts = globalThis.__INVOKTA_DEPLOY_NETWORK_ATTEMPTS__;
 if (!Array.isArray(attempts)) throw new Error("SENTINELS_NOT_INSTALLED");
 
 const context = createDeployContext({

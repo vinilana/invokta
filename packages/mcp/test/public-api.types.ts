@@ -1,4 +1,4 @@
-import type { Engine, Principal } from "@ai-engine/core";
+import type { Engine, Principal } from "@invokta/core";
 import { expectTypeOf } from "vitest";
 
 import {

@@ -1,5 +1,5 @@
 {
-  "name": "@ai-engine/mcp",
+  "name": "@invokta/mcp",
   "version": "0.1.0",
   "type": "module",
   "sideEffects": false,
@@ -21,7 +21,7 @@
     "prepack": "npm run --silent build"
   },
   "dependencies": {
-    "@ai-engine/core": "0.1.0",
+    "@invokta/core": "0.1.0",
     "@modelcontextprotocol/sdk": "1.30.0"
   }
 }

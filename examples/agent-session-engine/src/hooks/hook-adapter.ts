@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { runCli } from "@ai-engine/cli";
-import type { Principal } from "@ai-engine/core";
+import { runCli } from "@invokta/cli";
+import type { Principal } from "@invokta/core";
 
 import type { AgentHarness } from "../domain/agent-session.js";
 import type { createAgentSessionEngine } from "../engine.js";

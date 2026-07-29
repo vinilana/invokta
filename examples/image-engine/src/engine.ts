@@ -1,4 +1,4 @@
-import { createEngine } from "@ai-engine/core";
+import { createEngine } from "@invokta/core";
 
 import type { ImageEngineDependencies } from "./application/ports.js";
 import { createComposeReferenceAsset } from "./capabilities/compose-reference-asset.js";

@@ -1,4 +1,4 @@
-import { createEngine, defineCapability, EngineError } from "@ai-engine/core";
+import { createEngine, defineCapability, EngineError } from "@invokta/core";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 

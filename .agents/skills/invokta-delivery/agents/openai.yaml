@@ -1,0 +1,4 @@
+interface:
+  display_name: "Invokta Delivery"
+  short_description: "Deliver Invokta milestones with TDD"
+  default_prompt: "Use $invokta-delivery to implement the next Invokta milestone with TDD and the repository's delivery gates."

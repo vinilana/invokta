@@ -1,4 +1,4 @@
-import { createEngine } from "@ai-engine/core";
+import { createEngine } from "@invokta/core";
 
 import type { ObservabilityDependencies } from "./application/ports.js";
 import { createCollectIncidentContext } from "./capabilities/collect-incident-context.js";

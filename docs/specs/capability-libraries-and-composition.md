@@ -7,7 +7,7 @@
 
 ## Summary
 
-AI Engine applications need to reuse domain capabilities published by local ESM
+Action Engine applications need to reuse domain capabilities published by local ESM
 modules and community packages without copying handlers or introducing runtime
 plugin discovery. A module may export one atomic capability, while a capability
 library may export a bundle. Either form may expose dependency-injected
@@ -124,7 +124,7 @@ An ESM module may export one capability without defining a library bundle:
 import {
   defineCapability,
   defineExportedCapability,
-} from "@ai-engine/core";
+} from "@invokta/core";
 
 export function createClassifyTicket(
   dependencies: SupportCapabilityDependencies,
@@ -179,7 +179,7 @@ import {
   composeCapabilities,
   createEngine,
   importCapability,
-} from "@ai-engine/core";
+} from "@invokta/core";
 
 const classifyTicket = createClassifyTicket(dependencies.support);
 
@@ -215,7 +215,7 @@ import {
   defineCapability,
   defineCapabilityLibrary,
   importCapabilities,
-} from "@ai-engine/core";
+} from "@invokta/core";
 
 export function createSupportCapabilityLibrary(
   dependencies: SupportCapabilityDependencies,
@@ -254,7 +254,7 @@ import {
   composeCapabilities,
   createEngine,
   importCapabilities,
-} from "@ai-engine/core";
+} from "@invokta/core";
 import {
   createSupportCapabilityLibrary,
 } from "@community/support-capabilities";
@@ -509,10 +509,10 @@ validation remains authoritative.
 
 ### Build gate
 
-A new dev-only `@ai-engine/tooling` package MUST provide:
+A new dev-only `@invokta/tooling` package MUST provide:
 
 ```text
-ai-engine check-capabilities <esm-module> [--export <name>]
+invokta check-capabilities <esm-module> [--export <name>]
 ```
 
 The default export name inspected by the command is `capabilities`. The selected
@@ -532,7 +532,7 @@ The command MUST:
    invalid usage, module loading failure, or a missing/wrong export;
 7. report every collision issue in one run.
 
-The core MUST NOT depend on `@ai-engine/tooling`. Tooling may depend only on the
+The core MUST NOT depend on `@invokta/tooling`. Tooling may depend only on the
 core public composition API and Node ESM facilities. The command does not invoke
 capabilities, initialize their dependencies, or start CLI/MCP transports beyond
 the application code executed by the imported module itself.
@@ -598,7 +598,7 @@ be reported.
 | `AE-AC-07` | All collisions are returned in deterministic order with complete, payload-free local, atomic, or library provenance. | Snapshot-free structural error assertions and log safety test. |
 | `AE-AC-08` | Bare atomic definitions, unknown selections, and unknown remaps fail statically when typed and dynamically otherwise. | Public type tests and runtime boundary tests. |
 | `AE-AC-09` | Literal remapped IDs preserve exact invocation input and output inference. | Public API type test. |
-| `AE-AC-10` | `ai-engine check-capabilities` exits `0`, `1`, and `2` for valid, colliding, and invalid-tooling fixtures respectively. | Child-process tooling tests. |
+| `AE-AC-10` | `invokta check-capabilities` exits `0`, `1`, and `2` for valid, colliding, and invalid-tooling fixtures respectively. | Child-process tooling tests. |
 | `AE-AC-11` | The build checker rejects an untracked raw map instead of claiming collision safety. | Tooling fixture using pre-flattened object spread. |
 | `AE-AC-12` | Atomic and library capabilities execute through the same `engine.invoke` path across all adapters. | Adapter spies and end-to-end community-package examples. |
 | `AE-AC-13` | A dynamically generated composition of 10,000 declarations is validated without stack overflow and without executing access rules or handlers. | Instrumented runtime test using computed IDs. |
@@ -617,7 +617,7 @@ be reported.
 | Reusable community libraries | `defineCapabilityLibrary`, explicit dependency factories | `AE-AC-01`, `AE-AC-12` |
 | Default and overridden IDs | Atomic `as`; library `include` and `remap` | `AE-AC-02`, `AE-AC-03`, `AE-AC-04` |
 | Collision safety | `composeCapabilities`, `CapabilityCompositionError` | `AE-AC-05` through `AE-AC-09`, `AE-AC-18` |
-| Lint/build enforcement | `@ai-engine/tooling`, `check-capabilities` | `AE-AC-10`, `AE-AC-11` |
+| Lint/build enforcement | `@invokta/tooling`, `check-capabilities` | `AE-AC-10`, `AE-AC-11` |
 | Architectural boundaries | Atomic and bundled ESM imports, composition root, unchanged `engine.invoke` | `AE-AC-01`, `AE-AC-12` through `AE-AC-17` |
 
 ## Delivery slices

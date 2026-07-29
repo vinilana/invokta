@@ -328,7 +328,7 @@ describe("the toolkit import graph", () => {
 
   it("mentions a framework package only as scaffold template text", () => {
     const mentioning = modules.filter(
-      (module) => occurrences(module.source, "@ai-engine/") > 0,
+      (module) => occurrences(module.source, "@invokta/") > 0,
     );
 
     expect(mentioning.map((module) => module.path)).toEqual([
@@ -337,7 +337,7 @@ describe("the toolkit import graph", () => {
     ]);
     // Every occurrence disappears with the template text, so not one of them is
     // an import the toolkit itself performs.
-    expect(markersInCode(["@ai-engine/"])).toEqual([]);
+    expect(markersInCode(["@invokta/"])).toEqual([]);
   });
 
   it("never reaches a child-process entry point", () => {
@@ -435,7 +435,7 @@ describe("the toolkit runtime sentinels", () => {
     expect(report.initExitCode).toBe(0);
     expect([...report.initFiles]).toEqual([
       ".env.example",
-      "ai-engine.deploy.json",
+      "invokta.deploy.json",
       "src",
     ]);
     expect(report.packageExitCode).toBe(0);

@@ -135,7 +135,7 @@ capability timeout before invoking the completed hook.
 
 ## CLI
 
-**AE-CLI-01 — Commands.** `@ai-engine/cli` MUST implement `list`, `describe`, and
+**AE-CLI-01 — Commands.** `@invokta/cli` MUST implement `list`, `describe`, and
 `run`, accept JSON through `--input` or stdin, and receive the local principal
 through the composition root. It MUST NOT provide an actor, role, or login flag.
 
@@ -172,7 +172,7 @@ cannot safely read or serialize the structured `EngineError`, it MUST return the
 generic `EXECUTION_FAILED` tool error and MUST NOT let the SDK convert the failure
 into an internal protocol error.
 
-**AE-MCP-02 — Isolated SDK.** `@ai-engine/mcp` encapsulates the official SDK and
+**AE-MCP-02 — Isolated SDK.** `@invokta/mcp` encapsulates the official SDK and
 MUST NOT leak its types through the public API or copy it into the core. The
 baseline revision is `2025-11-25`; the approved version is recorded in ADR 0012
 and the lockfile. Valid request IDs retain their protocol identity, including

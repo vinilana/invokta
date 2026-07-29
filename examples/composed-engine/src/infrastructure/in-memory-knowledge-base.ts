@@ -1,7 +1,7 @@
 import type {
   KnowledgeArticle,
   KnowledgeBase,
-} from "@ai-engine/example-community-capabilities";
+} from "@invokta/example-community-capabilities";
 
 const minimumTermLength = 4;
 

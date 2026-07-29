@@ -5,7 +5,7 @@
  * collision is already lost before any framework code can observe it. The
  * checker must reject this map instead of reporting a valid composition.
  */
-import { defineCapability } from "@ai-engine/core";
+import { defineCapability } from "@invokta/core";
 
 import { capability } from "./support.js";
 

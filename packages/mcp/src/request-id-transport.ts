@@ -48,9 +48,9 @@ class FalsyRequestIdTransport implements Transport {
   ) => void;
 
   private readonly numericZeroSentinel =
-    `\u0000ai-engine-request-id:${randomUUID()}:numeric-zero`;
+    `\u0000invokta-request-id:${randomUUID()}:numeric-zero`;
   private readonly emptyStringSentinel =
-    `\u0000ai-engine-request-id:${randomUUID()}:empty-string`;
+    `\u0000invokta-request-id:${randomUUID()}:empty-string`;
 
   constructor(private readonly transport: Transport) {}
 

@@ -8,7 +8,7 @@ import {
   defineCapability,
   defineExportedCapability,
   importCapability,
-} from "@ai-engine/core";
+} from "@invokta/core";
 
 import { capability } from "./support.js";
 

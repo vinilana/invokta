@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 function temporaryDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), "ai-engine-transaction-fs-"));
+  const directory = mkdtempSync(join(tmpdir(), "invokta-transaction-fs-"));
   temporaryDirectories.push(directory);
   return directory;
 }

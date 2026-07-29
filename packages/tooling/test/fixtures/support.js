@@ -14,7 +14,7 @@ function schema() {
   return {
     "~standard": {
       version: 1,
-      vendor: "ai-engine-tooling-fixture",
+      vendor: "invokta-tooling-fixture",
       validate: (value) => ({ value }),
     },
     marker: fixtureSecret,

@@ -2,11 +2,11 @@
 
 This guide makes ownership explicit. The normative limits remain in
 [v0.1 scope and limits](./v0.1-scope.md); this matrix helps decide whether work
-belongs in the framework, a custom engine, or a later evidence-driven package.
+belongs in Invokta, a custom engine, or a later evidence-driven package.
 
 ## Responsibility matrix
 
-| Concern | Framework v0.1 | Custom engine or host | Not provided in v0.1 |
+| Concern | Invokta v0.1 | Custom engine or host | Not provided in v0.1 |
 | --- | --- | --- | --- |
 | Domain API | Define, register, list, describe, and invoke capabilities | Name domain operations and own compatible contracts | Generic model-call API |
 | Schemas | Accept Standard Schema + Standard JSON Schema and validate input/output | Choose a compatible schema implementation and domain constraints | A new schema language or universal converter |
@@ -52,11 +52,11 @@ decision.
 | --- | --- | --- |
 | A — Experiment | A prompt or model call lives inside one feature without a stable contract or reusable boundary | Below the framework's target; useful for discovery |
 | B — Contracted capability | Runtime-validated input/output, isolated handler, direct invocation, and basic tests | Directly supported by the core |
-| C — Reusable AI Engine | A meaningful domain capability is reused through direct, CLI, and MCP channels without duplicating its handler | Primary v0.1 outcome |
-| D — Production AI Engine | Authentication, domain authorization, evals, tracing, cost/timeout controls, incident handling, and risk-appropriate review | v0.1 supplies only minimal hooks; the engine and its platform own the controls |
-| E — AI Engine platform | Federated catalog, shared routing/context/policy, rollout, canary, economics, and governance at scale | Explicitly outside v0.1 |
+| C — Reusable Action Engine | A meaningful domain capability is reused through direct, CLI, and MCP channels without duplicating its handler | Primary v0.1 outcome |
+| D — Production Action Engine | Authentication, domain authorization, evals, tracing, cost/timeout controls, incident handling, and risk-appropriate review | v0.1 supplies only minimal hooks; the engine and its platform own the controls |
+| E — Action Engine platform | Federated catalog, shared routing/context/policy, rollout, canary, economics, and governance at scale | Explicitly outside v0.1 |
 
-The framework does not automatically make an engine production-ready. Cost,
+Invokta does not automatically make an engine production-ready. Cost,
 hallucination risk, evidence, safety, availability, privacy, and human review
 remain domain and deployment responsibilities.
 

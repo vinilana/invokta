@@ -17,7 +17,7 @@ import { loadDeployManifest, toDeployError } from "./manifest.js";
 
 // Mirrors the CLI wording: a rejected argument is never echoed, so a crafted
 // argument can neither forge a diagnostic line nor reach a log.
-const invalidUsageText = 'Invalid arguments. Run "ai-engine-deploy --help".\n';
+const invalidUsageText = 'Invalid arguments. Run "invokta-deploy --help".\n';
 
 async function isRegularFile(path: string): Promise<boolean> {
   try {

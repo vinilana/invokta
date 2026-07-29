@@ -1,5 +1,5 @@
 {
-  "name": "@ai-engine/example-composed",
+  "name": "@invokta/example-composed",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,14 +14,14 @@
     "check:capabilities": "node ../../packages/tooling/dist/cli.js check-capabilities ./dist/capabilities.js"
   },
   "dependencies": {
-    "@ai-engine/cli": "0.1.0",
-    "@ai-engine/core": "0.1.0",
-    "@ai-engine/example-community-capabilities": "0.1.0",
-    "@ai-engine/mcp": "0.1.0",
+    "@invokta/cli": "0.1.0",
+    "@invokta/core": "0.1.0",
+    "@invokta/example-community-capabilities": "0.1.0",
+    "@invokta/mcp": "0.1.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@ai-engine/tooling": "0.1.0",
+    "@invokta/tooling": "0.1.0",
     "@modelcontextprotocol/sdk": "1.30.0"
   }
 }

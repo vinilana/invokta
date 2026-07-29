@@ -17,7 +17,7 @@ import {
 
 // Nothing about a rejected argument is echoed, so a crafted argument can
 // neither forge a diagnostic line nor reach a log.
-const invalidUsageText = 'Invalid arguments. Run "ai-engine-deploy --help".\n';
+const invalidUsageText = 'Invalid arguments. Run "invokta-deploy --help".\n';
 
 type ScaffoldStatus = "created" | "skipped";
 

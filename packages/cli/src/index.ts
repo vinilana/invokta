@@ -3,7 +3,7 @@ import {
   type Engine,
   EngineError,
   type Principal,
-} from "@ai-engine/core";
+} from "@invokta/core";
 
 import { InvalidUtf8Error, readUtf8 } from "./stdin.js";
 

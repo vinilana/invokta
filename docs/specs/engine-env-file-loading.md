@@ -24,7 +24,7 @@ one generated implementation of it:
 - required-variable validation that fails startup closed, naming missing
   variables without printing any value;
 - scaffold support in the HTTP engine build and deploy toolkit
-  (`docs/specs/http-engine-build-and-deploy.md`): `ai-engine-deploy init`
+  (`docs/specs/http-engine-build-and-deploy.md`): `invokta-deploy init`
   additionally generates a `src/env.ts` loader module and a secret-free
   `.env.example` derived from the deployment manifest's declared names.
 
@@ -37,7 +37,7 @@ the container build context, so a production image never contains one.
 
 This specification changes no runtime package and adds no runtime API:
 
-- `@ai-engine/core`, `@ai-engine/cli`, and `@ai-engine/mcp` are not
+- `@invokta/core`, `@invokta/cli`, and `@invokta/mcp` are not
   modified. ADR 0001's hexagonal boundary holds: reading files and mutating
   `process.env` are I/O concerns owned by the application composition root,
   never by the core or an adapter.
@@ -49,7 +49,7 @@ This specification changes no runtime package and adds no runtime API:
 - Parsing is pinned to the Node.js standard library (`util.parseEnv`,
   available at the repository floor of Node.js `>=22.20.0`). No `dotenv` or
   other third-party dependency is introduced anywhere.
-- The generated loader is application code emitted by `@ai-engine/deploy`'s
+- The generated loader is application code emitted by `@invokta/deploy`'s
   `init` command. This specification therefore amends the scaffold contract
   of `docs/specs/http-engine-build-and-deploy.md` (its `init` file set and
   `DEPLOYMENT.md` content) and is governed by the same authorizing ADR. It
@@ -83,10 +83,10 @@ This specification changes no runtime package and adds no runtime API:
 - Encrypted environment files, secret managers, keychains, or remote
   configuration services.
 - A runtime configuration API, typed config schema, or validation beyond
-  presence checks in `@ai-engine/core` or any adapter.
+  presence checks in `@invokta/core` or any adapter.
 - Watching, hot reload, or re-reading the file after startup; a process
   reads its environment once.
-- Loading inside `@ai-engine/cli` or `@ai-engine/mcp`; adapters receive an
+- Loading inside `@invokta/cli` or `@invokta/mcp`; adapters receive an
   already-configured process.
 - Writing to, migrating, or synchronizing environment files. The toolkit
   generates only the example file; the real `.env` is always user-authored.
@@ -108,7 +108,7 @@ This specification changes no runtime package and adds no runtime API:
   deployment manifest's `env.required` list when the toolkit is used.
 
 **Override variable**
-: `AI_ENGINE_ENV_FILE`, the documented way to point the loader at a
+: `INVOKTA_ENV_FILE`, the documented way to point the loader at a
   non-default environment file path.
 
 ## Loading contract
@@ -121,14 +121,14 @@ unchanged.
 
 **AE-ENV-LOAD-02 — Canonical path and override.** The default file is
 `.env` resolved against the process working directory. When
-`AI_ENGINE_ENV_FILE` is set and non-empty, its NUL-free path — absolute, or
+`INVOKTA_ENV_FILE` is set and non-empty, its NUL-free path — absolute, or
 relative to the process working directory — replaces the default. The
 override designates a file, never a directory.
 
 **AE-ENV-LOAD-03 — Missing-file asymmetry.** A missing default `.env` is a
 silent no-op: local files are optional and production is expected not to
 have one. A missing, unreadable, or non-regular file named by
-`AI_ENGINE_ENV_FILE` is a startup failure: an explicit request must not
+`INVOKTA_ENV_FILE` is a startup failure: an explicit request must not
 degrade silently.
 
 **AE-ENV-LOAD-04 — Real environment wins.** The loader never overrides,
@@ -207,7 +207,7 @@ This section amends `docs/specs/http-engine-build-and-deploy.md`.
 
 ### `init` additions
 
-`ai-engine-deploy init` additionally generates, when absent and under the
+`invokta-deploy init` additionally generates, when absent and under the
 same never-overwrite rule:
 
 | File | Content |
@@ -277,7 +277,7 @@ stable across runs with identical inputs.
 - The convention and the generated loader are governed by the same
   authorizing ADR as the HTTP engine build and deploy toolkit; no additional
   package or ADR is required.
-- `AI_ENGINE_ENV_FILE` joins the toolkit's environment contract. Renaming
+- `INVOKTA_ENV_FILE` joins the toolkit's environment contract. Renaming
   it after release is breaking and requires a documented migration.
 - The parsing dialect is whatever `util.parseEnv` implements at the pinned
   Node.js floor. Raising the repository floor MAY change accepted syntax;
@@ -297,13 +297,13 @@ stable across runs with identical inputs.
 | --- | --- | --- |
 | `AE-ENV-AC-01` | With no `.env` and no override, startup proceeds and `process.env` is untouched. | Composition-root fixture asserting deep environment equality. |
 | `AE-ENV-AC-02` | A `.env` value fills an absent variable, and the same key already present in the environment — including present-but-empty — is never overridden. | Precedence matrix test. |
-| `AE-ENV-AC-03` | `AI_ENGINE_ENV_FILE` selects an alternate file; when it names a missing or non-regular path, startup fails with the stable message and starts no adapter. | Override fixtures with listener spies. |
+| `AE-ENV-AC-03` | `INVOKTA_ENV_FILE` selects an alternate file; when it names a missing or non-regular path, startup fails with the stable message and starts no adapter. | Override fixtures with listener spies. |
 | `AE-ENV-AC-04` | Comment, quoting, and whitespace handling matches `util.parseEnv` for a fixture set exercised against the real platform parser, not a reimplementation. | Differential fixtures comparing loader output to direct `util.parseEnv` output. |
 | `AE-ENV-AC-05` | A symlinked file, a NUL byte, 65,537 bytes, 257 applicable keys, and a 4,097-scalar value each abort startup before any key is applied; the inclusive bounds succeed. | Inclusive/exclusive boundary fixtures. |
 | `AE-ENV-AC-06` | An applicable key failing the name pattern aborts startup naming that key; the same key pre-existing in the environment does not. | Key-validation tests. |
 | `AE-ENV-AC-07` | A missing or empty declared required variable aborts startup listing exactly the missing names, and no value or partial value appears in any output. | Secret-sentinel leak test over stderr and thrown errors. |
 | `AE-ENV-AC-08` | `init` generates `src/env.ts` and `.env.example`; the example lists exactly the manifest's declared names with empty values; rerunning `init` skips both, and `package` writes neither. | Scaffold fixture with golden files. |
-| `AE-ENV-AC-09` | The scaffolded HTTP root loads the file before reading its environment contract, so a `.env`-supplied `AI_ENGINE_HTTP_PORT` binds the port when the variable is otherwise absent. | End-to-end scaffold startup test. |
+| `AE-ENV-AC-09` | The scaffolded HTTP root loads the file before reading its environment contract, so a `.env`-supplied `INVOKTA_HTTP_PORT` binds the port when the variable is otherwise absent. | End-to-end scaffold startup test. |
 | `AE-ENV-AC-10` | A packaged container context contains no `.env*` file even when several exist in the project. | Build-context enumeration test over the generated `.dockerignore`. |
 | `AE-ENV-AC-11` | The loader module imports only Node built-ins and performs no write, spawn, or network operation. | Import-graph check plus filesystem, child-process, and network sentinels. |
 
@@ -326,7 +326,7 @@ delivery plan. Each slice begins with failing executable evidence, ends
 green, and is one cohesive commit:
 
 1. Extend the deploy toolkit's authorizing ADR with this scaffold expansion
-   and the `AI_ENGINE_ENV_FILE` contract addition.
+   and the `INVOKTA_ENV_FILE` contract addition.
 2. Implement the loader contract as the scaffold template with differential
    parsing, precedence, boundary, and sentinel tests.
 3. Implement the required-name check and its manifest-derived generation,
@@ -341,7 +341,7 @@ green, and is one cohesive commit:
 1. **Convention plus scaffold versus published helper.** This draft ships
    the loader as generated, user-owned source with zero dependencies. The
    alternative — a small published runtime package (for example
-   `@ai-engine/env`) — would centralize fixes but adds a sixth published
+   `@invokta/env`) — would centralize fixes but adds a sixth published
    package and a runtime dependency for something Node built-ins already
    cover. Confirm the generated-source approach.
 2. **Strictness of key validation.** `AE-ENV-LOAD-06` fails closed on a

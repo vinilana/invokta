@@ -12,8 +12,8 @@ tool call and then execution stops.
 From the repository root:
 
 ```sh
-yarn workspace @ai-engine/example-support build
-yarn workspace @ai-engine/example-support-harness build
+yarn workspace @invokta/example-support build
+yarn workspace @invokta/example-support-harness build
 node examples/support-harness/dist/main.js T-123
 ```
 

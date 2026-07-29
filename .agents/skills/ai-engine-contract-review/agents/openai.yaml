@@ -1,4 +1,0 @@
-interface:
-  display_name: "AI Engine Contract Review"
-  short_description: "Review AI Engine contracts and limits"
-  default_prompt: "Use $ai-engine-contract-review to review the next AI Engine milestone's API, acceptance criteria, and operational limits."

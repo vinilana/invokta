@@ -1,4 +1,4 @@
-import { createEngine } from "@ai-engine/core";
+import { createEngine } from "@invokta/core";
 
 import type { CrawlDependencies } from "./application/ports.js";
 import { createCrawlSite } from "./capabilities/crawl-site.js";

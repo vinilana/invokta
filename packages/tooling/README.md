@@ -1,14 +1,14 @@
-# @ai-engine/tooling
+# @invokta/tooling
 
-Development-time command line tooling for the AI Engine framework. This package
+Development-time command line tooling for Invokta. This package
 contributes no runtime contract, capability, adapter, or transport. It depends
-only on the public composition API of `@ai-engine/core` and Node built-ins, and
+only on the public composition API of `@invokta/core` and Node built-ins, and
 no runtime package depends on it.
 
-## ai-engine check-capabilities
+## invokta check-capabilities
 
 ```text
-ai-engine check-capabilities <esm-module> [--export <name>]
+invokta check-capabilities <esm-module> [--export <name>]
 ```
 
 The build gate for collision-safe capability composition. It imports a built ESM
@@ -45,7 +45,7 @@ value is emitted as a JSON string literal so that an identifier containing
 whitespace or a newline cannot forge a diagnostic line.
 
 ```text
-ai-engine: the capability composition is invalid.
+invokta: the capability composition is invalid.
 module: "dist/capabilities.js"
 export: "capabilities"
 issues: 2
@@ -65,13 +65,13 @@ Run the command for every engine that composes imported capabilities, after the
 application has been built:
 
 ```bash
-ai-engine check-capabilities dist/capabilities.js
+invokta check-capabilities dist/capabilities.js
 ```
 
 ## Programmatic API
 
 ```ts
-import { checkCapabilities } from "@ai-engine/tooling";
+import { checkCapabilities } from "@invokta/tooling";
 
 const exitCode = await checkCapabilities({
   argv: ["check-capabilities", "dist/capabilities.js"],

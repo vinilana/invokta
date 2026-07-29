@@ -1,5 +1,5 @@
 {
-  "name": "@ai-engine/deploy",
+  "name": "@invokta/deploy",
   "version": "0.1.0",
   "type": "module",
   "sideEffects": false,
@@ -17,7 +17,7 @@
     }
   },
   "bin": {
-    "ai-engine-deploy": "./dist/bin.js"
+    "invokta-deploy": "./dist/bin.js"
   },
   "scripts": {
     "build": "tsc -b --pretty false",

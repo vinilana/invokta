@@ -1,4 +1,4 @@
-import { EngineError } from "@ai-engine/core";
+import { EngineError } from "@invokta/core";
 
 const maximumProviderResponseBytes = 64 * 1024 * 1024;
 const maximumCauseCharacters = 512;

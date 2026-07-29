@@ -27,7 +27,7 @@ const descriptor: CapabilityInstallDescriptor = {
   description: "Support tools.",
   capabilityIds: ["support.classify"],
   server: {
-    name: "ai-engine-support",
+    name: "invokta-support",
     transport: {
       type: "stdio",
       command: "support-engine-mcp",

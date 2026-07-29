@@ -14,7 +14,7 @@ upgrade as a lockfile-only change would leave the public operational contract an
 the security decision stale.
 
 The 1.29.0 to 1.30.0 comparison was reviewed against every SDK subpath imported
-by `@ai-engine/mcp` and its tests. The investigation established the following:
+by `@invokta/mcp` and its tests. The investigation established the following:
 
 - `LATEST_PROTOCOL_VERSION` remains `2025-11-25`, and the protocol schemas used
   by the adapter remain compatible with the adopted baseline.
@@ -34,7 +34,7 @@ by `@ai-engine/mcp` and its tests. The investigation established the following:
   therefore do not expand or change the framework's stateless HTTP contract.
 - Zod literal and error-formatting fixes remain internal to the SDK. The
   framework still registers authoritative Standard JSON Schemas through the
-  low-level server API and exposes no SDK or Zod types from `@ai-engine/mcp`.
+  low-level server API and exposes no SDK or Zod types from `@invokta/mcp`.
 - The SDK dependency range for `@hono/node-server` changes from `^1.19.9` to
   `^1.19.9 || ^2.0.5`. An ordinary install can now select a patched 2.x release,
   so the temporary root resolution and its incompatible-range warning are no

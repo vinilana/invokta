@@ -13,10 +13,10 @@ protocol revision would create a false guarantee.
 
 ## Decision
 
-`@ai-engine/mcp` will implement the integration with the official MCP SDK. The
+`@invokta/mcp` will implement the integration with the official MCP SDK. The
 SDK's imports, concrete types, transport objects, and lifecycle details will be
 confined to `packages/mcp`; none of them will be part of the public API or types
-of `@ai-engine/core`.
+of `@invokta/core`.
 
 The adapter's normative protocol revision will be the exact string `2025-11-25`.
 The handshake, capabilities, messages, and conformance tests must be compatible
@@ -85,7 +85,7 @@ obsolete after the patched 1.x publication. The warning is accepted only while
 the full transport suite and repository dependency audit remain green.
 
 Root Yarn resolutions are not included in a published package's dependency
-contract. A downstream consumer of `@ai-engine/mcp` does not inherit this
+contract. A downstream consumer of `@invokta/mcp` does not inherit this
 control and must evaluate its own lockfile and advisory data. In particular, this
 repository's zero-audit result is not a guarantee about a consumer's install.
 The resolution must be removed when an unforced install using the approved SDK

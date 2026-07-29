@@ -5,7 +5,7 @@ import {
   createEngine,
   defineCapability,
   type ExecutionContext,
-} from "@ai-engine/core";
+} from "@invokta/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";

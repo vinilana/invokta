@@ -1,4 +1,4 @@
-import type { Principal } from "@ai-engine/core";
+import type { Principal } from "@invokta/core";
 
 export const localPrincipal: Principal = Object.freeze({
   id: "local:agent-session-coordinator",

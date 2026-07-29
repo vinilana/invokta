@@ -1,9 +1,9 @@
 ---
-name: ai-engine-contract-review
-description: "Review AI Engine contracts for public APIs, acceptance criteria, errors, invariants, operational limits, compatibility, and architectural boundaries. Use before implementing or approving changes to interfaces, schemas, ports, events, observable persistence, configuration, or public behavior in this repository."
+name: invokta-contract-review
+description: "Review Invokta contracts for public APIs, acceptance criteria, errors, invariants, operational limits, compatibility, and architectural boundaries. Use before implementing or approving changes to interfaces, schemas, ports, events, observable persistence, configuration, or public behavior in this repository."
 ---
 
-# AI Engine Contract Review
+# Invokta Contract Review
 
 ## Establish the source of truth
 

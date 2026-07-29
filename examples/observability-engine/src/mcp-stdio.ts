@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import { serveMcpStdio } from "@ai-engine/mcp";
+import { serveMcpStdio } from "@invokta/mcp";
 
 import { createProviderBackedObservabilityEngine } from "./engine.js";
 import { localPrincipal } from "./local-principal.js";

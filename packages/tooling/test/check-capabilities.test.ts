@@ -52,7 +52,7 @@ function runCheck(...args: readonly string[]) {
   };
 }
 
-const collidingDiagnostics = `ai-engine: the capability composition is invalid.
+const collidingDiagnostics = `invokta: the capability composition is invalid.
 module: "${fixture("colliding-composition.js")}"
 export: "capabilities"
 issues: 6
@@ -85,7 +85,7 @@ beforeAll(() => {
   );
 });
 
-describe("ai-engine check-capabilities", () => {
+describe("invokta check-capabilities", () => {
   it("exits 0 without any output for a tracked valid composition", () => {
     const result = runCommand(
       "check-capabilities",
@@ -248,7 +248,7 @@ describe("checkCapabilities usage errors", () => {
     await expect(run.exitCode).resolves.toBe(2);
     expect(run.stderr.join("")).toContain("A command is required.");
     expect(run.stderr.join("")).toContain(
-      "ai-engine check-capabilities <esm-module> [--export <name>]",
+      "invokta check-capabilities <esm-module> [--export <name>]",
     );
   });
 

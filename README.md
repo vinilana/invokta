@@ -1,20 +1,24 @@
-# AI Engine Framework
+# Invokta
 
-A small TypeScript framework for publishing AI-backed domain capabilities behind
-stable contracts. Define a capability once, then invoke the same runtime through
-application code, the CLI, MCP stdio, or stateless MCP Streamable HTTP.
+The TypeScript framework for building **Action Engines**.
+
+An [Action Engine](./docs/action-engines.md) packages reusable, AI-supported
+domain actions behind stable contracts, independently of the agents,
+applications, and interfaces that invoke them. Define a capability once with
+Invokta, then invoke the same runtime through application code, the CLI, MCP
+stdio, or stateless MCP Streamable HTTP.
 
 Version 0.1 focuses on a compact hexagonal kernel:
 
-- `@ai-engine/core` defines capabilities, validates Standard Schema input and
+- `@invokta/core` defines capabilities, validates Standard Schema input and
   output, enforces access rules, propagates cancellation, and emits minimal
   invocation events;
-- `@ai-engine/cli` provides `list`, `describe`, and `run` without bypassing
+- `@invokta/cli` provides `list`, `describe`, and `run` without bypassing
   `engine.invoke`;
-- `@ai-engine/mcp` publishes capabilities as tools over stdio and secure
+- `@invokta/mcp` publishes capabilities as tools over stdio and secure
   stateless HTTP while keeping the official MCP SDK behind the adapter boundary.
 
-The framework does not provide identity, model routing, an agent harness, a
+Invokta does not provide identity, model routing, an agent harness, a
 workflow engine, or a production observability platform. Custom engines inject
 their own model, data, tool, authentication, and authorization integrations.
 
@@ -56,9 +60,11 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
 
 ## Documentation
 
-The [documentation index](./docs/README.md) links the normative architecture,
-scope, acceptance criteria, ADRs, HTTP authentication guide, capability
-authorization guide, and explicit v0.1 scope matrix.
+Start with the framework-neutral [Action Engines community
+definition](./docs/action-engines.md). The [documentation
+index](./docs/README.md) links Invokta's normative architecture, scope,
+acceptance criteria, ADRs, HTTP authentication guide, capability authorization
+guide, and explicit v0.1 scope matrix.
 
 All public behavior is developed with runtime and type-level tests. Repository
 changes follow RED, GREEN, REFACTOR and use one cohesive commit per deliverable.

@@ -8,7 +8,7 @@ import { probeTimeoutDefaultMs } from "../src/probe/options.js";
 import { probeInitializeBody } from "../src/probe/request.js";
 
 /**
- * `ai-engine-deploy probe` and the generated `deploy/healthcheck.mjs` are two
+ * `invokta-deploy probe` and the generated `deploy/healthcheck.mjs` are two
  * implementations of one semantic contract against the same endpoint. These
  * assertions compare the two surfaces directly, so a change to either one that
  * the other does not follow fails here rather than in a deployment.

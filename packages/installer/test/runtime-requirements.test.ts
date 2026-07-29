@@ -23,7 +23,7 @@ function stdioDescriptor(
   forwardEnv: readonly string[] = [],
 ): SuspendedDescriptor {
   return Object.freeze({
-    name: "ai-engine-support",
+    name: "invokta-support",
     transport: Object.freeze({
       type: "stdio",
       command,
@@ -35,7 +35,7 @@ function stdioDescriptor(
 
 function httpDescriptor(): SuspendedDescriptor {
   return Object.freeze({
-    name: "ai-engine-support",
+    name: "invokta-support",
     transport: Object.freeze({
       type: "streamable-http",
       url: "https://support.example/mcp",

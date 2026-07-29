@@ -1,4 +1,0 @@
-interface:
-  display_name: "AI Engine Delivery"
-  short_description: "Deliver AI Engine milestones with TDD"
-  default_prompt: "Use $ai-engine-delivery to implement the next AI Engine milestone with TDD and the repository's delivery gates."

@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureDirectory = fileURLToPath(new URL("./fixtures", import.meta.url));
-const temporaryRoot = mkdtempSync(join(tmpdir(), "ai-engine-runtime-"));
+const temporaryRoot = mkdtempSync(join(tmpdir(), "invokta-runtime-"));
 const executablePath = join(temporaryRoot, "support-engine-mcp");
 const markerPath = join(temporaryRoot, "invoked.marker");
 const secret = "runtime-secret-child-b26d4f7c";
@@ -58,8 +58,8 @@ describe("runtime requirement process and network sentinels", () => {
         encoding: "utf8",
         env: {
           ...process.env,
-          AI_ENGINE_INSTALLER_RUNTIME_EXECUTABLE: executablePath,
-          AI_ENGINE_INSTALLER_RUNTIME_SECRET: secret,
+          INVOKTA_INSTALLER_RUNTIME_EXECUTABLE: executablePath,
+          INVOKTA_INSTALLER_RUNTIME_SECRET: secret,
         },
       },
     );

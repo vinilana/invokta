@@ -65,7 +65,7 @@ describe("hello engine entrypoints", () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toEqual({
-      message: "Hello, Ada! Welcome to your first AI Engine.",
+      message: "Hello, Ada! Welcome to your first Action Engine.",
     });
   });
 
@@ -80,7 +80,7 @@ describe("hello engine entrypoints", () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toEqual({
-      message: "Hello, Ada! Welcome to your first AI Engine.",
+      message: "Hello, Ada! Welcome to your first Action Engine.",
     });
   });
 
@@ -129,7 +129,7 @@ describe("hello engine entrypoints", () => {
       await expect(called).resolves.toMatchObject({
         result: {
           structuredContent: {
-            message: "Hello, Ada! Welcome to your first AI Engine.",
+            message: "Hello, Ada! Welcome to your first Action Engine.",
           },
         },
       });
@@ -221,7 +221,7 @@ describe("hello engine entrypoints", () => {
       await expect(response.json()).resolves.toMatchObject({
         result: {
           structuredContent: {
-            message: "Hello, Ada! Welcome to your first AI Engine.",
+            message: "Hello, Ada! Welcome to your first Action Engine.",
           },
         },
       });

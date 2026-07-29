@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import {
   isCapabilityCompositionError,
   isComposedCapabilities,
-} from "@ai-engine/core";
+} from "@invokta/core";
 
 export interface CheckCapabilitiesIo {
   readonly writeStderr: (text: string) => void | Promise<void>;
@@ -25,11 +25,11 @@ interface CheckCommand {
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
-const programName = "ai-engine";
+const programName = "invokta";
 const defaultExportName = "capabilities";
 
 const usage = `Usage:
-  ai-engine check-capabilities <esm-module> [--export <name>]
+  invokta check-capabilities <esm-module> [--export <name>]
 
 The module path is resolved against the current working directory and must
 already be built to ESM. The selected export defaults to "capabilities" and must
@@ -323,7 +323,7 @@ async function writeStderr(
 }
 
 /**
- * Runs `ai-engine check-capabilities` and resolves with its exit code.
+ * Runs `invokta check-capabilities` and resolves with its exit code.
  *
  * The command imports the requested module, which is what runs
  * `composeCapabilities`; validation is never re-implemented here. Nothing is

@@ -1,4 +1,4 @@
-import { createEngine } from "@ai-engine/core";
+import { createEngine } from "@invokta/core";
 
 import type { ReviewDependencies } from "./application/ports.js";
 import { createAssessTaskReadiness } from "./capabilities/assess-task-readiness.js";

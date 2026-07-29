@@ -1,4 +1,4 @@
-import type { PermissionChecker } from "@ai-engine/example-community-capabilities";
+import type { PermissionChecker } from "@invokta/example-community-capabilities";
 
 function stringArray(value: unknown): ReadonlyArray<string> | null {
   return Array.isArray(value) && value.every((item) => typeof item === "string")

@@ -1,4 +1,4 @@
-import type { CommunitySupportDependencies } from "@ai-engine/example-community-capabilities";
+import type { CommunitySupportDependencies } from "@invokta/example-community-capabilities";
 
 import type { OperationsReport } from "../domain/report.js";
 

@@ -1,4 +1,4 @@
-import { EngineError } from "@ai-engine/core";
+import { EngineError } from "@invokta/core";
 import { z } from "zod";
 
 import type { SpecificationStore } from "../application/ports.js";

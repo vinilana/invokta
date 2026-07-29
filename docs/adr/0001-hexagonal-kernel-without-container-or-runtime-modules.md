@@ -15,7 +15,7 @@ refer to the language's ESM modules.
 
 ## Decision
 
-`@ai-engine/core` will adopt a hexagonal architecture:
+`@invokta/core` will adopt a hexagonal architecture:
 
 - the kernel will contain capabilities, public types, invariants, and the pipeline;
 - model, data, and tool ports will be interfaces of the custom engine, not

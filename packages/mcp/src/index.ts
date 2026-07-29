@@ -1,7 +1,7 @@
 import process from "node:process";
 import type { Writable } from "node:stream";
 
-import type { CapabilityMap, Engine, Principal } from "@ai-engine/core";
+import type { CapabilityMap, Engine, Principal } from "@invokta/core";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";

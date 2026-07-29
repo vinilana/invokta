@@ -26,12 +26,12 @@ import {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const statePath = "/home/tester/.local/state/ai-engine/installer.json";
+const statePath = "/home/tester/.local/state/invokta/installer.json";
 const configPath = "/home/tester/.config/codex/config.toml";
 const otherConfigPath = "/home/tester/.config/hermes/config.yaml";
 const stateLockPath = `${statePath}.lock`;
-const configLockPath = `${configPath}.ai-engine-installer.lock`;
-const otherConfigLockPath = `${otherConfigPath}.ai-engine-installer.lock`;
+const configLockPath = `${configPath}.invokta-installer.lock`;
+const otherConfigLockPath = `${otherConfigPath}.invokta-installer.lock`;
 
 interface LockIdentity {
   readonly dev: bigint;
@@ -683,19 +683,19 @@ describe("AE-INSTALL-AC-15 installer locks", () => {
 
   it("serializes two real processes targeting different configs on the exact shared state lock", async () => {
     const temporaryRoot = mkdtempSync(
-      join(tmpdir(), "ai-engine-two-process-lock-"),
+      join(tmpdir(), "invokta-two-process-lock-"),
     );
     const realStatePath = join(
       temporaryRoot,
       "state",
-      "ai-engine",
+      "invokta",
       "installer.json",
     );
     const firstConfigPath = join(temporaryRoot, "configs", "a", "mcp.json");
     const secondConfigPath = join(temporaryRoot, "configs", "b", "mcp.json");
     const realStateLockPath = `${realStatePath}.lock`;
-    const firstConfigLockPath = `${firstConfigPath}.ai-engine-installer.lock`;
-    const secondConfigLockPath = `${secondConfigPath}.ai-engine-installer.lock`;
+    const firstConfigLockPath = `${firstConfigPath}.invokta-installer.lock`;
+    const secondConfigLockPath = `${secondConfigPath}.invokta-installer.lock`;
     const originalState = Buffer.from(
       '{"schemaVersion":1,"installations":{"holder":"retained"}}\n',
     );

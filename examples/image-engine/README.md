@@ -193,7 +193,7 @@ should add an eval and human-approval step after this capability returns.
 The tests use local provider stubs and never call OpenAI, BytePlus, or Google:
 
 ```sh
-yarn workspace @ai-engine/example-image test
-yarn workspace @ai-engine/example-image typecheck
-yarn workspace @ai-engine/example-image build
+yarn workspace @invokta/example-image test
+yarn workspace @invokta/example-image typecheck
+yarn workspace @invokta/example-image build
 ```

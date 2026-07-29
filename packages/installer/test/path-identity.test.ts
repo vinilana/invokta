@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 function temporaryHome(): string {
-  const directory = mkdtempSync(join(tmpdir(), "ai-engine-path-identity-"));
+  const directory = mkdtempSync(join(tmpdir(), "invokta-path-identity-"));
   temporaryDirectories.push(directory);
   return directory;
 }
@@ -181,7 +181,7 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
       rootPath: home,
       currentUserId: currentUserId(),
     });
-    const directoryPath = join(home, ".local/state/ai-engine");
+    const directoryPath = join(home, ".local/state/invokta");
     const expected = await capturePathIdentity(fileSystem, {
       root,
       targetPath: directoryPath,
@@ -221,7 +221,7 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
       rootPath: home,
       currentUserId: currentUserId(),
     });
-    const targetPath = join(home, "ai-engine/nested");
+    const targetPath = join(home, "invokta/nested");
     const expected = await capturePathIdentity(fileSystem, {
       root,
       targetPath,
@@ -232,8 +232,8 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
 
     expect(raced).toBe(true);
     expect(created.missingPaths).toEqual([]);
-    expect(created.components.at(1)?.path).toBe(join(home, "ai-engine"));
-    expect(statSync(join(home, "ai-engine")).mode & 0o777).toBe(0o700);
+    expect(created.components.at(1)?.path).toBe(join(home, "invokta"));
+    expect(statSync(join(home, "invokta")).mode & 0o777).toBe(0o700);
   });
 
   it("rejects an EEXIST race that installs a symlink", async () => {

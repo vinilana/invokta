@@ -1166,7 +1166,7 @@ export async function loadInstallerState(
       : join(options.homeDirectory, ".local", "state"),
   );
   const inspectionBase = usesXdg ? basePath : resolve(options.homeDirectory);
-  const path = join(basePath, "ai-engine", "installer.json");
+  const path = join(basePath, "invokta", "installer.json");
   const inspection = await inspectStatePath(
     options.fileSystem,
     options.currentUserId,

@@ -90,8 +90,8 @@ RUN npm ci --omit=dev
 
 FROM node:22-slim AS runtime
 ENV NODE_ENV=production
-ENV AI_ENGINE_HTTP_HOST=0.0.0.0
-ENV AI_ENGINE_HTTP_PORT=3000
+ENV INVOKTA_HTTP_HOST=0.0.0.0
+ENV INVOKTA_HTTP_PORT=3000
 WORKDIR /app
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/node_modules ./node_modules
@@ -118,7 +118,7 @@ Dockerfile
 
 describe("generated file marker", () => {
   it("names the toolkit and its major version in every comment syntax", () => {
-    expect(generatedFileMarkerText).toContain("ai-engine-deploy");
+    expect(generatedFileMarkerText).toContain("invokta-deploy");
     expect(generatedFileMarkerText).toContain(`v${deployToolkitMajorVersion}`);
     expect(hashMarker).toBe(`# ${generatedFileMarkerText}`);
     expect(lineMarker).toBe(`// ${generatedFileMarkerText}`);
@@ -354,7 +354,7 @@ describe("Dockerfile", () => {
     expect(dockerfile).toContain("FROM node:22-alpine AS build\n");
     expect(dockerfile).toContain("FROM node:22-alpine AS runtime\n");
     expect(dockerfile).toContain("EXPOSE 8080\n");
-    expect(dockerfile).toContain("ENV AI_ENGINE_HTTP_PORT=8080\n");
+    expect(dockerfile).toContain("ENV INVOKTA_HTTP_PORT=8080\n");
     expect(dockerfile).toContain("COPY --from=build /app/build ./build\n");
     expect(dockerfile).toContain('CMD ["node", "build/http/server.mjs"]\n');
   });
@@ -373,7 +373,7 @@ describe("Dockerfile", () => {
 
     expect(dockerfile).toContain("\nUSER node\n");
     expect(dockerfile).toContain("ENV NODE_ENV=production\n");
-    expect(dockerfile).toContain("ENV AI_ENGINE_HTTP_HOST=0.0.0.0\n");
+    expect(dockerfile).toContain("ENV INVOKTA_HTTP_HOST=0.0.0.0\n");
     expect(dockerfile).toContain('CMD ["node", "deploy/healthcheck.mjs"]');
     expect(dockerfile).toContain("HEALTHCHECK ");
   });
@@ -415,7 +415,7 @@ describe("deploy/DEPLOYMENT.md", () => {
   const document = contentsAt("pnpm", "deploy/DEPLOYMENT.md", {
     env: {
       required: ["SUPPORT_API_TOKEN"],
-      optional: ["AI_ENGINE_HTTP_ALLOWED_ORIGINS"],
+      optional: ["INVOKTA_HTTP_ALLOWED_ORIGINS"],
     },
     healthcheck: { expect: "ready", bearerEnv: "SUPPORT_API_TOKEN" },
     image: { port: 8080 },
@@ -423,16 +423,16 @@ describe("deploy/DEPLOYMENT.md", () => {
 
   it("documents the environment contract of the composition root", () => {
     for (const variable of [
-      "AI_ENGINE_HTTP_HOST",
-      "AI_ENGINE_HTTP_PORT",
+      "INVOKTA_HTTP_HOST",
+      "INVOKTA_HTTP_PORT",
       "PORT",
-      "AI_ENGINE_HTTP_ALLOWED_HOSTS",
-      "AI_ENGINE_HTTP_ALLOWED_ORIGINS",
-      "AI_ENGINE_HTTP_MAX_BODY_BYTES",
+      "INVOKTA_HTTP_ALLOWED_HOSTS",
+      "INVOKTA_HTTP_ALLOWED_ORIGINS",
+      "INVOKTA_HTTP_MAX_BODY_BYTES",
     ]) {
       expect(document).toContain(variable);
     }
-    expect(document).toContain("`AI_ENGINE_HTTP_PORT` wins");
+    expect(document).toContain("`INVOKTA_HTTP_PORT` wins");
   });
 
   it("lists the variables declared by the manifest", () => {
@@ -446,7 +446,7 @@ describe("deploy/DEPLOYMENT.md", () => {
       "HTTPS",
       "/mcp",
       "raw `Host` header",
-      "AI_ENGINE_HTTP_ALLOWED_HOSTS",
+      "INVOKTA_HTTP_ALLOWED_HOSTS",
       "browser",
       "stateless",
       "horizontally",
@@ -467,7 +467,7 @@ describe("deploy/DEPLOYMENT.md", () => {
   it("documents the environment file convention and its precedence", () => {
     expect(document).toContain("## Environment files");
     expect(document).toContain("`.env`");
-    expect(document).toContain("AI_ENGINE_ENV_FILE");
+    expect(document).toContain("INVOKTA_ENV_FILE");
     expect(document).toContain(
       "process environment, then the environment file, then the defaults",
     );

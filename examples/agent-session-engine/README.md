@@ -67,7 +67,7 @@ export AGENT_SESSION_ENGINE_DATA_DIR="$PWD/.agent-sessions"
 export AGENT_SESSION_ENGINE_SESSION_ID="delivery-42"
 
 node examples/agent-session-engine/dist/cli.js run agent-session.start --input \
-  '{"sessionId":"delivery-42","objective":"Deliver the hook integration","workspaceRoot":"/workspace/ai-engines"}'
+  '{"sessionId":"delivery-42","objective":"Deliver the hook integration","workspaceRoot":"/workspace/invokta"}'
 
 node examples/agent-session-engine/dist/cli.js run agent-session.create-task --input \
   '{"sessionId":"delivery-42","taskId":"implement-hooks","title":"Implement harness hook adapters","phase":"implementation","assignedHarness":"codex","assignedAgentId":"primary"}'
@@ -198,7 +198,7 @@ AGENT_SESSION_ENGINE_BEARER_TOKEN=development-only-token \
 ## Verify
 
 ```sh
-yarn workspace @ai-engine/example-agent-session test
-yarn workspace @ai-engine/example-agent-session typecheck
-yarn workspace @ai-engine/example-agent-session build
+yarn workspace @invokta/example-agent-session test
+yarn workspace @invokta/example-agent-session typecheck
+yarn workspace @invokta/example-agent-session build
 ```

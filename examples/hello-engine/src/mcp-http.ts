@@ -1,4 +1,4 @@
-import { serveMcpHttp } from "@ai-engine/mcp";
+import { serveMcpHttp } from "@invokta/mcp";
 
 import { engine } from "./engine.js";
 

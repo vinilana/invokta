@@ -7,14 +7,14 @@ import { DeployError } from "../src/errors.js";
 import type { DeployContext } from "../src/io.js";
 
 const helpText = `Usage:
-  ai-engine-deploy init
-  ai-engine-deploy package
-  ai-engine-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
+  invokta-deploy init
+  invokta-deploy package
+  invokta-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
                          [--host-header HOST] [--timeout-ms N]
-  ai-engine-deploy --help
-  ai-engine-deploy --version
+  invokta-deploy --help
+  invokta-deploy --version
 `;
-const invalidUsageText = 'Invalid arguments. Run "ai-engine-deploy --help".\n';
+const invalidUsageText = 'Invalid arguments. Run "invokta-deploy --help".\n';
 const manifest = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ) as { readonly version: string };
@@ -153,7 +153,7 @@ describe("runDeployCli dispatch", () => {
       const exitCode = await runDeployCli({
         argv: [name, "--url", "https://engine.example/mcp"],
         cwd: "/workspace/engine",
-        env: { AI_ENGINE_HTTP_PORT: "3000" },
+        env: { INVOKTA_HTTP_PORT: "3000" },
         io: output.io,
         commands,
       });
@@ -166,7 +166,7 @@ describe("runDeployCli dispatch", () => {
       ];
       expect(call[0]).toEqual(["--url", "https://engine.example/mcp"]);
       expect(call[1].cwd).toBe("/workspace/engine");
-      expect(call[1].env).toEqual({ AI_ENGINE_HTTP_PORT: "3000" });
+      expect(call[1].env).toEqual({ INVOKTA_HTTP_PORT: "3000" });
       expect(output.stdout).toEqual([]);
       expect(output.stderr).toEqual([]);
     },

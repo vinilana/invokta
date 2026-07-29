@@ -1,9 +1,9 @@
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const configuredRoot = process.env.AI_ENGINE_INSTALLER_DIST_ROOT;
+const configuredRoot = process.env.INVOKTA_INSTALLER_DIST_ROOT;
 if (configuredRoot === undefined || configuredRoot === "") {
-  throw new Error("AI_ENGINE_INSTALLER_DIST_ROOT is required by the loader.");
+  throw new Error("INVOKTA_INSTALLER_DIST_ROOT is required by the loader.");
 }
 
 const distRoot = `${pathToFileURL(resolvePath(configuredRoot)).href}/`;

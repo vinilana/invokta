@@ -1,7 +1,7 @@
 import type {
   Ticket,
   TicketRepository,
-} from "@ai-engine/example-community-capabilities";
+} from "@invokta/example-community-capabilities";
 
 export function createInMemoryTicketRepository(
   tickets: ReadonlyArray<Ticket>,

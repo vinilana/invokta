@@ -118,7 +118,7 @@ describe("the private support harness", () => {
       )
     ).join("\n");
 
-    expect(source).not.toMatch(/@ai-engine\//u);
+    expect(source).not.toMatch(/@invokta\//u);
     expect(source).not.toContain("support-engine/src");
     expect(source).not.toContain(".invoke(");
     expect(source).not.toContain(".run(");

@@ -15,16 +15,16 @@ import type {
 import type { AnyCapability, CapabilityMap } from "./types.js";
 
 const exportedCapabilityBrand: unique symbol = Symbol.for(
-  "@ai-engine/core.exportedCapability",
+  "@invokta/core.exportedCapability",
 );
 const capabilityLibraryBrand: unique symbol = Symbol.for(
-  "@ai-engine/core.capabilityLibrary",
+  "@invokta/core.capabilityLibrary",
 );
 const capabilityImportBrand: unique symbol = Symbol.for(
-  "@ai-engine/core.capabilityImport",
+  "@invokta/core.capabilityImport",
 );
 const composedCapabilitiesBrand: unique symbol = Symbol.for(
-  "@ai-engine/core.composedCapabilities",
+  "@invokta/core.composedCapabilities",
 );
 
 declare const capabilityImportEntries: unique symbol;

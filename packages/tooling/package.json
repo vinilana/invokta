@@ -1,5 +1,5 @@
 {
-  "name": "@ai-engine/tooling",
+  "name": "@invokta/tooling",
   "version": "0.1.0",
   "type": "module",
   "sideEffects": false,
@@ -17,13 +17,13 @@
     }
   },
   "bin": {
-    "ai-engine": "./dist/cli.js"
+    "invokta": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc -b --pretty false",
     "prepack": "npm run --silent build"
   },
   "dependencies": {
-    "@ai-engine/core": "0.1.0"
+    "@invokta/core": "0.1.0"
   }
 }

@@ -1,4 +1,4 @@
-import type { EngineError } from "@ai-engine/core";
+import type { EngineError } from "@invokta/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createDatadogLogStore } from "../src/infrastructure/datadog-log-store.js";

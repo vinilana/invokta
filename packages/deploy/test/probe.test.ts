@@ -77,7 +77,7 @@ describe("runProbe request shape", () => {
       params: {
         protocolVersion: "2025-11-25",
         capabilities: {},
-        clientInfo: { name: "ai-engine-deploy-probe", version: "1" },
+        clientInfo: { name: "invokta-deploy-probe", version: "1" },
       },
     });
   });

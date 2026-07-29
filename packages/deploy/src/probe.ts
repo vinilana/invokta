@@ -8,7 +8,7 @@ import { sendProbeRequest } from "./probe/request.js";
 // The same line the CLI writes for a rejected invocation. Nothing about a
 // rejected argument or environment value is echoed, so a crafted value can
 // neither forge a diagnostic line nor reach a log.
-const invalidUsageText = 'Invalid arguments. Run "ai-engine-deploy --help".\n';
+const invalidUsageText = 'Invalid arguments. Run "invokta-deploy --help".\n';
 
 /**
  * Performs one bounded MCP liveness or readiness check against a running

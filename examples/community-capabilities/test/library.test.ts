@@ -3,7 +3,7 @@ import {
   createEngine,
   importCapabilities,
   type Principal,
-} from "@ai-engine/core";
+} from "@invokta/core";
 import { describe, expect, it } from "vitest";
 
 import type { CommunitySupportDependencies } from "../src/application/ports.js";

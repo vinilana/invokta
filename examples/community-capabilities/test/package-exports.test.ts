@@ -8,7 +8,7 @@ import {
   importCapabilities,
   importCapability,
   type Principal,
-} from "@ai-engine/core";
+} from "@invokta/core";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createDependencies } from "./dependencies.js";
@@ -73,9 +73,9 @@ describe("the fixture package exports map", () => {
   it("resolves the root, the atomic subpath, and the library subpath through Node", () => {
     const resolved = runNodeModule(
       `process.stdout.write(JSON.stringify([
-        "@ai-engine/example-community-capabilities",
-        "@ai-engine/example-community-capabilities/classify-ticket",
-        "@ai-engine/example-community-capabilities/library",
+        "@invokta/example-community-capabilities",
+        "@invokta/example-community-capabilities/classify-ticket",
+        "@invokta/example-community-capabilities/library",
       ].map((specifier) => import.meta.resolve(specifier))));`,
     );
 
@@ -93,9 +93,9 @@ describe("the fixture package exports map", () => {
   });
 
   it("publishes an atomic capability from the package root and from the atomic subpath", async () => {
-    const root = await import("@ai-engine/example-community-capabilities");
+    const root = await import("@invokta/example-community-capabilities");
     const subpath = await import(
-      "@ai-engine/example-community-capabilities/classify-ticket"
+      "@invokta/example-community-capabilities/classify-ticket"
     );
     const dependencies = createDependencies();
 
@@ -153,7 +153,7 @@ describe("the fixture package exports map", () => {
 
     const evaluated = runNodeModule(
       `const atomic = await import(
-        "@ai-engine/example-community-capabilities/classify-ticket",
+        "@invokta/example-community-capabilities/classify-ticket",
       );
       process.stdout.write(JSON.stringify(Object.keys(atomic)));`,
     );
@@ -167,13 +167,11 @@ describe("the fixture package exports map", () => {
 
   it("publishes the capability library only from the library subpath", async () => {
     const library = await import(
-      "@ai-engine/example-community-capabilities/library"
+      "@invokta/example-community-capabilities/library"
     );
     const bundle = library.createCommunitySupportLibrary(createDependencies());
 
-    expect(bundle.name).toBe(
-      "@ai-engine/example-community-capabilities/library",
-    );
+    expect(bundle.name).toBe("@invokta/example-community-capabilities/library");
     expect(bundle.version).toBe("1.4.0");
 
     const capabilities = composeCapabilities({

@@ -7,7 +7,7 @@ import {
   importCapability,
   isComposedCapabilities,
   type Principal,
-} from "@ai-engine/core";
+} from "@invokta/core";
 import { beforeAll, describe, expect, expectTypeOf, it } from "vitest";
 
 import { createDependencies } from "./dependencies.js";
@@ -45,7 +45,7 @@ describe("the atomic capability published by a built ESM module", () => {
     expect(Object.keys(builtModule)).toEqual(["createClassifyTicketExport"]);
     expect(exported.defaultId).toBe("community.classify-ticket");
     expect(exported.source).toEqual({
-      name: "@ai-engine/example-community-capabilities/classify-ticket",
+      name: "@invokta/example-community-capabilities/classify-ticket",
       version: "1.4.0",
     });
     expectTypeOf(

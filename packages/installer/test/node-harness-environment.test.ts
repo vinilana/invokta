@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 function temporaryDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), "ai-engine-detection-"));
+  const directory = mkdtempSync(join(tmpdir(), "invokta-detection-"));
   temporaryDirectories.push(directory);
   return directory;
 }

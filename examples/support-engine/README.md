@@ -95,7 +95,7 @@ implementations change.
 ## Verify the example
 
 ```sh
-yarn workspace @ai-engine/example-support test
-yarn workspace @ai-engine/example-support typecheck
-yarn workspace @ai-engine/example-support build
+yarn workspace @invokta/example-support test
+yarn workspace @invokta/example-support typecheck
+yarn workspace @invokta/example-support build
 ```

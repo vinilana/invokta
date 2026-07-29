@@ -21,7 +21,7 @@ function stdioDescriptor(
     description: "Support tools.",
     capabilityIds: ["support.classify"],
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "stdio",
         command: "support-engine-mcp",
@@ -46,7 +46,7 @@ function httpDescriptor(
   return {
     ...stdioDescriptor(targetId),
     server: {
-      name: "ai-engine-support",
+      name: "invokta-support",
       transport: {
         type: "streamable-http",
         url: "https://support.example.com/mcp",
@@ -116,7 +116,7 @@ describe("target descriptor inverse mappings", () => {
 
       expectInstallerCode(
         () =>
-          adapter.definitionToSuspendedDescriptor("ai-engine-support", forged),
+          adapter.definitionToSuspendedDescriptor("invokta-support", forged),
         "HARNESS_CONFIG_INVALID",
       );
     },
@@ -153,7 +153,7 @@ describe("target descriptor inverse mappings", () => {
 
       expectInstallerCode(
         () =>
-          adapter.definitionToSuspendedDescriptor("ai-engine-support", forged),
+          adapter.definitionToSuspendedDescriptor("invokta-support", forged),
         "HARNESS_CONFIG_INVALID",
       );
     },
@@ -171,10 +171,7 @@ describe("target descriptor inverse mappings", () => {
 
     expectInstallerCode(
       () =>
-        adapter.definitionToSuspendedDescriptor(
-          "ai-engine-support",
-          definition,
-        ),
+        adapter.definitionToSuspendedDescriptor("invokta-support", definition),
       "HARNESS_CONFIG_INVALID",
     );
   });
@@ -202,7 +199,7 @@ describe("target descriptor inverse mappings", () => {
       for (const url of adversarialUrls) {
         expectInstallerCode(
           () =>
-            adapter.definitionToSuspendedDescriptor("ai-engine-support", {
+            adapter.definitionToSuspendedDescriptor("invokta-support", {
               ...definition,
               [urlField]: url,
             }),

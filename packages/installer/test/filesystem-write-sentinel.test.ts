@@ -16,7 +16,7 @@ describe("filesystem-write sentinel self-probes", () => {
         sentinel,
         "--input-type=module",
         "--eval",
-        "process.stdout.write(JSON.stringify(globalThis.__AI_ENGINE_WRITE_SENTINEL_REPORT__))",
+        "process.stdout.write(JSON.stringify(globalThis.__INVOKTA_WRITE_SENTINEL_REPORT__))",
       ],
       { encoding: "utf8" },
     );

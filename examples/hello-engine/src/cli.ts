@@ -1,4 +1,4 @@
-import { runCli } from "@ai-engine/cli";
+import { runCli } from "@invokta/cli";
 
 import { engine, localPrincipal } from "./engine.js";
 

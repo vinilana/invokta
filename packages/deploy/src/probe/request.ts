@@ -18,7 +18,7 @@ export const probeInitializeBody = JSON.stringify({
   params: {
     protocolVersion: probeProtocolVersion,
     capabilities: {},
-    clientInfo: { name: "ai-engine-deploy-probe", version: "1" },
+    clientInfo: { name: "invokta-deploy-probe", version: "1" },
   },
 });
 

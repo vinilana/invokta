@@ -35,7 +35,7 @@ const manifest: HttpDeployManifest = {
   env: { required: [requiredName], optional: ["SCAFFOLD_TEST_OPTIONAL"] },
 };
 
-const engineModule = `import { createEngine } from "@ai-engine/core";
+const engineModule = `import { createEngine } from "@invokta/core";
 
 export const engine = createEngine({
   name: "scaffold-fixture",
@@ -48,7 +48,7 @@ export const engine = createEngine({
 // that the adapter has handed it a request and then holds it, so a signal can
 // arrive while the exchange is open. Without the variable the hook answers
 // immediately, exactly as an implemented one would.
-const implementedAuthModule = `import type { McpHttpAuthOptions } from "@ai-engine/mcp";
+const implementedAuthModule = `import type { McpHttpAuthOptions } from "@invokta/mcp";
 
 const holdMs = Number(process.env.SCAFFOLD_TEST_AUTH_HOLD_MS ?? "0");
 
@@ -228,7 +228,7 @@ describe("the scaffolded composition root", () => {
   it("reads its configuration from the environment file it loaded", () => {
     writeFileSync(
       join(implemented.directory, ".env"),
-      `${requiredName}=fixture-token\nAI_ENGINE_HTTP_PORT=70000\n`,
+      `${requiredName}=fixture-token\nINVOKTA_HTTP_PORT=70000\n`,
       "utf8",
     );
 
@@ -236,30 +236,30 @@ describe("the scaffolded composition root", () => {
 
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("AI_ENGINE_HTTP_PORT");
+    expect(result.stderr).toContain("INVOKTA_HTTP_PORT");
     expect(result.stderr).not.toContain("fixture-token");
   });
 
   it("lets the real environment win over the environment file", () => {
     writeFileSync(
       join(implemented.directory, ".env"),
-      `${requiredName}=fixture-token\nAI_ENGINE_HTTP_PORT=70000\n`,
+      `${requiredName}=fixture-token\nINVOKTA_HTTP_PORT=70000\n`,
       "utf8",
     );
 
     const result = runCompiledModule(implemented, "dist/mcp-http.js", {
-      AI_ENGINE_HTTP_PORT: "0",
-      AI_ENGINE_HTTP_MAX_BODY_BYTES: "not-an-integer",
+      INVOKTA_HTTP_PORT: "0",
+      INVOKTA_HTTP_MAX_BODY_BYTES: "not-an-integer",
     });
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("AI_ENGINE_HTTP_MAX_BODY_BYTES");
+    expect(result.stderr).toContain("INVOKTA_HTTP_MAX_BODY_BYTES");
   });
 
   it("binds the port the environment file supplies and exits 0 on SIGTERM", async () => {
     writeFileSync(
       join(implemented.directory, ".env"),
-      `${requiredName}=${token}\nAI_ENGINE_HTTP_PORT=0\n`,
+      `${requiredName}=${token}\nINVOKTA_HTTP_PORT=0\n`,
       "utf8",
     );
 
@@ -283,40 +283,40 @@ describe("the scaffolded composition root", () => {
  */
 const invalidValueCases = [
   [
-    "AI_ENGINE_HTTP_HOST",
+    "INVOKTA_HTTP_HOST",
     "an empty host",
-    { AI_ENGINE_HTTP_HOST: "" },
-    "AI_ENGINE_HTTP_HOST must not be empty.",
+    { INVOKTA_HTTP_HOST: "" },
+    "INVOKTA_HTTP_HOST must not be empty.",
   ],
   [
-    "AI_ENGINE_HTTP_HOST",
+    "INVOKTA_HTTP_HOST",
     "a non-loopback host with no allowlist",
-    { AI_ENGINE_HTTP_HOST: "10.0.0.5" },
-    "AI_ENGINE_HTTP_ALLOWED_HOSTS is required when AI_ENGINE_HTTP_HOST is not a loopback address.",
+    { INVOKTA_HTTP_HOST: "10.0.0.5" },
+    "INVOKTA_HTTP_ALLOWED_HOSTS is required when INVOKTA_HTTP_HOST is not a loopback address.",
   ],
   [
-    "AI_ENGINE_HTTP_PORT",
+    "INVOKTA_HTTP_PORT",
     "an empty port",
-    { AI_ENGINE_HTTP_PORT: "" },
-    "AI_ENGINE_HTTP_PORT must not be empty.",
+    { INVOKTA_HTTP_PORT: "" },
+    "INVOKTA_HTTP_PORT must not be empty.",
   ],
   [
-    "AI_ENGINE_HTTP_PORT",
+    "INVOKTA_HTTP_PORT",
     "a non-integer port",
-    { AI_ENGINE_HTTP_PORT: "3000.5" },
-    "AI_ENGINE_HTTP_PORT must be an integer between 0 and 65535.",
+    { INVOKTA_HTTP_PORT: "3000.5" },
+    "INVOKTA_HTTP_PORT must be an integer between 0 and 65535.",
   ],
   [
-    "AI_ENGINE_HTTP_PORT",
+    "INVOKTA_HTTP_PORT",
     "a port above the range",
-    { AI_ENGINE_HTTP_PORT: "70000" },
-    "AI_ENGINE_HTTP_PORT must be an integer between 0 and 65535.",
+    { INVOKTA_HTTP_PORT: "70000" },
+    "INVOKTA_HTTP_PORT must be an integer between 0 and 65535.",
   ],
   [
-    "AI_ENGINE_HTTP_PORT",
+    "INVOKTA_HTTP_PORT",
     "a negative port",
-    { AI_ENGINE_HTTP_PORT: "-1" },
-    "AI_ENGINE_HTTP_PORT must be an integer between 0 and 65535.",
+    { INVOKTA_HTTP_PORT: "-1" },
+    "INVOKTA_HTTP_PORT must be an integer between 0 and 65535.",
   ],
   ["PORT", "an empty fallback port", { PORT: "" }, "PORT must not be empty."],
   [
@@ -326,56 +326,56 @@ const invalidValueCases = [
     "PORT must be an integer between 0 and 65535.",
   ],
   [
-    "AI_ENGINE_HTTP_ALLOWED_HOSTS",
+    "INVOKTA_HTTP_ALLOWED_HOSTS",
     "an empty host allowlist",
-    { AI_ENGINE_HTTP_ALLOWED_HOSTS: "" },
-    "AI_ENGINE_HTTP_ALLOWED_HOSTS must not be empty.",
+    { INVOKTA_HTTP_ALLOWED_HOSTS: "" },
+    "INVOKTA_HTTP_ALLOWED_HOSTS must not be empty.",
   ],
   [
-    "AI_ENGINE_HTTP_ALLOWED_HOSTS",
+    "INVOKTA_HTTP_ALLOWED_HOSTS",
     "a host allowlist of separators only",
-    { AI_ENGINE_HTTP_ALLOWED_HOSTS: " , , " },
-    "AI_ENGINE_HTTP_ALLOWED_HOSTS must list at least one entry.",
+    { INVOKTA_HTTP_ALLOWED_HOSTS: " , , " },
+    "INVOKTA_HTTP_ALLOWED_HOSTS must list at least one entry.",
   ],
   [
-    "AI_ENGINE_HTTP_ALLOWED_ORIGINS",
+    "INVOKTA_HTTP_ALLOWED_ORIGINS",
     "an empty origin allowlist",
-    { AI_ENGINE_HTTP_ALLOWED_ORIGINS: "" },
-    "AI_ENGINE_HTTP_ALLOWED_ORIGINS must not be empty.",
+    { INVOKTA_HTTP_ALLOWED_ORIGINS: "" },
+    "INVOKTA_HTTP_ALLOWED_ORIGINS must not be empty.",
   ],
   [
-    "AI_ENGINE_HTTP_ALLOWED_ORIGINS",
+    "INVOKTA_HTTP_ALLOWED_ORIGINS",
     "an origin allowlist of separators only",
-    { AI_ENGINE_HTTP_ALLOWED_ORIGINS: ",," },
-    "AI_ENGINE_HTTP_ALLOWED_ORIGINS must list at least one entry.",
+    { INVOKTA_HTTP_ALLOWED_ORIGINS: ",," },
+    "INVOKTA_HTTP_ALLOWED_ORIGINS must list at least one entry.",
   ],
   [
-    "AI_ENGINE_HTTP_MAX_BODY_BYTES",
+    "INVOKTA_HTTP_MAX_BODY_BYTES",
     "an empty body limit",
-    { AI_ENGINE_HTTP_MAX_BODY_BYTES: "" },
-    "AI_ENGINE_HTTP_MAX_BODY_BYTES must not be empty.",
+    { INVOKTA_HTTP_MAX_BODY_BYTES: "" },
+    "INVOKTA_HTTP_MAX_BODY_BYTES must not be empty.",
   ],
   [
-    "AI_ENGINE_HTTP_MAX_BODY_BYTES",
+    "INVOKTA_HTTP_MAX_BODY_BYTES",
     "a zero body limit",
-    { AI_ENGINE_HTTP_MAX_BODY_BYTES: "0" },
-    "AI_ENGINE_HTTP_MAX_BODY_BYTES must be an integer between 1 and 9007199254740991.",
+    { INVOKTA_HTTP_MAX_BODY_BYTES: "0" },
+    "INVOKTA_HTTP_MAX_BODY_BYTES must be an integer between 1 and 9007199254740991.",
   ],
   [
-    "AI_ENGINE_HTTP_MAX_BODY_BYTES",
+    "INVOKTA_HTTP_MAX_BODY_BYTES",
     "a fractional body limit",
-    { AI_ENGINE_HTTP_MAX_BODY_BYTES: "1.5" },
-    "AI_ENGINE_HTTP_MAX_BODY_BYTES must be an integer between 1 and 9007199254740991.",
+    { INVOKTA_HTTP_MAX_BODY_BYTES: "1.5" },
+    "INVOKTA_HTTP_MAX_BODY_BYTES must be an integer between 1 and 9007199254740991.",
   ],
 ] as const;
 
 const nulCarryingVariables = [
-  "AI_ENGINE_HTTP_HOST",
-  "AI_ENGINE_HTTP_PORT",
+  "INVOKTA_HTTP_HOST",
+  "INVOKTA_HTTP_PORT",
   "PORT",
-  "AI_ENGINE_HTTP_ALLOWED_HOSTS",
-  "AI_ENGINE_HTTP_ALLOWED_ORIGINS",
-  "AI_ENGINE_HTTP_MAX_BODY_BYTES",
+  "INVOKTA_HTTP_ALLOWED_HOSTS",
+  "INVOKTA_HTTP_ALLOWED_ORIGINS",
+  "INVOKTA_HTTP_MAX_BODY_BYTES",
 ] as const;
 
 describe("the environment contract of the scaffolded composition root", () => {
@@ -423,13 +423,13 @@ describe("the environment contract of the scaffolded composition root", () => {
     },
   );
 
-  it("binds the port AI_ENGINE_HTTP_PORT names when PORT is also set", async () => {
+  it("binds the port INVOKTA_HTTP_PORT names when PORT is also set", async () => {
     const fallbackPort = await reserveLoopbackPort();
     const preferredPort = await reserveLoopbackPort();
     const started = await start({
-      AI_ENGINE_HTTP_HOST: "localhost",
+      INVOKTA_HTTP_HOST: "localhost",
       PORT: String(fallbackPort),
-      AI_ENGINE_HTTP_PORT: String(preferredPort),
+      INVOKTA_HTTP_PORT: String(preferredPort),
     });
 
     try {
@@ -446,7 +446,7 @@ describe("the environment contract of the scaffolded composition root", () => {
     }
   }, 30_000);
 
-  it("falls back to PORT when AI_ENGINE_HTTP_PORT is absent", async () => {
+  it("falls back to PORT when INVOKTA_HTTP_PORT is absent", async () => {
     const fallbackPort = await reserveLoopbackPort();
     const started = await start({ PORT: String(fallbackPort) });
 
@@ -460,10 +460,10 @@ describe("the environment contract of the scaffolded composition root", () => {
 
   it("passes the allowlist and the body limit through to the adapter", async () => {
     const started = await start({
-      AI_ENGINE_HTTP_PORT: "0",
-      AI_ENGINE_HTTP_ALLOWED_HOSTS: "engine.example, engine.example:443",
-      AI_ENGINE_HTTP_ALLOWED_ORIGINS: "https://app.example",
-      AI_ENGINE_HTTP_MAX_BODY_BYTES: "256",
+      INVOKTA_HTTP_PORT: "0",
+      INVOKTA_HTTP_ALLOWED_HOSTS: "engine.example, engine.example:443",
+      INVOKTA_HTTP_ALLOWED_ORIGINS: "https://app.example",
+      INVOKTA_HTTP_MAX_BODY_BYTES: "256",
     });
 
     try {
@@ -500,7 +500,7 @@ describe.each(["SIGTERM", "SIGINT"] as const)(
 
     it("aborts the request it is holding and exits 0", async () => {
       const started = await start({
-        AI_ENGINE_HTTP_PORT: "0",
+        INVOKTA_HTTP_PORT: "0",
         // Far longer than the test's own deadline: if the shutdown did not
         // abort the exchange, this test would time out rather than pass.
         SCAFFOLD_TEST_AUTH_HOLD_MS: "60000",
@@ -524,7 +524,7 @@ describe.each(["SIGTERM", "SIGINT"] as const)(
     }, 45_000);
 
     it("exits 0 with nothing in flight", async () => {
-      const started = await start({ AI_ENGINE_HTTP_PORT: "0" });
+      const started = await start({ INVOKTA_HTTP_PORT: "0" });
 
       started.signal(signalName);
       const exited = await started.exit();
@@ -575,9 +575,7 @@ describe("the scaffold templates", () => {
     const firstImport = /^import .*$/m.exec(root)?.[0];
 
     expect(firstImport).toBe('import "./env.js";');
-    expect(root.indexOf("./env.js")).toBeLessThan(
-      root.indexOf("@ai-engine/mcp"),
-    );
+    expect(root.indexOf("./env.js")).toBeLessThan(root.indexOf("@invokta/mcp"));
     expect(root.indexOf("requireEnvironment(")).toBeLessThan(
       root.indexOf('import("./engine.js")'),
     );
@@ -587,16 +585,16 @@ describe("the scaffold templates", () => {
     const root = renderHttpRootModule(manifest);
 
     for (const name of [
-      "AI_ENGINE_HTTP_HOST",
-      "AI_ENGINE_HTTP_PORT",
+      "INVOKTA_HTTP_HOST",
+      "INVOKTA_HTTP_PORT",
       "PORT",
-      "AI_ENGINE_HTTP_ALLOWED_HOSTS",
-      "AI_ENGINE_HTTP_ALLOWED_ORIGINS",
-      "AI_ENGINE_HTTP_MAX_BODY_BYTES",
+      "INVOKTA_HTTP_ALLOWED_HOSTS",
+      "INVOKTA_HTTP_ALLOWED_ORIGINS",
+      "INVOKTA_HTTP_MAX_BODY_BYTES",
     ]) {
       expect(root).toContain(name);
     }
-    expect(root.indexOf("AI_ENGINE_HTTP_PORT")).toBeLessThan(
+    expect(root.indexOf("INVOKTA_HTTP_PORT")).toBeLessThan(
       root.indexOf('"PORT"'),
     );
     expect(root).toContain(`"${requiredName}"`);

@@ -182,7 +182,7 @@ for (const method of fileHandle) {
   );
 }
 
-globalThis.__AI_ENGINE_WRITE_SENTINEL_REPORT__ = Object.freeze({
+globalThis.__INVOKTA_WRITE_SENTINEL_REPORT__ = Object.freeze({
   direct: Object.freeze(direct),
   promises: Object.freeze(promises),
   fileHandle: Object.freeze(fileHandle),

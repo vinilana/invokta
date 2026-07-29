@@ -12,7 +12,7 @@ import {
   importCapabilities,
   importCapability,
   type Principal,
-} from "@ai-engine/core";
+} from "@invokta/core";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 

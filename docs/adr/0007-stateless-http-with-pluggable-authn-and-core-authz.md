@@ -84,7 +84,7 @@ HTTP is permitted only as an explicit development resource. Authorization server
 URLs use HTTPS without credentials, query, or fragment. Their path components
 remain permitted because OAuth issuer identifiers commonly include tenant paths.
 
-Authorization (`authz`) will be the responsibility of `@ai-engine/core` and will
+Authorization (`authz`) will be the responsibility of `@invokta/core` and will
 occur in the `invoke` pipeline before the handler. Every capability will declare
 `access` as `public`, `authenticated`, or a domain authorization function.
 Protected capabilities will

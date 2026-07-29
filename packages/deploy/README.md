@@ -1,11 +1,11 @@
-# @ai-engine/deploy
+# @invokta/deploy
 
 Development-time toolkit that turns an engine exposing MCP Streamable HTTP into
 a reviewable container build context, and verifies a running endpoint. This
 package contributes no runtime contract, capability, adapter, or transport. It
-depends on Node built-ins only — not on `@ai-engine/core`, `@ai-engine/cli`,
-`@ai-engine/mcp`, `@ai-engine/tooling`, or `@ai-engine/installer` — and no
-runtime package depends on it. Generated user code imports `@ai-engine/mcp`; the
+depends on Node built-ins only — not on `@invokta/core`, `@invokta/cli`,
+`@invokta/mcp`, `@invokta/tooling`, or `@invokta/installer` — and no
+runtime package depends on it. Generated user code imports `@invokta/mcp`; the
 toolkit itself never does.
 
 The toolkit generates and validates text. No command spawns a process, executes
@@ -14,12 +14,12 @@ a shell, or runs a package manager, compiler, or container tool. `init` and
 HTTP request per invocation.
 
 ```text
-ai-engine-deploy init
-ai-engine-deploy package
-ai-engine-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
+invokta-deploy init
+invokta-deploy package
+invokta-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
                        [--host-header HOST] [--timeout-ms N]
-ai-engine-deploy --help
-ai-engine-deploy --version
+invokta-deploy --help
+invokta-deploy --version
 ```
 
 All commands are non-interactive and require no TTY. Diagnostics and per-file
@@ -37,7 +37,7 @@ progress go to `stderr`; nothing is written to `stdout` except `--help` and
 Orchestrating functions return these values and never call `process.exit`; only
 the binary owns the final process status.
 
-## ai-engine-deploy init
+## invokta-deploy init
 
 Scaffolds the deployment manifest, a production-shaped HTTP composition root,
 its fail-closed authentication hook, the environment-file loader, and a
@@ -45,7 +45,7 @@ secret-free example file:
 
 | File                    | Content                                                            |
 | ----------------------- | ------------------------------------------------------------------ |
-| `ai-engine.deploy.json` | The deployment manifest, with every documented default spelled out. |
+| `invokta.deploy.json` | The deployment manifest, with every documented default spelled out. |
 | `src/mcp-http.ts`       | The composition root that reads the environment contract below.     |
 | `src/http-auth.ts`      | The `auth.mode: "required"` hook, failing closed until implemented. |
 | `src/env.ts`            | The environment-file loader and required-name check.                |
@@ -65,7 +65,7 @@ a scaffolded engine can never serve an unverified request. The adapter's
 `dangerously-disabled-for-development` mode is deliberately absent from every
 template; it remains a manual, local-only choice.
 
-## ai-engine-deploy package
+## invokta-deploy package
 
 Generates the deployment package. It validates in a fixed order — manifest,
 `package.json` (`name`, `version`, and a `build` script), exactly one supported
@@ -107,7 +107,7 @@ UTF-8 with LF endings and a trailing newline.
 
 Generated files are meant to be committed and reviewed like any other code.
 
-## ai-engine-deploy probe
+## invokta-deploy probe
 
 Performs one bounded MCP liveness or readiness check, for CI smoke tests and
 container health checks. A healthy endpoint produces no output at all.
@@ -144,13 +144,13 @@ The generated `deploy/healthcheck.mjs` implements this same contract against
 `http://127.0.0.1:<port>/mcp` using the manifest's `healthcheck` settings. Both
 surfaces read the pinned protocol revision and the default deadline from one
 module, so they cannot disagree. Because the adapter validates the raw `Host`
-header, the script sends the first entry of `AI_ENGINE_HTTP_ALLOWED_HOSTS` as
+header, the script sends the first entry of `INVOKTA_HTTP_ALLOWED_HOSTS` as
 its `Host` when that variable is set, so the runtime allowlist never has to
 admit a loopback host.
 
 ## Deployment manifest
 
-`ai-engine.deploy.json` at the engine project root is the single input that
+`invokta.deploy.json` at the engine project root is the single input that
 parameterizes scaffolding, packaging, and health checks.
 
 ```json
@@ -159,7 +159,7 @@ parameterizes scaffolding, packaging, and health checks.
   "entry": "dist/mcp-http.js",
   "env": {
     "required": ["SUPPORT_API_TOKEN"],
-    "optional": ["AI_ENGINE_HTTP_ALLOWED_ORIGINS"]
+    "optional": ["INVOKTA_HTTP_ALLOWED_ORIGINS"]
   },
   "image": {
     "baseImage": "node:22-slim",
@@ -193,12 +193,12 @@ generated application code, not a runtime-package feature.
 
 | Variable                         | Meaning                                                     | Default              |
 | -------------------------------- | ----------------------------------------------------------- | -------------------- |
-| `AI_ENGINE_HTTP_HOST`            | Bind host passed to `serveMcpHttp`; the image sets `0.0.0.0`.| `127.0.0.1`          |
-| `AI_ENGINE_HTTP_PORT`, `PORT`    | Bind port; the AI Engine name wins when both are set.        | `3000`               |
-| `AI_ENGINE_HTTP_ALLOWED_HOSTS`   | Comma-separated `Host` allowlist, required for a non-loopback bind. | unset         |
-| `AI_ENGINE_HTTP_ALLOWED_ORIGINS` | Comma-separated browser origin allowlist.                    | unset                |
-| `AI_ENGINE_HTTP_MAX_BODY_BYTES`  | Request body limit override.                                 | adapter default (1 MiB) |
-| `AI_ENGINE_ENV_FILE`             | Path of the environment file to load instead of `.env`.      | `.env`               |
+| `INVOKTA_HTTP_HOST`            | Bind host passed to `serveMcpHttp`; the image sets `0.0.0.0`.| `127.0.0.1`          |
+| `INVOKTA_HTTP_PORT`, `PORT`    | Bind port; the Invokta-specific name wins when both are set.     | `3000`               |
+| `INVOKTA_HTTP_ALLOWED_HOSTS`   | Comma-separated `Host` allowlist, required for a non-loopback bind. | unset         |
+| `INVOKTA_HTTP_ALLOWED_ORIGINS` | Comma-separated browser origin allowlist.                    | unset                |
+| `INVOKTA_HTTP_MAX_BODY_BYTES`  | Request body limit override.                                 | adapter default (1 MiB) |
+| `INVOKTA_ENV_FILE`             | Path of the environment file to load instead of `.env`.      | `.env`               |
 
 List values are split on commas, trimmed, and emptied of blank items. A
 non-integer value, an out-of-range value, or a NUL aborts startup rather than
@@ -214,7 +214,7 @@ value, and closes the server on `SIGTERM` and `SIGINT` before exiting `0`.
 configuration.
 
 - The default file is `.env` in the process working directory. A missing
-  default is a silent no-op; a file named by `AI_ENGINE_ENV_FILE` that is
+  default is a silent no-op; a file named by `INVOKTA_ENV_FILE` that is
   missing or not a regular file is a startup failure, because an explicit
   request must not degrade silently.
 - The real environment always wins. The loader only adds absent keys, so a
@@ -238,7 +238,7 @@ built from the generated context contains one.
 ## Programmatic API
 
 ```ts
-import { runDeployCli } from "@ai-engine/deploy";
+import { runDeployCli } from "@invokta/deploy";
 
 const exitCode = await runDeployCli({
   argv: ["probe", "--url", "https://engine.example/mcp"],

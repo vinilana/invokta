@@ -1,4 +1,4 @@
-import type { Principal } from "@ai-engine/core";
+import type { Principal } from "@invokta/core";
 
 /**
  * Trusted local configuration. A deployment that separates roles issues

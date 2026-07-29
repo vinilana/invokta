@@ -19,9 +19,9 @@ three non-interactive commands:
 
 | Command | Responsibility |
 | --- | --- |
-| `ai-engine-deploy init` | Scaffold a deployment manifest and a production-shaped HTTP composition root that fails closed until authentication is implemented. |
-| `ai-engine-deploy package` | Generate a deterministic, reviewable deployment package: `Dockerfile`, `.dockerignore`, a self-contained health-check script, and generated deployment documentation. |
-| `ai-engine-deploy probe` | Perform one bounded MCP liveness or readiness check against a running endpoint, for CI smoke tests and container health checks. |
+| `invokta-deploy init` | Scaffold a deployment manifest and a production-shaped HTTP composition root that fails closed until authentication is implemented. |
+| `invokta-deploy package` | Generate a deterministic, reviewable deployment package: `Dockerfile`, `.dockerignore`, a self-contained health-check script, and generated deployment documentation. |
+| `invokta-deploy probe` | Perform one bounded MCP liveness or readiness check against a running endpoint, for CI smoke tests and container health checks. |
 
 The toolkit generates and validates text. It never runs Docker, a package
 manager, a shell, or the engine itself, and its only network operation is the
@@ -33,7 +33,7 @@ build context that any OCI builder and any container platform can consume.
 
 This specification is a post-v0.1 expansion. It changes no v0.1 contract:
 
-- `@ai-engine/core`, `@ai-engine/cli`, and `@ai-engine/mcp` are not modified.
+- `@invokta/core`, `@invokta/cli`, and `@invokta/mcp` are not modified.
   The generated composition root uses only the existing public
   `serveMcpHttp` API and its documented options (`host`, `port`,
   `allowedHosts`, `allowedOrigins`, `maxRequestBodyBytes`, `auth`).
@@ -52,22 +52,22 @@ This specification is a post-v0.1 expansion. It changes no v0.1 contract:
   (`AE-INSTALL-REG-06`): HTTPS at the public edge and the exact `/mcp` path.
 
 Implementation requires a new ADR before code is added. That ADR must
-authorize the post-v0.1 `@ai-engine/deploy` package, amend the package
+authorize the post-v0.1 `@invokta/deploy` package, amend the package
 boundary in ADR 0004, and distinguish this developer-facing generator from the
-dev-only build gate `@ai-engine/tooling` (ADR 0009) and the end-user
-`@ai-engine/installer` (ADR 0010). The preferred package and binary are:
+dev-only build gate `@invokta/tooling` (ADR 0009) and the end-user
+`@invokta/installer` (ADR 0010). The preferred package and binary are:
 
 | Artifact | Responsibility |
 | --- | --- |
-| `packages/deploy` / `@ai-engine/deploy` | Manifest validation, scaffolding, deployment package generation, probe |
-| `ai-engine-deploy` | Non-interactive executable; owns no capability execution command |
+| `packages/deploy` / `@invokta/deploy` | Manifest validation, scaffolding, deployment package generation, probe |
+| `invokta-deploy` | Non-interactive executable; owns no capability execution command |
 
-No runtime or tooling package may depend on `@ai-engine/deploy`, and
-`@ai-engine/deploy` MUST NOT depend on `@ai-engine/core`, `@ai-engine/cli`,
-`@ai-engine/mcp`, `@ai-engine/tooling`, or `@ai-engine/installer`. It may use
+No runtime or tooling package may depend on `@invokta/deploy`, and
+`@invokta/deploy` MUST NOT depend on `@invokta/core`, `@invokta/cli`,
+`@invokta/mcp`, `@invokta/tooling`, or `@invokta/installer`. It may use
 only Node built-ins. The package is native ESM and declares the repository
 runtime floor of Node.js `>=22.20.0`. Generated user code imports
-`@ai-engine/mcp`; the toolkit itself does not.
+`@invokta/mcp`; the toolkit itself does not.
 
 ## Goals
 
@@ -111,7 +111,7 @@ runtime floor of Node.js `>=22.20.0`. Generated user code imports
   `serveMcpHttp`.
 
 **Deployment manifest**
-: The closed, versioned JSON document `ai-engine.deploy.json` at the engine
+: The closed, versioned JSON document `invokta.deploy.json` at the engine
   project root. It is the single input that parameterizes scaffolding,
   packaging, and health checks.
 
@@ -133,17 +133,17 @@ runtime floor of Node.js `>=22.20.0`. Generated user code imports
 ### Commands
 
 ```text
-ai-engine-deploy init
-ai-engine-deploy package
-ai-engine-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
+invokta-deploy init
+invokta-deploy package
+invokta-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
                        [--host-header HOST] [--timeout-ms N]
-ai-engine-deploy --help
-ai-engine-deploy --version
+invokta-deploy --help
+invokta-deploy --version
 ```
 
 All commands are non-interactive and require no TTY. Diagnostics and progress
 go to `stderr`; no command writes to `stdout` except `--help` and
-`--version`, which follow the same conventions as `@ai-engine/tooling`. The
+`--version`, which follow the same conventions as `@invokta/tooling`. The
 orchestrating functions return exit codes and never call `process.exit`; the
 binary composition root owns the final process status.
 
@@ -177,7 +177,7 @@ project rewrites nothing: a byte-identical generated file is reported as
 
 ### Schema
 
-The manifest is `ai-engine.deploy.json` at the engine project root.
+The manifest is `invokta.deploy.json` at the engine project root.
 TypeScript notation documents the JSON data; the manifest itself is plain
 JSON.
 
@@ -208,7 +208,7 @@ Example:
   "entry": "dist/mcp-http.js",
   "env": {
     "required": ["SUPPORT_API_TOKEN"],
-    "optional": ["AI_ENGINE_HTTP_ALLOWED_ORIGINS"]
+    "optional": ["INVOKTA_HTTP_ALLOWED_ORIGINS"]
   },
   "image": {
     "port": 3000
@@ -259,7 +259,7 @@ and never echoes a rejected value into a diagnostic.
 
 ## Scaffolded HTTP composition root
 
-`ai-engine-deploy init` writes, when absent, the manifest and two source
+`invokta-deploy init` writes, when absent, the manifest and two source
 files: `src/mcp-http.ts` (the composition root) and `src/http-auth.ts` (the
 authentication hook module). `init` never overwrites an existing file; an
 existing target is reported as `skipped` and the command still exits `0`.
@@ -273,11 +273,11 @@ of generated application code, not a runtime-package feature:
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `AI_ENGINE_HTTP_HOST` | Bind host passed to `serveMcpHttp`. | `127.0.0.1` |
-| `AI_ENGINE_HTTP_PORT`, then `PORT` | Bind port; the AI Engine name wins when both are set. | `3000` |
-| `AI_ENGINE_HTTP_ALLOWED_HOSTS` | Comma-separated `Host` allowlist for non-loopback binds. | unset |
-| `AI_ENGINE_HTTP_ALLOWED_ORIGINS` | Comma-separated browser origin allowlist. | unset |
-| `AI_ENGINE_HTTP_MAX_BODY_BYTES` | Request body limit override. | adapter default (1 MiB) |
+| `INVOKTA_HTTP_HOST` | Bind host passed to `serveMcpHttp`. | `127.0.0.1` |
+| `INVOKTA_HTTP_PORT`, then `PORT` | Bind port; the Invokta-specific name wins when both are set. | `3000` |
+| `INVOKTA_HTTP_ALLOWED_HOSTS` | Comma-separated `Host` allowlist for non-loopback binds. | unset |
+| `INVOKTA_HTTP_ALLOWED_ORIGINS` | Comma-separated browser origin allowlist. | unset |
+| `INVOKTA_HTTP_MAX_BODY_BYTES` | Request body limit override. | adapter default (1 MiB) |
 
 **AE-DEPLOY-ENV-01 — Fail-closed parsing.** List values are split on commas,
 trimmed, and empty items dropped. A non-integer or out-of-range numeric
@@ -304,7 +304,7 @@ values or environment values.
 
 ### Inputs and validation order
 
-`ai-engine-deploy package` performs, in order:
+`invokta-deploy package` performs, in order:
 
 1. load and validate the manifest;
 2. read `package.json`; require a `build` script and a `name` and `version`;
@@ -347,7 +347,7 @@ other files are still processed, and the command exits `1`.
 - in the runtime stage, set `NODE_ENV=production`, run as the non-root
   `node` user, set `WORKDIR /app`, and copy only the built output,
   production `node_modules`, `package.json`, and `deploy/healthcheck.mjs`;
-- set `AI_ENGINE_HTTP_HOST=0.0.0.0` and `EXPOSE` the manifest port;
+- set `INVOKTA_HTTP_HOST=0.0.0.0` and `EXPOSE` the manifest port;
 - declare `HEALTHCHECK` invoking `node deploy/healthcheck.mjs`;
 - end with `CMD ["node", "<entry>"]` using the manifest entry;
 - contain no secret, credential, token, registry authentication, or `.env`
@@ -357,7 +357,7 @@ other files are still processed, and the command exits `1`.
 implements the probe semantics below against
 `http://127.0.0.1:<port>/mcp`. Because the adapter validates the raw `Host`
 header (ADR 0007), the script sends the first entry of
-`AI_ENGINE_HTTP_ALLOWED_HOSTS` as its `Host` header when that variable is
+`INVOKTA_HTTP_ALLOWED_HOSTS` as its `Host` header when that variable is
 set, so the runtime allowlist does not need to admit loopback hosts. It reads
 a bearer token only from the manifest's `healthcheck.bearerEnv` variable and
 never prints it.
@@ -368,7 +368,7 @@ the affected files; unrelated user files are never read or written.
 
 ## Probe contract
 
-`ai-engine-deploy probe` and the generated health-check script share one
+`invokta-deploy probe` and the generated health-check script share one
 semantic contract.
 
 **AE-DEPLOY-PROBE-01 — Target URL.** The URL MUST be absolute HTTP(S) without
@@ -408,8 +408,8 @@ reported request detail.
   public URL MUST be HTTPS with the exact `/mcp` path.
 - The adapter validates the raw `Host` header and ignores forwarded-host
   headers. The edge MUST forward the original public `Host`, and
-  `AI_ENGINE_HTTP_ALLOWED_HOSTS` MUST list every public host it forwards.
-- `AI_ENGINE_HTTP_ALLOWED_ORIGINS` is needed only for browser-based clients
+  `INVOKTA_HTTP_ALLOWED_HOSTS` MUST list every public host it forwards.
+- `INVOKTA_HTTP_ALLOWED_ORIGINS` is needed only for browser-based clients
   and MUST list exact origins.
 - The profile is stateless (ADR 0007): replicas can scale horizontally with
   no sticky sessions, shared state, or drain coordination beyond the
@@ -457,7 +457,7 @@ pointer. These orders MUST be stable across runs with identical inputs.
 
 ## Versioning and compatibility
 
-- Adding `@ai-engine/deploy` is additive and post-v0.1, but it requires the
+- Adding `@invokta/deploy` is additive and post-v0.1, but it requires the
   package-boundary ADR described above.
 - Manifest `schemaVersion: 1` is exact. Because the schema is closed, adding
   even an optional field is a schema change requiring a release decision.
@@ -475,8 +475,8 @@ pointer. These orders MUST be stable across runs with identical inputs.
 | ID | Observable outcome | Minimum evidence |
 | --- | --- | --- |
 | `AE-DEPLOY-AC-01` | `init` in an empty engine project writes the manifest and both source scaffolds; rerunning it reports every target as `skipped` and writes nothing. | Filesystem fixture with writer spies. |
-| `AE-DEPLOY-AC-02` | The scaffolded composition root builds against the public `@ai-engine/mcp` API and refuses to start until the authentication hook is implemented. | Compile-and-start test on a fixture engine. |
-| `AE-DEPLOY-AC-03` | Every environment variable in the contract table is honored, the precedence of `AI_ENGINE_HTTP_PORT` over `PORT` holds, and each invalid value aborts startup. | Table-driven env fixture tests. |
+| `AE-DEPLOY-AC-02` | The scaffolded composition root builds against the public `@invokta/mcp` API and refuses to start until the authentication hook is implemented. | Compile-and-start test on a fixture engine. |
+| `AE-DEPLOY-AC-03` | Every environment variable in the contract table is honored, the precedence of `INVOKTA_HTTP_PORT` over `PORT` holds, and each invalid value aborts startup. | Table-driven env fixture tests. |
 | `AE-DEPLOY-AC-04` | `SIGTERM` closes the scaffolded server, aborts an in-flight request, and exits `0`. | Child-process signal test. |
 | `AE-DEPLOY-AC-05` | `package` output is byte-identical across repeated runs and machines given identical inputs, and contains no timestamp, username, or absolute path. | Golden-file determinism test with content scanning. |
 | `AE-DEPLOY-AC-06` | Each lockfile produces its documented install command in the Dockerfile; zero or multiple lockfiles fail with their stable codes before any write. | Lockfile matrix fixtures. |
@@ -507,7 +507,7 @@ evidence, ends green, and is one cohesive commit:
 
 1. Record the package and architectural boundary in a new ADR, including the
    relationship with ADRs 0004, 0007, 0009, and 0010.
-2. Add the `@ai-engine/deploy` package skeleton, injectable filesystem and
+2. Add the `@invokta/deploy` package skeleton, injectable filesystem and
    clock boundaries, stable errors, and CLI usage behavior.
 3. Add the closed manifest schema, limits, and deterministic diagnostics.
 4. Implement `init` scaffolding, including the environment contract and
@@ -523,12 +523,12 @@ evidence, ends green, and is one cohesive commit:
 
 These points need explicit agreement in the authorizing ADR:
 
-1. **Package boundary.** This draft prefers a new `@ai-engine/deploy` over
-   extending `@ai-engine/tooling`, because packaging concerns (container
+1. **Package boundary.** This draft prefers a new `@invokta/deploy` over
+   extending `@invokta/tooling`, because packaging concerns (container
    conventions, probe network access) have a different release cadence and
    risk profile than the composition build gate, mirroring the reasoning
    that separated the installer in ADR 0010. The alternative — an
-   `ai-engine deploy` subcommand family in tooling — would avoid a sixth
+   `invokta deploy` subcommand family in tooling — would avoid a sixth
    package at the cost of widening tooling's authority.
 2. **Bundle versus container-stage install.** This draft rebuilds inside the
    image from the lockfile instead of bundling with a JavaScript bundler.
@@ -539,7 +539,7 @@ These points need explicit agreement in the authorizing ADR:
    the first write, with no drift tracking.
 4. **Health semantics.** Confirm that accepting a 401 challenge as `alive`
    is the intended liveness contract, and that no in-adapter health route
-   will be added to `@ai-engine/mcp`.
+   will be added to `@invokta/mcp`.
 
 ## Deferred and unspecified
 
@@ -555,6 +555,6 @@ The following require later evidence and an explicit specification update:
 - secrets-manager integration and OAuth-protected probe credentials;
 - machine-readable (`--json`) command output;
 - a `watch` or development-server mode;
-- a unified `ai-engine` launcher shared with tooling or the installer;
+- a unified `invokta` launcher shared with tooling or the installer;
 - automatic registration of a deployed endpoint in the local capability MCP
   installer registry.

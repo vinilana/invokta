@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { EngineEvent, Principal } from "@ai-engine/core";
+import type { EngineEvent, Principal } from "@invokta/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createAgentSessionEngine } from "../src/engine.js";

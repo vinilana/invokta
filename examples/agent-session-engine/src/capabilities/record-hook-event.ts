@@ -1,4 +1,4 @@
-import { defineCapability, EngineError } from "@ai-engine/core";
+import { defineCapability, EngineError } from "@invokta/core";
 import { z } from "zod";
 
 import { hasPermission } from "../application/authorization.js";
