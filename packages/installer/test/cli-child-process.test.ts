@@ -71,6 +71,7 @@ describe("invokta-installer executable", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe(`Usage:
   invokta-installer
+  invokta-installer install --engine <project-directory>
   invokta-installer --help
   invokta-installer --version
 `);

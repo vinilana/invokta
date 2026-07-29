@@ -5,6 +5,10 @@ import {
 
 export type InstallerExitCode = 0 | 1 | 2 | 130;
 
+export type InstallerCommand =
+  | { readonly kind: "inventory" }
+  | { readonly kind: "install-engine"; readonly projectDirectory: string };
+
 export interface InstallerCliIo {
   readonly inputIsTTY: () => boolean;
   readonly outputIsTTY: () => boolean;
@@ -15,12 +19,15 @@ export interface InstallerCliIo {
 export interface RunInstallerCliOptions {
   readonly argv?: readonly string[];
   readonly io?: Partial<InstallerCliIo>;
-  readonly loadInteractiveSession?: () => Promise<InstallerExitCode>;
+  readonly loadInteractiveSession?: (
+    command: InstallerCommand,
+  ) => Promise<InstallerExitCode>;
   readonly loadPackageVersion?: () => Promise<string>;
 }
 
 const helpText = `Usage:
   invokta-installer
+  invokta-installer install --engine <project-directory>
   invokta-installer --help
   invokta-installer --version
 `;
@@ -47,9 +54,22 @@ function resolveIo(overrides: Partial<InstallerCliIo> | undefined) {
   } satisfies InstallerCliIo;
 }
 
-async function loadDefaultInteractiveSession(): Promise<InstallerExitCode> {
+async function loadDefaultInteractiveSession(
+  command: InstallerCommand,
+): Promise<InstallerExitCode> {
   const { runInteractiveSession } = await import("./interactive-session.js");
-  return runInteractiveSession();
+  return runInteractiveSession({ command });
+}
+
+function parseCommand(argv: readonly string[]): InstallerCommand | undefined {
+  if (argv.length === 0) return Object.freeze({ kind: "inventory" });
+  if (argv.length === 3 && argv[0] === "install" && argv[1] === "--engine") {
+    return Object.freeze({
+      kind: "install-engine",
+      projectDirectory: argv[2] as string,
+    });
+  }
+  return undefined;
 }
 
 function asRecord(
@@ -116,7 +136,8 @@ export async function runInstallerCli(
       return writeInitializationFailure(io, error);
     }
   }
-  if (argv.length !== 0) {
+  const command = parseCommand(argv);
+  if (command === undefined) {
     await writeStderr(io, invalidUsageText);
     return 2;
   }
@@ -131,8 +152,21 @@ export async function runInstallerCli(
     }
     return await (
       options.loadInteractiveSession ?? loadDefaultInteractiveSession
-    )();
+    )(command);
   } catch (error) {
+    if (error instanceof InstallerError) {
+      if (error.code === "CANCELLED") {
+        await writeStderr(io, renderInstallerDiagnostic(error));
+        return 130;
+      }
+      if (
+        error.code !== "INSTALLER_INITIALIZATION_FAILED" &&
+        error.code !== "REGISTRY_INVALID"
+      ) {
+        await writeStderr(io, renderInstallerDiagnostic(error));
+        return 1;
+      }
+    }
     return writeInitializationFailure(io, error);
   }
 }

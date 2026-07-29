@@ -2,10 +2,12 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { InstallerError } from "../src/installer-error.js";
 import { runInstallerCli } from "../src/run-installer-cli.js";
 
 const helpText = `Usage:
   invokta-installer
+  invokta-installer install --engine <project-directory>
   invokta-installer --help
   invokta-installer --version
 `;
@@ -177,6 +179,42 @@ describe("runInstallerCli", () => {
       expect(output.stderr).toEqual([]);
     },
   );
+
+  it("parses a project-local engine installation before lazy interactive loading", async () => {
+    const output = createIo();
+    const loadInteractiveSession = vi.fn(async () => 0 as const);
+
+    const result = await runInstallerCli({
+      argv: ["install", "--engine", "projects/support-engine"],
+      io: output.io,
+      loadInteractiveSession,
+    });
+
+    expect(result).toBe(0);
+    expect(loadInteractiveSession).toHaveBeenCalledWith({
+      kind: "install-engine",
+      projectDirectory: "projects/support-engine",
+    });
+    expect(output.stdout).toEqual([]);
+    expect(output.stderr).toEqual([]);
+  });
+
+  it("maps a stable operational failure to exit code 1", async () => {
+    const output = createIo();
+
+    const result = await runInstallerCli({
+      argv: ["install", "--engine", "."],
+      io: output.io,
+      loadInteractiveSession: async () => {
+        throw new InstallerError("ENGINE_ENTRYPOINT_MISSING");
+      },
+    });
+
+    expect(result).toBe(1);
+    expect(output.stderr).toEqual([
+      "ENGINE_ENTRYPOINT_MISSING: The Action Engine entry point was not found.\n",
+    ]);
+  });
 
   it("sanitizes an unexpected interactive initialization failure", async () => {
     const output = createIo();
