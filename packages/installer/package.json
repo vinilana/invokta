@@ -1,7 +1,18 @@
 {
   "name": "@invokta/installer",
   "version": "0.1.0",
+  "description": "Read-only local MCP client inventory for Invokta.",
+  "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vinilana/invokta.git",
+    "directory": "packages/installer"
+  },
+  "homepage": "https://docs.invokta.dev/reference/installer/",
+  "bugs": {
+    "url": "https://github.com/vinilana/invokta/issues"
+  },
   "publishConfig": {
     "access": "public"
   },

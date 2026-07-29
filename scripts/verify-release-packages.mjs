@@ -18,6 +18,10 @@ const checkoutDirectory = join(temporaryRoot, "checkout");
 const artifactDirectory = join(temporaryRoot, "artifacts");
 const consumerDirectory = join(temporaryRoot, "consumer");
 const distEntryFiles = ["dist/index.js", "dist/index.d.ts"];
+const repositoryUrl = "git+https://github.com/vinilana/invokta.git";
+const issuesUrl = "https://github.com/vinilana/invokta/issues";
+const documentationUrl = "https://docs.invokta.dev";
+const packageAuthor = "Vini Lana <vini@aicoders.academy>";
 const publicPackages = [
   { directory: "core", name: "@invokta/core", requiredFiles: distEntryFiles },
   { directory: "cli", name: "@invokta/cli", requiredFiles: distEntryFiles },
@@ -74,6 +78,122 @@ function run(command, args, options = {}) {
   return result.stdout ?? "";
 }
 
+function failReleaseMetadata(message) {
+  throw new Error(`Release metadata check failed: ${message}`);
+}
+
+function requireEqual(actual, expected, label) {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    failReleaseMetadata(`${label} must be ${JSON.stringify(expected)}`);
+  }
+}
+
+function verifyRootReleaseMetadata(packageReport) {
+  const releaseVersion = packageReport.version;
+  if (
+    typeof releaseVersion !== "string" ||
+    !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(releaseVersion)
+  ) {
+    failReleaseMetadata("the root package version must be a release version");
+  }
+
+  requireEqual(packageReport.name, "invokta", "root package name");
+  requireEqual(packageReport.private, true, "root package private flag");
+  requireEqual(packageReport.license, "MIT", "root package license");
+  requireEqual(packageReport.author, packageAuthor, "root package author");
+  requireEqual(
+    packageReport.repository,
+    { type: "git", url: repositoryUrl },
+    "root package repository",
+  );
+  requireEqual(
+    packageReport.homepage,
+    `${documentationUrl}/`,
+    "root package homepage",
+  );
+  requireEqual(packageReport.bugs, { url: issuesUrl }, "root package bugs URL");
+  if (
+    typeof packageReport.description !== "string" ||
+    !packageReport.description
+  ) {
+    failReleaseMetadata("the root package must declare a description");
+  }
+
+  return releaseVersion;
+}
+
+function verifyPublicPackageReleaseMetadata(
+  packageReport,
+  publicPackage,
+  releaseVersion,
+) {
+  const label = publicPackage.name;
+  requireEqual(packageReport.name, label, `${label} name`);
+  requireEqual(packageReport.version, releaseVersion, `${label} version`);
+  requireEqual(packageReport.license, "MIT", `${label} license`);
+  requireEqual(packageReport.author, packageAuthor, `${label} author`);
+  requireEqual(
+    packageReport.repository,
+    {
+      type: "git",
+      url: repositoryUrl,
+      directory: `packages/${publicPackage.directory}`,
+    },
+    `${label} repository`,
+  );
+  requireEqual(
+    packageReport.homepage,
+    `${documentationUrl}/reference/${publicPackage.directory}/`,
+    `${label} homepage`,
+  );
+  requireEqual(packageReport.bugs, { url: issuesUrl }, `${label} bugs URL`);
+  requireEqual(
+    packageReport.publishConfig?.access,
+    "public",
+    `${label} publish access`,
+  );
+  if (
+    typeof packageReport.description !== "string" ||
+    !packageReport.description
+  ) {
+    failReleaseMetadata(`${label} must declare a description`);
+  }
+  if (packageReport.private === true) {
+    failReleaseMetadata(`${label} must be publishable`);
+  }
+
+  for (const [dependency, version] of Object.entries(
+    packageReport.dependencies ?? {},
+  )) {
+    if (dependency.startsWith("@invokta/") && version !== releaseVersion) {
+      failReleaseMetadata(
+        `${label} dependency ${dependency} must use version ${releaseVersion}`,
+      );
+    }
+  }
+}
+
+function verifyChangelog(changelog, releaseVersion) {
+  const escapedVersion = releaseVersion.replaceAll(".", "\\.");
+  if (
+    !new RegExp(
+      `^## \\[${escapedVersion}\\] - \\d{4}-\\d{2}-\\d{2}$`,
+      "mu",
+    ).test(changelog)
+  ) {
+    failReleaseMetadata(
+      `CHANGELOG.md is missing a dated ${releaseVersion} entry`,
+    );
+  }
+
+  const releaseLink = `[${releaseVersion}]: https://github.com/vinilana/invokta/releases/tag/v${releaseVersion}`;
+  if (!changelog.includes(releaseLink)) {
+    failReleaseMetadata(
+      `CHANGELOG.md is missing the ${releaseVersion} release link`,
+    );
+  }
+}
+
 try {
   mkdirSync(checkoutDirectory);
   mkdirSync(artifactDirectory);
@@ -97,6 +217,15 @@ try {
     cwd: checkoutDirectory,
   });
 
+  const rootPackageReport = JSON.parse(
+    readFileSync(join(checkoutDirectory, "package.json"), "utf8"),
+  );
+  const releaseVersion = verifyRootReleaseMetadata(rootPackageReport);
+  verifyChangelog(
+    readFileSync(join(checkoutDirectory, "CHANGELOG.md"), "utf8"),
+    releaseVersion,
+  );
+
   const tarballs = [];
 
   for (const publicPackage of publicPackages) {
@@ -104,6 +233,11 @@ try {
       checkoutDirectory,
       "packages",
       publicPackage.directory,
+    );
+    verifyPublicPackageReleaseMetadata(
+      JSON.parse(readFileSync(join(packageDirectory, "package.json"), "utf8")),
+      publicPackage,
+      releaseVersion,
     );
     const reportText = run(
       "npm",
@@ -253,26 +387,16 @@ try {
         "utf8",
       ),
     );
-    if (packageReport.name !== publicPackage.name) {
-      throw new Error(
-        `${publicPackage.directory} installed as ${packageReport.name}`,
-      );
-    }
-    if (packageReport.license !== "MIT") {
-      throw new Error(
-        `${publicPackage.directory} package does not declare the MIT license`,
-      );
-    }
-    if (packageReport.publishConfig?.access !== "public") {
-      throw new Error(
-        `${publicPackage.directory} package is not configured for public access`,
-      );
-    }
+    verifyPublicPackageReleaseMetadata(
+      packageReport,
+      publicPackage,
+      releaseVersion,
+    );
     return packageReport.name;
   });
 
   process.stdout.write(
-    `Verified clean release tarballs, isolated ESM imports, and executable smoke: ${packageNames.join(", ")}\n`,
+    `Verified Invokta ${releaseVersion} metadata, clean release tarballs, isolated ESM imports, and executable smoke: ${packageNames.join(", ")}\n`,
   );
 } finally {
   rmSync(temporaryRoot, { force: true, recursive: true });

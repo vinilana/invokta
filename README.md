@@ -150,6 +150,9 @@ index](./docs/README.md) links Invokta's normative architecture, scope,
 acceptance criteria, ADRs, HTTP authentication guide, capability authorization
 guide, and explicit scope matrix.
 
+The [changelog](./CHANGELOG.md) records release-level additions, security
+hardening, and known limitations.
+
 All public behavior is developed with runtime and type-level tests. Repository
 changes follow RED, GREEN, REFACTOR and use one cohesive commit per deliverable.
 
