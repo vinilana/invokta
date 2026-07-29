@@ -11,6 +11,7 @@
     { "path": "./examples/composed-engine" },
     { "path": "./examples/crawl-engine" },
     { "path": "./examples/hello-engine" },
+    { "path": "./examples/image-engine" },
     { "path": "./examples/spec-engine" },
     { "path": "./examples/support-engine" },
     { "path": "./examples/support-harness" }
