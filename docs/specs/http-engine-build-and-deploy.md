@@ -236,10 +236,17 @@ names. The manifest declares names; it MUST NOT contain credential values,
 tokens, or URLs with userinfo.
 
 **AE-DEPLOY-MAN-04 — Image.** `image.baseImage` defaults to `node:22-slim`,
-MUST be non-empty, and MUST contain no whitespace or NUL. The image's Node.js
-major version MUST satisfy the repository floor; the toolkit validates the
-declared tag textually and does not pull the image. `image.port` defaults to
-`3000` and MUST be an integer in `1..65535`.
+MUST be non-empty, and MUST contain no whitespace or NUL. That is the whole
+validation: the toolkit copies the declared reference into the generated
+`Dockerfile` unchanged. It deliberately does not read a Node.js major version
+out of the reference and does not check one against the repository floor. An
+image reference is an opaque registry-defined label — a tag, a digest, and a
+private mirror's own naming are all legitimate — and the toolkit never pulls
+the image, so any such check would be a guess about a string. Declaring a base
+image whose Node.js version satisfies the floor remains the author's
+obligation; one below it surfaces when the author's own build or container
+runs, never as a toolkit diagnostic. `image.port` defaults to `3000` and MUST
+be an integer in `1..65535`.
 
 **AE-DEPLOY-MAN-05 — Healthcheck.** `expect` defaults to `alive`. `bearerEnv`
 is permitted only when `expect` is `ready`.
@@ -489,9 +496,9 @@ pointer. These orders MUST be stable across runs with identical inputs.
 | Production-shaped composition root | Scaffold, env contract, fail-closed auth, shutdown | `AE-DEPLOY-AC-01` through `AE-DEPLOY-AC-04` |
 | Standardized configuration | Environment contract table | `AE-DEPLOY-AC-03`, `AE-DEPLOY-AC-05` |
 | Deterministic deployment package | Manifest, generation order, marker policy, Dockerfile contract | `AE-DEPLOY-AC-05` through `AE-DEPLOY-AC-08`, `AE-DEPLOY-AC-14` |
-| Verifiable deployments | Probe semantics, health-check script | `AE-DEPLOY-AC-09` through `AE-DEPLOY-AC-12` |
+| Verifiable deployments | Probe semantics, health-check script | `AE-DEPLOY-AC-09` through `AE-DEPLOY-AC-11`, plus `AE-DEPLOY-AC-12` wherever a container runtime is available |
 | Secret and execution safety | No child processes, bounded network, credential hygiene | `AE-DEPLOY-AC-10`, `AE-DEPLOY-AC-13` |
-| Existing architecture unchanged | Standalone package, public-API-only generated code | `AE-DEPLOY-AC-02`, `AE-DEPLOY-AC-13`, package dependency review |
+| Existing architecture unchanged | Standalone package, public-API-only generated code | `AE-DEPLOY-AC-02`, `AE-DEPLOY-AC-13`, whose import-graph check subsumes the package dependency review |
 
 ## Delivery slices
 

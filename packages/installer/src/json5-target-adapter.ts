@@ -549,6 +549,7 @@ function constructPatch(
 export function createJson5TargetAdapter(options: {
   readonly compatibility: TargetAdapter["compatibility"];
   readonly descriptorToDefinition: TargetAdapter["descriptorToDefinition"];
+  readonly definitionToSuspendedDescriptor: TargetAdapter["definitionToSuspendedDescriptor"];
 }): TargetAdapter {
   const inspectionOwner = Object.freeze({});
   return Object.freeze({
@@ -561,6 +562,7 @@ export function createJson5TargetAdapter(options: {
     }),
     compatibility: options.compatibility,
     descriptorToDefinition: options.descriptorToDefinition,
+    definitionToSuspendedDescriptor: options.definitionToSuspendedDescriptor,
     suspendedDescriptorToDefinition: (descriptor) => {
       const fake = {
         id: "suspended",

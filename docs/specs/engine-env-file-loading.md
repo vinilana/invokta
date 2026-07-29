@@ -169,11 +169,13 @@ the missing names — names only, no values, no partial values — to `stderr`
 and exits non-zero without constructing the engine or starting an adapter.
 
 **AE-ENV-REQ-02 — Names come from the manifest.** When the deploy toolkit
-is used, the scaffolded check is generated from the deployment manifest's
-`env.required` list, so the manifest, the generated `.env.example`, the
-generated `DEPLOYMENT.md`, and the startup check cannot disagree. A
-hand-written composition root supplies its own literal name list under the
-same rules.
+is used, the scaffolded check and `.env.example` are both generated from the
+deployment manifest's `env.required` list, so neither can disagree with the
+manifest at the moment `init` writes them. Both are user-owned from that
+first write and the author keeps them current after a manifest change; the
+generated `DEPLOYMENT.md` is the artifact that follows the manifest on every
+`package` run. A hand-written composition root supplies its own literal name
+list under the same rules.
 
 **AE-ENV-REQ-03 — Presence is not validity.** The check proves presence and
 non-emptiness only. Semantic validation of values remains where it already
@@ -211,7 +213,7 @@ same never-overwrite rule:
 | File | Content |
 | --- | --- |
 | `src/env.ts` | The loader and `requireEnvironment` check implementing this contract with Node built-ins only. User-owned after the first write, like the other source scaffolds. |
-| `.env.example` | One line per declared manifest name (`required` first, then `optional`, each group in declaration order) with an empty value and a comment marking the required group. Secret-free by construction; safe to commit. |
+| `.env.example` | One line per declared manifest name (`required` first, then `optional`, each group in declaration order) with an empty value and a comment marking the required group. Secret-free by construction; safe to commit. User-owned after the first write, like the other scaffolds. |
 
 The generated `src/mcp-http.ts` imports `src/env.ts` as its first
 side-effectful import and calls the required-name check before constructing
@@ -226,8 +228,11 @@ stdio, and direct roots can import the same module.
 - `deploy/DEPLOYMENT.md` MUST document the precedence order, state that
   `.env` is a local development file, and instruct operators to inject
   production values through the platform.
-- `.env.example` regeneration follows `package`'s marker policy when the
-  manifest's declared names change; `.env` itself is never generated,
+- `.env.example` belongs to `init` alone. It carries no generated-file
+  marker, `package` never writes it, and a later manifest change does not
+  rewrite it: the file is user-owned from the first write like every other
+  scaffold, and `deploy/DEPLOYMENT.md` is the generated artifact that keeps
+  the manifest's declared names current. `.env` itself is never generated,
   read, or validated by the toolkit. Only the running engine reads it.
 - The getting-started guide gains a short section presenting the convention
   for engines that do not use the toolkit.
@@ -278,9 +283,10 @@ stable across runs with identical inputs.
   Node.js floor. Raising the repository floor MAY change accepted syntax;
   a floor raise MUST rerun the parsing fixtures and record any observable
   difference in release notes.
-- Scaffolded `src/env.ts` files are user-owned; a later toolkit release
-  changes only what new scaffolds emit. Authors upgrade an existing loader
-  manually, like any other source file.
+- Scaffolded `src/env.ts` and `.env.example` files are user-owned; a later
+  toolkit release changes only what new scaffolds emit. Authors upgrade an
+  existing loader, and extend an existing example file, manually, like any
+  other file they own.
 - Layered profile files, if ever added, must extend this contract with an
   explicit precedence specification; the single-file contract here MUST NOT
   be reinterpreted.
@@ -296,7 +302,7 @@ stable across runs with identical inputs.
 | `AE-ENV-AC-05` | A symlinked file, a NUL byte, 65,537 bytes, 257 applicable keys, and a 4,097-scalar value each abort startup before any key is applied; the inclusive bounds succeed. | Inclusive/exclusive boundary fixtures. |
 | `AE-ENV-AC-06` | An applicable key failing the name pattern aborts startup naming that key; the same key pre-existing in the environment does not. | Key-validation tests. |
 | `AE-ENV-AC-07` | A missing or empty declared required variable aborts startup listing exactly the missing names, and no value or partial value appears in any output. | Secret-sentinel leak test over stderr and thrown errors. |
-| `AE-ENV-AC-08` | `init` generates `src/env.ts` and `.env.example`; the example lists exactly the manifest's declared names with empty values; rerunning `init` skips both. | Scaffold fixture with golden files. |
+| `AE-ENV-AC-08` | `init` generates `src/env.ts` and `.env.example`; the example lists exactly the manifest's declared names with empty values; rerunning `init` skips both, and `package` writes neither. | Scaffold fixture with golden files. |
 | `AE-ENV-AC-09` | The scaffolded HTTP root loads the file before reading its environment contract, so a `.env`-supplied `AI_ENGINE_HTTP_PORT` binds the port when the variable is otherwise absent. | End-to-end scaffold startup test. |
 | `AE-ENV-AC-10` | A packaged container context contains no `.env*` file even when several exist in the project. | Build-context enumeration test over the generated `.dockerignore`. |
 | `AE-ENV-AC-11` | The loader module imports only Node built-ins and performs no write, spawn, or network operation. | Import-graph check plus filesystem, child-process, and network sentinels. |
@@ -325,8 +331,8 @@ green, and is one cohesive commit:
    parsing, precedence, boundary, and sentinel tests.
 3. Implement the required-name check and its manifest-derived generation,
    with secret-sentinel leak tests.
-4. Add `.env.example` generation to `init` and the marker-governed
-   regeneration to `package`.
+4. Add `.env.example` generation to `init` under the same never-overwrite
+   rule as the other scaffolds.
 5. Update `DEPLOYMENT.md` generation and the getting-started guide with the
    convention for non-toolkit engines.
 
