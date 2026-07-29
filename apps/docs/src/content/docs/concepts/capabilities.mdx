@@ -1,0 +1,116 @@
+---
+title: Capabilities
+description: Design the typed domain actions published by an Invokta engine.
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+A capability is the unit of domain behavior that an Invokta engine publishes.
+Its definition contains five required fields:
+
+```ts
+const capability = defineCapability({
+  description,
+  input,
+  output,
+  access,
+  run,
+});
+```
+
+The capability ID is not part of this object. The engine assigns it as a key:
+
+```ts
+const engine = createEngine({
+  name: "support-engine",
+  version: "1.0.0",
+  capabilities: {
+    "support.classify-ticket": capability,
+  },
+});
+```
+
+This lets a capability library provide a default ID while a consuming engine
+keeps authority over its final public namespace.
+
+## Contract fields
+
+| Field | Responsibility |
+| --- | --- |
+| `description` | Explain the domain outcome to people and tool consumers |
+| `input` | Validate and transform the object received from a caller |
+| `output` | Validate and transform the object returned by `run` |
+| `access` | Declare public, authenticated, or domain-specific authorization |
+| `run` | Execute the capability with validated input and an execution context |
+
+`title`, `timeoutMs`, and MCP-compatible `annotations` are optional.
+
+## Schemas
+
+Input and output schemas must satisfy both Standard Schema v1 and Standard JSON
+Schema v1. The first contract gives Invokta validation and type inference. The
+second gives adapters a portable description of the same data.
+
+Both schemas need an object root and must produce values in the lossless JSON
+data model.
+
+```ts
+const summarize = defineCapability({
+  description: "Summarize one support ticket.",
+  input: z.object({ ticketId: z.string().min(1) }),
+  output: z.object({ summary: z.string() }),
+  access: "authenticated",
+  async run({ input, context }) {
+    context.signal.throwIfAborted();
+    return { summary: await summarizeTicket(input.ticketId) };
+  },
+});
+```
+
+## Access rules
+
+<CardGrid>
+  <Card title="public" icon="unlock">
+    Accepts a `null` principal. Use it only when the domain action is intentionally
+    available without identity.
+  </Card>
+  <Card title="authenticated" icon="lock">
+    Requires a validated principal. Identity is supplied by the composition root
+    or HTTP authentication boundary.
+  </Card>
+  <Card title="function" icon="setting">
+    Receives the principal, a protected input snapshot, context, and capability ID.
+    It grants access only by returning `true`.
+  </Card>
+</CardGrid>
+
+```ts
+access: ({ principal, input }) =>
+  principal?.attributes?.tenantId === input.tenantId,
+```
+
+<Aside type="caution" title="Keep credentials out of capability input">
+  Authentication belongs at the entry-point boundary. Pass the resulting
+  `Principal` through invocation options so credentials never become business
+  input, schema data, or an MCP tool argument.
+</Aside>
+
+## Execution context
+
+`run` receives a minimal context:
+
+```ts
+interface ExecutionContext {
+  requestId: string;
+  source: "direct" | "cli" | "mcp-stdio" | "mcp-http";
+  principal: Principal | null;
+  signal: AbortSignal;
+  logger: EngineLogger;
+}
+```
+
+Dependencies such as repositories, model clients, and data providers should be
+injected through a factory or closure. The context is not a service container.
+
+See the [invocation pipeline](/concepts/invocation-pipeline/) for the order in
+which Invokta applies these fields.

@@ -1,0 +1,88 @@
+---
+title: '@invokta/cli'
+description: API and command reference for the local Invokta CLI adapter.
+---
+
+`@invokta/cli` publishes an engine through three commands while keeping
+capability execution on `engine.invoke`.
+
+## `runCli`
+
+```ts
+import { runCli } from "@invokta/cli";
+
+const exitCode = await runCli(engine, {
+  principal: { id: "local:developer" },
+});
+
+process.exitCode = exitCode;
+```
+
+The composition root owns the trusted local principal and the final process
+status. `runCli` returns an exit code; it does not terminate the process or set
+`process.exitCode` itself.
+
+## Options
+
+```ts
+interface RunCliOptions {
+  argv?: readonly string[];
+  principal: Principal | null;
+  signal?: AbortSignal;
+  format?: "json" | "human";
+  io?: Partial<CliIo>;
+}
+```
+
+`argv` defaults to the process arguments. `io` lets tests and embedding
+applications replace standard input, output, and diagnostics. JSON is the
+canonical output format; `human` produces deterministic, pretty-printed JSON.
+
+## Commands
+
+### `list`
+
+```text
+engine list
+```
+
+Writes the result of `engine.list()`.
+
+### `describe`
+
+```text
+engine describe <capability-id>
+```
+
+Writes the result of `engine.describe(capabilityId)`.
+
+### `run`
+
+Pass a JSON object as an argument:
+
+```text
+engine run <capability-id> --input '<json>'
+```
+
+Or read it from standard input:
+
+```text
+engine run <capability-id> --stdin
+```
+
+The command invokes the selected capability with source `cli` and the principal
+provided by the composition root.
+
+## Process contract
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Command completed successfully |
+| `1` | Execution, validation, authorization, or output write failed |
+| `2` | Invalid usage, arguments, JSON, or UTF-8 input |
+
+Standard output contains only the requested result. Diagnostics and compact
+errors are written to standard error.
+
+Public engine failures contain `code`, `message`, and optional `publicDetails`.
+Causes, stack traces, credentials, and rejected values are never serialized.

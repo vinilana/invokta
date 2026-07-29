@@ -1,0 +1,88 @@
+---
+title: Installation
+description: Install Invokta and choose the adapters your Action Engine needs.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Invokta is distributed as focused ESM packages. Start with `@invokta/core`, then
+install only the adapters and development tools your engine uses.
+
+## Requirements
+
+- Node.js 22.20.0 or later
+- An ESM project (`"type": "module"`)
+- A schema library that implements Standard Schema v1 and Standard JSON Schema v1
+
+The examples use Zod 4 because it implements both schema contracts.
+
+## Install the core
+
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+    ```sh
+    npm install @invokta/core zod
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```sh
+    pnpm add @invokta/core zod
+    ```
+  </TabItem>
+  <TabItem label="Yarn">
+    ```sh
+    yarn add @invokta/core zod
+    ```
+  </TabItem>
+</Tabs>
+
+## Add execution channels
+
+Install the CLI or MCP adapter when the engine needs that boundary.
+
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+    ```sh
+    npm install @invokta/cli @invokta/mcp
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```sh
+    pnpm add @invokta/cli @invokta/mcp
+    ```
+  </TabItem>
+  <TabItem label="Yarn">
+    ```sh
+    yarn add @invokta/cli @invokta/mcp
+    ```
+  </TabItem>
+</Tabs>
+
+| Package | Use it for |
+| --- | --- |
+| `@invokta/core` | Capabilities, engines, contracts, errors, and events |
+| `@invokta/cli` | `list`, `describe`, and `run` commands |
+| `@invokta/mcp` | MCP tools over stdio or stateless Streamable HTTP |
+| `@invokta/tooling` | Capability-composition checks during development |
+| `@invokta/installer` | Local MCP installation across supported agent harnesses |
+| `@invokta/deploy` | Reviewable container packaging and endpoint probes |
+
+<Aside type="note" title="ESM only">
+  Invokta publishes native ESM entry points. Use `import` syntax and include file
+  extensions in relative imports after TypeScript compilation, such as
+  `./engine.js`.
+</Aside>
+
+## Work inside this repository
+
+Clone the repository and install from its root when contributing to Invokta or
+running the included examples:
+
+```sh
+git clone https://github.com/vinilana/ai-engines.git
+cd ai-engines
+yarn install --frozen-lockfile
+yarn build
+```
+
+Continue with [your first engine](/getting-started/first-engine/).

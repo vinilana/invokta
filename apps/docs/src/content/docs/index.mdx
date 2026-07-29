@@ -1,0 +1,92 @@
+---
+title: Invokta
+description: Define typed domain capabilities once and invoke them directly, through a CLI, or over MCP.
+template: splash
+hero:
+  tagline: Define a domain capability once. Invokta keeps validation, authorization, execution, and errors on the same path wherever that capability is called.
+  actions:
+    - text: Start building
+      link: /getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: Read the concepts
+      link: /concepts/action-engines/
+      icon: open-book
+      variant: secondary
+---
+
+import { Card, CardGrid, LinkButton } from '@astrojs/starlight/components';
+
+## One capability, four entry points
+
+An Invokta capability has typed input and output schemas, an explicit access rule,
+and one handler. The engine publishes it through direct TypeScript calls, a local
+CLI, MCP stdio, and stateless MCP Streamable HTTP.
+
+<CardGrid>
+  <Card title="Stable contracts" icon="seti:typescript">
+    Validate input and output at runtime while keeping schema information available
+    to every adapter.
+  </Card>
+  <Card title="One execution path" icon="approve-check">
+    Every adapter calls `engine.invoke`, so authorization, errors, cancellation,
+    and observability do not drift.
+  </Card>
+  <Card title="Replaceable internals" icon="puzzle">
+    Change models, prompts, data sources, and tools without teaching consumers a
+    new public contract.
+  </Card>
+  <Card title="MCP included" icon="transfer">
+    Expose the same capability as an MCP tool over local stdio or bounded,
+    stateless HTTP.
+  </Card>
+</CardGrid>
+
+## The smallest useful engine
+
+```ts
+import { createEngine, defineCapability } from "@invokta/core";
+import { z } from "zod";
+
+const greet = defineCapability({
+  description: "Create a welcome message for a new team member.",
+  input: z.object({ name: z.string().trim().min(1) }),
+  output: z.object({ message: z.string() }),
+  access: "public",
+  async run({ input }) {
+    return { message: `Welcome, ${input.name}!` };
+  },
+});
+
+export const engine = createEngine({
+  name: "hello-engine",
+  version: "1.0.0",
+  capabilities: {
+    "onboarding.create-welcome-message": greet,
+  },
+});
+```
+
+The capability ID belongs to the engine map. The capability itself contains the
+contract and implementation that every entry point reuses.
+
+<LinkButton href="/getting-started/first-engine/" icon="right-arrow">
+  Build the complete example
+</LinkButton>
+
+## Choose your next step
+
+<CardGrid>
+  <Card title="Understand capabilities" icon="document">
+    Read the [capability contract](/concepts/capabilities/) before designing your
+    first domain action.
+  </Card>
+  <Card title="Connect an adapter" icon="transfer">
+    Follow the [execution channels guide](/guides/execution-channels/) to add CLI
+    and MCP entry points without duplicating the handler.
+  </Card>
+  <Card title="Look up the API" icon="open-book">
+    Use the [`@invokta/core` reference](/reference/core/) for the engine surface
+    and the [error taxonomy](/reference/errors/) for failure handling.
+  </Card>
+</CardGrid>

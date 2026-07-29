@@ -1,0 +1,5 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <title>Invokta</title>
+  <rect width="32" height="32" rx="8" fill="#111"/>
+  <path d="M9 9h5v14H9V9Zm8 0h6v5h-6V9Zm0 8h6v6h-6v-6Z" fill="#fff"/>
+</svg>

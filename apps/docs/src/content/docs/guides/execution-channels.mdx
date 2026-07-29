@@ -1,0 +1,135 @@
+---
+title: Execution channels
+description: Publish the same capability through direct calls, CLI, MCP stdio, and MCP HTTP.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+An execution channel is a composition root around the same engine. The channel
+owns transport parsing, trusted identity, and process lifecycle. Invokta keeps
+domain validation, authorization, execution, and error normalization inside
+`engine.invoke`.
+
+## Direct TypeScript
+
+Use direct invocation from an application, a test, or another capability-owned
+workflow.
+
+```ts
+const result = await engine.invoke(
+  "onboarding.create-welcome-message",
+  { name: "Ada" },
+  {
+    source: "direct",
+    principal: { id: "user:42" },
+  },
+);
+```
+
+The return type is inferred from the selected capability and its output schema.
+
+## CLI
+
+Create a thin binary entry point:
+
+```ts
+import { runCli } from "@invokta/cli";
+
+import { engine } from "./engine.js";
+
+process.exitCode = await runCli(engine, {
+  principal: { id: "local:developer" },
+});
+```
+
+The composition root decides which local identity is trusted. The CLI does not
+accept actor, role, or login flags.
+
+<Tabs>
+  <TabItem label="List">
+    ```sh
+    my-engine list
+    ```
+  </TabItem>
+  <TabItem label="Describe">
+    ```sh
+    my-engine describe onboarding.create-welcome-message
+    ```
+  </TabItem>
+  <TabItem label="Run">
+    ```sh
+    my-engine run onboarding.create-welcome-message --input '{"name":"Ada"}'
+    ```
+  </TabItem>
+</Tabs>
+
+Standard output contains only the requested JSON result. Diagnostics are written
+to standard error, which makes the binary safe to compose in shell pipelines.
+
+## MCP stdio
+
+Use stdio when an MCP host starts and supervises the engine as a local process:
+
+```ts
+import { serveMcpStdio } from "@invokta/mcp";
+
+import { engine } from "./engine.js";
+
+await serveMcpStdio(engine, {
+  principal: { id: "local:mcp-host" },
+});
+```
+
+Start the compiled entry point directly with Node:
+
+```sh
+node dist/mcp-stdio.js
+```
+
+The adapter maps each capability to one MCP tool and propagates the request's
+cancellation signal. Standard output is reserved for protocol messages; send
+logs to standard error.
+
+## MCP Streamable HTTP
+
+For a loopback development server, make the unauthenticated choice explicit:
+
+```ts
+import { serveMcpHttp } from "@invokta/mcp";
+
+import { engine } from "./engine.js";
+
+const server = await serveMcpHttp(engine, {
+  host: "127.0.0.1",
+  port: 3000,
+  auth: {
+    mode: "dangerously-disabled-for-development",
+  },
+});
+
+const { host, port } = server.address();
+process.stderr.write(`MCP endpoint: http://${host}:${port}/mcp\n`);
+```
+
+Each accepted `POST /mcp` request gets a fresh MCP server, transport, and
+principal. Sessions, resumption, and cross-request state are disabled.
+
+<Aside type="danger" title="Require authentication outside local development">
+  Production deployments should use `auth.mode: "required"` with a hook that
+  validates the request and returns a trusted `Principal`. The development mode
+  supplies no identity and cannot invoke an `authenticated` capability.
+</Aside>
+
+## What stays consistent
+
+| Concern | Owner |
+| --- | --- |
+| Transport parsing and process lifecycle | Adapter or composition root |
+| Authentication | Trusted composition root or HTTP boundary |
+| Input and output validation | `engine.invoke` |
+| Capability authorization | `engine.invoke` |
+| Domain execution | Capability `run` |
+| Normalized errors and events | `engine.invoke` |
+
+Use the [`@invokta/cli` reference](/reference/cli/) or
+[`@invokta/mcp` reference](/reference/mcp/) for boundary-specific options.

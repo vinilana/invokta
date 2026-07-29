@@ -1,0 +1,189 @@
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist/wght-italic.css";
+@import "@fontsource-variable/geist-mono";
+
+:root {
+  --sl-font: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --sl-font-mono: "Geist Mono Variable", "SFMono-Regular", Consolas, monospace;
+  --sl-color-accent-low: #172554;
+  --sl-color-accent: #60a5fa;
+  --sl-color-accent-high: #bfdbfe;
+  --sl-color-white: #fafafa;
+  --sl-color-gray-1: #e4e4e7;
+  --sl-color-gray-2: #a1a1aa;
+  --sl-color-gray-3: #71717a;
+  --sl-color-gray-4: #3f3f46;
+  --sl-color-gray-5: #27272a;
+  --sl-color-gray-6: #18181b;
+  --sl-color-black: #09090b;
+  --sl-color-bg-nav: color-mix(in srgb, var(--sl-color-black) 92%, transparent);
+  --sl-color-bg-sidebar: var(--sl-color-black);
+  --sl-content-width: 48rem;
+  --sl-text-5xl: clamp(3rem, 7vw, 4.75rem);
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #dbeafe;
+  --sl-color-accent: #2563eb;
+  --sl-color-accent-high: #1e3a8a;
+  --sl-color-white: #18181b;
+  --sl-color-gray-1: #27272a;
+  --sl-color-gray-2: #52525b;
+  --sl-color-gray-3: #71717a;
+  --sl-color-gray-4: #a1a1aa;
+  --sl-color-gray-5: #e4e4e7;
+  --sl-color-gray-6: #f4f4f5;
+  --sl-color-gray-7: #fafafa;
+  --sl-color-black: #ffffff;
+  --sl-color-bg-nav: color-mix(in srgb, white 90%, transparent);
+  --sl-color-bg-sidebar: #ffffff;
+}
+
+html {
+  letter-spacing: -0.012em;
+}
+
+body {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--sl-color-gray-5) 30%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--sl-color-gray-5) 22%, transparent) 1px,
+      transparent 1px
+    );
+  background-position: center top;
+  background-size: 64px 64px;
+}
+
+header.header {
+  border-bottom-color: var(--sl-color-gray-5);
+  backdrop-filter: blur(16px) saturate(140%);
+}
+
+.site-title {
+  gap: 0.65rem;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.site-title img {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.sidebar-pane {
+  border-inline-end: 1px solid var(--sl-color-gray-5);
+}
+
+.sidebar-content a[aria-current="page"] {
+  border-radius: 0.38rem;
+  font-weight: 550;
+}
+
+.content-panel + .content-panel {
+  border-top-color: var(--sl-color-gray-5);
+}
+
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3 {
+  letter-spacing: -0.035em;
+}
+
+.sl-markdown-content h1 {
+  font-weight: 630;
+}
+
+.sl-markdown-content h2 {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--sl-color-gray-5);
+  font-weight: 610;
+}
+
+.sl-markdown-content a:not([class]) {
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--sl-color-accent) 45%,
+    transparent
+  );
+  text-underline-offset: 0.2em;
+}
+
+.sl-markdown-content code:not(:where(.not-content *)) {
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.32rem;
+}
+
+.expressive-code {
+  --ec-brdRad: 0.65rem;
+  --ec-brdWd: 1px;
+  --ec-brdCol: var(--sl-color-gray-5);
+}
+
+.hero {
+  padding-block: clamp(3rem, 9vw, 7rem);
+}
+
+.hero .copy {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.hero h1 {
+  max-width: 13ch;
+  font-weight: 650;
+  letter-spacing: -0.06em;
+  line-height: 0.98;
+}
+
+.hero .tagline {
+  max-width: 42rem;
+  color: var(--sl-color-gray-2);
+  font-size: clamp(1.05rem, 2vw, 1.3rem);
+  line-height: 1.55;
+}
+
+.hero .actions a {
+  border-radius: 0.5rem;
+  font-weight: 550;
+}
+
+.hero .actions a.primary {
+  color: var(--sl-color-black);
+  background: var(--sl-color-white);
+}
+
+.card-grid > article {
+  border-color: var(--sl-color-gray-5);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--sl-color-black) 95%, transparent);
+  box-shadow: none;
+  transition:
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.card-grid > article:hover {
+  border-color: var(--sl-color-gray-3);
+  transform: translateY(-2px);
+}
+
+@media (min-width: 72rem) {
+  .main-pane {
+    --sl-content-margin-inline: clamp(2rem, 5vw, 5rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .card-grid > article {
+    transition: none;
+  }
+}

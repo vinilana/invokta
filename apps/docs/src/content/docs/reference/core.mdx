@@ -1,0 +1,119 @@
+---
+title: '@invokta/core'
+description: API reference for capabilities, engines, execution context, composition, errors, and events.
+---
+
+`@invokta/core` contains the framework contract and runtime. It has no dependency
+on the CLI, MCP SDK, model SDKs, identity providers, or application frameworks.
+
+## `defineCapability`
+
+Preserves schema inference while declaring a capability.
+
+```ts
+function defineCapability<InputSchema, OutputSchema>(
+  definition: CapabilityDefinition<InputSchema, OutputSchema>,
+): CapabilityDefinition<InputSchema, OutputSchema>;
+```
+
+Required definition fields are `description`, `input`, `output`, `access`, and
+`run`. Optional fields are `title`, `timeoutMs`, and `annotations`.
+
+`timeoutMs`, when present, must be an integer from `1` through `2_147_483_647`.
+
+## `createEngine`
+
+Captures capability contracts and returns the typed engine surface.
+
+```ts
+const engine = createEngine({
+  name: "support-engine",
+  version: "1.0.0",
+  capabilities,
+  logger,
+  onEvent,
+});
+```
+
+`name`, `version`, and `capabilities` are required. `logger` and `onEvent` are
+optional.
+
+### `engine.invoke`
+
+```ts
+await engine.invoke(capabilityId, input, {
+  requestId,
+  source,
+  principal,
+  signal,
+});
+```
+
+The capability ID controls the inferred input and output types. Options are
+optional; the default source is `direct` and the default principal is `null`.
+
+### `engine.list`
+
+```ts
+const summaries = engine.list();
+```
+
+Returns frozen capability summaries containing IDs, descriptions, optional
+titles, and optional annotations.
+
+### `engine.describe`
+
+```ts
+const description = engine.describe("support.classify-ticket");
+```
+
+Returns the summary plus copied input/output JSON Schemas and an optional
+timeout. A missing capability throws `CAPABILITY_NOT_FOUND`.
+
+## `Principal`
+
+```ts
+interface Principal {
+  readonly id: string;
+  readonly attributes?: Readonly<Record<string, unknown>>;
+}
+```
+
+The `id` must be a non-empty string. Roles, scopes, tenant IDs, groups, and
+provider claims belong in `attributes` when an engine needs them.
+
+## `ExecutionContext`
+
+```ts
+interface ExecutionContext {
+  readonly requestId: string;
+  readonly source: "direct" | "cli" | "mcp-stdio" | "mcp-http";
+  readonly principal: Principal | null;
+  readonly signal: AbortSignal;
+  readonly logger: EngineLogger;
+}
+```
+
+The context carries request state, not application dependencies. Inject model
+clients, repositories, and provider adapters through the capability factory.
+
+## Capability composition
+
+The core also exports composition helpers for atomic capabilities and capability
+libraries:
+
+- `defineExportedCapability`
+- `defineCapabilityLibrary`
+- `importCapability`
+- `importCapabilities`
+- `composeCapabilities`
+- `isComposedCapabilities`
+
+Composition tracks declaration provenance and reports every collision or invalid
+import in a `CapabilityCompositionError`. Use `@invokta/tooling` to enforce the
+same tracked composition in CI.
+
+## Errors
+
+`EngineError` and `EngineErrorCode` are exported from the core. See the complete
+[error taxonomy](/reference/errors/).

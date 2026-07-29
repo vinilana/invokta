@@ -1,0 +1,94 @@
+---
+title: Deployment
+description: Package an HTTP Action Engine as a reviewable container build context and probe its MCP endpoint.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+`@invokta/deploy` turns an engine with an MCP Streamable HTTP entry point into a
+reviewable container build context. It generates text files but does not run a
+package manager, compiler, container tool, or shell command.
+
+<Steps>
+
+1. Install the development toolkit
+
+   ```sh
+   yarn add --dev @invokta/deploy
+   ```
+
+2. Scaffold the deployment boundary
+
+   ```sh
+   invokta-deploy init
+   ```
+
+   The command creates:
+
+   - `invokta.deploy.json`
+   - `src/mcp-http.ts`
+   - `src/http-auth.ts`
+   - `src/env.ts`
+   - `.env.example`
+
+   Existing files are never overwritten. The generated authentication module
+   fails closed until you implement the identity check.
+
+3. Build the engine
+
+   ```sh
+   yarn build
+   ```
+
+   The deployment manifest identifies the compiled HTTP entry point. Keep the
+   engine build deterministic and verify it before packaging.
+
+4. Generate the container context
+
+   ```sh
+   invokta-deploy package
+   ```
+
+   Invokta validates the manifest, `package.json`, one supported lockfile, and
+   the compiled entry point before writing anything. It then generates a
+   `Dockerfile`, `.dockerignore`, bounded health check, and operator notes.
+
+5. Probe the deployed endpoint
+
+   ```sh
+   invokta-deploy probe \
+     --url https://engine.example/mcp \
+     --expect alive
+   ```
+
+   An `alive` probe accepts either a valid MCP initialization response or an HTTP
+   401 Bearer challenge. A `ready` probe requires a valid initialization result:
+
+   ```sh
+   ENGINE_PROBE_TOKEN="replace-at-runtime" \
+     invokta-deploy probe \
+       --url https://engine.example/mcp \
+       --expect ready \
+       --bearer-env ENGINE_PROBE_TOKEN
+   ```
+
+</Steps>
+
+## Generated files are source files
+
+Commit and review the generated container context. Every generated file carries
+an Invokta marker, and the toolkit overwrites only files carrying that marker.
+An unmarked file produces a conflict instead of being replaced.
+
+The generated `.dockerignore` excludes `.env*`, test output, coverage, Git data,
+and local dependencies. Credentials enter at runtime through the deployment
+platform.
+
+<Aside type="note" title="No hidden deployment platform">
+  The toolkit prepares portable container inputs and probes an endpoint. Your CI
+  and hosting platform remain responsible for building, publishing, starting,
+  and supervising the container.
+</Aside>
+
+For HTTP adapter behavior, including Host and Origin validation, see the
+[`@invokta/mcp` reference](/reference/mcp/).

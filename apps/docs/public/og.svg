@@ -1,0 +1,23 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <title>Invokta documentation</title>
+  <rect width="1200" height="630" fill="#0a0a0a"/>
+  <path d="M0 1h1200M0 629h1200M1 0v630M1199 0v630" stroke="#2a2a2a"/>
+  <g transform="translate(96 94)">
+    <rect width="72" height="72" rx="18" fill="#fff"/>
+    <path d="M20 20h12v32H20V20Zm20 0h12v12H40V20Zm0 20h12v12H40V40Z" fill="#0a0a0a"/>
+  </g>
+  <text x="96" y="265" fill="#fff" font-family="Arial, sans-serif" font-size="88" font-weight="650">Invokta</text>
+  <text x="96" y="353" fill="#a1a1a1" font-family="Arial, sans-serif" font-size="36">Typed domain capabilities, one execution path.</text>
+  <g transform="translate(96 454)" fill="none" stroke="#3f3f46">
+    <rect width="210" height="70" rx="12"/>
+    <rect x="234" width="210" height="70" rx="12"/>
+    <rect x="468" width="210" height="70" rx="12"/>
+    <rect x="702" width="210" height="70" rx="12"/>
+  </g>
+  <g fill="#d4d4d8" font-family="monospace" font-size="24" text-anchor="middle">
+    <text x="201" y="498">direct</text>
+    <text x="435" y="498">CLI</text>
+    <text x="669" y="498">MCP stdio</text>
+    <text x="903" y="498">MCP HTTP</text>
+  </g>
+</svg>

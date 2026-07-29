@@ -1,0 +1,72 @@
+---
+title: Invocation pipeline
+description: Follow an Invokta request through validation, authorization, execution, and output validation.
+---
+
+import InvocationFlow from '../../../components/InvocationFlow.astro';
+
+Every execution channel converges on `engine.invoke`. Adapters can parse their
+own transport, but they do not call capability handlers directly.
+
+<InvocationFlow />
+
+## Ordered stages
+
+For each invocation, the engine:
+
+1. generates or accepts a request ID;
+2. resolves the capability by ID;
+3. validates and transforms the input;
+4. creates the execution context and enforces the access rule;
+5. combines caller cancellation with the capability timeout, runs the handler,
+   and validates the output; and
+6. emits a terminal event and returns typed data or throws an `EngineError`.
+
+Input validation happens before authorization because the access rule receives
+typed domain input. Output validation happens before the result crosses the
+engine boundary.
+
+## Isolation at the request boundary
+
+Invokta snapshots transformed input and identity data before asynchronous work.
+The access rule receives its own copy, while `run` receives the request-owned
+execution copy. A caller or access rule cannot mutate what the capability later
+observes.
+
+## Cancellation and timeouts
+
+Pass an `AbortSignal` in the invocation options when the caller owns cancellation:
+
+```ts
+const controller = new AbortController();
+
+const pending = engine.invoke(
+  "support.classify-ticket",
+  { ticketId: "T-123" },
+  {
+    source: "direct",
+    principal: { id: "user:42" },
+    signal: controller.signal,
+  },
+);
+
+controller.abort();
+await pending; // throws EngineError with code CANCELLED
+```
+
+A capability can also declare `timeoutMs`. Its timer starts after authorization,
+so an expensive access check does not consume the capability's execution budget.
+
+## Events
+
+The optional `onEvent` hook receives a compact lifecycle stream:
+
+- `invocation.started`
+- `invocation.completed`
+- `invocation.failed`
+
+Events contain identifiers, timing, source, and error codes. Payloads and
+credentials are excluded. Delivery is best-effort and never blocks the result.
+
+Read the [error reference](/reference/errors/) for the normalized failure
+taxonomy.

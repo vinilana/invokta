@@ -1,0 +1,27 @@
+{
+  "name": "@invokta/docs",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "packageManager": "yarn@1.22.22",
+  "scripts": {
+    "dev": "astro dev",
+    "test": "node --test test/*.node.mjs",
+    "check": "astro check",
+    "build": "astro build",
+    "preview": "astro preview",
+    "validate": "yarn test && yarn run check && yarn build"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.41.5",
+    "@fontsource-variable/geist": "5.3.0",
+    "@fontsource-variable/geist-mono": "5.3.0",
+    "astro": "7.1.6"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "typescript": "6.0.3"
+  }
+}

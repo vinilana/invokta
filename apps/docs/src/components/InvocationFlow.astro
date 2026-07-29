@@ -1,0 +1,149 @@
+<div
+  class="invocation-flow"
+  role="img"
+  aria-label="Direct calls, CLI, MCP stdio, and MCP HTTP all converge on engine.invoke, which validates input, authorizes access, runs the capability, and validates output."
+>
+  <div class="channels" aria-hidden="true">
+    <span>Direct</span>
+    <span>CLI</span>
+    <span>MCP stdio</span>
+    <span>MCP HTTP</span>
+  </div>
+  <div class="connector" aria-hidden="true"></div>
+  <div class="invoke" aria-hidden="true">
+    <span class="prompt">›</span>
+    <code>engine.invoke</code>
+  </div>
+  <div class="stages" aria-hidden="true">
+    <span>validate input</span>
+    <span>authorize</span>
+    <span>run</span>
+    <span>validate output</span>
+  </div>
+</div>
+
+<style>
+  .invocation-flow {
+    margin-block: 1.75rem;
+    padding: clamp(1rem, 3vw, 1.5rem);
+    overflow: hidden;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.75rem;
+    background:
+      linear-gradient(var(--sl-color-bg), var(--sl-color-bg)) padding-box,
+      radial-gradient(circle at 50% 0%, var(--sl-color-accent-low), transparent 55%);
+  }
+
+  .channels,
+  .stages {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .channels span,
+  .stages span {
+    position: relative;
+    display: grid;
+    min-height: 2.55rem;
+    place-items: center;
+    padding: 0.45rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    color: var(--sl-color-gray-2);
+    background: var(--sl-color-bg-nav);
+    font-family: var(--sl-font-mono);
+    font-size: 0.72rem;
+    line-height: 1.2;
+    text-align: center;
+  }
+
+  .connector {
+    position: relative;
+    height: 2.6rem;
+  }
+
+  .connector::before,
+  .connector::after {
+    position: absolute;
+    content: "";
+    background: var(--sl-color-gray-5);
+  }
+
+  .connector::before {
+    top: 1.3rem;
+    left: 12.5%;
+    width: 75%;
+    height: 1px;
+  }
+
+  .connector::after {
+    top: 1.3rem;
+    left: 50%;
+    width: 1px;
+    height: 1.3rem;
+  }
+
+  .channels span::after {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    width: 1px;
+    height: 1.3rem;
+    background: var(--sl-color-gray-5);
+    content: "";
+  }
+
+  .invoke {
+    display: flex;
+    width: fit-content;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0 auto 1.4rem;
+    padding: 0.8rem 1.1rem;
+    border: 1px solid var(--sl-color-white);
+    border-radius: 0.55rem;
+    color: var(--sl-color-black);
+    background: var(--sl-color-white);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--sl-color-accent) 12%, transparent);
+  }
+
+  .invoke code {
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    font-size: 0.86rem;
+  }
+
+  .prompt {
+    color: var(--sl-color-accent-high);
+    font-family: var(--sl-font-mono);
+    font-weight: 700;
+  }
+
+  .stages span:not(:last-child)::after {
+    position: absolute;
+    right: -0.52rem;
+    color: var(--sl-color-gray-3);
+    content: "›";
+  }
+
+  @media (max-width: 36rem) {
+    .channels,
+    .stages {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .connector {
+      display: none;
+    }
+
+    .invoke {
+      margin-block: 1rem;
+    }
+
+    .stages span:nth-child(2)::after {
+      display: none;
+    }
+  }
+</style>

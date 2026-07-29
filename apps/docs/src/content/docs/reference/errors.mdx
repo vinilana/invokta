@@ -1,0 +1,72 @@
+---
+title: Errors
+description: Handle the seven public errors produced by the Invokta invocation pipeline.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Invokta normalizes every invocation failure to `EngineError`. Consumers can make
+decisions from a seven-code taxonomy without learning provider or transport
+exceptions.
+
+```ts
+import { EngineError } from "@invokta/core";
+
+try {
+  await engine.invoke(capabilityId, input, options);
+} catch (error) {
+  if (error instanceof EngineError) {
+    switch (error.code) {
+      case "INPUT_INVALID":
+        // Ask the caller to correct the request.
+        break;
+      case "FORBIDDEN":
+        // Preserve the denial without exposing policy internals.
+        break;
+    }
+  }
+}
+```
+
+## Error codes
+
+| Code | Meaning |
+| --- | --- |
+| `CAPABILITY_NOT_FOUND` | The engine does not publish the requested ID |
+| `INPUT_INVALID` | Input failed schema validation or the lossless JSON boundary |
+| `UNAUTHENTICATED` | Identity is missing, malformed, or cannot be safely captured |
+| `FORBIDDEN` | An authenticated principal was denied by the access rule |
+| `OUTPUT_INVALID` | The capability result failed its output contract |
+| `CANCELLED` | Caller cancellation or a capability timeout stopped execution |
+| `EXECUTION_FAILED` | An unknown internal failure was normalized at the boundary |
+
+## Public and internal details
+
+```ts
+class EngineError extends Error {
+  readonly code: EngineErrorCode;
+  readonly publicDetails?: unknown;
+  readonly cause?: unknown;
+}
+```
+
+Only `code`, `message`, and optional `publicDetails` are safe for adapters to
+serialize. `cause` and the stack stay inside the process.
+
+<Aside type="caution" title="Treat publicDetails as part of the contract">
+  Include only information a caller is allowed to see. Do not place payloads,
+  tokens, provider responses, policy internals, or rejected values in public
+  error details.
+</Aside>
+
+## Adapter behavior
+
+- Direct callers receive the `EngineError`.
+- The CLI writes a compact JSON error to standard error and chooses exit code
+  `1` or `2`.
+- MCP returns capability errors as tool results with `isError: true`.
+- A missing MCP tool is a protocol-level error rather than a capability error.
+
+Errors thrown by hostile or malformed caller-controlled objects cannot select
+their own public code or message. Invokta replaces them with a sanitized boundary
+error and retains the original failure only as an internal cause.

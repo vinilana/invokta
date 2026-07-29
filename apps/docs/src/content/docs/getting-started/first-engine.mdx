@@ -1,0 +1,122 @@
+---
+title: Build your first engine
+description: Define one capability and reuse it through direct calls, CLI, and MCP.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+This guide creates a small onboarding capability. It stays deterministic so you
+can inspect the Invokta boundary before connecting a model or another provider.
+
+<Steps>
+
+1. Define the capability
+
+   Create `src/engine.ts`:
+
+   ```ts
+   import { createEngine, defineCapability } from "@invokta/core";
+   import { z } from "zod";
+
+   const createWelcomeMessage = defineCapability({
+     title: "Create a welcome message",
+     description: "Create a welcome message for a new team member.",
+     input: z.object({
+       name: z.string().trim().min(1),
+     }),
+     output: z.object({
+       message: z.string().min(1),
+     }),
+     access: "public",
+     annotations: {
+       readOnly: true,
+       destructive: false,
+       idempotent: true,
+       openWorld: false,
+     },
+     async run({ input }) {
+       return { message: `Welcome, ${input.name}!` };
+     },
+   });
+
+   export const engine = createEngine({
+     name: "hello-engine",
+     version: "1.0.0",
+     capabilities: {
+       "onboarding.create-welcome-message": createWelcomeMessage,
+     },
+   });
+   ```
+
+   The key in `capabilities` is the public capability ID. Consumers do not need
+   to know how the welcome message is produced.
+
+2. Invoke it directly
+
+   Create `src/direct.ts`:
+
+   ```ts
+   import { engine } from "./engine.js";
+
+   const result = await engine.invoke(
+     "onboarding.create-welcome-message",
+     { name: "Ada" },
+     { source: "direct", principal: null },
+   );
+
+   process.stdout.write(`${JSON.stringify(result)}\n`);
+   ```
+
+   `engine.invoke` validates the input, applies the access rule, runs the
+   capability, and validates the result before returning it.
+
+3. Add a CLI composition root
+
+   Create `src/cli.ts`:
+
+   ```ts
+   import { runCli } from "@invokta/cli";
+
+   import { engine } from "./engine.js";
+
+   process.exitCode = await runCli(engine, {
+     principal: { id: "local:developer" },
+   });
+   ```
+
+   Build the project, then inspect and run the capability:
+
+   ```sh
+   node dist/cli.js list
+   node dist/cli.js describe onboarding.create-welcome-message
+   node dist/cli.js run onboarding.create-welcome-message --input '{"name":"Ada"}'
+   ```
+
+4. Add an MCP stdio composition root
+
+   Create `src/mcp-stdio.ts`:
+
+   ```ts
+   import { serveMcpStdio } from "@invokta/mcp";
+
+   import { engine } from "./engine.js";
+
+   await serveMcpStdio(engine, {
+     principal: { id: "local:mcp-host" },
+   });
+   ```
+
+   Start the compiled file directly with Node. Standard output is reserved for
+   MCP protocol messages.
+
+</Steps>
+
+<Aside type="tip" title="Start from a running example">
+  The repository's
+  [`hello-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/hello-engine)
+  adds dependency injection, authenticated access, tests, and both MCP transports
+  without changing the capability contract.
+</Aside>
+
+Next, read how [execution channels](/guides/execution-channels/) converge on the
+same runtime path.

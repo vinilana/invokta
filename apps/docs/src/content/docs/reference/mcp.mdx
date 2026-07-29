@@ -1,0 +1,114 @@
+---
+title: '@invokta/mcp'
+description: API reference for Invokta MCP stdio and stateless Streamable HTTP adapters.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/mcp` maps every capability to one MCP tool. It contains the official MCP
+SDK so SDK types and transport details do not enter `@invokta/core`.
+
+## Tool mapping
+
+| Capability field | MCP tool field |
+| --- | --- |
+| Engine map key | Tool name |
+| `title` | Tool title |
+| `description` | Tool description |
+| Input JSON Schema | `inputSchema` |
+| Output JSON Schema | `outputSchema` |
+| `annotations` | Tool annotations |
+
+A successful call returns the validated result as `structuredContent` plus a JSON
+text fallback. Capability failures return `isError: true` with a sanitized public
+error.
+
+## `serveMcpStdio`
+
+```ts
+await serveMcpStdio(engine, {
+  principal: { id: "local:mcp-host" },
+  maxReadBufferBytes: 10 * 1024 * 1024,
+});
+```
+
+Both options are optional. The principal defaults to `null`; the read buffer
+defaults to 10 MiB. The host process owns the local identity and must keep
+standard output exclusive to MCP messages.
+
+Closing client input closes the transport and aborts active request signals. A
+read-buffer overflow closes the connection and rejects `serveMcpStdio`.
+
+## `serveMcpHttp`
+
+```ts
+const server = await serveMcpHttp(engine, {
+  host: "127.0.0.1",
+  port: 3000,
+  allowedHosts: ["engine.example"],
+  allowedOrigins: ["https://console.example"],
+  maxRequestBodyBytes: 1024 * 1024,
+  auth: {
+    mode: "required",
+    async authenticate(request) {
+      return authenticateBearerRequest(request.headers);
+    },
+  },
+});
+```
+
+`auth` is required. The server defaults to `127.0.0.1:3000`, exposes the canonical
+`POST /mcp` endpoint, and applies a 1 MiB request-body limit by default.
+
+The returned handle exposes:
+
+```ts
+server.address(); // { host, port }
+await server.close();
+```
+
+## Authentication modes
+
+### Required
+
+```ts
+auth: {
+  mode: "required",
+  authenticate(request) {
+    // Return a trusted Principal or null.
+  },
+  resourceMetadata: {
+    resource: "https://engine.example/mcp",
+    authorizationServers: ["https://identity.example"],
+    scopesSupported: ["engine:invoke"],
+  },
+}
+```
+
+Authentication runs after Host, Origin, route, method, and declared body-size
+checks, but before the request reaches `engine.invoke`.
+
+### Development only
+
+```ts
+auth: {
+  mode: "dangerously-disabled-for-development",
+}
+```
+
+<Aside type="danger" title="Keep this mode on loopback">
+  The development mode provides no authentication and no principal. Do not use it
+  on a shared interface or production deployment.
+</Aside>
+
+## HTTP boundary
+
+- Only the exact `/mcp` request target is accepted.
+- Every protocol request is stateless.
+- Host is required and validated before authentication.
+- Origin is optional, but a supplied value must match `allowedOrigins` exactly.
+- Forwarded-host headers are ignored.
+- Capability authorization failures remain MCP tool errors inside HTTP 200.
+
+See the [execution channels guide](/guides/execution-channels/) for complete
+composition roots.

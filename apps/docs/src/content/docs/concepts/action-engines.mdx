@@ -1,0 +1,64 @@
+---
+title: Action Engines
+description: Understand the architectural category that Invokta implements.
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+An **Action Engine** is a versioned software component that publishes reusable,
+AI-supported domain capabilities through stable contracts. Models, prompts, data,
+retrieval, and tools remain replaceable implementation details.
+
+Invokta is a framework for building Action Engines. It supplies the contracts,
+runtime, and adapters. Your engine supplies the domain language and business
+behavior.
+
+## What qualifies as an Action Engine
+
+An implementation qualifies when it:
+
+1. publishes at least one domain-oriented operation;
+2. validates its input and output at runtime;
+3. hides the AI implementation behind that contract;
+4. reuses the same operation through more than one execution channel; and
+5. has a clear unit of ownership and versioning.
+
+An operation such as `support.classify-ticket` describes a domain outcome. An
+operation such as `llm.complete` exposes infrastructure and leaves every consumer
+responsible for the business contract.
+
+## Keep the responsibilities separate
+
+<CardGrid>
+  <Card title="Action Engine" icon="puzzle">
+    Publishes reusable domain capabilities governed by runtime contracts.
+  </Card>
+  <Card title="Harness" icon="setting">
+    Manages an agent's messages, tools, memory, environment, and execution.
+  </Card>
+  <Card title="Loop" icon="refresh">
+    Chooses the next step, repeats work, and decides when a goal is complete.
+  </Card>
+  <Card title="Invokta" icon="rocket">
+    Provides the capability contract, invocation pipeline, and CLI/MCP adapters.
+  </Card>
+</CardGrid>
+
+A product can contain all four responsibilities, but the Invokta core does not
+couple them. That boundary keeps an engine usable from a test, a command, an MCP
+client, or another application.
+
+## Stable outside, replaceable inside
+
+Suppose `support.classify-ticket` accepts a ticket ID and returns a queue,
+priority, and explanation. Its implementation can move from one model provider
+to another, add retrieval, or replace a prompt with deterministic rules. The
+consumer continues to send and receive the same validated objects.
+
+<Aside type="note" title="Version the contract deliberately">
+  Changing a provider is usually internal. Removing an output field or changing
+  the meaning of a capability ID changes what consumers rely on and requires a
+  compatibility decision.
+</Aside>
+
+Continue with the [capability contract](/concepts/capabilities/).
