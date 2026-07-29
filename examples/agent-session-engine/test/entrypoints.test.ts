@@ -336,13 +336,71 @@ describe("agent session example entrypoints", () => {
 
   it("ships parseable hook configurations for all four harnesses", async () => {
     const expected = {
-      "cursor.hooks.json": ["sessionStart", "preToolUse", "stop"],
-      "codex.hooks.json": ["SessionStart", "PreToolUse", "Stop"],
+      "cursor.hooks.json": [
+        "workspaceOpen",
+        "sessionStart",
+        "sessionEnd",
+        "beforeSubmitPrompt",
+        "afterAgentResponse",
+        "afterAgentThought",
+        "preToolUse",
+        "postToolUse",
+        "postToolUseFailure",
+        "beforeShellExecution",
+        "afterShellExecution",
+        "beforeMCPExecution",
+        "afterMCPExecution",
+        "beforeReadFile",
+        "afterFileEdit",
+        "beforeTabFileRead",
+        "afterTabFileEdit",
+        "subagentStart",
+        "subagentStop",
+        "preCompact",
+        "stop",
+      ],
+      "codex.hooks.json": [
+        "SessionStart",
+        "SessionEnd",
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PermissionRequest",
+        "PostToolUse",
+        "PreCompact",
+        "PostCompact",
+        "SubagentStart",
+        "SubagentStop",
+        "Stop",
+      ],
       "claude-code.settings.json": [
         "SessionStart",
+        "Setup",
+        "UserPromptSubmit",
+        "UserPromptExpansion",
+        "PreToolUse",
+        "PermissionRequest",
+        "PermissionDenied",
+        "PostToolUse",
+        "PostToolUseFailure",
+        "PostToolBatch",
+        "Notification",
+        "MessageDisplay",
+        "SubagentStart",
+        "SubagentStop",
         "TaskCreated",
         "TaskCompleted",
         "Stop",
+        "StopFailure",
+        "TeammateIdle",
+        "InstructionsLoaded",
+        "ConfigChange",
+        "CwdChanged",
+        "WorktreeRemove",
+        "PreCompact",
+        "PostCompact",
+        "Elicitation",
+        "ElicitationResult",
+        "SessionEnd",
       ],
       "antigravity.hooks.json": [
         "PreInvocation",
@@ -359,7 +417,16 @@ describe("agent session example entrypoints", () => {
       );
       const parsed = JSON.parse(encoded) as unknown;
       expect(parsed).toBeTypeOf("object");
-      for (const eventName of eventNames) expect(encoded).toContain(eventName);
+      const root = parsed as Record<string, unknown>;
+      const hookContainer =
+        filename === "antigravity.hooks.json"
+          ? (root["agent-session-recorder"] as Record<string, unknown>)
+          : (root.hooks as Record<string, unknown>);
+      expect(
+        Object.keys(hookContainer)
+          .filter((key) => key !== "enabled")
+          .sort(),
+      ).toEqual([...eventNames].sort());
       expect(encoded).toContain(
         "node examples/agent-session-engine/dist/hook-cli.js",
       );

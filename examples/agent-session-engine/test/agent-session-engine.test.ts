@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +7,7 @@ import type { EngineError, EngineEvent, Principal } from "@ai-engine/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createAgentSessionEngine } from "../src/engine.js";
+import { createAgentSession } from "../src/domain/agent-session.js";
 import { createFileAgentSessionStore } from "../src/infrastructure/file-agent-session-store.js";
 
 const principal: Principal = {
@@ -154,6 +156,125 @@ describe("the agent session engine example", () => {
       checkpoint:
         "The contract tests are red; implement the file adapter next.",
     });
+  });
+
+  it("bounds resume context across maximum valid fields without failing after persistence", async () => {
+    const { create, engine } = await createTestEngine();
+    await engine.invoke(
+      "agent-session.start",
+      {
+        sessionId: "bounded-resume-context",
+        objective: "o".repeat(2_000),
+        workspaceRoot: `/${"w".repeat(1_999)}`,
+      },
+      invocation,
+    );
+    await engine.invoke(
+      "agent-session.create-task",
+      {
+        sessionId: "bounded-resume-context",
+        taskId: "large-checkpoint-task",
+        title: "t".repeat(200),
+        phase: "implementation",
+      },
+      invocation,
+    );
+    await engine.invoke(
+      "agent-session.update-task",
+      {
+        sessionId: "bounded-resume-context",
+        taskId: "large-checkpoint-task",
+        expectedTaskRevision: 1,
+        checkpoint: "c".repeat(4_000),
+      },
+      invocation,
+    );
+
+    const checkpointed = await engine.invoke(
+      "agent-session.checkpoint",
+      {
+        sessionId: "bounded-resume-context",
+        expectedRevision: 3,
+        phase: "implementation",
+        status: "paused",
+        checkpoint: "s".repeat(4_000),
+        nextAction: "n".repeat(4_000),
+      },
+      invocation,
+    );
+    const resumed = await create().invoke(
+      "agent-session.get",
+      { sessionId: "bounded-resume-context" },
+      invocation,
+    );
+
+    expect(checkpointed.revision).toBe(4);
+    expect(checkpointed.resumeContext.length).toBeLessThanOrEqual(16_000);
+    expect(checkpointed.resumeContext).toContain("Next action: nnnn");
+    expect(resumed).toEqual(checkpointed);
+  });
+
+  it("keeps live stale-looking locks and recovers locks whose owner exited", async () => {
+    const dataDirectory = await mkdtemp(join(tmpdir(), "agent-session-lock-"));
+    temporaryDirectories.push(dataDirectory);
+    const sessionId = "lock-ownership";
+    const fileStem = createHash("sha256").update(sessionId).digest("hex");
+    const lockPath = join(dataDirectory, `${fileStem}.lock`);
+    const oldTime = new Date("2026-07-28T00:00:00.000Z");
+    const session = createAgentSession({
+      sessionId,
+      objective: "Preserve lock ownership.",
+      workspaceRoot: "/workspace/project",
+      createdAt: "2026-07-28T12:00:00.000Z",
+    });
+    const store = createFileAgentSessionStore({
+      dataDirectory,
+      lockTimeoutMs: 25,
+      staleLockMs: 1,
+    });
+
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({ ownerId: "live-owner", pid: process.pid, acquiredAt: oldTime.toISOString() })}\n`,
+      { mode: 0o600 },
+    );
+    await utimes(lockPath, oldTime, oldTime);
+    await expect(store.create(session)).rejects.toThrow(
+      "Timed out while waiting for the agent session lock.",
+    );
+
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({ ownerId: "exited-owner", pid: 2_147_483_647, acquiredAt: oldTime.toISOString() })}\n`,
+      { mode: 0o600 },
+    );
+    await utimes(lockPath, oldTime, oldTime);
+    await expect(store.create(session)).resolves.toBe("created");
+  });
+
+  it("persists every schema-valid maximum-length session identifier", async () => {
+    const { create, dataDirectory, engine } = await createTestEngine();
+    const sessionId = `a${":".repeat(127)}`;
+
+    await expect(
+      engine.invoke(
+        "agent-session.start",
+        {
+          sessionId,
+          objective: "Use a bounded filesystem key.",
+          workspaceRoot: "/workspace/project",
+        },
+        invocation,
+      ),
+    ).resolves.toMatchObject({ sessionId });
+    await expect(
+      create().invoke("agent-session.get", { sessionId }, invocation),
+    ).resolves.toMatchObject({ sessionId });
+
+    const filenames = await readdir(dataDirectory);
+    expect(filenames).toEqual([
+      `${createHash("sha256").update(sessionId).digest("hex")}.json`,
+    ]);
   });
 
   it("allows only one concurrent update from the same task revision", async () => {

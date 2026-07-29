@@ -29,9 +29,12 @@ as an operator's CLI command.
 
 The default `FileAgentSessionStore` writes one JSON document per portable
 session under `AGENT_SESSION_ENGINE_DATA_DIR`, or `.agent-sessions/` in the
-current directory when the variable is absent. It uses a per-session exclusive
-file lock, optimistic revisions, a synced temporary file, and atomic rename.
-A lock left by a terminated process becomes recoverable after 30 seconds.
+current directory when the variable is absent. Files use a fixed-length SHA-256
+name derived from the validated session ID. The store uses a per-session
+exclusive file lock with an owner token and process identity, optimistic
+revisions, a synced temporary file, and atomic rename. A lock left by a
+terminated process becomes recoverable after 30 seconds; elapsed time alone
+never permits one live process to steal another process's lock.
 
 The example makes these operational limits explicit:
 
@@ -42,12 +45,16 @@ The example makes these operational limits explicit:
 - 2,000 milliseconds to acquire a live session lock;
 - 4,000 characters per checkpoint, next action, or evidence value;
 - 20 open tasks in injected resume context; `agent-session.get` retains the
-  complete task list.
+  complete task list;
+- 16,000 characters in injected resume context, with an explicit truncation
+  notice when the complete state is larger.
 
 A process crash cannot partially replace a valid session document. This local
 file adapter is not a distributed database: place the data directory on one
 host-local filesystem and replace the store port when multiple hosts must write
-the same session.
+the same session. The JSON layout is an example-version persistence format, not
+a cross-version migration contract; migrate or replace the store before changing
+its schema in an existing deployment.
 
 ## Build and create a session
 
@@ -120,6 +127,12 @@ On a resumed Codex or Claude Code `SessionStart`, the hook returns
 `PreInvocation`. Other configured handlers return the neutral output required
 by that harness.
 
+Hook events are observations. They do not implicitly advance the portable
+phase, task status, checkpoint, or owner. A coordinator must invoke the task and
+checkpoint capabilities for those state transitions. Concurrent hook events are
+returned in successful persistence order; `observedAt` records each recorder's
+wall-clock observation and is not a distributed causal clock.
+
 ### Coverage is bounded by the harness
 
 The configurations capture the safe session, agent, task, compaction, model
@@ -134,16 +147,19 @@ into an action for which the harness emits no hook.
   invocation/stop events are recorded.
 - Claude Code `WorktreeCreate` changes worktree creation behavior and
   `FileChanged` requires an explicit watch list. Neither is a neutral lifecycle
-  observer, so this example does not register them.
+  observer, so this example omits those two events and registers every other
+  currently documented Claude Code event.
 - Cursor coverage is the set of events emitted by the installed Cursor version;
   generic and legacy tool events may both fire and are stored as distinct event
   names.
 
-The normalizer creates a deterministic event ID from the harness, native
-session, event metadata, and SHA-256 of the received payload. An identical
-redelivery is idempotent. Hooks without a stable native occurrence identifier
-can still be delivered at least once by the harness, so this example does not
-promise distributed exactly-once delivery.
+When a hook supplies a stable native occurrence identifier, the normalizer
+creates a deterministic event ID from that occurrence and the SHA-256 of the
+received payload, so a byte-identical redelivery is idempotent. When a hook does
+not supply one, each hook process assigns a new delivery identity so distinct
+byte-identical lifecycle occurrences are never collapsed. Such events can be
+duplicated if the harness retries them, so this example promises neither
+distributed exactly-once delivery nor automatic retry deduplication.
 
 ## Payload privacy
 

@@ -1,6 +1,7 @@
 export const MAX_SESSION_TASKS = 256;
 export const MAX_SESSION_EVENTS = 10_000;
 export const MAX_RESUME_TASKS = 20;
+export const MAX_RESUME_CONTEXT_CHARACTERS = 16_000;
 
 export type AgentHarness = "cursor" | "antigravity" | "claude-code" | "codex";
 
@@ -123,5 +124,16 @@ export function buildResumeContext(session: AgentSession): string {
       `- ${String(actionableTasks.length - shownTasks.length)} additional task(s) omitted; call agent-session.get for the complete state.`,
     );
   }
-  return lines.join("\n");
+  const context = lines.join("\n");
+  if (context.length <= MAX_RESUME_CONTEXT_CHARACTERS) return context;
+
+  const notice =
+    "\n- Resume context truncated; call agent-session.get for the complete state.";
+  const prefixLimit = MAX_RESUME_CONTEXT_CHARACTERS - notice.length - 1;
+  let prefix = context.slice(0, prefixLimit);
+  const finalCodeUnit = prefix.charCodeAt(prefix.length - 1);
+  if (finalCodeUnit >= 0xd800 && finalCodeUnit <= 0xdbff) {
+    prefix = prefix.slice(0, -1);
+  }
+  return `${prefix}…${notice}`;
 }

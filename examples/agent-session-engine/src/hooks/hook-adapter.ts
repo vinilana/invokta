@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { runCli } from "@ai-engine/cli";
 import type { Principal } from "@ai-engine/core";
@@ -204,7 +204,9 @@ export function normalizeHookEvent(
         harness,
         resolvedNativeSessionId,
         eventName,
-        occurrence,
+        occurrence === ""
+          ? `delivery:${randomUUID()}`
+          : `occurrence:${occurrence}`,
         payloadSha256,
       ].join("\0"),
     )

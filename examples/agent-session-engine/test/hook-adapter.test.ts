@@ -151,6 +151,51 @@ describe("agent harness hook adapters", () => {
     );
   });
 
+  it("records repeated lifecycle deliveries that have no native occurrence identifier", async () => {
+    const { engine } = await fixture();
+    const rawInput = JSON.stringify({
+      session_id: "codex-native-session",
+      hook_event_name: "SessionStart",
+      source: "resume",
+      cwd: "/workspace/project",
+    });
+
+    for (const observedAt of [
+      "2026-07-28T12:00:00.000Z",
+      "2026-07-28T13:00:00.000Z",
+    ]) {
+      await expect(
+        runHookCommand("codex", {
+          rawInput,
+          portableSessionId: "repeated-session-start",
+          engine,
+          principal,
+          observedAt,
+          writeStdout: () => undefined,
+          writeStderr: () => undefined,
+        }),
+      ).resolves.toBe(0);
+    }
+
+    const session = await engine.invoke(
+      "agent-session.get",
+      { sessionId: "repeated-session-start" },
+      {
+        source: "direct",
+        principal: {
+          id: "reviewer",
+          attributes: { permissions: ["agent-session:read"] },
+        },
+      },
+    );
+    expect(session.events).toHaveLength(2);
+    expect(session.events.map(({ observedAt }) => observedAt)).toEqual([
+      "2026-07-28T12:00:00.000Z",
+      "2026-07-28T13:00:00.000Z",
+    ]);
+    expect(session.events[0]?.id).not.toBe(session.events[1]?.id);
+  });
+
   it("uses each harness neutral output and resumes Antigravity on its first invocation", async () => {
     const { engine } = await fixture();
     await engine.invoke(

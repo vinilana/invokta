@@ -1,7 +1,15 @@
-import { mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  link,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  stat,
+  unlink,
+} from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { randomUUID } from "node:crypto";
 
 import type {
   AgentSessionStore,
@@ -22,6 +30,11 @@ export interface FileAgentSessionStoreOptions {
   readonly staleLockMs?: number;
 }
 
+interface LockRecord {
+  readonly ownerId: string | null;
+  readonly pid: number;
+}
+
 function errorCode(error: unknown): string | undefined {
   return error !== null &&
     typeof error === "object" &&
@@ -33,6 +46,37 @@ function errorCode(error: unknown): string | undefined {
 
 function ensureNotAborted(signal: AbortSignal | undefined): void {
   signal?.throwIfAborted();
+}
+
+function parseLockRecord(encoded: string): LockRecord | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(encoded) as unknown;
+  } catch {
+    return null;
+  }
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    !("pid" in parsed) ||
+    !Number.isSafeInteger(parsed.pid) ||
+    (parsed.pid as number) < 1 ||
+    (parsed.pid as number) > 2_147_483_647
+  ) {
+    return null;
+  }
+  const ownerId = "ownerId" in parsed ? parsed.ownerId : null;
+  if (ownerId !== null && typeof ownerId !== "string") return null;
+  return { ownerId, pid: parsed.pid as number };
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return errorCode(error) !== "ESRCH";
+  }
 }
 
 export function createFileAgentSessionStore(
@@ -48,7 +92,8 @@ export function createFileAgentSessionStore(
     throw new TypeError("staleLockMs must be a positive integer.");
   }
 
-  const fileStem = (sessionId: string) => encodeURIComponent(sessionId);
+  const fileStem = (sessionId: string) =>
+    createHash("sha256").update(sessionId).digest("hex");
   const pathsFor = (sessionId: string) => ({
     state: join(dataDirectory, `${fileStem(sessionId)}.json`),
     lock: join(dataDirectory, `${fileStem(sessionId)}.lock`),
@@ -82,6 +127,11 @@ export function createFileAgentSessionStore(
     try {
       const lockStat = await stat(lockPath);
       if (Date.now() - lockStat.mtimeMs <= staleLockMs) return;
+      const encoded = await readFile(lockPath, "utf8");
+      const record = parseLockRecord(encoded);
+      if (record !== null && processIsAlive(record.pid)) return;
+      const confirmation = await readFile(lockPath, "utf8");
+      if (confirmation !== encoded) return;
       await unlink(lockPath);
     } catch (error) {
       if (errorCode(error) !== "ENOENT") throw error;
@@ -95,44 +145,75 @@ export function createFileAgentSessionStore(
   ): Promise<Result> => {
     await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
     const { lock } = pathsFor(sessionId);
+    const ownerId = randomUUID();
+    const lockCandidate = join(
+      dataDirectory,
+      `.${fileStem(sessionId)}.${ownerId}.lock-candidate`,
+    );
     const deadline = Date.now() + lockTimeoutMs;
     let acquired = false;
-    while (!acquired) {
-      ensureNotAborted(storeOptions?.signal);
+    let candidateCreated = false;
+    try {
+      const candidateHandle = await open(lockCandidate, "wx", 0o600);
+      candidateCreated = true;
       try {
-        const handle = await open(lock, "wx", 0o600);
+        await candidateHandle.writeFile(
+          `${JSON.stringify({ ownerId, pid: process.pid, acquiredAt: new Date().toISOString() })}\n`,
+        );
+        await candidateHandle.sync();
+      } finally {
+        await candidateHandle.close();
+      }
+
+      while (!acquired) {
+        ensureNotAborted(storeOptions?.signal);
         try {
-          await handle.writeFile(
-            `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() })}\n`,
-          );
-          await handle.sync();
-        } finally {
-          await handle.close();
+          await link(lockCandidate, lock);
+          acquired = true;
+          try {
+            await unlink(lockCandidate);
+            candidateCreated = false;
+          } catch {
+            // The owner link is complete; final cleanup retries the candidate.
+          }
+        } catch (error) {
+          if (errorCode(error) !== "EEXIST") throw error;
+          await removeStaleLock(lock);
+          if (Date.now() >= deadline) {
+            throw new Error(
+              "Timed out while waiting for the agent session lock.",
+            );
+          }
+          await delay(LOCK_RETRY_MS, undefined, {
+            ...(storeOptions?.signal === undefined
+              ? {}
+              : { signal: storeOptions.signal }),
+          });
         }
-        acquired = true;
+      }
+
+      const release = async (): Promise<void> => {
+        const record = parseLockRecord(await readFile(lock, "utf8"));
+        if (record?.ownerId !== ownerId) {
+          throw new Error("Agent session lock ownership was lost.");
+        }
+        await unlink(lock);
+      };
+      try {
+        ensureNotAborted(storeOptions?.signal);
+        const result = await operation();
+        await release();
+        return result;
       } catch (error) {
-        if (errorCode(error) !== "EEXIST") throw error;
-        await removeStaleLock(lock);
-        if (Date.now() >= deadline) {
-          throw new Error(
-            "Timed out while waiting for the agent session lock.",
-          );
-        }
-        await delay(LOCK_RETRY_MS, undefined, {
-          ...(storeOptions?.signal === undefined
-            ? {}
-            : { signal: storeOptions.signal }),
+        await release().catch(() => undefined);
+        throw error;
+      }
+    } finally {
+      if (candidateCreated) {
+        await unlink(lockCandidate).catch((error: unknown) => {
+          if (errorCode(error) !== "ENOENT") throw error;
         });
       }
-    }
-
-    try {
-      ensureNotAborted(storeOptions?.signal);
-      return await operation();
-    } finally {
-      await unlink(lock).catch((error: unknown) => {
-        if (errorCode(error) !== "ENOENT") throw error;
-      });
     }
   };
 

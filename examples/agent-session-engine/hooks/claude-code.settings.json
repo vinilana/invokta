@@ -11,6 +11,17 @@
         ]
       }
     ],
+    "Setup": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
@@ -33,7 +44,40 @@
         ]
       }
     ],
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
       {
         "hooks": [
           {
@@ -56,6 +100,39 @@
       }
     ],
     "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolBatch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "MessageDisplay": [
       {
         "hooks": [
           {
@@ -110,6 +187,61 @@
         ]
       }
     ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "InstructionsLoaded": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreCompact": [
       {
         "hooks": [
@@ -122,6 +254,28 @@
       }
     ],
     "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Elicitation": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node examples/agent-session-engine/dist/hook-cli.js claude-code",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "ElicitationResult": [
       {
         "hooks": [
           {

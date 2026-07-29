@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAX_RESUME_CONTEXT_CHARACTERS } from "../domain/agent-session.js";
+
 export const identifierSchema = z
   .string()
   .trim()
@@ -87,5 +89,5 @@ export const agentSessionSchema = z.object({
 
 export const sessionViewSchema = agentSessionSchema.extend({
   eventCount: z.number().int().min(0).max(10_000),
-  resumeContext: z.string().min(1).max(16_000),
+  resumeContext: z.string().min(1).max(MAX_RESUME_CONTEXT_CHARACTERS),
 });
