@@ -37,6 +37,9 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
 - [`crawl-engine`](./examples/crawl-engine/) for an outbound provider
   integration, crawling the web with Firecrawl behind a port, with target rules
   that run before authorization;
+- [`obsidian-context-engine`](./examples/obsidian-context-engine/) for bounded,
+  deterministic context retrieval from a local Obsidian vault through direct,
+  CLI, and MCP entrypoints;
 - [`spec-engine`](./examples/spec-engine/) for a spec-driven development
   workflow whose ordering, state, and per-step authorization live in the domain
   rather than in a workflow engine.
