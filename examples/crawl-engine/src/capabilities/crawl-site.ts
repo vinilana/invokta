@@ -7,7 +7,7 @@ import {
   crawlTargetUrl,
   requireCrawlTarget,
   scrapedPageOutput,
-} from "./crawl-target-input.js";
+} from "./crawl-contract.js";
 
 const defaultPageLimit = 5;
 const defaultMaxDepth = 2;

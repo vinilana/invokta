@@ -7,7 +7,7 @@ import {
   crawlTargetUrl,
   requireCrawlTarget,
   scrapedPageOutput,
-} from "./crawl-target-input.js";
+} from "./crawl-contract.js";
 
 export function createScrapePage({ crawler, permissions }: CrawlDependencies) {
   return defineCapability({

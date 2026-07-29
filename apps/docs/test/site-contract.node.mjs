@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
-import { dirname, extname, join, relative, sep } from "node:path";
+import { basename, dirname, extname, join, relative, sep } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -322,6 +322,55 @@ test("the file naming guide defines engine-owned naming patterns", async () => {
   assert.match(source, /kebab-case/iu);
   assert.match(source, /service\.ts/iu);
   assert.match(source, /does not (?:inspect|enforce)/iu);
+});
+
+test("example files follow the documented filename grammar", async () => {
+  const examplesRoot = join(repositoryRoot, "examples");
+  const files = (await collectFiles(examplesRoot)).filter((path) => {
+    const segments = relative(examplesRoot, path).split(sep);
+    return (
+      (segments.includes("src") || segments.includes("test")) &&
+      extname(path) === ".ts"
+    );
+  });
+  const genericNames = new Set([
+    "common.ts",
+    "helpers.ts",
+    "provider.ts",
+    "service.ts",
+    "services.ts",
+    "types.ts",
+    "utils.ts",
+  ]);
+  const failures = [];
+
+  for (const path of files) {
+    const name = basename(path);
+    const displayPath = relative(repositoryRoot, path).split(sep).join("/");
+    const segments = relative(examplesRoot, path).split(sep);
+    const filenamePattern = segments.includes("src")
+      ? /^[a-z0-9]+(?:-[a-z0-9]+)*\.ts$/u
+      : /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.test)?\.ts$/u;
+    if (!filenamePattern.test(name)) {
+      failures.push(`${displayPath}: use lowercase kebab-case`);
+    }
+    if (genericNames.has(name)) {
+      failures.push(`${displayPath}: name the owned responsibility`);
+    }
+
+    if (segments.at(-2) !== "capabilities") continue;
+    const source = await readFile(path, "utf8");
+    if (
+      !/\bdefineCapability\b/u.test(source) &&
+      !/-contract\.ts$/u.test(name)
+    ) {
+      failures.push(
+        `${displayPath}: shared capability support must use -contract.ts`,
+      );
+    }
+  }
+
+  assert.deepEqual(failures, []);
 });
 
 test("recipes provide runnable commands, verification, and full examples", async () => {

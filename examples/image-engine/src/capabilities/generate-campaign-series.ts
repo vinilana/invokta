@@ -8,7 +8,7 @@ import {
   imageAssetSchema,
   promptSchema,
   resolutionSchema,
-} from "./image-contracts.js";
+} from "./image-contract.js";
 
 export function createGenerateCampaignSeries(
   generator: CampaignImageGenerator,

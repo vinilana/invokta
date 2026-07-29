@@ -8,7 +8,7 @@ import {
   promptSchema,
   referenceImageSchema,
   singleImageOutputSchema,
-} from "./image-contracts.js";
+} from "./image-contract.js";
 
 export function createEditAsset(editor: ImageEditor) {
   return defineCapability({

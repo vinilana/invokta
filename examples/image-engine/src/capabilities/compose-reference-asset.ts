@@ -9,7 +9,7 @@ import {
   referenceImageSchema,
   resolutionSchema,
   singleImageOutputSchema,
-} from "./image-contracts.js";
+} from "./image-contract.js";
 
 export function createComposeReferenceAsset(composer: ReferenceImageComposer) {
   return defineCapability({

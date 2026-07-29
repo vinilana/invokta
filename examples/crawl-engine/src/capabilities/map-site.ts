@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { CrawlDependencies } from "../application/ports.js";
 import { parseCrawlTarget } from "../domain/crawl-target.js";
-import { crawlTargetUrl, requireCrawlTarget } from "./crawl-target-input.js";
+import { crawlTargetUrl, requireCrawlTarget } from "./crawl-contract.js";
 
 const defaultLinkLimit = 20;
 

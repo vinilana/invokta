@@ -8,7 +8,7 @@ import {
   promptSchema,
   requiredTextSchema,
   singleImageOutputSchema,
-} from "./image-contracts.js";
+} from "./image-contract.js";
 
 export function createRenderTextAsset(renderer: TextImageRenderer) {
   return defineCapability({
