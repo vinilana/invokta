@@ -18,3 +18,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0009](0009-capability-composition-and-dev-tooling.md) | Capability composition and development tooling | Accepted | 2026-07-28 |
 | [0010](0010-standalone-local-capability-mcp-installer.md) | Standalone local capability MCP installer | Accepted | 2026-07-28 |
 | [0011](0011-http-engine-deploy-toolkit.md) | HTTP engine deployment toolkit | Accepted | 2026-07-28 |
+| [0012](0012-standalone-invokta-engine-creator.md) | Standalone Invokta engine creator | Accepted | 2026-07-29 |
