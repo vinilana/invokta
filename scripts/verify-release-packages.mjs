@@ -38,6 +38,12 @@ const publicPackages = [
       "registry/README.md",
     ],
   },
+  {
+    directory: "deploy",
+    name: "@ai-engine/deploy",
+    // The toolkit ships both an import API and the `ai-engine-deploy` executable.
+    requiredFiles: [...distEntryFiles, "dist/bin.js"],
+  },
 ];
 
 function run(command, args, options = {}) {
@@ -149,10 +155,12 @@ try {
     const cli = await import("@ai-engine/cli");
     const mcp = await import("@ai-engine/mcp");
     const tooling = await import("@ai-engine/tooling");
+    const deploy = await import("@ai-engine/deploy");
     if (typeof core.createEngine !== "function") throw new Error("core import failed");
     if (typeof cli.runCli !== "function") throw new Error("cli import failed");
     if (typeof mcp.serveMcpStdio !== "function") throw new Error("mcp import failed");
     if (typeof tooling.checkCapabilities !== "function") throw new Error("tooling import failed");
+    if (typeof deploy.runDeployCli !== "function") throw new Error("deploy import failed");
   `;
   run("node", ["--input-type=module", "--eval", smokeProgram], {
     cwd: consumerDirectory,
@@ -196,6 +204,37 @@ try {
   });
   if (installerVersion !== `${installerPackageReport.version}\n`) {
     throw new Error("installer binary version smoke failed");
+  }
+
+  const deployCommand = join(
+    consumerDirectory,
+    "node_modules",
+    ".bin",
+    "ai-engine-deploy",
+  );
+  const deployPackageReport = JSON.parse(
+    readFileSync(
+      join(
+        consumerDirectory,
+        "node_modules",
+        "@ai-engine",
+        "deploy",
+        "package.json",
+      ),
+      "utf8",
+    ),
+  );
+  // The eager-load sentinel is scoped to the installer module graph, so the
+  // deploy binary is pinned by the reusable network sentinel alone.
+  const deployVersion = run(deployCommand, ["--version"], {
+    cwd: consumerDirectory,
+    capture: true,
+    env: {
+      NODE_OPTIONS: `--no-warnings --import=${networkSentinel}`,
+    },
+  });
+  if (deployVersion !== `${deployPackageReport.version}\n`) {
+    throw new Error("deploy binary version smoke failed");
   }
 
   const packageNames = publicPackages.map((publicPackage) => {

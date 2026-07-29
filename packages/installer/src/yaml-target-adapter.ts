@@ -736,6 +736,7 @@ function constructPatch(
 export function createYamlTargetAdapter(options: {
   readonly compatibility: TargetAdapter["compatibility"];
   readonly descriptorToDefinition: TargetAdapter["descriptorToDefinition"];
+  readonly definitionToSuspendedDescriptor: TargetAdapter["definitionToSuspendedDescriptor"];
 }): TargetAdapter {
   const inspectionOwner = Object.freeze({});
   return Object.freeze({
@@ -748,6 +749,7 @@ export function createYamlTargetAdapter(options: {
     }),
     compatibility: options.compatibility,
     descriptorToDefinition: options.descriptorToDefinition,
+    definitionToSuspendedDescriptor: options.definitionToSuspendedDescriptor,
     suspendedDescriptorToDefinition: (descriptor) => {
       const fake = {
         id: "suspended",

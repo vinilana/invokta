@@ -39,9 +39,20 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
   that run before authorization;
 - [`cursor-agent-routing-engine`](./examples/cursor-agent-routing-engine/) for
   deterministic Cursor subagent and model selection by development use case;
+- [`image-engine`](./examples/image-engine/) for outcome-based routing across
+  GPT Image 2, Seedream 5.0, and Nano Banana 2 behind replaceable domain ports;
+- [`obsidian-context-engine`](./examples/obsidian-context-engine/) for bounded,
+  progressive knowledge-graph navigation from Obsidian frontmatter and
+  wikilinks through direct, CLI, and MCP entrypoints;
 - [`spec-engine`](./examples/spec-engine/) for a spec-driven development
   workflow whose ordering, state, and per-step authorization live in the domain
-  rather than in a workflow engine.
+  rather than in a workflow engine;
+- [`agent-session-engine`](./examples/agent-session-engine/) for durable task,
+  phase, checkpoint, and handoff state plus CLI-backed hooks for Cursor,
+  Antigravity, Claude Code, and Codex;
+- [`review-engine`](./examples/review-engine/) for a fail-closed code review,
+  acceptance-eval, and adversarial-review gate that tells an agent whether a
+  task is ready to be declared complete.
 
 ## Documentation
 

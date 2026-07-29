@@ -94,7 +94,10 @@ describe("read-only interactive inventory", () => {
               },
             },
           ],
-          configuration: { kind: "absent" },
+          configuration: {
+            kind: "absent",
+            path: "/users/tester/.gemini/config/mcp_config.json",
+          },
           eligible: true,
           mayCreateConfiguration: true,
           reloadHint,
@@ -121,6 +124,9 @@ describe("read-only interactive inventory", () => {
     ).toHaveLength(1);
     const resultText = interaction.note.mock.calls[1]?.[0] as string;
     expect(resultText).toContain("antigravity-cli, antigravity-ide");
+    expect(resultText).toContain(
+      "Configuration: /users/tester/.gemini/config/mcp_config.json",
+    );
     expect(resultText.match(new RegExp(reloadHint, "gu"))).toHaveLength(1);
     expect(interaction.outro).toHaveBeenCalledWith(
       "Read-only inventory complete. No changes were made.",

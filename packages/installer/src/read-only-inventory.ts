@@ -11,11 +11,9 @@ type InventorySelection = ConfigurationTargetId | "dismiss";
 
 function inventoryResult(target: ConfigurationTargetSnapshot): string {
   const configuration =
-    target.configuration.kind === "present"
-      ? target.configuration.path
-      : target.configuration.kind === "blocked"
-        ? target.configuration.code
-        : "absent";
+    target.configuration.kind === "blocked"
+      ? target.configuration.code
+      : target.configuration.path;
   const surfaces =
     target.surfaceIds.length === 0 ? "none" : target.surfaceIds.join(", ");
   return [

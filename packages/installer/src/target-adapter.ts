@@ -145,6 +145,10 @@ export interface TargetAdapter {
   readonly suspendedDescriptorToDefinition: (
     descriptor: SuspendedDescriptor,
   ) => Readonly<Record<string, unknown>>;
+  readonly definitionToSuspendedDescriptor: (
+    serverName: string,
+    definition: Readonly<Record<string, unknown>>,
+  ) => SuspendedDescriptor;
   readonly inspect: (input: {
     readonly source: Uint8Array | undefined;
     readonly serverName: string;

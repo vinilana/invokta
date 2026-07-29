@@ -62,6 +62,7 @@ interface TomlTargetOptions {
   readonly dialect: TomlDialect;
   readonly compatibility: TargetAdapter["compatibility"];
   readonly descriptorToDefinition: TargetAdapter["descriptorToDefinition"];
+  readonly definitionToSuspendedDescriptor: TargetAdapter["definitionToSuspendedDescriptor"];
 }
 
 function invalid(cause?: unknown): never {
@@ -873,6 +874,7 @@ export function createTomlTargetAdapter(
     }),
     compatibility: options.compatibility,
     descriptorToDefinition: options.descriptorToDefinition,
+    definitionToSuspendedDescriptor: options.definitionToSuspendedDescriptor,
     suspendedDescriptorToDefinition: (descriptor) => {
       const fake = {
         id: "suspended",
