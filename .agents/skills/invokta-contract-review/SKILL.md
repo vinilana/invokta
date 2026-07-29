@@ -8,7 +8,7 @@ description: "Review Invokta contracts for public APIs, acceptance criteria, err
 ## Establish the source of truth
 
 1. Read `docs/README.md` and `docs/vision-and-invariants.md`.
-2. Compare the change with `docs/architecture.md`, `docs/v0.1-scope.md`, `docs/implementation-plan-and-acceptance-criteria.md`, `docs/adr/README.md`, and applicable ADRs.
+2. Compare the change with `docs/architecture.md`, `docs/scope-and-limits.md`, `docs/implementation-plan-and-acceptance-criteria.md`, `docs/adr/README.md`, and applicable ADRs.
 3. Inspect public types, acceptance tests, and the existing implementation. Do not infer guarantees from examples or internal details.
 4. Identify the consumer, public surface, and change type: additive, compatible, ambiguous, or breaking.
 5. Stay read-only for review requests. Edit only when the user requests fixes.

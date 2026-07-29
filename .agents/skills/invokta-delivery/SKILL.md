@@ -8,7 +8,7 @@ description: "Deliver Invokta milestones and work items with TDD, adherence to v
 ## Prepare the delivery
 
 1. Read `docs/README.md` and locate the milestone in `docs/implementation-plan-and-acceptance-criteria.md`.
-2. Compare the milestone with `docs/vision-and-invariants.md`, `docs/architecture.md`, `docs/v0.1-scope.md`, `docs/adr/README.md`, applicable ADRs, public contracts, and acceptance tests. Treat these versioned sources as authoritative; do not duplicate the specification in this skill.
+2. Compare the milestone with `docs/vision-and-invariants.md`, `docs/architecture.md`, `docs/scope-and-limits.md`, `docs/adr/README.md`, applicable ADRs, public contracts, and acceptance tests. Treat these sources as authoritative; do not duplicate their detail in this skill.
 3. Inspect the code, tests, and Git state before editing. Preserve unrelated changes and exclude unrelated files from the work item.
 4. Define a small vertical slice: observable behavior, acceptance criterion, affected components, and validation command.
 

@@ -5,7 +5,7 @@
 
 ## Context
 
-The project defines contracts shared across three packages and multiple
+The project defines contracts shared across multiple packages and
 transports. Large implementations without verifiable checkpoints make review,
 regression analysis, and bisection difficult. Separating tests from the change
 they specify also reduces the reliability of the history.

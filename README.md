@@ -8,7 +8,7 @@ applications, and interfaces that invoke them. Define a capability once with
 Invokta, then invoke the same runtime through application code, the CLI, MCP
 stdio, or stateless MCP Streamable HTTP.
 
-Version 0.1 focuses on a compact hexagonal kernel:
+Invokta keeps capability execution in a compact hexagonal kernel:
 
 - `@invokta/core` defines capabilities, validates Standard Schema input and
   output, enforces access rules, propagates cancellation, and emits minimal
@@ -16,7 +16,11 @@ Version 0.1 focuses on a compact hexagonal kernel:
 - `@invokta/cli` provides `list`, `describe`, and `run` without bypassing
   `engine.invoke`;
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure
-  stateless HTTP while keeping the official MCP SDK behind the adapter boundary.
+  stateless HTTP while keeping the official MCP SDK behind the adapter boundary;
+- `@invokta/tooling` validates composed capabilities during development;
+- `@invokta/installer` configures supported MCP clients on a user's machine;
+- `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes
+  deployed endpoints.
 
 Invokta does not provide identity, model routing, an agent harness, a
 workflow engine, or a production observability platform. Custom engines inject
@@ -64,7 +68,11 @@ Start with the framework-neutral [Action Engines community
 definition](./docs/action-engines.md). The [documentation
 index](./docs/README.md) links Invokta's normative architecture, scope,
 acceptance criteria, ADRs, HTTP authentication guide, capability authorization
-guide, and explicit v0.1 scope matrix.
+guide, and explicit scope matrix.
 
 All public behavior is developed with runtime and type-level tests. Repository
 changes follow RED, GREEN, REFACTOR and use one cohesive commit per deliverable.
+
+## License
+
+Invokta is available under the [MIT License](./LICENSE).

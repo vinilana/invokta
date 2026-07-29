@@ -14,8 +14,8 @@ the direct API, CLI, MCP stdio, and stateless MCP HTTP:
 
 ## The framework has no workflow engine
 
-Version 0.1 deliberately excludes orchestration: no queue, scheduler, saga,
-retry policy, or step runner (`docs/v0.1-scope.md`, AE-LIMIT-01 and
+Invokta deliberately excludes orchestration: no queue, scheduler, saga,
+retry policy, or step runner (`docs/scope-and-limits.md`, AE-LIMIT-01 and
 AE-LIMIT-02). This example shows that a real workflow does not need one.
 
 - **Ordering is a domain rule.** `src/domain/workflow.ts` owns the stages and the

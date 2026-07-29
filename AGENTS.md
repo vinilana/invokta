@@ -11,5 +11,5 @@ release notes.
 - Read `docs/README.md` and the applicable ADRs before changing a public contract.
 - Follow RED, GREEN, REFACTOR for executable behavior.
 - Keep one validated, cohesive commit per deliverable.
-- Preserve the v0.1 scope limits; do not add speculative abstractions.
+- Preserve the documented scope limits; do not add speculative abstractions.
 - Keep CLI and MCP adapters on the single `engine.invoke` execution path.

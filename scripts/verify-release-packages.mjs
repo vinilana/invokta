@@ -124,6 +124,10 @@ try {
         .filter((path) => typeof path === "string"),
     );
 
+    if (!fileNames.has("LICENSE")) {
+      throw new Error(`${publicPackage.directory} tarball is missing LICENSE`);
+    }
+
     for (const requiredFile of publicPackage.requiredFiles) {
       if (!fileNames.has(requiredFile)) {
         throw new Error(
@@ -252,6 +256,16 @@ try {
     if (packageReport.name !== publicPackage.name) {
       throw new Error(
         `${publicPackage.directory} installed as ${packageReport.name}`,
+      );
+    }
+    if (packageReport.license !== "MIT") {
+      throw new Error(
+        `${publicPackage.directory} package does not declare the MIT license`,
+      );
+    }
+    if (packageReport.publishConfig?.access !== "public") {
+      throw new Error(
+        `${publicPackage.directory} package is not configured for public access`,
       );
     }
     return packageReport.name;

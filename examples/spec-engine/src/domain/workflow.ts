@@ -9,7 +9,7 @@ import type {
 export type WorkflowTransition = "plan" | "break-down" | "complete-task";
 
 /**
- * The spec-driven order is a domain rule, not a framework feature. Version 0.1
+ * The spec-driven order is a domain rule, not a framework feature. Invokta
  * has no workflow engine: each capability is one invocation, and these stage
  * guards are what keep the steps in order across processes and channels.
  */

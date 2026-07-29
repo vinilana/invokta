@@ -39,7 +39,7 @@ explicitly public `message` and `publicDetails` fields contain no secrets.
 
 `run` accepts exactly one input source: `--input <json>` or `--stdin`. Missing,
 duplicate, combined, trailing, and unknown arguments produce exit code `2`
-without invoking the engine. Version 0.1 reads stdin without a framework-owned
+without invoking the engine. The CLI reads stdin without a framework-owned
 size limit; hosts may inject a bounded reader when local input is not trusted.
 The default reader incrementally decodes byte chunks with fatal UTF-8 validation,
 while preserving multibyte code points split across byte chunks and surrogate

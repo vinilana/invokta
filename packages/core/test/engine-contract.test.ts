@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import {
+  type AccessRule,
   createEngine,
   defineCapability,
   EngineError,
-  type AccessRule,
-  type EngineEvent,
   type EngineErrorCode,
+  type EngineEvent,
   type EngineSchema,
   type ExecutionContext,
   type Principal,
@@ -90,7 +90,7 @@ function createEchoCapability(
   });
 }
 
-describe("the core v0.1 contract", () => {
+describe("the core public contract", () => {
   it("runs validation, authorization, execution, and output validation in order", async () => {
     const order: string[] = [];
     const orderedInput = z.object({

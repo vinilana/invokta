@@ -116,7 +116,7 @@ completes.
 
 ## Events
 
-**AE-OBS-01 — Single hook.** The only cross-cutting hook in v0.1 is `onEvent`,
+**AE-OBS-01 — Single hook.** The only cross-cutting hook is `onEvent`,
 with the events `invocation.started`, `invocation.completed`, and
 `invocation.failed`. The started event contains `requestId`, `capabilityId`,
 `source`, optional `principalId`, and ISO `startedAt`. The completed event contains
@@ -127,8 +127,8 @@ MUST NOT change the invocation result; the runtime MAY send a payload-free
 diagnostic to the configured logger. The runtime invokes the started hook and
 then exactly one terminal hook synchronously in pipeline order, but it observes
 any promise returned by a hook without awaiting it. Event delivery is therefore
-best-effort: a pending hook cannot block execution or result delivery, and v0.1
-provides no delivery-completion guarantee. Rejections from the hook and from an
+best-effort: a pending hook cannot block execution or result delivery, and the
+framework provides no delivery-completion guarantee. Rejections from the hook and from an
 asynchronous diagnostic logger are contained without producing an unhandled
 rejection. After successful output validation, the runtime MUST clear its
 capability timeout before invoking the completed hook.
@@ -146,7 +146,7 @@ exit code and does not terminate the process or mutate `process.exitCode`; the
 composition root owns that process-level decision. Errors are compact JSON with
 only `code`, `message`, and optional `publicDetails`. JSON is the default output
 format; trusted configuration may select deterministic, pretty-printed JSON as
-the human rendering of the same result. Version 0.1 does not impose a stdin size
+the human rendering of the same result. Invokta does not impose a stdin size
 limit; hosts that accept untrusted local input must bound the stream before it
 reaches the adapter.
 

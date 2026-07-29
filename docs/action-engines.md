@@ -1,6 +1,6 @@
 # Action Engines
 
-Community Definition 0.1
+Community definition
 
 ## Purpose
 
@@ -166,4 +166,4 @@ to be compatible with Invokta.
 Invokta's stricter versioned contracts and limits are documented separately in
 [Vision and invariants](./vision-and-invariants.md),
 [Architecture and contracts](./architecture.md), and
-[v0.1 scope and limits](./v0.1-scope.md).
+[scope and limits](./scope-and-limits.md).

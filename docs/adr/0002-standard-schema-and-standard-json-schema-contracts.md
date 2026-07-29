@@ -15,7 +15,7 @@ choice into a requirement for every consumer.
 Every executable schema accepted by the core will simultaneously conform to the
 Standard Schema and Standard JSON Schema contracts. Thus, the same declaration
 validates and transforms values at runtime and provides the JSON Schema
-representation consumed by the adapters. Version 0.1 will have no custom schema
+representation consumed by the adapters. The core has no custom schema
 converter or abstraction.
 
 Input and output will be required, JSON-serializable, and have an object as their

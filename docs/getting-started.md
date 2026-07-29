@@ -59,7 +59,7 @@ const createWelcomeMessage = defineCapability({
 
 export const engine = createEngine({
   name: "hello-engine",
-  version: "0.1.0",
+  version: "1.0.0",
   capabilities: {
     "onboarding.create-welcome-message": createWelcomeMessage,
   },
@@ -285,9 +285,9 @@ production values through your platform instead.
 `invokta-deploy init` from [`@invokta/deploy`](../packages/deploy/README.md)
 generates a complete loader as `src/env.ts`, along with the matching
 `.env.example`, and the deployment package it produces excludes every `.env*`
-file from the container build context. The full contract — file safety, bounds,
-and the stable startup failure messages — is in
-[engine environment file loading](./specs/engine-env-file-loading.md).
+file from the container build context. File safety, bounds, and stable startup
+failures are documented in the deployment package's
+[environment-file guide](../packages/deploy/README.md#environment-files).
 
 ## 7. Verify reuse rather than duplicate it
 
@@ -306,4 +306,4 @@ execution, output validation, errors, and events remain in the single runtime
 pipeline.
 
 Next, read the [capability authorization guide](./capability-authorization.md)
-and the [v0.1 scope matrix](./scope-matrix.md).
+and the [scope matrix](./scope-matrix.md).

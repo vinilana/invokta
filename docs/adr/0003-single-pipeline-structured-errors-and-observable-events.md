@@ -22,7 +22,7 @@ Every capability execution will pass through a single core pipeline, triggered b
 6. emit the success or failure event and return or throw.
 
 An adapter may decode a request before the pipeline and encode the response after
-it, but it must not skip or reimplement stages. Version 0.1 will have no
+it, but it must not skip or reimplement stages. Invokta has no
 before/after/onError policies, queue, concurrency, retry, or lifecycle.
 
 After a successful input transformation and lossless-JSON check, the core will
@@ -53,7 +53,7 @@ its cancellation listener, or reading its state or reason is always sanitized
 as `EXECUTION_FAILED`, even when the failure itself is an `EngineError`. A signal
 reason access failure is not classified as a genuine caller cancellation.
 Caller-controlled errors at these boundaries cannot select public codes,
-messages, or details. Version 0.1 accepts only a platform-branded `AbortSignal`
+messages, or details. Invokta accepts only a platform-branded `AbortSignal`
 from the supported runtime. The runtime rejects proxies without invoking traps,
 then validates the brand with the captured platform getter before any caller
 signal accessor or listener method runs. Structural, polyfilled, and proxy
@@ -74,7 +74,7 @@ payloads or credentials. Hook invocation will be synchronous and ordered as a
 started event followed by exactly one completed or failed event. A promise
 returned by a hook will be observed for rejection but will not be awaited, so a
 pending observability backend cannot delay capability execution, result delivery,
-or error delivery. Version 0.1 provides no event delivery-completion guarantee.
+or error delivery. Invokta provides no event delivery-completion guarantee.
 An asynchronous rejection from the diagnostic logger will also be observed and
 contained. The capability timeout ends after successful output validation,
 before the completed hook is invoked.
