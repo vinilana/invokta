@@ -24,6 +24,7 @@ These guides apply the normative contracts above. When a guide or example
 conflicts with a contract or ADR, the normative source takes precedence.
 
 - [Getting started: direct, CLI, MCP stdio, and MCP HTTP](./getting-started.md)
+- [File naming and project structure for custom engines](../apps/docs/src/content/docs/guides/file-naming.mdx)
 - [Integrating an identity provider at the HTTP boundary](./http-authentication.md)
 - [Integrating a PDP through a capability access rule](./capability-authorization.md)
 - [Authoring and composing community capabilities](./capability-composition.md)

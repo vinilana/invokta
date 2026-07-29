@@ -37,6 +37,7 @@ const requiredRoutes = [
   "/concepts/scope-and-limits/",
   "/guides/execution-channels/",
   "/guides/capability-packages/",
+  "/guides/file-naming/",
   "/guides/http-authentication/",
   "/guides/capability-authorization/",
   "/guides/deployment/",
@@ -298,6 +299,29 @@ test("the capability package guide covers authoring, publishing, and consuming",
   }
   assert.match(source, /package\.json/iu);
   assert.match(source, /CAPABILITY_COMPOSITION_INVALID/u);
+});
+
+test("the file naming guide defines engine-owned naming patterns", async () => {
+  const source = await readFile(
+    join(contentRoot, "guides", "file-naming.mdx"),
+    "utf8",
+  );
+
+  const requiredPatterns = [
+    "src/capabilities/<verb>-<object>.ts",
+    "src/domain/<concept>.ts",
+    "src/application/ports.ts",
+    "src/infrastructure/<provider>-<port-role>.ts",
+    "src/engine.ts",
+    "<subject>.test.ts",
+  ];
+
+  for (const pattern of requiredPatterns) {
+    assert.ok(source.includes(pattern), pattern);
+  }
+  assert.match(source, /kebab-case/iu);
+  assert.match(source, /service\.ts/iu);
+  assert.match(source, /does not (?:inspect|enforce)/iu);
 });
 
 test("recipes provide runnable commands, verification, and full examples", async () => {

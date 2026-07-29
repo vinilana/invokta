@@ -66,6 +66,7 @@ export default defineConfig({
           items: [
             { slug: "guides/execution-channels" },
             { slug: "guides/capability-packages" },
+            { slug: "guides/file-naming" },
             { slug: "guides/http-authentication" },
             { slug: "guides/capability-authorization" },
             { slug: "guides/deployment" },
