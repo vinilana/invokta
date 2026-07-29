@@ -25,6 +25,9 @@
     "dist"
   ],
   "exports": {},
+  "bin": {
+    "create-invokta-engine": "./dist/bin.js"
+  },
   "scripts": {
     "build": "tsc -b --pretty false",
     "prepack": "npm run --silent build"

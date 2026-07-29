@@ -1,4 +1,7 @@
-export type PackageManager = "npm" | "pnpm" | "yarn";
+import {
+  type PackageManager,
+  packageManagerCommands,
+} from "./package-manager.js";
 
 export interface StarterFile {
   /** Project-relative POSIX path. */
@@ -11,41 +14,6 @@ export interface CreateStarterFilesOptions {
   readonly invoktaVersion: string;
   readonly packageManager: PackageManager;
 }
-
-const packageManagerCommands = Object.freeze({
-  npm: Object.freeze({
-    check: "npm run check",
-    direct: "npm run direct -- Ada",
-    list: "npm run cli -- list",
-    run: 'npm run cli -- run onboarding.create-welcome-message --input \'{"name":"Ada"}\'',
-    stdio: "npm run mcp:stdio",
-  }),
-  pnpm: Object.freeze({
-    check: "pnpm run check",
-    direct: "pnpm run direct Ada",
-    list: "pnpm run cli list",
-    run: 'pnpm run cli run onboarding.create-welcome-message --input \'{"name":"Ada"}\'',
-    stdio: "pnpm run mcp:stdio",
-  }),
-  yarn: Object.freeze({
-    check: "yarn check",
-    direct: "yarn direct Ada",
-    list: "yarn cli list",
-    run: 'yarn cli run onboarding.create-welcome-message --input \'{"name":"Ada"}\'',
-    stdio: "yarn mcp:stdio",
-  }),
-} as const satisfies Readonly<
-  Record<
-    PackageManager,
-    Readonly<{
-      check: string;
-      direct: string;
-      list: string;
-      run: string;
-      stdio: string;
-    }>
-  >
->);
 
 function renderReadme(
   projectName: string,

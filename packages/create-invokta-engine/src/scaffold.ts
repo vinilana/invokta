@@ -10,11 +10,8 @@ import {
 import { basename, dirname, isAbsolute, join, resolve, win32 } from "node:path";
 
 import { CreatorError } from "./errors.js";
-import {
-  createStarterFiles,
-  type PackageManager,
-  type StarterFile,
-} from "./starter.js";
+import type { PackageManager } from "./package-manager.js";
+import { createStarterFiles, type StarterFile } from "./starter.js";
 
 export const creatorTargetLimits = Object.freeze({
   maxPathScalars: 1_024,
