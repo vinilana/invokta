@@ -28,6 +28,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [`support-harness`: private MCP consumer](../examples/support-harness/)
 - [`crawl-engine`: outbound provider integration with Firecrawl](../examples/crawl-engine/)
 - [`spec-engine`: spec-driven development workflow as domain rules](../examples/spec-engine/)
+- [`agent-session-engine`: durable cross-harness sessions and CLI-backed hooks](../examples/agent-session-engine/)
 - [`community-capabilities`: atomic and library capability publication fixture](../examples/community-capabilities/)
 - [`composed-engine`: local, atomic, and library capability composition](../examples/composed-engine/)
 

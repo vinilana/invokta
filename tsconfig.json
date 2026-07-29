@@ -10,6 +10,7 @@
     { "path": "./examples/community-capabilities" },
     { "path": "./examples/composed-engine" },
     { "path": "./examples/crawl-engine" },
+    { "path": "./examples/agent-session-engine" },
     { "path": "./examples/hello-engine" },
     { "path": "./examples/spec-engine" },
     { "path": "./examples/support-engine" },
