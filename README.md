@@ -39,7 +39,10 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
   that run before authorization;
 - [`spec-engine`](./examples/spec-engine/) for a spec-driven development
   workflow whose ordering, state, and per-step authorization live in the domain
-  rather than in a workflow engine.
+  rather than in a workflow engine;
+- [`review-engine`](./examples/review-engine/) for a fail-closed code review,
+  acceptance-eval, and adversarial-review gate that tells an agent whether a
+  task is ready to be declared complete.
 
 ## Documentation
 

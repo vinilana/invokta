@@ -11,9 +11,11 @@ For complete, runnable compositions, see
 onboarding path. The support example demonstrates injected ports and a domain
 authorization rule. Two further examples apply the same contracts to harder
 cases: [`crawl-engine`](../examples/crawl-engine/) integrates an external
-provider (Firecrawl) behind a port, and [`spec-engine`](../examples/spec-engine/)
+provider (Firecrawl) behind a port, [`spec-engine`](../examples/spec-engine/)
 runs a multi-step, spec-driven workflow using domain stage rules instead of a
-workflow engine.
+workflow engine, and [`review-engine`](../examples/review-engine/) applies
+code-review, acceptance-eval, and adversarial-review rules before an agent may
+declare a task complete.
 
 ## Prerequisites
 
