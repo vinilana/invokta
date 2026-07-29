@@ -61,6 +61,12 @@ accept actor, role, or login flags.
     my-engine run onboarding.create-welcome-message --input '{"name":"Ada"}'
     ```
   </TabItem>
+  <TabItem label="Run from stdin">
+    ```sh
+    printf '%s' '{"name":"Ada"}' | \
+      my-engine run onboarding.create-welcome-message --stdin
+    ```
+  </TabItem>
 </Tabs>
 
 Standard output contains only the requested JSON result. Diagnostics are written
@@ -89,6 +95,10 @@ node dist/mcp-stdio.js
 The adapter maps each capability to one MCP tool and propagates the request's
 cancellation signal. Standard output is reserved for protocol messages; send
 logs to standard error.
+
+The [MCP stdio consumer recipe](/recipes/mcp-stdio-consumer/) shows the other
+side of this boundary: an independent harness starts the engine, discovers its
+tools, invokes one capability, and shuts the child process down cleanly.
 
 ## MCP Streamable HTTP
 
@@ -119,6 +129,11 @@ principal. Sessions, resumption, and cross-request state are disabled.
   validates the request and returns a trusted `Principal`. The development mode
   supplies no identity and cannot invoke an `authenticated` capability.
 </Aside>
+
+Follow the [HTTP authentication guide](/guides/http-authentication/) before
+exposing the endpoint beyond loopback. It covers bearer verification,
+protected-resource metadata, Host and Origin checks, trusted proxy behavior,
+and authentication-hook limits.
 
 ## What stays consistent
 

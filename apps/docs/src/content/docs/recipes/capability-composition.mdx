@@ -9,6 +9,11 @@ Use composition when one engine should publish capabilities from its own package
 and from reusable packages. The consuming engine owns the final IDs, supplies all
 dependencies, and detects collisions before serving traffic.
 
+If you are publishing the reusable package first, read the
+[capability packages guide](/guides/capability-packages/) or start with the
+[atomic export](/recipes/atomic-capability-export/) and
+[capability library](/recipes/capability-library/) recipes.
+
 This recipe follows the `composed-engine` example. It combines one local
 capability, two atomic exports, and two selected capabilities from a library.
 
@@ -158,3 +163,6 @@ Read the complete
 [`composed-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/composed-engine)
 example for the export package, injected dependencies, inbound adapters, and
 collision tests.
+
+The [`@invokta/tooling` reference](/reference/tooling/) documents named exports,
+diagnostic boundaries, and every `check-capabilities` exit code.

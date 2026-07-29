@@ -70,3 +70,32 @@ serialize. `cause` and the stack stay inside the process.
 Errors thrown by hostile or malformed caller-controlled objects cannot select
 their own public code or message. Invokta replaces them with a sanitized boundary
 error and retains the original failure only as an internal cause.
+
+## Construction and composition failures
+
+The seven codes above describe invocation and introspection failures. Engine
+construction validates capability timeouts and JSON Schema documents
+synchronously and can throw `TypeError` before an engine exists.
+
+Capability composition has its own construction-time error:
+
+```ts
+class CapabilityCompositionError extends TypeError {
+  readonly code: "CAPABILITY_COMPOSITION_INVALID";
+  readonly issues: readonly CapabilityCompositionIssue[];
+}
+```
+
+Collected collisions, invalid atomic imports, unknown library IDs, and invalid
+selection/remap combinations use this error. Malformed descriptors or API
+arguments may throw plain `TypeError` before issues can be collected. Use
+`isCapabilityCompositionError` instead of relying only on `instanceof` across
+multiple installed copies of the package.
+
+## Cancellation is cooperative
+
+`CANCELLED` means the caller signal or capability timeout stopped the invocation
+boundary. Invokta propagates an `AbortSignal`; it does not roll back database,
+filesystem, provider, or other side effects already performed by the domain
+implementation. Capabilities that mutate external state still need their own
+idempotency, transaction, and compensation strategy.

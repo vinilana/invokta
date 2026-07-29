@@ -1,0 +1,187 @@
+---
+title: HTTP authentication
+description: Verify credentials at the MCP HTTP boundary and map them into a minimal trusted Principal.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+`@invokta/mcp` accepts a host-provided authentication hook. The hook verifies
+one HTTP request, converts valid identity into Invokta's minimal `Principal`, and
+returns it before the request reaches `engine.invoke`.
+
+Invokta acts as a Resource Server boundary. It does not issue or refresh tokens,
+perform login or consent, store users or sessions, or prescribe a JWT,
+introspection, or workload-identity provider.
+
+## Integrate a verifier
+
+<Steps>
+
+1. Define a host-owned verifier port
+
+   ```ts
+   interface VerifiedIdentity {
+     readonly subject: string;
+     readonly scopes: ReadonlyArray<string>;
+   }
+
+   interface AccessTokenVerifier {
+     verify(
+       token: string,
+       options: { readonly signal: AbortSignal },
+     ): Promise<VerifiedIdentity | null>;
+   }
+   ```
+
+   Implement this port with the identity SDK or service selected by your host.
+   Keep provider request and response types outside capability contracts.
+
+2. Parse the credential without logging it
+
+   ```ts
+   import type { McpHttpHeaderView } from "@invokta/mcp";
+
+   function readBearerToken(
+     headers: McpHttpHeaderView,
+   ): string | null {
+     const authorization = headers.get("authorization");
+     if (authorization === null) return null;
+
+     const match = /^Bearer ([^\s]+)$/.exec(authorization);
+     return match?.[1] ?? null;
+   }
+   ```
+
+   The adapter rejects duplicate raw Authorization headers before calling the
+   hook, so the verifier never chooses among ambiguous credentials.
+
+3. Map verified identity to a minimal Principal
+
+   ```ts
+   import type { Principal } from "@invokta/core";
+
+   function toPrincipal(
+     identity: VerifiedIdentity,
+   ): Principal {
+     return {
+       id: identity.subject,
+       attributes: {
+         scopes: identity.scopes,
+       },
+     };
+   }
+   ```
+
+   Include only verified values needed by domain authorization. Do not copy a
+   token, provider SDK object, or complete unreviewed claim set.
+
+4. Require authentication at server startup
+
+   ```ts
+   const server = await serveMcpHttp(engine, {
+     host: "0.0.0.0",
+     port: 3000,
+     allowedHosts: ["engine.example.com"],
+     allowedOrigins: ["https://console.example.com"],
+     auth: {
+       mode: "required",
+       async authenticate(request) {
+         const token = readBearerToken(request.headers);
+         if (token === null) return null;
+
+         const identity = await verifier.verify(token, {
+           signal: request.signal,
+         });
+         return identity === null
+           ? null
+           : toPrincipal(identity);
+       },
+       resourceMetadata: {
+         resource: "https://engine.example.com/mcp",
+         authorizationServers: [
+           "https://identity.example.com",
+         ],
+         scopesSupported: ["engine:invoke"],
+       },
+     },
+   });
+   ```
+
+</Steps>
+
+The hook returns a principal for valid credentials, `null` for missing,
+malformed, expired, revoked, or otherwise invalid credentials, and throws only
+when authentication infrastructure cannot complete the check.
+
+| Hook outcome | HTTP outcome | Reaches `engine.invoke` |
+| --- | --- | --- |
+| Valid `Principal` | MCP request continues | Yes |
+| `null` | `401` with Bearer challenge | No |
+| Malformed or uncloneable Principal | `401` | No |
+| Throw or rejection | Sanitized `500` | No |
+
+The adapter snapshots its authentication configuration before listening. It
+deep-clones every returned principal, requires a non-empty string `id`, and
+accepts `attributes` only as a structured-cloneable record.
+
+## Protected Resource Metadata
+
+When `resourceMetadata` is configured, the server publishes a well-known
+document and adds its discovery URL to the 401 Bearer challenge. For a resource
+ending in `/mcp`, the path is:
+
+```text
+/.well-known/oauth-protected-resource/mcp
+```
+
+The `resource` must be the exact `/mcp` URL over HTTPS. Loopback HTTP is allowed
+only for local development. It cannot contain credentials, a query, or a
+fragment. Authorization Server identifiers require HTTPS and may contain issuer
+paths, but no credentials, query, or fragment.
+
+The configured resource URL, not `Host` or a forwarded header, determines the
+metadata URL.
+
+## Configure Host, Origin, and proxies
+
+- The default bind address is `127.0.0.1`.
+- A non-loopback bind requires a non-empty exact `allowedHosts` list.
+- Forwarded-host headers are ignored.
+- Origin is optional for non-browser clients.
+- Every supplied Origin must match a configured normalized HTTP(S) origin.
+- Host and Origin rejection returns HTTP 403 before authentication.
+
+Configure public hostnames and browser origins at the composition root. TLS
+termination and reverse-proxy trust remain deployment responsibilities.
+
+<Aside type="caution" title="Authentication and authorization are different boundaries">
+  The hook proves who sent the HTTP request. The capability access rule still
+  decides whether that principal may perform the requested domain action. A
+  domain denial is `FORBIDDEN` inside an MCP tool result over HTTP 200, not an
+  HTTP 403.
+</Aside>
+
+## Bound and cancel verifier work
+
+The request supplies an `AbortSignal`; propagate it to the identity service.
+Apply a finite verifier timeout as part of the host integration. Invokta does
+not retry authentication and a capability's `timeoutMs` starts after
+authorization, so it does not bound this HTTP authentication hook.
+
+## Keep secrets out of public data
+
+- Never place raw credentials in `Principal`, capability input, URLs, events,
+  logs, or `EngineError.publicDetails`.
+- Do not log authentication headers or verifier requests.
+- Validate issuer, audience, signature, expiry, replay, and scopes according to
+  the host's security policy.
+- Inject credential-verification configuration through the deployment secret
+  mechanism.
+- Log only safe identifiers and coarse operational outcomes.
+
+Every accepted POST is independent and authenticates again. The adapter stores
+no identity session or cookie and provides no cross-request cancellation.
+
+For domain policy, continue with [capability authorization](/guides/capability-authorization/).
+For exact HTTP status and media contracts, use the
+[`@invokta/mcp` reference](/reference/mcp/).

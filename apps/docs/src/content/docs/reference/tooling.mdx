@@ -1,0 +1,170 @@
+---
+title: '@invokta/tooling'
+description: Command and API reference for validating composed capabilities during development and CI.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/tooling` is the development-time build gate for capability
+composition. It imports a built ESM module and confirms that the selected export
+is the tracked value returned by `composeCapabilities`.
+
+The package adds no runtime contract, adapter, or transport. It never invokes a
+capability or starts an engine.
+
+## Install
+
+Install it as a development dependency in an engine that imports capabilities:
+
+```sh
+yarn add --dev @invokta/tooling
+```
+
+The package is native ESM and requires Node.js 22.20.0 or later. It exposes the
+`invokta` binary and one package-root programmatic API.
+
+## Commands
+
+The package provides one command:
+
+```text
+invokta check-capabilities <esm-module> [--export <name>]
+```
+
+| Argument | Contract |
+| --- | --- |
+| `<esm-module>` | Exactly one non-empty path to an already-built ESM module, resolved from the current working directory |
+| `--export <name>` | Optional own module export to inspect; defaults to `capabilities` and may appear once |
+
+The module should contain composition only:
+
+```ts
+// src/capabilities.ts
+export const capabilities = composeCapabilities({
+  local,
+  imports,
+});
+```
+
+Build it, then run the check:
+
+```sh
+invokta check-capabilities ./dist/capabilities.js
+invokta check-capabilities ./dist/capabilities.js \
+  --export capabilities
+```
+
+The selected export must still carry the provenance created by
+`composeCapabilities`. A plain map or a map flattened with object spread is
+rejected because collisions may already have been overwritten.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The selected export is a valid tracked composition |
+| `1` | Composition failed; every detected issue is reported |
+| `2` | Usage, module loading, export selection, or untracked-map failure |
+
+The command writes diagnostics to standard error and nothing to standard output.
+A valid composition is silent.
+
+### Composition diagnostics
+
+Composition issues are deterministic. Collisions come first, sorted by
+effective ID; other issues remain in composition order. Author-controlled values
+are encoded as JSON string literals so an ID cannot create a forged diagnostic
+line.
+
+| Issue code | Meaning |
+| --- | --- |
+| `CAPABILITY_ID_COLLISION` | More than one declaration claims an effective ID |
+| `CAPABILITY_IMPORT_INVALID` | An atomic import did not receive an exported-capability descriptor |
+| `CAPABILITY_IMPORT_ID_NOT_FOUND` | `include` or `remap` names an unknown library ID |
+| `CAPABILITY_REMAP_NOT_SELECTED` | A remap key is excluded by `include` |
+
+Composition diagnostics contain effective IDs, default IDs, and declared source
+metadata. They exclude schemas, handlers, business input, dependency values, and
+credentials.
+
+<Aside type="caution" title="The checked module is trusted application code">
+  Importing the module executes its top-level code. The checker does not provide
+  a sandbox, timeout, cancellation, or resource limit. A module-loading failure
+  can include the thrown error name, string code, and message in CI diagnostics.
+  Keep the composition module side-effect-free and keep secrets out of thrown
+  messages.
+</Aside>
+
+## CI setup
+
+Add the gate after the engine build:
+
+```json
+{
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "check:capabilities":
+      "invokta check-capabilities ./dist/capabilities.js"
+  }
+}
+```
+
+```sh
+yarn build
+yarn check:capabilities
+```
+
+Run it for every engine that composes imported capabilities. Literal IDs also
+receive TypeScript diagnostics, but the built-module gate covers values widened
+or computed at runtime.
+
+## API
+
+The package root exports one function and its option types:
+
+```ts
+import {
+  checkCapabilities,
+  type CheckCapabilitiesIo,
+  type CheckCapabilitiesOptions,
+} from "@invokta/tooling";
+```
+
+```ts
+interface CheckCapabilitiesIo {
+  readonly writeStderr: (
+    text: string,
+  ) => void | Promise<void>;
+}
+
+interface CheckCapabilitiesOptions {
+  readonly argv?: readonly string[];
+  readonly cwd?: string;
+  readonly io?: Partial<CheckCapabilitiesIo>;
+}
+
+function checkCapabilities(
+  options?: CheckCapabilitiesOptions,
+): Promise<number>;
+```
+
+`argv` defaults to `process.argv.slice(2)`. `cwd` defaults to `process.cwd()` and
+controls path resolution. `io.writeStderr` replaces the diagnostic sink.
+
+```ts
+const exitCode = await checkCapabilities({
+  argv: [
+    "check-capabilities",
+    "./dist/capabilities.js",
+    "--export",
+    "capabilities",
+  ],
+  cwd: process.cwd(),
+});
+
+process.exitCode = exitCode;
+```
+
+The function returns the numeric exit code and never terminates the process.
+Read [Capability packages](/guides/capability-packages/) for the complete
+authoring and importing flow.

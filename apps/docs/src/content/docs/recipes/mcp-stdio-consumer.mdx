@@ -1,0 +1,140 @@
+---
+title: Consume an engine over MCP stdio
+description: Connect an independent harness with the official MCP client without importing Invokta runtime packages.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An MCP consumer does not need to import the engine, its capability definitions,
+or an Invokta package. It can launch the engine's stdio entry point with the
+official MCP client, discover tools, call one, and own its own conversation or
+workflow state.
+
+This recipe follows `support-harness`, a private one-shot consumer of
+`support.classify-ticket`.
+
+## Build the consumer
+
+<Steps>
+
+1. Depend on the official client SDK
+
+   ```json
+   {
+     "dependencies": {
+       "@modelcontextprotocol/sdk": "1.30.0"
+     }
+   }
+   ```
+
+   The harness does not depend on `@invokta/core` or `@invokta/mcp`. Those
+   packages belong to the server process.
+
+2. Create the client and stdio transport
+
+   ```ts
+   import { Client } from
+     "@modelcontextprotocol/sdk/client/index.js";
+   import { StdioClientTransport } from
+     "@modelcontextprotocol/sdk/client/stdio.js";
+
+   const transport = new StdioClientTransport({
+     command: process.execPath,
+     args: ["examples/support-engine/dist/mcp-stdio.js"],
+     stderr: "pipe",
+   });
+
+   const client = new Client(
+     { name: "support-harness", version: "0.1.0" },
+     { capabilities: {} },
+   );
+   ```
+
+3. Discover and require the expected tool
+
+   ```ts
+   await client.connect(transport);
+   const tools = await client.listTools();
+   const toolNames = tools.tools.map(({ name }) => name);
+
+   if (!toolNames.includes("support.classify-ticket")) {
+     throw new Error("Required support tool was not found.");
+   }
+   ```
+
+   Discovery keeps the consumer from assuming that a different engine version
+   publishes the required contract.
+
+4. Call the tool and read its structured result
+
+   ```ts
+   const result = await client.callTool({
+     name: "support.classify-ticket",
+     arguments: { ticketId: "T-123" },
+   });
+
+   if (result.isError === true) {
+     const first = result.content[0];
+     if (first?.type !== "text") {
+       throw new Error("The tool returned no safe error text.");
+     }
+     const safeError = JSON.parse(first.text);
+     throw new Error(
+       `${safeError.code}: ${safeError.message}`,
+     );
+   }
+
+   const classification = result.structuredContent;
+   ```
+
+   Production consumer code should validate content item types and the expected
+   structured result before using it. Parse only the safe text representation
+   when `isError` is true.
+
+5. Always close the client
+
+   ```ts
+   try {
+     await client.connect(transport);
+     // Discover and invoke tools.
+   } finally {
+     await client.close();
+   }
+   ```
+
+   Closing settles the child transport and lets the server observe stdin end,
+   abort active work, and clean up its listeners.
+
+</Steps>
+
+<Aside type="note" title="The harness owns orchestration">
+  The example maps one user request to one tool call and stops. A larger harness
+  may own messages, tool selection, iteration, and memory while the engine keeps
+  validation, authorization, execution, and public failures behind MCP.
+</Aside>
+
+## Run it
+
+Build both processes and classify the seeded ticket:
+
+```sh
+yarn workspace @invokta/example-support build
+yarn workspace @invokta/example-support-harness build
+node examples/support-harness/dist/main.js T-123
+```
+
+The JSON snapshot contains the discovered tool IDs, harness-owned messages, and
+one execution record with the validated classification result.
+
+## Verify it
+
+```sh
+yarn workspace @invokta/example-support-harness test
+yarn workspace @invokta/example-support-harness typecheck
+yarn workspace @invokta/example-support-harness build
+```
+
+Read the complete
+[`support-harness`](https://github.com/vinilana/ai-engines/tree/main/examples/support-harness)
+example for defensive result parsing, safe MCP errors, immutable snapshots, and
+the child-process test.

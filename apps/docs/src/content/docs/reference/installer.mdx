@@ -1,0 +1,130 @@
+---
+title: '@invokta/installer'
+description: Current command reference for the read-only local MCP client inventory.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/installer` is a standalone terminal application for local MCP client
+configuration work. In the current release, its executable provides a read-only
+inventory: it detects supported harnesses and configuration targets but does not
+read configuration contents or change files.
+
+<Aside type="caution" title="Current status: read-only inventory">
+  The bundled production registry is empty and the mutation coordinator is not
+  connected to the executable. The current command does not install, adopt,
+  enable, disable, update, or remove an MCP server. It does not provide backup or
+  rollback behavior. Those actions must not be inferred from the package name.
+</Aside>
+
+## Install
+
+Install the binary as a development dependency:
+
+```sh
+yarn add --dev @invokta/installer
+```
+
+The package is native ESM, requires Node.js 22.20.0 or later, and exposes no
+JavaScript import API. Its only public package surface is the
+`invokta-installer` binary.
+
+## Commands
+
+```text
+invokta-installer
+invokta-installer --help
+invokta-installer --version
+```
+
+`--help` and `--version` work without a terminal. The inventory itself requires
+both standard input and standard output to be attached to a TTY. `-h`, `-v`, and
+any other argument are invalid usage.
+
+From this repository, build and run it in a terminal:
+
+```sh
+yarn workspace @invokta/installer build
+node packages/installer/dist/cli.js
+```
+
+The session lets you select one detected target and inspect its executable
+evidence, configuration path evidence, and reload guidance. It finishes with a
+confirmation that no changes were made.
+
+### Exit behavior
+
+| Code | Current behavior |
+| --- | --- |
+| `0` | Help, version, or read-only inventory completed |
+| `2` | Invalid usage, no TTY, registry failure, or initialization failure |
+| `130` | The user cancelled an interactive prompt |
+
+Diagnostics use stable installer-specific codes and messages. They are not
+`EngineError` values and do not extend the seven capability invocation errors.
+
+## Supported inventory targets
+
+The inventory recognizes ten executable surfaces that map to nine configuration
+targets:
+
+| Target | Executable evidence | Default configuration path |
+| --- | --- | --- |
+| Antigravity | `agy` or `antigravity` | `~/.gemini/config/mcp_config.json` |
+| Claude Code | `claude` | `~/.claude.json` |
+| Codex | `codex` | `~/.codex/config.toml` |
+| Cursor | `cursor` or `cursor-agent` | `~/.cursor/mcp.json` |
+| Grok Build | `grok` | `~/.grok/config.toml` |
+| Hermes Agent | `hermes` | `~/.hermes/config.yaml` |
+| Kimi Code | `kimi` | `~/.kimi-code/mcp.json` |
+| OpenClaw | `openclaw` | Discovered below its supported home or state directory |
+| OpenCode v2 | `opencode2` | `~/.config/opencode/opencode.json` or `.jsonc` |
+
+Antigravity CLI and IDE share one target. Cursor's two executable names also
+share one target. When both OpenCode JSON and JSONC files exist, the evidence is
+ambiguous and fails closed.
+
+Several targets respect their own established home overrides, including
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, `HERMES_HOME`,
+`KIMI_CODE_HOME`, `OPENCODE_CONFIG_DIR`, `XDG_CONFIG_HOME`, and the supported
+OpenClaw path variables.
+
+## Public surface
+
+The package manifest deliberately exposes no programmatic API:
+
+```json
+{
+  "exports": {},
+  "bin": {
+    "invokta-installer": "./dist/cli.js"
+  }
+}
+```
+
+Registry parsers, target adapters, ownership planners, state transitions, locks,
+and file-system primitives are internal groundwork. They are tested, but they
+are not importable package contracts and are not connected into a public write
+workflow in the current executable.
+
+## Current safety boundary
+
+The inventory:
+
+- checks a finite catalog of executable names and user-home configuration paths;
+- uses file metadata and real paths instead of executing a detected command;
+- performs no network request, package loading, shell execution, or MCP call;
+- does not read or validate the contents of a harness configuration;
+- does not inspect arbitrary project-local configurations;
+- makes no file-system writes; and
+- fails closed when ownership or path evidence cannot be established safely.
+
+Executable presence does not validate a client version. Configuration-path
+evidence alone also does not authorize future file creation; installed harness
+evidence would be required by the internal planning model.
+
+<Aside type="note" title="Installer scope is separate from engine execution">
+  A configured client would later reach an engine through `@invokta/mcp` and the
+  normal `engine.invoke` path. The inventory does not execute capabilities and
+  is not part of the engine request path.
+</Aside>

@@ -1,119 +1,325 @@
 ---
 title: '@invokta/core'
-description: API reference for capabilities, engines, execution context, composition, errors, and events.
+description: Complete public API reference for capability contracts, engine execution, schemas, events, errors, and composition.
 ---
 
-`@invokta/core` contains the framework contract and runtime. It has no dependency
-on the CLI, MCP SDK, model SDKs, identity providers, or application frameworks.
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/core` contains the Action Engine contract and runtime. It has no CLI,
+MCP, HTTP, model SDK, identity SDK, provider adapter, or application framework
+dependency.
+
+## Install
+
+Install the core and a schema implementation compatible with both Standard
+Schema v1 and Standard JSON Schema v1:
+
+```sh
+yarn add @invokta/core zod
+```
+
+Zod 4 is used by the examples, but it is not part of the core contract. The
+package is native ESM and requires Node.js 22.20.0 or later.
+
+## API
+
+The package root exposes these public groups:
+
+| Group | Exports |
+| --- | --- |
+| Capability | `defineCapability`, `CapabilityDefinition`, `AnyCapability`, `CapabilityMap`, `CapabilityAnnotations`, `AccessRule` |
+| Engine | `createEngine`, `Engine`, `EngineDefinition`, `InvokeOptions`, `CapabilitySummary`, `CapabilityDescription` |
+| Schema | `EngineSchema`, `EngineJsonSchema`, `InferSchemaInput`, `InferSchemaOutput` |
+| Identity and context | `Principal`, `ExecutionContext`, `ExecutionSource`, `EngineLogger` |
+| Events | `EngineEvent` |
+| Invocation errors | `EngineError`, `EngineErrorCode` |
+| Composition values | `ExportedCapability`, `CapabilityLibrary`, `CapabilityImport`, `AnyCapabilityImport`, `ComposedCapabilities`, `CapabilitySource` |
+| Composition functions | `defineExportedCapability`, `defineCapabilityLibrary`, `importCapability`, `importCapabilities`, `composeCapabilities`, `isComposedCapabilities` |
+| Composition diagnostics | `CapabilityCompositionError`, `CapabilityCompositionIssue`, `CapabilityDeclarationProvenance`, `isCapabilityCompositionError` |
+
+Only the package root is exported. Internal schema, pipeline, and composition
+helpers are not public subpaths.
 
 ## `defineCapability`
 
-Preserves schema inference while declaring a capability.
-
 ```ts
-function defineCapability<InputSchema, OutputSchema>(
+function defineCapability<
+  InputSchema extends EngineSchema,
+  OutputSchema extends EngineSchema,
+>(
   definition: CapabilityDefinition<InputSchema, OutputSchema>,
 ): CapabilityDefinition<InputSchema, OutputSchema>;
 ```
 
-Required definition fields are `description`, `input`, `output`, `access`, and
-`run`. Optional fields are `title`, `timeoutMs`, and `annotations`.
+`defineCapability` preserves schema inference and returns the supplied
+definition. It does not register, validate, or execute the capability.
 
-`timeoutMs`, when present, must be an integer from `1` through `2_147_483_647`.
+```ts
+interface CapabilityDefinition<InputSchema, OutputSchema> {
+  readonly title?: string;
+  readonly description: string;
+  readonly input: InputSchema;
+  readonly output: OutputSchema;
+  readonly access: AccessRule<InferSchemaOutput<InputSchema>>;
+  readonly timeoutMs?: number;
+  readonly annotations?: CapabilityAnnotations;
+  readonly run: (args: {
+    readonly input: InferSchemaOutput<InputSchema>;
+    readonly context: ExecutionContext;
+  }) => Promise<InferSchemaInput<OutputSchema>>;
+}
+```
+
+The five required fields are `description`, `input`, `output`, `access`, and
+`run`. `timeoutMs` must be an integer from `1` through `2_147_483_647`. With no
+timeout, execution remains bounded only by caller cancellation and the
+capability's own dependencies.
+
+### Annotations
+
+```ts
+interface CapabilityAnnotations {
+  readonly readOnly?: boolean;
+  readonly destructive?: boolean;
+  readonly idempotent?: boolean;
+  readonly openWorld?: boolean;
+}
+```
+
+Annotations are copied metadata and map to MCP tool hints. The core does not
+enforce side effects, retries, rollback, idempotency, or network access from
+these values.
+
+## Schema contract
+
+```ts
+interface EngineSchema<Input = unknown, Output = Input> {
+  readonly "~standard":
+    StandardSchemaV1.Props<Input, Output> &
+    StandardJSONSchemaV1.Props<Input, Output>;
+}
+
+type InferSchemaInput<Schema extends EngineSchema> =
+  StandardSchemaV1.InferInput<Schema>;
+
+type InferSchemaOutput<Schema extends EngineSchema> =
+  StandardSchemaV1.InferOutput<Schema>;
+
+type EngineJsonSchema = Readonly<Record<string, unknown>>;
+```
+
+`invoke` accepts the input schema's input type. Validation may transform it;
+`access` and `run` receive the transformed output type. The handler returns the
+output schema's input type, and `invoke` resolves to its transformed output
+type.
+
+Both schemas must describe an object root. Their JSON Schema converters run
+synchronously during `createEngine`; generated documents are copied and frozen.
+Validated values must remain in Invokta's lossless JSON model: `null`, strings,
+booleans, finite numbers other than negative zero, dense arrays, and ordinary
+records containing the same values.
+
+Values such as `undefined`, bigint, symbols, functions, non-finite numbers,
+sparse arrays, accessors, proxies, custom prototypes, dynamic `toJSON` values,
+and cycles fail as `INPUT_INVALID` or `OUTPUT_INVALID` without exposing the
+rejected value.
 
 ## `createEngine`
 
-Captures capability contracts and returns the typed engine surface.
-
 ```ts
-const engine = createEngine({
-  name: "support-engine",
-  version: "1.0.0",
-  capabilities,
-  logger,
-  onEvent,
-});
+interface EngineDefinition<Capabilities extends CapabilityMap> {
+  readonly name: string;
+  readonly version: string;
+  readonly capabilities: Capabilities;
+  readonly logger?: EngineLogger;
+  readonly onEvent?: (
+    event: EngineEvent,
+  ) => void | Promise<void>;
+}
+
+function createEngine<Capabilities extends CapabilityMap>(
+  definition: EngineDefinition<Capabilities>,
+): Engine<Capabilities>;
 ```
 
-`name`, `version`, and `capabilities` are required. `logger` and `onEvent` are
-optional.
+Construction captures every capability's top-level contract once. It validates
+timeouts and JSON Schema documents synchronously, and copies annotations and
+schemas away from producer-owned objects. Later mutation of the original map or
+definition cannot alter the registered contract.
+
+Engine names, versions, and capability IDs are caller-owned strings. The core
+does not impose semantic-version parsing or a dotted-ID grammar; composition
+descriptors apply their own non-empty metadata and ID checks.
 
 ### `engine.invoke`
 
 ```ts
-await engine.invoke(capabilityId, input, {
-  requestId,
-  source,
-  principal,
-  signal,
-});
+invoke<CapabilityId extends keyof Capabilities>(
+  capabilityId: CapabilityId,
+  input: InferSchemaInput<Capabilities[CapabilityId]["input"]>,
+  options?: InvokeOptions,
+): Promise<
+  InferSchemaOutput<Capabilities[CapabilityId]["output"]>
+>;
 ```
 
-The capability ID controls the inferred input and output types. Options are
-optional; the default source is `direct` and the default principal is `null`.
+```ts
+interface InvokeOptions {
+  readonly requestId?: string;
+  readonly source?: ExecutionSource;
+  readonly principal?: Principal | null;
+  readonly signal?: AbortSignal;
+}
+```
+
+`requestId` defaults to a generated UUID, `source` defaults to `direct`, and
+`principal` defaults to `null`. `source` is one of `direct`, `cli`, `mcp-stdio`,
+or `mcp-http`.
+
+The optional signal must be a platform `AbortSignal`; structural substitutes
+and proxies are rejected safely. Caller cancellation and a capability timeout
+become `CANCELLED`. The timeout starts after authorization and covers handler
+execution plus asynchronous output validation.
+
+The pipeline validates input, snapshots it for the request, snapshots identity,
+applies `access`, executes `run`, and validates output. Authorization and
+execution receive independent input and principal snapshots.
 
 ### `engine.list`
 
 ```ts
-const summaries = engine.list();
+list(): ReadonlyArray<CapabilitySummary>;
 ```
 
-Returns frozen capability summaries containing IDs, descriptions, optional
-titles, and optional annotations.
+Returns fresh, deeply frozen summaries containing `id`, `description`, optional
+`title`, and optional annotations.
 
 ### `engine.describe`
 
 ```ts
-const description = engine.describe("support.classify-ticket");
+describe(capabilityId): CapabilityDescription;
 ```
 
-Returns the summary plus copied input/output JSON Schemas and an optional
-timeout. A missing capability throws `CAPABILITY_NOT_FOUND`.
+Adds frozen `inputSchema`, `outputSchema`, and optional `timeoutMs` to the
+summary. A missing ID throws `CAPABILITY_NOT_FOUND`.
 
-## `Principal`
+## Identity and access
 
 ```ts
 interface Principal {
   readonly id: string;
   readonly attributes?: Readonly<Record<string, unknown>>;
 }
+
+type AccessRule<Input> =
+  | "public"
+  | "authenticated"
+  | ((args: {
+      readonly principal: Principal | null;
+      readonly input: Input;
+      readonly context: ExecutionContext;
+      readonly capabilityId: string;
+    }) => boolean | Promise<boolean>);
 ```
 
-The `id` must be a non-empty string. Roles, scopes, tenant IDs, groups, and
-provider claims belong in `attributes` when an engine needs them.
+A non-null principal must be structured-cloneable, have a non-empty `id`, and
+use a record for `attributes`. Invalid identity fails as `UNAUTHENTICATED`
+before `access` or `run`.
 
-## `ExecutionContext`
+Function access permits execution only on `true`. A denial with no principal is
+`UNAUTHENTICATED`; a denial with a principal is `FORBIDDEN`. Identity comes from
+the trusted invocation or adapter boundary, not capability input.
+
+## Context, logging, and events
 
 ```ts
 interface ExecutionContext {
   readonly requestId: string;
-  readonly source: "direct" | "cli" | "mcp-stdio" | "mcp-http";
+  readonly source: ExecutionSource;
   readonly principal: Principal | null;
   readonly signal: AbortSignal;
   readonly logger: EngineLogger;
 }
 ```
 
-The context carries request state, not application dependencies. Inject model
-clients, repositories, and provider adapters through the capability factory.
+`EngineLogger` contains `debug`, `info`, `warn`, and `error`; every method takes
+a message plus optional read-only details. Context carries request state, not a
+dependency registry. Inject repositories, providers, and model clients through
+capability factories.
+
+`EngineEvent` is a union of:
+
+- `invocation.started`: request ID, capability ID, source, optional principal
+  ID, and ISO start time;
+- `invocation.completed`: request ID, capability ID, and duration; and
+- `invocation.failed`: request ID, capability ID, duration, and normalized error
+  code.
+
+The runtime calls started and exactly one terminal event in pipeline order.
+Event promises are observed but not awaited, and hook or diagnostic-logger
+failures do not replace the invocation result. Events are best-effort and carry
+no business payload or credential by default.
 
 ## Capability composition
 
-The core also exports composition helpers for atomic capabilities and capability
-libraries:
+```ts
+defineExportedCapability({ source, defaultId, capability });
+defineCapabilityLibrary({ name, version, capabilities });
+importCapability(exported, { as });
+importCapabilities(library, { include, remap });
+composeCapabilities({ local, imports });
+isComposedCapabilities(value);
+```
 
-- `defineExportedCapability`
-- `defineCapabilityLibrary`
-- `importCapability`
-- `importCapabilities`
-- `composeCapabilities`
-- `isComposedCapabilities`
+These functions publish atomic capabilities or libraries and combine them under
+effective engine IDs. Their generic return types are `ExportedCapability`,
+`CapabilityLibrary`, `CapabilityImport`, and `ComposedCapabilities`; the
+read-only `AnyCapabilityImport` type represents either import form.
 
-Composition tracks declaration provenance and reports every collision or invalid
-import in a `CapabilityCompositionError`. Use `@invokta/tooling` to enforce the
-same tracked composition in CI.
+Composition is eager and immutable. It adds no discovery, namespacing,
+precedence, or plugin lifecycle. Read [Capability packages](/guides/capability-packages/)
+for copy-ready signatures and all import variants.
 
-## Errors
+### Composition diagnostics
 
-`EngineError` and `EngineErrorCode` are exported from the core. See the complete
-[error taxonomy](/reference/errors/).
+Detected issues throw an immutable `CapabilityCompositionError`:
+
+```ts
+class CapabilityCompositionError extends TypeError {
+  readonly code: "CAPABILITY_COMPOSITION_INVALID";
+  readonly issues: readonly CapabilityCompositionIssue[];
+}
+```
+
+| Issue | Meaning |
+| --- | --- |
+| `CAPABILITY_ID_COLLISION` | Several local, atomic, or library declarations claim one effective ID |
+| `CAPABILITY_IMPORT_INVALID` | An atomic import received no exported-capability descriptor |
+| `CAPABILITY_IMPORT_ID_NOT_FOUND` | A library selection or remap names an unknown default ID |
+| `CAPABILITY_REMAP_NOT_SELECTED` | A remap key was excluded by `include` |
+
+`CapabilityDeclarationProvenance` identifies a declaration as local, atomic, or
+library with only IDs and declared source metadata. Malformed descriptors or API
+arguments may throw plain `TypeError` before issue collection.
+
+Use `isCapabilityCompositionError(error)` rather than `instanceof` when two
+installed copies of the core may exist. It recognizes the stable code and issue
+shape. Use `isComposedCapabilities(value)` to confirm a map retains composition
+provenance.
+
+## Invocation errors
+
+`EngineError` contains `code`, `message`, optional `publicDetails`, and optional
+internal `cause`. See the complete [error taxonomy](/reference/errors/).
+
+Construction `TypeError`s and `CapabilityCompositionError` happen before an
+invocation and emit no invocation event. Invokta has no automatic retry or
+rollback policy, and cancellation remains cooperative: downstream dependencies
+must observe `context.signal`.
+
+<Aside type="note" title="Intentional limits">
+  The core has no queue, concurrency controller, service container, model
+  router, lifecycle manager, cache, retry policy, or default timeout. Read
+  [scope and limits](/concepts/scope-and-limits/) before adding engine-local
+  behavior around the runtime.
+</Aside>

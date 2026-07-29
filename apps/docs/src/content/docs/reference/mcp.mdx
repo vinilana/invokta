@@ -1,29 +1,80 @@
 ---
 title: '@invokta/mcp'
-description: API reference for Invokta MCP stdio and stateless Streamable HTTP adapters.
+description: Complete API and protocol reference for MCP tools over stdio and stateless Streamable HTTP.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-`@invokta/mcp` maps every capability to one MCP tool. It contains the official MCP
-SDK so SDK types and transport details do not enter `@invokta/core`.
+`@invokta/mcp` maps every engine capability to one MCP tool and keeps the
+official MCP SDK behind the adapter boundary. Every tool call executes through
+`engine.invoke`.
+
+The compatibility baseline is MCP `2025-11-25`; the approved TypeScript SDK is
+pinned to `1.30.0` in the package manifest.
+
+## Install
+
+```sh
+yarn add @invokta/mcp
+```
+
+The package is native ESM and requires Node.js 22.20.0 or later. SDK and
+transport types are not part of its public API.
+
+## API
+
+The package root exports:
+
+- `serveMcpStdio` and `ServeMcpStdioOptions`;
+- `serveMcpHttp` and `ServeMcpHttpOptions`;
+- `McpHttpAuthOptions`;
+- `McpHttpAuthenticationRequest` and `McpHttpHeaderView`;
+- `McpHttpProtectedResourceMetadata`; and
+- `McpHttpServerAddress` and `McpHttpServerHandle`.
 
 ## Tool mapping
 
-| Capability field | MCP tool field |
+| Capability | MCP tool |
 | --- | --- |
-| Engine map key | Tool name |
-| `title` | Tool title |
-| `description` | Tool description |
+| Engine map key | `name` |
+| `title` | `title` |
+| `description` | `description` |
 | Input JSON Schema | `inputSchema` |
 | Output JSON Schema | `outputSchema` |
-| `annotations` | Tool annotations |
+| `readOnly` | `readOnlyHint` |
+| `destructive` | `destructiveHint` |
+| `idempotent` | `idempotentHint` |
+| `openWorld` | `openWorldHint` |
 
-A successful call returns the validated result as `structuredContent` plus a JSON
-text fallback. Capability failures return `isError: true` with a sanitized public
-error.
+Engine name and version become the MCP server identity. Omitted tool arguments
+default to `{}` before input validation.
+
+A successful call returns the validated result as `structuredContent` plus a
+JSON text fallback. Invocation failures return `isError: true` with one safe JSON
+text error and no `structuredContent`. Unsafe or unknown errors fall back to:
+
+```json
+{"code":"EXECUTION_FAILED","message":"Capability execution failed."}
+```
+
+An unknown tool is a protocol `InvalidParams` error rather than an invocation
+`CAPABILITY_NOT_FOUND`. Valid request IDs such as numeric `0` and the empty
+string retain their wire identity, and cancellation reaches only its matching
+request.
 
 ## `serveMcpStdio`
+
+```ts
+interface ServeMcpStdioOptions {
+  readonly principal?: Principal | null;
+  readonly maxReadBufferBytes?: number;
+}
+
+function serveMcpStdio<Capabilities extends CapabilityMap>(
+  engine: Engine<Capabilities>,
+  options?: ServeMcpStdioOptions,
+): Promise<void>;
+```
 
 ```ts
 await serveMcpStdio(engine, {
@@ -32,14 +83,40 @@ await serveMcpStdio(engine, {
 });
 ```
 
-Both options are optional. The principal defaults to `null`; the read buffer
-defaults to 10 MiB. The host process owns the local identity and must keep
-standard output exclusive to MCP messages.
+The principal defaults to `null`. The read buffer defaults to 10,485,760 bytes
+and must be a positive safe integer. A message that keeps the buffer at the
+limit is accepted; crossing it closes the transport, aborts active requests,
+removes stream listeners, and rejects the promise.
 
-Closing client input closes the transport and aborts active request signals. A
-read-buffer overflow closes the connection and rejects `serveMcpStdio`.
+`serveMcpStdio` remains pending for the protocol connection lifetime. Clean
+stdin end or close shuts down the server and aborts active requests. A broken
+stdout pipe is treated as a normal client disconnect; another output failure is
+reported. Standard output is reserved for protocol messages, so diagnostics
+belong on standard error.
+
+<Aside type="caution" title="Supervise stdio processes">
+  On POSIX, teardown settles pending pipe writes. On Windows, a peer that stops
+  reading stdout can block the process synchronously. MCP hosts must continuously
+  drain stdout and supervise a stalled child process.
+</Aside>
 
 ## `serveMcpHttp`
+
+```ts
+interface ServeMcpHttpOptions {
+  readonly host?: string;
+  readonly port?: number;
+  readonly allowedHosts?: ReadonlyArray<string>;
+  readonly allowedOrigins?: ReadonlyArray<string>;
+  readonly maxRequestBodyBytes?: number;
+  readonly auth: McpHttpAuthOptions;
+}
+
+interface McpHttpServerHandle {
+  address(): { readonly host: string; readonly port: number };
+  close(): Promise<void>;
+}
+```
 
 ```ts
 const server = await serveMcpHttp(engine, {
@@ -50,45 +127,94 @@ const server = await serveMcpHttp(engine, {
   maxRequestBodyBytes: 1024 * 1024,
   auth: {
     mode: "required",
-    async authenticate(request) {
-      return authenticateBearerRequest(request.headers);
-    },
+    authenticate,
   },
 });
 ```
 
-`auth` is required. The server defaults to `127.0.0.1:3000`, exposes the canonical
-`POST /mcp` endpoint, and applies a 1 MiB request-body limit by default.
+Defaults are `127.0.0.1`, port `3000`, and a 1,048,576-byte body limit. Use port
+`0` in tests to let the operating system select an available port, then read it
+with `server.address()`. The address is the listener address, not a public URL.
 
-The returned handle exposes:
+`server.close()` is idempotent, shares concurrent close calls, aborts active
+request signals, and closes their connections.
+
+### Stateless profile
+
+Each accepted POST creates a fresh MCP server and transport. The adapter has no
+session ID, resumption, event store, server-to-client SSE, cross-request
+cancellation, resources, prompts, sampling, elicitation, or tasks.
+
+The sole protocol endpoint is the exact canonical `POST /mcp`. When Protected
+Resource Metadata is configured, its generated well-known GET route is the only
+non-protocol route. Dot segments, percent-encoded aliases, queries, fragments,
+absolute-form targets, and batches never reach protocol dispatch.
+
+### HTTP request boundary
+
+Checks occur before capability execution:
+
+1. exactly one raw `Host` header and an allowed host;
+2. an optional but valid and allowed `Origin`;
+3. canonical route, supported method, and declared body size;
+4. exactly one unambiguous Authorization value for protected requests;
+5. authentication and principal snapshotting;
+6. exact JSON content type, required accepted response media, streamed body
+   bound, strict UTF-8, and one JSON-RPC message; and
+7. MCP dispatch to `engine.invoke`.
+
+A non-loopback bind requires a non-empty `allowedHosts` list. Forwarded-host
+headers are ignored. An absent Origin is allowed for non-browser clients; any
+present Origin must match a configured normalized HTTP(S) origin exactly,
+including scheme and any non-default port.
+
+`Accept` must include both `application/json` and `text/event-stream` with
+positive quality. One raw `Content-Type` header must identify
+`application/json`. The body-size boundary is inclusive, and decoding is strict
+incremental UTF-8.
+
+| Status | Boundary meaning |
+| --- | --- |
+| `200` | MCP response, including capability `FORBIDDEN` as a tool error |
+| `202` | Accepted notification with no protocol result body |
+| `400` | Invalid target/header ambiguity, JSON parsing, or top-level batch |
+| `401` | Missing/invalid credentials or malformed returned Principal |
+| `403` | Rejected Host or Origin |
+| `404` | Unknown route |
+| `405` | Unsupported method |
+| `406` | Required response media types not accepted |
+| `413` | Declared or streamed body crossed the configured limit |
+| `415` | Missing, duplicated, or unsupported content type |
+| `500` | Authentication infrastructure or internal boundary failure |
+
+## HTTP authentication
 
 ```ts
-server.address(); // { host, port }
-await server.close();
+type McpHttpAuthOptions =
+  | {
+      readonly mode: "required";
+      readonly authenticate: (
+        request: McpHttpAuthenticationRequest,
+      ) => Principal | null | Promise<Principal | null>;
+      readonly resourceMetadata?:
+        McpHttpProtectedResourceMetadata;
+    }
+  | {
+      readonly mode:
+        "dangerously-disabled-for-development";
+    };
 ```
 
-## Authentication modes
+The authentication request contains normalized `path`, `method`, a read-only
+header view, and a cancellation signal. Returning a principal authenticates the
+request; returning `null` produces 401; throwing produces a sanitized 500. The
+adapter validates and deep-snapshots the principal before `engine.invoke`.
 
-### Required
+Domain authorization stays in the capability access rule. Read the
+[HTTP authentication guide](/guides/http-authentication/) for verifier mapping,
+Protected Resource Metadata, proxy boundaries, and secret handling.
 
-```ts
-auth: {
-  mode: "required",
-  authenticate(request) {
-    // Return a trusted Principal or null.
-  },
-  resourceMetadata: {
-    resource: "https://engine.example/mcp",
-    authorizationServers: ["https://identity.example"],
-    scopesSupported: ["engine:invoke"],
-  },
-}
-```
-
-Authentication runs after Host, Origin, route, method, and declared body-size
-checks, but before the request reaches `engine.invoke`.
-
-### Development only
+### Development mode
 
 ```ts
 auth: {
@@ -96,19 +222,17 @@ auth: {
 }
 ```
 
-<Aside type="danger" title="Keep this mode on loopback">
-  The development mode provides no authentication and no principal. Do not use it
-  on a shared interface or production deployment.
-</Aside>
+This mode supplies `principal = null`. Keep it on an isolated loopback process;
+authenticated capabilities remain closed. It is not a production authentication
+strategy.
 
-## HTTP boundary
+## Host responsibilities and limits
 
-- Only the exact `/mcp` request target is accepted.
-- Every protocol request is stateless.
-- Host is required and validated before authentication.
-- Origin is optional, but a supplied value must match `allowedOrigins` exactly.
-- Forwarded-host headers are ignored.
-- Capability authorization failures remain MCP tool errors inside HTTP 200.
+The adapter provides no TLS termination, proxy-trust policy, rate limit,
+concurrency limit, authentication retry, or verifier timeout. The host and
+deployment own those controls. Verifiers and capability dependencies must
+observe their request signals and apply their own finite outbound deadlines.
 
-See the [execution channels guide](/guides/execution-channels/) for complete
-composition roots.
+See [execution channels](/guides/execution-channels/) for composition roots and
+[scope and limits](/concepts/scope-and-limits/) for the complete framework
+boundary.

@@ -1,0 +1,173 @@
+---
+title: Capability authorization
+description: Call a policy decision point from a capability access rule and fail closed before execution.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Authentication establishes a trusted `Principal`. Authorization decides whether
+that principal may execute one capability for its validated domain input.
+
+Authorization belongs in the capability access rule, so direct, CLI, MCP stdio,
+and MCP HTTP calls enforce the same decision before `run`.
+
+## Integrate a policy decision point
+
+<Steps>
+
+1. Define a provider-neutral engine port
+
+   ```ts
+   interface AuthorizationDecisionPoint {
+     isAllowed(
+       request: {
+         readonly subject: {
+           readonly id: string;
+           readonly attributes?:
+             Readonly<Record<string, unknown>>;
+         };
+         readonly action: string;
+         readonly resource: {
+           readonly type: "support-ticket";
+           readonly id: string;
+         };
+       },
+       options: { readonly signal: AbortSignal },
+     ): Promise<boolean>;
+   }
+   ```
+
+   This interface belongs to the custom engine. Its implementation may call any
+   policy service or apply local domain rules.
+
+2. Build a fail-closed access rule
+
+   ```ts
+   import type { AccessRule } from "@invokta/core";
+
+   function canClassifyTicket(
+     pdp: AuthorizationDecisionPoint,
+   ): AccessRule<{ ticketId: string }> {
+     return async ({
+       principal,
+       input,
+       context,
+       capabilityId,
+     }) => {
+       if (principal === null) return false;
+
+       try {
+         const allowed = await pdp.isAllowed(
+           {
+             subject: {
+               id: principal.id,
+               ...(principal.attributes === undefined
+                 ? {}
+                 : { attributes: principal.attributes }),
+             },
+             action: capabilityId,
+             resource: {
+               type: "support-ticket",
+               id: input.ticketId,
+             },
+           },
+           { signal: context.signal },
+         );
+         return allowed === true;
+       } catch {
+         context.logger.warn(
+           "Authorization decision was unavailable.",
+           {
+             requestId: context.requestId,
+             capabilityId,
+           },
+         );
+         return false;
+       }
+     };
+   }
+   ```
+
+   Return `true` only for an explicit allow decision. Convert an unavailable,
+   timed-out, or malformed policy response into denial when the domain is
+   fail-closed.
+
+3. Inject the access rule through the capability factory
+
+   ```ts
+   export function createClassifyTicket(
+     pdp: AuthorizationDecisionPoint,
+   ) {
+     return defineCapability({
+       description: "Classify a support ticket.",
+       input: z.object({ ticketId: z.string().min(1) }),
+       output: z.object({ category: z.string() }),
+       access: canClassifyTicket(pdp),
+       async run({ input }) {
+         return {
+           category: classifyByDomainRules(input.ticketId),
+         };
+       },
+     });
+   }
+   ```
+
+   Wire the PDP implementation at the composition root. No framework container,
+   policy registry, or service locator is needed.
+
+</Steps>
+
+## Denial and failure behavior
+
+| Rule outcome | Principal | Engine result | Calls `run` |
+| --- | --- | --- | --- |
+| `true` | Present or absent, according to domain policy | Continue | Yes |
+| `false` | `null` | `UNAUTHENTICATED` | No |
+| `false` | Present | `FORBIDDEN` | No |
+| Throws | Any | `EXECUTION_FAILED` | No |
+
+An explicit denial communicates policy. A thrown access rule is still safe in
+that execution does not continue, but it becomes an infrastructure failure
+rather than a deliberate authorization result.
+
+The capability timeout starts after access enforcement. Configure a finite PDP
+client timeout and propagate `context.signal`; do not assume the capability's
+`timeoutMs` bounds authorization I/O.
+
+## Shape identity for the domain
+
+`Principal` standardizes only a non-empty `id` and optional record attributes.
+Map verified roles, scopes, tenant IDs, groups, or relationships into the
+minimal values the domain rule needs.
+
+Capability input cannot choose or replace identity. A field named `actor`,
+`role`, or `principal` remains ordinary caller-controlled data.
+
+Input and identity passed to `access` are request-owned snapshots. `run`
+receives independent snapshots, so caller or policy mutations cannot change
+what execution observes.
+
+<Aside type="caution" title="Keep policy internals private">
+  Do not expose policy documents, relationship graphs, provider responses,
+  credentials, or internal denial reasons through `publicDetails`. Safe logs may
+  contain the request ID, capability ID, and a coarse outcome.
+</Aside>
+
+## Test the boundary
+
+Create the capability with a fake PDP, build the engine, and invoke it directly.
+Cover these cases:
+
+1. validated input and the trusted principal reach the PDP;
+2. explicit allow calls `run` once;
+3. deny and absent identity never call `run`;
+4. PDP timeout, failure, and malformed output fail closed; and
+5. errors are `UNAUTHENTICATED`, `FORBIDDEN`, or a sanitized failure as
+   intended.
+
+Adapter tests then prove only that the boundary supplies the expected principal
+and calls `engine.invoke`; they do not duplicate domain policy.
+
+For a local attribute implementation, use the
+[domain authorization recipe](/recipes/domain-authorization/). For HTTP
+identity, start with [HTTP authentication](/guides/http-authentication/).

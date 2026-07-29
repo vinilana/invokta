@@ -91,7 +91,8 @@ and delivery adapters:
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure
   stateless HTTP while keeping the official MCP SDK behind the adapter boundary;
 - `@invokta/tooling` validates composed capabilities during development;
-- `@invokta/installer` configures supported MCP clients on a user's machine;
+- `@invokta/installer` currently provides a read-only inventory of supported
+  local MCP client targets without changing their configuration;
 - `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes
   deployed endpoints.
 
@@ -133,7 +134,13 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
   Antigravity, Claude Code, and Codex;
 - [`review-engine`](./examples/review-engine/) for a fail-closed code review,
   acceptance-eval, and adversarial-review gate that tells an agent whether a
-  task is ready to be declared complete.
+  task is ready to be declared complete;
+- [`observability-engine`](./examples/observability-engine/) for bounded incident
+  context normalized from Sentry, Datadog, and New Relic;
+- [`community-capabilities`](./examples/community-capabilities/) for atomic and
+  library capability publication forms; and
+- [`composed-engine`](./examples/composed-engine/) for combining local, atomic,
+  and library capabilities under deliberate effective IDs.
 
 ## Documentation
 

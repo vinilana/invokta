@@ -1,59 +1,97 @@
 ---
 title: Action Engines
-description: Understand the architectural category that Invokta implements.
+description: Understand the framework-neutral architectural category that Invokta implements.
 ---
 
 import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 An **Action Engine** is a versioned software component that publishes reusable,
-AI-supported domain capabilities through stable contracts. Models, prompts, data,
-retrieval, and tools remain replaceable implementation details.
+AI-supported domain actions through stable contracts. Models, prompts, data,
+retrieval, tools, and deterministic algorithms remain replaceable implementation
+details.
 
-Invokta is a framework for building Action Engines. It supplies the contracts,
-runtime, and adapters. Your engine supplies the domain language and business
-behavior.
+The category is framework-neutral. An Action Engine does not need Invokta,
+TypeScript, MCP, or any particular deployment model. Invokta is one framework
+for implementing the boundary.
+
+## You may already be building one
+
+A tool that creates a reviewed specification, retrieves relevant project
+context, recommends the next safe workflow step, classifies a support ticket, or
+assesses whether a code change is ready already contains a domain action.
+
+The MCP endpoint, command, HTTP route, or direct API is a delivery path. The
+durable value is the requested outcome and the rules that produce it. Naming the
+Action Engine boundary makes that outcome independently reusable, testable,
+owned, and versioned.
+
+## Why the boundary matters
+
+AI can make the first transport integration quick to create, but the team still
+owns authentication, schema compatibility, cancellation, error mapping,
+protocol upgrades, tests, and observability. A second interface often exposes
+assumptions shaped around the first transport.
+
+One Action Engine keeps the domain contract and behavior behind every consumer.
+For example, `support.classify-ticket` can validate the same request, apply the
+same access rule, and return the same result for an agent, graph node,
+application, CLI command, or MCP tool.
+
+<CardGrid>
+  <Card title="Reusable" icon="refresh">
+    Independent consumers call the same domain implementation through their
+    preferred interface.
+  </Card>
+  <Card title="Testable" icon="approve-check">
+    Exercise the action and its failures without starting a complete agent or
+    workflow.
+  </Card>
+  <Card title="Replaceable inside" icon="puzzle">
+    Change a model, prompt, provider, retrieval strategy, or deterministic rule
+    behind the stable contract.
+  </Card>
+  <Card title="Owned" icon="document">
+    Give the action an explicit version and one place to review access, limits,
+    public failures, and compatibility.
+  </Card>
+</CardGrid>
 
 ## What qualifies as an Action Engine
 
 An implementation qualifies when it:
 
-1. publishes at least one domain-oriented operation;
-2. validates its input and output at runtime;
-3. hides the AI implementation behind that contract;
-4. reuses the same operation through more than one execution channel; and
-5. has a clear unit of ownership and versioning.
+1. publishes a named domain outcome such as `review.assess-task-readiness`;
+2. exposes machine-readable input, output, and failure contracts;
+3. validates the contract at the execution boundary;
+4. encapsulates models, prompts, data, tools, and deterministic implementation;
+5. remains independent of one agent, harness, workflow, or interface;
+6. reuses the same domain behavior across consumers or channels; and
+7. has a clear ownership and versioning boundary.
 
-An operation such as `support.classify-ticket` describes a domain outcome. An
-operation such as `llm.complete` exposes infrastructure and leaves every consumer
-responsible for the business contract.
+An infrastructure operation such as `llm.complete` does not provide a domain
+outcome by itself. A one-off model call usually does not need an engine until
+reuse, independent ownership, or contract stability becomes useful.
 
-## Keep the responsibilities separate
+## Keep adjacent responsibilities distinct
 
-<CardGrid>
-  <Card title="Action Engine" icon="puzzle">
-    Publishes reusable domain capabilities governed by runtime contracts.
-  </Card>
-  <Card title="Harness" icon="setting">
-    Manages an agent's messages, tools, memory, environment, and execution.
-  </Card>
-  <Card title="Loop" icon="refresh">
-    Chooses the next step, repeats work, and decides when a goal is complete.
-  </Card>
-  <Card title="Invokta" icon="rocket">
-    Provides the capability contract, invocation pipeline, and CLI/MCP adapters.
-  </Card>
-</CardGrid>
+| Component | What it owns | How it relates to an Action Engine |
+| --- | --- | --- |
+| Prompt or skill | Instructions, context, knowledge, and usage guidance | Helps implement or select an action |
+| Rule | A constraint, permission, transformation, or deterministic decision | Governs action selection, access, or domain behavior |
+| Loop or graph | The next step, repetition, branches, dependencies, and stopping | Coordinates contracted actions |
+| Agent or harness | Goals, tool selection, messages, memory, and execution environment | Consumes or hosts access to actions |
+| Action Engine | The reusable domain outcome and its runtime contract | Owns validation, access, execution, and public failures |
+| Invokta | Framework contracts, runtime, and adapters | Provides one implementation of the Action Engine boundary |
 
-A product can contain all four responsibilities, but the Invokta core does not
-couple them. That boundary keeps an engine usable from a test, a command, an MCP
-client, or another application.
+A product can combine these components, but each responsibility can evolve
+without duplicating the domain action.
 
 ## Stable outside, replaceable inside
 
-Suppose `support.classify-ticket` accepts a ticket ID and returns a queue,
-priority, and explanation. Its implementation can move from one model provider
-to another, add retrieval, or replace a prompt with deterministic rules. The
-consumer continues to send and receive the same validated objects.
+Suppose `support.classify-ticket` accepts a ticket ID and returns a category,
+confidence, and rationale. Its implementation can move to another model, add
+retrieval, or use deterministic rules. Consumers continue to send and receive
+the same validated objects.
 
 <Aside type="note" title="Version the contract deliberately">
   Changing a provider is usually internal. Removing an output field or changing
@@ -61,4 +99,7 @@ consumer continues to send and receive the same validated objects.
   compatibility decision.
 </Aside>
 
-Continue with the [capability contract](/concepts/capabilities/).
+Invokta supplies the shared runtime mechanics and adapters while engine authors
+retain their domain rules, prompts, models, data integrations, evaluations, and
+quality decisions. See [complete example engines](/examples/) or continue with
+the [capability contract](/concepts/capabilities/).

@@ -1,0 +1,84 @@
+---
+title: Scope and limits
+description: Separate Invokta runtime guarantees from custom-engine and deployment responsibilities.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Invokta provides a compact capability runtime and a small set of adapters and
+development tools. The engine author owns the domain action and its quality; the
+host owns identity and deployment controls.
+
+## Responsibility matrix
+
+| Concern | Invokta provides | Your engine or host owns |
+| --- | --- | --- |
+| Domain API | Capability definition, composition, invocation, listing, and description | Domain names, compatible contracts, semantics, and versioning |
+| Schemas | Standard Schema and Standard JSON Schema integration; input/output validation | Schema library and domain constraints |
+| Dependencies | Factory and closure-friendly contracts | Ports, provider adapters, lifecycle, and composition |
+| CLI | `list`, `describe`, `run`, JSON I/O, stable exit classes | Executable, trusted local principal, and untrusted-input bounds |
+| MCP | Tool mapping over stdio and stateless HTTP | Process composition, network exposure, and deployment |
+| Authentication | Required HTTP hook and optional protected-resource metadata | Credential verifier, identity provider, token policy, and verifier timeout |
+| Authorization | Enforcement of each capability's `access` rule | Roles, scopes, tenants, PDP integration, and domain policy |
+| Observability | Payload-free `onEvent` lifecycle hook and logger | Metrics, tracing, storage, alerts, costs, and domain measurements |
+| AI behavior | Replaceable implementation boundary | Prompts, models, retrieval, tools, evidence, evaluations, and review |
+| Supporting tools | Composition checker, read-only client inventory, deployment artifact generator | Review, approval, execution, and operational authority |
+
+## Fixed framework limits
+
+| Dimension | Current limit |
+| --- | --- |
+| Runtime packages | 3: core, CLI, MCP |
+| Supporting packages | 3: tooling, installer, deploy |
+| Official adapters | CLI and MCP |
+| MCP transports | stdio and stateless Streamable HTTP |
+| Core primitives | Capability, Engine, Context, Principal |
+| Required capability fields | 5 |
+| Invocation stages | 6 |
+| Invocation error codes | 7 |
+| Cross-cutting hooks | 1: `onEvent` |
+| Built-in identity or PDP implementations | 0 |
+| Dependency containers or runtime plugin systems | 0 |
+
+## Deliberately outside the runtime
+
+Invokta does not provide:
+
+- queues, scheduling, jobs, distributed execution, progress APIs, or arbitrary
+  streaming;
+- framework-wide retries, fallbacks, caches, model routing, context compilation,
+  memory, or RAG abstractions;
+- a service container, mutable plugin registry, remote discovery, or dependency
+  lifecycle manager;
+- identity issuance, login, user storage, policy language, or relationship
+  graph;
+- an evaluation runner, automated judge, release gate, canary system, or
+  production observability platform; or
+- MCP resources, prompts, sampling, elicitation, tasks, stateful sessions,
+  resumption, or server-to-client requests.
+
+Custom engines may implement these domain-specific behaviors behind their own
+ports. For example, `spec-engine` owns workflow stages, `review-engine` owns its
+readiness gates, `image-engine` owns provider routing, and
+`observability-engine` owns provider normalization. Those examples do not add
+the behavior to the Invokta framework.
+
+<Aside type="note" title="Production readiness remains domain-specific">
+  Invokta validates the capability boundary, but it cannot determine acceptable
+  cost, hallucination risk, privacy, evidence, uptime, or human review for your
+  outcome. Encode and test those controls in the engine and deployment.
+</Aside>
+
+## Maturity model
+
+| Level | Observable state | Invokta relationship |
+| --- | --- | --- |
+| Experiment | A prompt or model call inside one feature | Useful for discovery, below the framework target |
+| Contracted capability | Runtime-validated input/output and isolated handler | Supported by `@invokta/core` |
+| Reusable Action Engine | One domain action serves independent consumers or channels | Primary framework outcome |
+| Production Action Engine | Identity, policy, evals, tracing, timeouts, incident controls, and review | Invokta supplies boundaries; engine and platform supply controls |
+| Action Engine platform | Federated catalog, routing, rollout, economics, and governance | Outside current framework scope |
+
+New framework abstractions require repeated evidence across engines and an
+explicit architectural decision. Start with an engine-owned port or policy, then
+extract only after the pattern and contract are stable.

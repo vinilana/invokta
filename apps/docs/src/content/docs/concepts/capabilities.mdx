@@ -33,6 +33,19 @@ const engine = createEngine({
 This lets a capability library provide a default ID while a consuming engine
 keeps authority over its final public namespace.
 
+## Where capabilities live
+
+| Form | Boundary | Start here |
+| --- | --- | --- |
+| Local capability | Used by one engine package | [Dependency injection recipe](/recipes/dependency-injection/) |
+| Atomic export | One reusable capability published from a package root or subpath | [Atomic export recipe](/recipes/atomic-capability-export/) |
+| Capability library | A related set with stable default IDs | [Capability library recipe](/recipes/capability-library/) |
+
+The consuming engine may combine all three forms with explicit selection and ID
+remapping. The [capability packages guide](/guides/capability-packages/) covers
+package exports, import variants, collision diagnostics, versioning, and the
+trusted-code boundary.
+
 ## Contract fields
 
 | Field | Responsibility |
@@ -113,4 +126,5 @@ Dependencies such as repositories, model clients, and data providers should be
 injected through a factory or closure. The context is not a service container.
 
 See the [invocation pipeline](/concepts/invocation-pipeline/) for the order in
-which Invokta applies these fields.
+which Invokta applies these fields, or the
+[`@invokta/core` reference](/reference/core/) for their complete public types.

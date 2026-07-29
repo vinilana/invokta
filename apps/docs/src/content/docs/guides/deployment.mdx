@@ -53,6 +53,10 @@ package manager, compiler, container tool, or shell command.
    the compiled entry point before writing anything. It then generates a
    `Dockerfile`, `.dockerignore`, bounded health check, and operator notes.
 
+   The current package command expects a standalone engine project as its build
+   context. Point it at the engine package rather than a monorepo workspace
+   container that depends on files outside that context.
+
 5. Probe the deployed endpoint
 
    ```sh
@@ -91,4 +95,6 @@ platform.
 </Aside>
 
 For HTTP adapter behavior, including Host and Origin validation, see the
-[`@invokta/mcp` reference](/reference/mcp/).
+[`@invokta/mcp` reference](/reference/mcp/). The
+[`@invokta/deploy` reference](/reference/deploy/) lists the manifest fields,
+ownership rules, probe grammar, limits, exit codes, and programmatic API.

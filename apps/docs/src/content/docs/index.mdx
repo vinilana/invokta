@@ -1,46 +1,72 @@
 ---
 title: Invokta
-description: Define typed domain capabilities once and invoke them directly, through a CLI, or over MCP.
+description: The TypeScript framework for building Action Engines.
 template: splash
 hero:
-  tagline: Define a domain capability once. Invokta keeps validation, authorization, execution, and errors on the same path wherever that capability is called.
+  tagline: Package reusable, AI-supported domain actions behind stable contracts. Define the action once, then invoke the same validated runtime from application code, the CLI, or MCP.
   actions:
     - text: Start building
       link: /getting-started/installation/
       icon: right-arrow
       variant: primary
-    - text: Read the concepts
-      link: /concepts/action-engines/
+    - text: Explore examples
+      link: /examples/
       icon: open-book
       variant: secondary
 ---
 
-import { Card, CardGrid, LinkButton } from '@astrojs/starlight/components';
+import { Aside, Card, CardGrid, LinkButton } from '@astrojs/starlight/components';
 
-## One capability, four entry points
+## The domain outcome is the durable asset
 
-An Invokta capability has typed input and output schemas, an explicit access rule,
-and one handler. The engine publishes it through direct TypeScript calls, a local
-CLI, MCP stdio, and stateless MCP Streamable HTTP.
+If your MCP tool or CLI command creates a specification, retrieves project
+context, guides a workflow, reviews code, or classifies a ticket, it already
+contains the core of an Action Engine.
+
+The reviewed specification, selected context, next safe step, or classified
+ticket is what consumers depend on. MCP, CLI, HTTP, and direct APIs are delivery
+paths to that outcome.
+
+Teams often build each delivery path separately. The first integration ships,
+then the next consumer needs its own schema conversion, authentication, error
+mapping, cancellation, logging, and tests. Protocol upgrades and business-rule
+changes must be kept consistent across every copy.
+
+An Action Engine gives the domain action one owned, versioned boundary. The
+model, prompt, provider, data source, and interface can change while consumers
+continue to use the same validated contract.
+
+## What Invokta provides
+
+Define a capability once with its input, output, access rule, and execution
+behavior. Invokta applies the same invocation pipeline from application code,
+the CLI, MCP stdio, and stateless MCP Streamable HTTP.
 
 <CardGrid>
   <Card title="Stable contracts" icon="seti:typescript">
-    Validate input and output at runtime while keeping schema information available
-    to every adapter.
+    Validate input and output at runtime and publish the same schema information
+    through every adapter.
   </Card>
   <Card title="One execution path" icon="approve-check">
-    Every adapter calls `engine.invoke`, so authorization, errors, cancellation,
-    and observability do not drift.
+    Every adapter calls `engine.invoke`, keeping validation, authorization,
+    cancellation, errors, and events in one pipeline.
   </Card>
-  <Card title="Replaceable internals" icon="puzzle">
-    Change models, prompts, data sources, and tools without teaching consumers a
-    new public contract.
+  <Card title="Delivery adapters" icon="transfer">
+    Invoke the engine directly, expose a local CLI, or publish MCP tools over
+    stdio and bounded stateless HTTP.
   </Card>
-  <Card title="MCP included" icon="transfer">
-    Expose the same capability as an MCP tool over local stdio or bounded,
-    stateless HTTP.
+  <Card title="Supporting tools" icon="setting">
+    Check capability composition, inspect supported local MCP client targets,
+    and prepare reviewable HTTP deployment artifacts.
   </Card>
 </CardGrid>
+
+<Aside type="note" title="Your engine owns the outcome">
+  Domain contracts, business rules, prompts, models, data integrations,
+  authorization policy, evaluations, and outcome quality stay in the engine you
+  build. Invokta does not provide an identity provider, model router, agent
+  harness, workflow engine, or production observability platform.
+</Aside>
 
 ## The smallest useful engine
 
@@ -67,7 +93,7 @@ export const engine = createEngine({
 });
 ```
 
-The capability ID belongs to the engine map. The capability itself contains the
+The capability ID belongs to the engine map. The capability contains the
 contract and implementation that every entry point reuses.
 
 <LinkButton href="/getting-started/first-engine/" icon="right-arrow">
@@ -77,20 +103,20 @@ contract and implementation that every entry point reuses.
 ## Choose your next step
 
 <CardGrid>
+  <Card title="Explore complete engines" icon="rocket">
+    Browse [example engines](/examples/) for specifications, context retrieval,
+    code review, image production, observability, and support operations.
+  </Card>
   <Card title="Follow a practical recipe" icon="puzzle">
-    Start with a [runnable recipe](/recipes/) for dependency injection, domain
+    Use a [runnable recipe](/recipes/) for dependency injection, domain
     authorization, capability composition, or an external provider.
   </Card>
-  <Card title="Understand capabilities" icon="document">
-    Read the [capability contract](/concepts/capabilities/) before designing your
-    first domain action.
-  </Card>
-  <Card title="Connect an adapter" icon="transfer">
-    Follow the [execution channels guide](/guides/execution-channels/) to add CLI
-    and MCP entry points without duplicating the handler.
+  <Card title="Understand the boundary" icon="document">
+    Read about [Action Engines](/concepts/action-engines/) and the
+    [capability contract](/concepts/capabilities/).
   </Card>
   <Card title="Look up the API" icon="open-book">
-    Use the [`@invokta/core` reference](/reference/core/) for the engine surface
-    and the [error taxonomy](/reference/errors/) for failure handling.
+    Use the [`@invokta/core` reference](/reference/core/) and the
+    [error taxonomy](/reference/errors/) while implementing an engine.
   </Card>
 </CardGrid>

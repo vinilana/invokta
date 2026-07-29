@@ -11,8 +11,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Invokta",
-      description:
-        "Define typed domain capabilities once and invoke them directly, through a CLI, or over MCP.",
+      description: "The TypeScript framework for building Action Engines.",
       favicon: "/favicon.svg",
       logo: {
         src: "./src/assets/invokta-mark.svg",
@@ -52,18 +51,23 @@ export default defineConfig({
             { slug: "getting-started/first-engine" },
           ],
         },
+        { label: "Examples", slug: "examples" },
         {
           label: "Concepts",
           items: [
             { slug: "concepts/action-engines" },
             { slug: "concepts/capabilities" },
             { slug: "concepts/invocation-pipeline" },
+            { slug: "concepts/scope-and-limits" },
           ],
         },
         {
           label: "Guides",
           items: [
             { slug: "guides/execution-channels" },
+            { slug: "guides/capability-packages" },
+            { slug: "guides/http-authentication" },
+            { slug: "guides/capability-authorization" },
             { slug: "guides/deployment" },
           ],
         },
@@ -71,18 +75,25 @@ export default defineConfig({
           label: "Recipes",
           items: [
             { slug: "recipes" },
+            { slug: "recipes/atomic-capability-export" },
+            { slug: "recipes/capability-library" },
             { slug: "recipes/dependency-injection" },
             { slug: "recipes/domain-authorization" },
             { slug: "recipes/capability-composition" },
+            { slug: "recipes/mcp-stdio-consumer" },
             { slug: "recipes/external-provider" },
           ],
         },
         {
           label: "Reference",
           items: [
+            { slug: "reference" },
             { slug: "reference/core" },
             { slug: "reference/cli" },
             { slug: "reference/mcp" },
+            { slug: "reference/tooling" },
+            { slug: "reference/installer" },
+            { slug: "reference/deploy" },
             { slug: "reference/errors" },
           ],
         },

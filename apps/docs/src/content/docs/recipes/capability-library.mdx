@@ -1,0 +1,132 @@
+---
+title: Publish a capability library
+description: Bundle related capabilities behind literal default IDs and factory-injected dependencies.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Use a library when a package owns several related capabilities that engines may
+import together or select individually. The library factory accepts engine-owned
+dependencies and publishes a frozen map with stable default IDs.
+
+## Build the library
+
+<Steps>
+
+1. Define each capability independently
+
+   Keep schemas, access rules, timeouts, and handlers in ordinary
+   `defineCapability` factories. They should know nothing about package
+   publication or the adapters a consuming engine will start.
+
+2. Create the library descriptor
+
+   ```ts
+   import { defineCapabilityLibrary } from "@invokta/core";
+
+   export function createCommunitySupportLibrary(
+     dependencies: CommunityLibraryDependencies,
+   ) {
+     return defineCapabilityLibrary({
+       name: "@acme/support-capabilities/library",
+       version: "1.0.0",
+       capabilities: {
+         "support.summarize-thread":
+           createSummarizeThread(dependencies),
+         "support.search-knowledge-base":
+           createSearchKnowledgeBase(dependencies),
+         "support.draft-reply":
+           createDraftReply(dependencies),
+       },
+     });
+   }
+   ```
+
+   Use literal keys. Their order remains the library order after selection and
+   remapping. The library version is required and diagnostic; installed package
+   version resolution still belongs to the package manager.
+
+3. Publish the library subpath
+
+   ```json
+   {
+     "exports": {
+       "./library": {
+         "types": "./dist/library.d.ts",
+         "import": "./dist/library.js"
+       }
+     }
+   }
+   ```
+
+4. Select and remap from the consuming engine
+
+   ```ts
+   const importedSupport = importCapabilities(
+     createCommunitySupportLibrary(dependencies.support),
+     {
+       include: [
+         "support.search-knowledge-base",
+         "support.draft-reply",
+       ],
+       remap: {
+         "support.draft-reply": "operations.draft-reply",
+       },
+     },
+   );
+   ```
+
+   Omit `include` to import every capability. Remap keys must exist and must be
+   selected when `include` is present.
+
+5. Compose local and imported declarations
+
+   ```ts
+   export const capabilities = composeCapabilities({
+     local: {
+       "operations.generate-report": generateReport,
+     },
+     imports: [importedSupport],
+   });
+   ```
+
+   Any duplicate effective ID fails synchronously before an engine or adapter
+   starts.
+
+</Steps>
+
+<Aside type="caution" title="Keep import-time behavior inert">
+  A library module defines values. It should not connect to a provider, start an
+  adapter, read global dependency state, or create an engine at import time.
+  Construct dependencies at the consuming engine's composition root.
+</Aside>
+
+## Run it
+
+Build the publisher and consumer, then invoke a remapped library capability:
+
+```sh
+yarn workspace @invokta/example-community-capabilities build
+yarn workspace @invokta/example-composed build
+node examples/composed-engine/dist/cli.js run operations.draft-reply \
+  --input '{"ticketId":"T-123","tone":"friendly"}'
+```
+
+The result is produced by the imported `community.draft-reply` capability, but
+the engine and every adapter expose only `operations.draft-reply`.
+
+## Verify it
+
+```sh
+yarn workspace @invokta/example-community-capabilities test
+yarn workspace @invokta/example-community-capabilities typecheck
+yarn workspace @invokta/example-community-capabilities build
+yarn workspace @invokta/example-composed check:capabilities
+```
+
+The publisher tests cover library order, independent dependency factories,
+selection, remapping, and real package exports. Read the complete
+[`community-capabilities`](https://github.com/vinilana/ai-engines/tree/main/examples/community-capabilities)
+fixture and the consuming
+[`composed-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/composed-engine)
+example.

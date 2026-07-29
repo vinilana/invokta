@@ -1,0 +1,360 @@
+---
+title: Capability packages
+description: Author atomic exports and capability libraries, publish package subpaths, and compose them into an engine.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A capability package lets several engines reuse a domain action without copying
+its schema, access rule, or handler. The package publishes explicit values. The
+consuming engine imports those values, supplies dependencies, chooses the final
+IDs, and keeps every execution channel on `engine.invoke`.
+
+Composition is eager and synchronous. It performs no discovery or I/O, starts no
+adapter, and adds no plugin lifecycle or dependency container.
+
+## Choose a publication form
+
+| Form | Use it when | Authoring API | Consuming API |
+| --- | --- | --- | --- |
+| Atomic export | Consumers should import one capability without evaluating a bundle | `defineExportedCapability` | `importCapability` |
+| Capability library | A package publishes a related set of capabilities | `defineCapabilityLibrary` | `importCapabilities` |
+| Local capability | The capability belongs only to the consuming engine | `defineCapability` | `composeCapabilities({ local })` |
+
+The package may publish atomic exports and a library at the same time. The
+[`community-capabilities`](https://github.com/vinilana/ai-engines/tree/main/examples/community-capabilities)
+fixture demonstrates all three package entry points.
+
+## Publish one atomic capability
+
+<Steps>
+
+1. Keep the capability definition independent of publication
+
+   ```ts
+   export function createClassifyTicket(
+     dependencies: ClassifyTicketDependencies,
+   ) {
+     return defineCapability({
+       description: "Classify one support ticket.",
+       input: z.object({ ticketId: z.string().min(1) }),
+       output: z.object({
+         category: z.string(),
+         confidence: z.number().min(0).max(1),
+       }),
+       access: ({ principal, input }) =>
+         principal !== null &&
+         dependencies.permissions.can(
+           principal,
+           "ticket:classify",
+           input.ticketId,
+         ),
+       async run({ input, context }) {
+         return dependencies.classifier.classify(input.ticketId, {
+           signal: context.signal,
+         });
+       },
+     });
+   }
+   ```
+
+   Dependencies belong to the package's application ports and enter through the
+   factory. Do not read repositories, providers, or policies from
+   `ExecutionContext` or a global registry.
+
+2. Wrap the capability with a default ID and diagnostic source
+
+   ```ts
+   import { defineExportedCapability } from "@invokta/core";
+
+   export function createClassifyTicketExport(
+     dependencies: ClassifyTicketDependencies,
+   ) {
+     return defineExportedCapability({
+       source: {
+         name: "@acme/support-capabilities/classify-ticket",
+         version: "1.0.0",
+       },
+       defaultId: "support.classify-ticket",
+       capability: createClassifyTicket(dependencies),
+     });
+   }
+   ```
+
+   `source` is diagnostic metadata. Invokta does not resolve its name, compare
+   its version, or treat it as a trust statement. `defaultId` is public API for
+   consumers that do not remap it. `source.version` is optional for an atomic
+   export; when present, it and the source name must be non-empty. A stateless
+   capability may export the frozen descriptor as a constant instead of using a
+   factory.
+
+3. Export the module from the package root or a subpath
+
+   Add the built entry points to `package.json`:
+
+   ```json
+   {
+     "name": "@acme/support-capabilities",
+     "version": "1.0.0",
+     "type": "module",
+     "sideEffects": false,
+     "exports": {
+       ".": {
+         "types": "./dist/index.d.ts",
+         "import": "./dist/index.js"
+       },
+       "./classify-ticket": {
+         "types": "./dist/classify-ticket.d.ts",
+         "import": "./dist/classify-ticket.js"
+       }
+     },
+     "dependencies": {
+       "@invokta/core": "^0.1.0"
+     }
+   }
+   ```
+
+   Keep the subpath's module graph independent from any library bundle. An
+   engine that imports one atomic capability should not evaluate unrelated
+   exports.
+
+</Steps>
+
+## Publish a capability library
+
+A library groups related capabilities under literal default IDs:
+
+```ts
+import { defineCapabilityLibrary } from "@invokta/core";
+
+export function createSupportLibrary(
+  dependencies: SupportLibraryDependencies,
+) {
+  return defineCapabilityLibrary({
+    name: "@acme/support-capabilities/library",
+    version: "1.0.0",
+    capabilities: {
+      "support.summarize-thread": createSummarizeThread(dependencies),
+      "support.search-knowledge-base":
+        createSearchKnowledgeBase(dependencies),
+      "support.draft-reply": createDraftReply(dependencies),
+    },
+  });
+}
+```
+
+Expose that module as another package subpath:
+
+```json
+{
+  "exports": {
+    "./classify-ticket": {
+      "types": "./dist/classify-ticket.d.ts",
+      "import": "./dist/classify-ticket.js"
+    },
+    "./library": {
+      "types": "./dist/library.d.ts",
+      "import": "./dist/library.js"
+    }
+  }
+}
+```
+
+The map keys are the default IDs and their order is part of the published
+contract. Unlike atomic source metadata, a library version is required. Empty
+names, versions, IDs, and invalid capability maps throw `TypeError`
+synchronously. Call the factory separately for engines that need different
+repositories, models, or policy implementations.
+
+<Aside type="caution" title="Version default IDs as public API">
+  Changing an atomic default ID breaks importers that kept it. Changing a
+  library key breaks importers that select or remap it. Removing a package root
+  or subpath export is also a package API break.
+</Aside>
+
+## Import an atomic export
+
+Use the default ID:
+
+```ts
+import { importCapability } from "@invokta/core";
+import {
+  createClassifyTicketExport,
+} from "@acme/support-capabilities/classify-ticket";
+
+const classifyTicket = importCapability(
+  createClassifyTicketExport(dependencies.support),
+);
+```
+
+Or replace it with an effective ID owned by the consuming engine:
+
+```ts
+const classifyTicket = importCapability(
+  createClassifyTicketExport(dependencies.support),
+  { as: "operations.classify-ticket" },
+);
+```
+
+`as` replaces the default ID; it does not create an alias. Only
+`operations.classify-ticket` appears in `invoke`, `list`, `describe`, access
+rules, events, CLI commands, and MCP tool names.
+
+To expose the same atomic capability under two IDs during a deliberate
+migration, declare two imports explicitly:
+
+```ts
+const legacyClassify = importCapability(exportedClassify);
+const operationsClassify = importCapability(exportedClassify, {
+  as: "operations.classify-ticket",
+});
+```
+
+Both effective IDs are public contracts. Invokta never creates an implicit
+alias.
+
+## Import a library
+
+Import every capability with its default ID:
+
+```ts
+const supportLibrary = importCapabilities(
+  createSupportLibrary(dependencies.support),
+);
+```
+
+Select a subset and remap one effective ID:
+
+```ts
+const supportLibrary = importCapabilities(
+  createSupportLibrary(dependencies.support),
+  {
+    include: [
+      "support.search-knowledge-base",
+      "support.draft-reply",
+    ],
+    remap: {
+      "support.draft-reply": "operations.draft-reply",
+    },
+  },
+);
+```
+
+- Omitting `include` selects every library capability.
+- `include` selects exactly the listed default IDs.
+- An absent `remap` entry keeps its default ID.
+- Every remap key must exist and, when `include` is present, must be selected.
+- Selection and remapping do not change schemas, access, annotations, timeouts,
+  or handlers.
+
+## Compose the engine map
+
+Keep composition in a module that creates no engine and starts no adapter:
+
+```ts
+import {
+  composeCapabilities,
+  importCapabilities,
+  importCapability,
+} from "@invokta/core";
+
+export function createOperationsCapabilities(dependencies) {
+  return composeCapabilities({
+    local: {
+      "operations.generate-report":
+        createGenerateReport(dependencies.reports),
+    },
+    imports: [
+      importCapability(
+        createClassifyTicketExport(dependencies.support),
+        { as: "operations.classify-ticket" },
+      ),
+      importCapabilities(
+        createSupportLibrary(dependencies.support),
+        {
+          include: [
+            "support.search-knowledge-base",
+            "support.draft-reply",
+          ],
+          remap: {
+            "support.draft-reply": "operations.draft-reply",
+          },
+        },
+      ),
+    ],
+  });
+}
+
+export const capabilities = createOperationsCapabilities(
+  createDefaultOperationsDependencies(),
+);
+```
+
+Then pass the composed map to the normal engine constructor:
+
+```ts
+export const engine = createEngine({
+  name: "operations-engine",
+  version: "1.0.0",
+  capabilities,
+});
+```
+
+`composeCapabilities` rejects every duplicate effective ID synchronously. It has
+no first-write, last-write, source-version, or import-order precedence.
+
+<Aside type="danger" title="Do not compose with object spread">
+  Object spread can overwrite a duplicate before Invokta sees it. The source
+  boundary and access rule that lost the collision are already gone. Pass local
+  maps and import descriptors to `composeCapabilities` instead.
+</Aside>
+
+## Handle composition failures
+
+Detected collisions and selection or import issues produce
+`CapabilityCompositionError`, a construction-time `TypeError` with code
+`CAPABILITY_COMPOSITION_INVALID`. Malformed descriptors, options, or import
+entries can throw a plain `TypeError` before issue collection. Both are separate
+from the seven invocation `EngineError` codes.
+
+```ts
+try {
+  createOperationsCapabilities(dependencies);
+} catch (error) {
+  if (!isCapabilityCompositionError(error)) throw error;
+  for (const issue of error.issues) {
+    process.stderr.write(`${JSON.stringify(issue)}\n`);
+  }
+}
+```
+
+Issues report collisions, invalid atomic exports, unknown library IDs, and
+remaps that were not selected. Diagnostics contain IDs and declared provenance,
+not schemas, handlers, dependency values, or credentials.
+
+Use `isComposedCapabilities(value)` when application tooling needs to confirm
+that a map still carries Invokta composition provenance.
+
+Imported capabilities are normal executable dependencies. Source metadata is
+not a signature, attestation, sandbox, permission manifest, or compatibility
+check. Review and pin the package as you would any code loaded by the host
+process.
+
+## Gate the built composition
+
+TypeScript detects many mistakes when IDs remain string literals. The runtime
+check remains authoritative for computed or widened IDs. Build the engine, then
+inspect its side-effect-free composition module in CI:
+
+```sh
+invokta check-capabilities ./dist/capabilities.js
+invokta check-capabilities ./dist/capabilities.js --export capabilities
+```
+
+The command exits `0` for a valid tracked composition, `1` for composition
+issues, and `2` for usage, loading, export, or untracked-map failures. It writes
+diagnostics only to standard error and never invokes a capability.
+
+Read the [composition recipe](/recipes/capability-composition/) for a runnable
+consumer and the [`@invokta/tooling` reference](/reference/tooling/) for the
+complete `check-capabilities` contract.

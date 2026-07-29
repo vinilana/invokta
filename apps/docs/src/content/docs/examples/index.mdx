@@ -1,0 +1,184 @@
+---
+title: Example engines
+description: Choose a complete Invokta example by the domain outcome or boundary you need to build.
+sidebar:
+  label: Overview
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+The repository examples apply the same Invokta contracts to different domain
+outcomes. Each engine keeps direct, CLI, and MCP execution on `engine.invoke`,
+while its own package owns ports, policies, limits, and provider integrations.
+
+## Choose by problem
+
+| You need to | Start with |
+| --- | --- |
+| Learn the smallest complete path | `hello-engine` |
+| Inject dependencies and enforce domain authorization | `support-engine` |
+| Consume an engine from a private MCP harness | `support-harness` |
+| Wrap web or SaaS providers behind domain ports | `crawl-engine`, `image-engine`, or `observability-engine` |
+| Build development workflow actions | `spec-engine`, `review-engine`, or `agent-session-engine` |
+| Publish deterministic agent-routing policy | `cursor-agent-routing-engine` |
+| Navigate local project knowledge progressively | `obsidian-context-engine` |
+| Publish and compose reusable capabilities | `community-capabilities` and `composed-engine` |
+
+## Choose by operational requirement
+
+| Examples | What you need locally |
+| --- | --- |
+| `hello-engine`, `support-engine`, `support-harness`, `cursor-agent-routing-engine`, `spec-engine`, `review-engine`, `community-capabilities`, `composed-engine` | No external provider credential for direct, CLI, stdio, or tests |
+| `agent-session-engine` | A writable data directory; the session ID and directory have local defaults |
+| `obsidian-context-engine` | `OBSIDIAN_VAULT_PATH` pointing to the directory the read-only adapter may inspect |
+| `crawl-engine` | `FIRECRAWL_API_KEY` |
+| `image-engine` | `OPENAI_API_KEY`, `ARK_API_KEY`, and `GEMINI_API_KEY` |
+| `observability-engine` | Sentry, Datadog, and New Relic credentials plus their organization or account identifiers |
+
+The HTTP entry points use example-specific bearer-token environment variables in
+addition to the requirements above. Every linked README gives the exact variable
+names and commands. Provider-backed direct examples perform real outbound calls,
+so review provider data handling and billing before running them.
+
+## Patterns demonstrated
+
+- **Independent consumers:** `support-harness` uses only MCP stdio and does not
+  import the engine runtime.
+- **Replaceable providers:** the crawl, image, and observability engines keep
+  vendor clients behind domain-owned ports.
+- **Domain-owned workflows:** the spec and review engines keep ordering,
+  revisions, and gates outside the framework runtime.
+- **Durable local state:** the agent-session engine owns persistence,
+  concurrency, checkpoints, and harness hooks.
+- **Bounded context:** the Obsidian engine exposes declared roots and one node at
+  a time instead of loading an entire vault.
+- **Reusable packages:** community capabilities publish atomic and library
+  entry points; the composed engine selects and remaps them.
+
+## Learn the framework boundary
+
+<CardGrid>
+  <Card title="Hello Engine" icon="rocket">
+    Define `onboarding.create-welcome-message` once and expose it through direct
+    invocation, CLI, MCP stdio, and stateless MCP HTTP with a deterministic
+    injected writer.
+
+    [Open `hello-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/hello-engine)
+  </Card>
+  <Card title="Support Engine" icon="puzzle">
+    Classify support tickets with injected repository, classifier, and
+    permission ports. The example covers authorization, safe errors,
+    cancellation, and all four entry points.
+
+    [Open `support-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/support-engine)
+  </Card>
+  <Card title="Support Harness" icon="setting">
+    Start the Support Engine over MCP stdio from a private consumer, discover
+    its tool, invoke it once, and record harness-owned history without importing
+    the engine runtime.
+
+    [Open `support-harness`](https://github.com/vinilana/ai-engines/tree/main/examples/support-harness)
+  </Card>
+  <Card title="Crawl Engine" icon="transfer">
+    Publish bounded page scraping, site mapping, and crawling while Firecrawl
+    stays behind a `WebCrawler` port and public-target validation runs before
+    provider I/O.
+
+    [Open `crawl-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/crawl-engine)
+  </Card>
+</CardGrid>
+
+## Build development actions
+
+<CardGrid>
+  <Card title="Spec Engine" icon="document">
+    Publish specification, planning, task breakdown, implementation evidence,
+    and status as separate capabilities. Ordering and revisions remain domain
+    rules instead of framework orchestration.
+
+    [Open `spec-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/spec-engine)
+  </Card>
+  <Card title="Review Engine" icon="approve-check">
+    Assess task readiness with code review, acceptance evidence, and adversarial
+    checks. The fail-closed result allows completion only when every gate passes.
+
+    [Open `review-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/review-engine)
+  </Card>
+  <Card title="Agent Session Engine" icon="refresh">
+    Persist tasks, phases, checkpoints, evidence, and handoffs independently of
+    Cursor, Antigravity, Claude Code, or Codex with explicit concurrency and
+    storage limits.
+
+    [Open `agent-session-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/agent-session-engine)
+  </Card>
+  <Card title="Cursor Agent Routing Engine" icon="setting">
+    Publish versioned, deterministic policy that selects a Cursor custom
+    subagent and model for seven development use cases without adding routing to
+    the Invokta core.
+
+    [Open `cursor-agent-routing-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/cursor-agent-routing-engine)
+  </Card>
+  <Card title="Obsidian Context Engine" icon="open-book">
+    Expose an Obsidian vault as a bounded knowledge graph. Agents list declared
+    roots, open one node at a time, and follow stable links without loading the
+    entire vault.
+
+    [Open `obsidian-context-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/obsidian-context-engine)
+  </Card>
+</CardGrid>
+
+## Integrate external systems
+
+<CardGrid>
+  <Card title="Image Engine" icon="puzzle">
+    Publish outcome-oriented editing, text rendering, campaign series, and
+    reference composition while GPT Image 2, Seedream 5.0, and Nano Banana 2
+    remain behind replaceable ports.
+
+    [Open `image-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/image-engine)
+  </Card>
+  <Card title="Observability Engine" icon="transfer">
+    Collect bounded incident context from Sentry, Datadog, and New Relic through
+    one provider-independent capability and normalized domain result.
+
+    [Open `observability-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/observability-engine)
+  </Card>
+</CardGrid>
+
+## Publish and compose capabilities
+
+<CardGrid>
+  <Card title="Community Capabilities" icon="puzzle">
+    Demonstrate atomic root exports, subpath exports, and a capability library
+    with factory-injected dependencies and literal default IDs.
+
+    [Open `community-capabilities`](https://github.com/vinilana/ai-engines/tree/main/examples/community-capabilities)
+  </Card>
+  <Card title="Composed Engine" icon="transfer">
+    Combine a local capability, atomic imports, selected library capabilities,
+    and deliberate ID remapping in one eagerly checked engine map.
+
+    [Open `composed-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/composed-engine)
+  </Card>
+</CardGrid>
+
+<Aside type="note" title="Fixtures and consumers are labeled explicitly">
+  `community-capabilities` is a private package fixture, and `support-harness` is
+  a private MCP consumer. They demonstrate package publication and consumption
+  boundaries but are not additional Invokta framework packages.
+</Aside>
+
+## Run an example locally
+
+Clone and build the repository first:
+
+```sh
+git clone https://github.com/vinilana/ai-engines.git
+cd ai-engines
+yarn install --frozen-lockfile
+yarn build
+```
+
+Each linked README lists its configuration, direct and CLI commands, MCP entry
+points, and focused test command. For smaller code extracts with an explanation
+of each decision, use the [practical recipes](/recipes/).

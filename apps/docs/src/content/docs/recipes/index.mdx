@@ -12,6 +12,17 @@ Engine. Each one uses code from a tested example in the Invokta repository, then
 shows how to run and verify the result locally.
 
 <CardGrid>
+  <Card title="Publish an atomic capability" icon="document">
+    Export one reusable capability from a package root or isolated ESM subpath.
+
+    [Open recipe](/recipes/atomic-capability-export/)
+  </Card>
+  <Card title="Publish a capability library" icon="puzzle">
+    Bundle related capabilities with literal default IDs and factory-injected
+    dependencies.
+
+    [Open recipe](/recipes/capability-library/)
+  </Card>
   <Card title="Inject a dependency" icon="puzzle">
     Put a repository and classifier behind engine-owned ports, then wire their
     implementations at the composition root.
@@ -29,6 +40,12 @@ shows how to run and verify the result locally.
     without losing ID ownership.
 
     [Open recipe](/recipes/capability-composition/)
+  </Card>
+  <Card title="Consume MCP stdio" icon="transfer">
+    Connect an independent harness with the official MCP client, discover a
+    tool, invoke it, and close the child transport.
+
+    [Open recipe](/recipes/mcp-stdio-consumer/)
   </Card>
   <Card title="Wrap an external provider" icon="transfer">
     Keep a provider credential and HTTP contract behind an outbound port while
@@ -52,4 +69,5 @@ yarn build
 
 If this is your first Invokta engine, build the
 [first-engine walkthrough](/getting-started/first-engine/) before using these
-patterns.
+patterns. Browse the [complete example catalog](/examples/) when you want to
+compare domains, provider boundaries, and workflow designs.

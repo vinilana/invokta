@@ -1,0 +1,141 @@
+---
+title: Publish an atomic capability
+description: Export one reusable capability from a package root or isolated subpath.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Use an atomic export when another engine should import one capability without
+evaluating a complete library bundle. The package publishes a descriptor with a
+default ID; the consuming engine still owns dependencies and the final effective
+ID.
+
+This recipe follows the `community-capabilities` fixture.
+
+## Build the export
+
+<Steps>
+
+1. Create the capability through a dependency factory
+
+   ```ts
+   export function createClassifyTicket(
+     dependencies: ClassifyTicketDependencies,
+   ) {
+     return defineCapability({
+       description: "Classify one support ticket.",
+       input: z.object({ ticketId: z.string().min(1) }),
+       output: ticketClassificationSchema,
+       access: createTicketAccessRule(dependencies.permissions),
+       async run({ input, context }) {
+         const ticket = await dependencies.tickets.findById(
+           input.ticketId,
+         );
+         return dependencies.classifier.classify(ticket, {
+           signal: context.signal,
+         });
+       },
+     });
+   }
+   ```
+
+2. Wrap it in `defineExportedCapability`
+
+   ```ts
+   import { defineExportedCapability } from "@invokta/core";
+
+   export function createClassifyTicketExport(
+     dependencies: ClassifyTicketDependencies,
+   ) {
+     return defineExportedCapability({
+       source: {
+         name: "@acme/support-capabilities/classify-ticket",
+         version: "1.0.0",
+       },
+       defaultId: "support.classify-ticket",
+       capability: createClassifyTicket(dependencies),
+     });
+   }
+   ```
+
+   The source strings exist for deterministic diagnostics. They do not install,
+   resolve, verify, or sandbox the package.
+
+3. Publish the subpath
+
+   ```json
+   {
+     "name": "@acme/support-capabilities",
+     "version": "1.0.0",
+     "type": "module",
+     "sideEffects": false,
+     "exports": {
+       ".": {
+         "types": "./dist/index.d.ts",
+         "import": "./dist/index.js"
+       },
+       "./classify-ticket": {
+         "types": "./dist/classify-ticket.d.ts",
+         "import": "./dist/classify-ticket.js"
+       }
+     }
+   }
+   ```
+
+   Keep `src/classify-ticket.ts` free of imports from a library bundle. Node can
+   then resolve and evaluate the atomic subpath on its own.
+
+4. Import it into an engine
+
+   ```ts
+   import { importCapability } from "@invokta/core";
+   import {
+     createClassifyTicketExport,
+   } from "@acme/support-capabilities/classify-ticket";
+
+   const imported = importCapability(
+     createClassifyTicketExport(dependencies.support),
+     { as: "operations.classify-ticket" },
+   );
+   ```
+
+   Omit `as` to keep `support.classify-ticket`. Providing it replaces the
+   default ID rather than publishing an alias.
+
+</Steps>
+
+<Aside type="tip" title="A stateless export may be a constant">
+  When the capability has no injected dependency, export the frozen descriptor
+  directly. A dependency-owning engine should prefer a factory so separate
+  engine instances do not share hidden state.
+</Aside>
+
+## Run it
+
+Build the fixture and the engine that imports its root and subpath exports:
+
+```sh
+yarn workspace @invokta/example-community-capabilities build
+yarn workspace @invokta/example-composed build
+node examples/composed-engine/dist/cli.js list
+```
+
+The list contains `community.score-ticket-priority` from the package root and
+`operations.classify-ticket` from the remapped subpath. The default
+`community.classify-ticket` ID is absent.
+
+## Verify it
+
+The fixture tests import the built package through its real Node export map and
+confirm the atomic subpath does not evaluate the library:
+
+```sh
+yarn workspace @invokta/example-community-capabilities test
+yarn workspace @invokta/example-community-capabilities typecheck
+yarn workspace @invokta/example-community-capabilities build
+```
+
+Read the complete
+[`community-capabilities`](https://github.com/vinilana/ai-engines/tree/main/examples/community-capabilities)
+fixture for the root export, isolated subpath, package-resolution tests, ports,
+and domain capability definitions.

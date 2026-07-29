@@ -1,88 +1,160 @@
 ---
 title: '@invokta/cli'
-description: API and command reference for the local Invokta CLI adapter.
+description: Complete API and command reference for the local Invokta CLI adapter.
 ---
 
-`@invokta/cli` publishes an engine through three commands while keeping
-capability execution on `engine.invoke`.
+import { Aside } from '@astrojs/starlight/components';
 
-## `runCli`
+`@invokta/cli` exposes an engine through `list`, `describe`, and `run`. A run
+always calls `engine.invoke`; the adapter does not import handlers or reproduce
+domain validation, authorization, events, or error normalization.
+
+## Install
+
+```sh
+yarn add @invokta/cli
+```
+
+The package is native ESM and requires Node.js 22.20.0 or later. It exports only
+`runCli`, `RunCliOptions`, and `CliIo` from the package root.
+
+## Commands
+
+```text
+engine list
+engine describe <capability-id>
+engine run <capability-id> --input '<json>'
+engine run <capability-id> --stdin
+```
+
+### `list`
+
+Writes the frozen summaries returned by `engine.list()`.
+
+```sh
+node dist/cli.js list
+```
+
+### `describe`
+
+Writes the selected capability contract returned by `engine.describe()`.
+
+```sh
+node dist/cli.js describe support.classify-ticket
+```
+
+### `run`
+
+Exactly one input source is required. Pass a JSON object as an argument:
+
+```sh
+node dist/cli.js run support.classify-ticket \
+  --input '{"ticketId":"T-123"}'
+```
+
+Or read strict UTF-8 JSON from standard input:
+
+```sh
+printf '%s' '{"ticketId":"T-123"}' | \
+  node dist/cli.js run support.classify-ticket --stdin
+```
+
+Missing, duplicate, combined, trailing, or unknown arguments are invalid usage.
+The CLI has no actor, role, login, or principal-selection flag. The composition
+root supplies trusted local identity.
+
+## API
 
 ```ts
-import { runCli } from "@invokta/cli";
+import {
+  runCli,
+  type CliIo,
+  type RunCliOptions,
+} from "@invokta/cli";
+```
 
+```ts
+interface CliIo {
+  readonly readStdin: () => Promise<string>;
+  readonly writeStdout: (
+    text: string,
+  ) => void | Promise<void>;
+  readonly writeStderr: (
+    text: string,
+  ) => void | Promise<void>;
+}
+
+interface RunCliOptions {
+  readonly argv?: readonly string[];
+  readonly principal: Principal | null;
+  readonly signal?: AbortSignal;
+  readonly format?: "json" | "human";
+  readonly io?: Partial<CliIo>;
+}
+
+function runCli<Capabilities extends CapabilityMap>(
+  engine: Engine<Capabilities>,
+  options: RunCliOptions,
+): Promise<number>;
+```
+
+`argv` defaults to `process.argv.slice(2)`. The `principal` property must exist,
+including when its value is `null`. An absent property is invalid usage.
+
+`signal` is passed unchanged to `engine.invoke` for `run`. `format` defaults to
+compact `json`; `human` uses deterministic two-space JSON formatting for
+successful results. Error output remains compact in either mode.
+
+`io` can replace any subset of standard input, output, and diagnostics. Both
+synchronous and asynchronous writers are supported and awaited; unspecified
+methods use the process defaults.
+
+```ts
 const exitCode = await runCli(engine, {
-  principal: { id: "local:developer" },
+  argv: [
+    "run",
+    "support.classify-ticket",
+    "--input",
+    '{"ticketId":"T-123"}',
+  ],
+  principal: { id: "local:operator" },
+  signal: controller.signal,
+  io: {
+    async writeStdout(text) {
+      await resultFile.write(text);
+    },
+  },
 });
 
 process.exitCode = exitCode;
 ```
 
-The composition root owns the trusted local principal and the final process
-status. `runCli` returns an exit code; it does not terminate the process or set
-`process.exitCode` itself.
-
-## Options
-
-```ts
-interface RunCliOptions {
-  argv?: readonly string[];
-  principal: Principal | null;
-  signal?: AbortSignal;
-  format?: "json" | "human";
-  io?: Partial<CliIo>;
-}
-```
-
-`argv` defaults to the process arguments. `io` lets tests and embedding
-applications replace standard input, output, and diagnostics. JSON is the
-canonical output format; `human` produces deterministic, pretty-printed JSON.
-
-## Commands
-
-### `list`
-
-```text
-engine list
-```
-
-Writes the result of `engine.list()`.
-
-### `describe`
-
-```text
-engine describe <capability-id>
-```
-
-Writes the result of `engine.describe(capabilityId)`.
-
-### `run`
-
-Pass a JSON object as an argument:
-
-```text
-engine run <capability-id> --input '<json>'
-```
-
-Or read it from standard input:
-
-```text
-engine run <capability-id> --stdin
-```
-
-The command invokes the selected capability with source `cli` and the principal
-provided by the composition root.
+`runCli` returns the numeric code. It never calls `process.exit` or assigns
+`process.exitCode`.
 
 ## Process contract
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | Command completed successfully |
-| `1` | Execution, validation, authorization, or output write failed |
-| `2` | Invalid usage, arguments, JSON, or UTF-8 input |
+| `0` | Command and output write completed successfully |
+| `1` | Invocation, cancellation, validation, authorization, or output write failed |
+| `2` | Invalid command, arguments, JSON, principal option, or UTF-8 input |
 
-Standard output contains only the requested result. Diagnostics and compact
+Standard output contains only the requested JSON result. Diagnostics and compact
 errors are written to standard error.
 
-Public engine failures contain `code`, `message`, and optional `publicDetails`.
-Causes, stack traces, credentials, and rejected values are never serialized.
+An engine error contains `code`, `message`, and optional `publicDetails`. Cause,
+stack, rejected input, and principal are not serialized. Unknown failures and
+standard-output write failures are sanitized as `EXECUTION_FAILED`. A failed
+diagnostic write is contained and does not replace the chosen exit code.
+
+The default stdin reader performs fatal incremental UTF-8 decoding, including
+multibyte sequences split across chunks. Invokta does not impose a default stdin
+size limit; a host receiving untrusted local input must provide a bounded
+`readStdin` implementation.
+
+<Aside type="note" title="The executable is your composition root">
+  Construct the engine, inject its dependencies, choose the trusted principal,
+  call `runCli`, and assign the returned process status. Keep business rules in
+  capabilities so direct and MCP callers observe the same behavior.
+</Aside>

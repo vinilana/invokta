@@ -1,0 +1,265 @@
+---
+title: '@invokta/deploy'
+description: Complete command, manifest, generated-file, probe, and programmatic API reference for HTTP deployment preparation.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/deploy` turns an engine with an MCP Streamable HTTP entry point into a
+reviewable container build context and probes an existing endpoint. It is a
+development tool, not a runtime adapter or deployment service.
+
+The toolkit generates and validates text. It never runs a shell, package
+manager, compiler, or container tool. `init` and `package` make no network
+requests; `probe` makes one bounded HTTP request.
+
+## Install
+
+```sh
+yarn add --dev @invokta/deploy
+```
+
+The package is native ESM, requires Node.js 22.20.0 or later, exports one package
+root, and provides the `invokta-deploy` binary.
+
+## Commands
+
+```text
+invokta-deploy init
+invokta-deploy package
+invokta-deploy probe --url <url> [--expect alive|ready]
+  [--bearer-env NAME] [--host-header HOST] [--timeout-ms N]
+invokta-deploy --help
+invokta-deploy --version
+```
+
+Commands are non-interactive. Progress and diagnostics go to standard error;
+only help and version write to standard output.
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Command succeeded or probe classified the endpoint as healthy |
+| `1` | Project input, generated-file conflict, or endpoint health failed |
+| `2` | Usage, manifest, initialization, or unexpected command failure |
+
+### `init`
+
+`init` accepts no arguments and scaffolds five user-owned files:
+
+| File | Purpose |
+| --- | --- |
+| `invokta.deploy.json` | Closed deployment manifest with explicit defaults |
+| `src/mcp-http.ts` | Production-shaped HTTP composition root |
+| `src/http-auth.ts` | Required authentication hook that fails closed until implemented |
+| `src/env.ts` | Bounded environment-file loader and required-name check |
+| `.env.example` | Empty, secret-free declarations from the manifest |
+
+Existing targets are reported as skipped and are never overwritten. A valid
+existing manifest parameterizes the other generated files; an invalid manifest
+fails before writes. The five exclusive writes are sequential rather than one
+cross-file transaction.
+
+The generated root expects a named `engine` export from `src/engine.ts`. It
+validates environment configuration before dynamically importing the engine.
+
+### `package`
+
+`package` validates, in order:
+
+1. `invokta.deploy.json`;
+2. package name, version, and build script;
+3. exactly one supported lockfile; and
+4. the built entry module.
+
+Preflight failure writes nothing. A successful preflight generates:
+
+| File | Purpose |
+| --- | --- |
+| `Dockerfile` | Multi-stage install, build, production prune, and non-root runtime |
+| `.dockerignore` | Excludes Git data, dependencies, tests, coverage, and every `.env*` |
+| `deploy/healthcheck.mjs` | One bounded MCP liveness/readiness request using Node built-ins |
+| `deploy/DEPLOYMENT.md` | Operator notes derived from the manifest |
+
+Each generated file starts with a toolkit marker. A marked file may be updated;
+an unmarked existing file is a per-file conflict and remains untouched while
+other files may still be generated. Status is `created`, `updated`, `unchanged`,
+or `conflict` in lexicographic path order.
+
+Writes use a private temporary file followed by rename. Identical regeneration
+does not rewrite bytes. Output contains no timestamp, hostname, username,
+absolute local path, or random value.
+
+| Lockfile | Install text | Production prune text |
+| --- | --- | --- |
+| `package-lock.json` | `npm ci` | `npm ci --omit=dev` |
+| `pnpm-lock.yaml` | `pnpm install --frozen-lockfile` | `pnpm install --prod --frozen-lockfile` |
+| `yarn.lock` | `yarn install --frozen-lockfile` | `yarn install --production --frozen-lockfile` |
+
+<Aside type="caution" title="Current container context limit">
+  The generated Dockerfile supports a standalone engine project. A monorepo
+  workspace build context is not supported by the current container template.
+  The toolkit also does not build or deploy the image; CI or an operator runs
+  those commands after reviewing the generated files.
+</Aside>
+
+### `probe`
+
+```sh
+invokta-deploy probe \
+  --url https://engine.example/mcp \
+  --expect alive
+
+ENGINE_PROBE_TOKEN='runtime-secret' \
+  invokta-deploy probe \
+  --url https://engine.example/mcp \
+  --expect ready \
+  --bearer-env ENGINE_PROBE_TOKEN
+```
+
+| Option | Contract |
+| --- | --- |
+| `--url` | Required absolute exact `/mcp` URL, at most 2,048 characters, without credentials, query, or fragment |
+| `--expect` | `alive` by default or `ready` |
+| `--bearer-env` | Environment variable name, allowed only with `ready`; token is non-empty visible ASCII up to 4,096 characters |
+| `--host-header` | Visible ASCII Host override up to 255 characters; changes the header, not the network destination |
+| `--timeout-ms` | Whole-exchange decimal timeout from `1` through `60000`; default `3000` |
+
+Plain HTTP is allowed only for literal `127.0.0.1` or `[::1]`, not `localhost`.
+Every option uses a separate name and value; duplicates, positionals, unknown
+flags, or `--flag=value` are invalid.
+
+The probe sends one MCP `initialize` POST, follows no redirect, performs no
+retry, and reuses no connection. It accepts JSON or SSE framing and caps the
+response at 1 MiB.
+
+The current success parser requires JSON-RPC `2.0`, no `error`, an object
+`result`, and a non-empty `result.protocolVersion`. It does not require the
+response ID to equal the request ID or require the negotiated version to equal
+the requested version. This is probe health classification, not a complete MCP
+conformance test.
+
+| Expectation | Healthy result |
+| --- | --- |
+| `alive` | A 401 with a Bearer challenge or a usable 200 initialize result |
+| `ready` | A usable 200 initialize result, with the named bearer token when supplied |
+
+Connection failure, timeout, a malformed response, or any status outside the
+accepted 200/401 cases is unhealthy. A credential enters through an environment
+variable and never appears in argv or diagnostics.
+
+<Aside type="danger" title="Probe only a trusted destination">
+  `--bearer-env` sends the token to the network destination in `--url`. A Host
+  override changes only the HTTP header and does not redirect the socket or TLS
+  connection.
+</Aside>
+
+## Deployment manifest
+
+```json
+{
+  "schemaVersion": 1,
+  "entry": "dist/mcp-http.js",
+  "env": {
+    "required": ["SUPPORT_API_TOKEN"],
+    "optional": ["INVOKTA_HTTP_ALLOWED_ORIGINS"]
+  },
+  "image": {
+    "baseImage": "node:22-slim",
+    "port": 3000
+  },
+  "healthcheck": {
+    "expect": "alive"
+  }
+}
+```
+
+The schema rejects unknown keys and reports every detectable issue in JSON
+pointer order without echoing rejected values.
+
+| Field | Contract |
+| --- | --- |
+| `schemaVersion` | Required exact number `1` |
+| `entry` | Required relative in-project `.js` or `.mjs` path without empty or `..` segments |
+| `env.required`, `env.optional` | Unique names matching `^[A-Z_][A-Z0-9_]{0,127}$`; at most 64 total |
+| `image.baseImage` | Non-empty text without whitespace or NUL; default `node:22-slim` |
+| `image.port` | Integer `1..65535`; default `3000` |
+| `healthcheck.expect` | `alive` by default or `ready` |
+| `healthcheck.bearerEnv` | Environment name allowed only with `ready` |
+
+The encoded document is limited to 65,536 bytes and each string to 1,024 Unicode
+scalars.
+
+## Generated environment contract
+
+The generated application code recognizes:
+
+| Variable | Meaning |
+| --- | --- |
+| `INVOKTA_HTTP_HOST` | Bind host, default `127.0.0.1` |
+| `INVOKTA_HTTP_PORT` or `PORT` | Bind port; the Invokta name wins |
+| `INVOKTA_HTTP_ALLOWED_HOSTS` | Comma-separated host allowlist, required for non-loopback |
+| `INVOKTA_HTTP_ALLOWED_ORIGINS` | Comma-separated browser origins |
+| `INVOKTA_HTTP_MAX_BODY_BYTES` | HTTP body limit override |
+| `INVOKTA_ENV_FILE` | Environment-file path, default `.env` |
+
+Process environment, including an empty value, has precedence over the file;
+file values have precedence over defaults. A missing default `.env` is ignored,
+but an explicitly named missing file fails. The loader uses Node's
+`util.parseEnv`, rejects symlinks, invalid UTF-8, NUL, oversized files, invalid
+names, more than 256 applied keys, or values over 4,096 Unicode scalars.
+
+Required manifest names must be present and non-empty before the engine module
+is imported. Production secrets belong in the platform; generated
+`.dockerignore` excludes all environment files.
+
+## Errors
+
+Deployment errors are toolkit contracts, not `EngineError` values:
+
+`MANIFEST_NOT_FOUND`, `MANIFEST_INVALID`, `PACKAGE_JSON_INVALID`,
+`LOCKFILE_MISSING`, `LOCKFILE_AMBIGUOUS`, `ENTRY_NOT_BUILT`,
+`GENERATED_FILE_CONFLICT`, `WRITE_FAILED`, `PROBE_UNREACHABLE`, and
+`PROBE_UNHEALTHY`.
+
+`DeployError` contains a stable `code`, `exitCode`, and sanitized details. It
+stores no cause. `renderDeployDiagnostic` emits the code and message followed by
+indented details.
+
+## API
+
+The package root exports:
+
+- command functions: `runDeployCli`, `runInit`, `runPackage`, `runProbe`;
+- context functions: `createDeployContext`, `writeDiagnostic`;
+- command/context types: `DeployCommandName`, `RunDeployCliOptions`,
+  `DeployCommandRun`, `DeployContext`, `DeployContextOverrides`, `DeployIo`,
+  `DeployExitCode`;
+- errors: `DeployError`, `DeployErrorCode`, `DeployErrorOptions`, error tables,
+  and `renderDeployDiagnostic`;
+- manifest functions: `loadDeployManifest`, `parseDeployManifest`, and
+  `toDeployError`;
+- manifest types: `HttpDeployManifest`, its nested environment/image/healthcheck
+  types, load options, result/success/failure, and issue/reason types; and
+- manifest constants: `deployManifestFileName`, `deployManifestDefaults`,
+  `deployManifestLimits`, `deployManifestIssueMessages`, and
+  `environmentNamePattern`.
+
+```ts
+const exitCode = await runDeployCli({
+  argv: [
+    "probe",
+    "--url",
+    "https://engine.example/mcp",
+  ],
+  cwd: process.cwd(),
+});
+
+process.exitCode = exitCode;
+```
+
+The orchestration functions return an exit code and never terminate the
+process. `runInit`, `runPackage`, and `runProbe` accept command arguments plus a
+`DeployContext` for embedding and tests.
+
+Follow the [deployment guide](/guides/deployment/) for the normal workflow and
+the [`@invokta/mcp` reference](/reference/mcp/) for the server being packaged.

@@ -1,0 +1,43 @@
+---
+title: Package reference
+description: Choose the Invokta runtime, adapter, or supporting package for the boundary you are implementing.
+sidebar:
+  label: Overview
+---
+
+Invokta publishes three runtime packages and three supporting packages. Each has
+one bounded responsibility.
+
+## Runtime packages
+
+| Package | Public role | Start here |
+| --- | --- | --- |
+| `@invokta/core` | Capability contracts, execution, composition, errors, and events | [Core reference](/reference/core/) |
+| `@invokta/cli` | Local `list`, `describe`, and `run` over `engine.invoke` | [CLI reference](/reference/cli/) |
+| `@invokta/mcp` | MCP tools over stdio and stateless Streamable HTTP | [MCP reference](/reference/mcp/) |
+
+The core has no adapter or SDK dependency. CLI and MCP import only its public
+API and never call capability handlers directly.
+
+## Supporting packages
+
+| Package | Public role | Start here |
+| --- | --- | --- |
+| `@invokta/tooling` | Validate a built, tracked capability composition in development or CI | [Tooling reference](/reference/tooling/) |
+| `@invokta/installer` | Current read-only inventory of supported local MCP client targets | [Installer reference](/reference/installer/) |
+| `@invokta/deploy` | Scaffold and package HTTP deployment artifacts and probe an endpoint | [Deploy reference](/reference/deploy/) |
+
+Supporting packages do not create another capability execution path. Tooling
+imports a trusted composition module, the installer inventory never invokes an
+engine, and deploy generates files or makes one probe request.
+
+## Shared requirements
+
+- Native ESM
+- Node.js 22.20.0 or later
+- Package-root imports only unless a package explicitly documents a subpath
+- Runtime behavior remains on `engine.invoke`
+
+Use the [error reference](/reference/errors/) for capability invocation errors.
+Tooling, installer, and deploy diagnostics have separate application-specific
+contracts.
