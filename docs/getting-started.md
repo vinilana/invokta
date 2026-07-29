@@ -16,7 +16,9 @@ multi-step, spec-driven workflow using domain stage rules. The
 [`agent-session-engine`](../examples/agent-session-engine/) shows how command
 hooks from Cursor, Antigravity, Claude Code, and Codex can record durable agent
 session metadata through the CLI adapter while another harness resumes from a
-portable checkpoint.
+portable checkpoint. The [`review-engine`](../examples/review-engine/) applies
+code-review, acceptance-eval, and adversarial-review rules before an agent may
+declare a task complete.
 
 ## Prerequisites
 
