@@ -11,6 +11,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Added `create-invokta-engine`, a non-interactive standalone engine creator with
   deterministic, non-overwriting scaffolding and npm, pnpm, and Yarn installation.
+- Added one-command local Action Engine installation through the generated
+  `mcp:install` script and strict `invokta.mcp.json` manifest.
+- Added confirmed, transactional multi-client installation with independent
+  per-target results, idempotent reruns, drift detection, and rollback.
+- Added interactive `status`, `enable`, `disable`, and `remove` commands for
+  installer-managed MCP entries.
+- Added offline registration of explicit Streamable HTTP endpoints with
+  environment-variable credential references.
+- Added VS Code user-profile and Claude Desktop macOS targets, bringing the
+  catalog to eleven configuration targets across twelve executable surfaces.
+
+### Security
+
+- Local installation validates owned, no-follow project paths and never imports,
+  executes, or reflects on the engine during discovery.
+- Remote installation performs no network request and rejects embedded
+  credentials, queries, fragments, noncanonical routes, and non-loopback HTTP.
+- Client updates use bounded locks, atomic replacements, per-target state, and
+  exact configuration rollback when a state commit fails.
 
 ## [0.1.0] - 2026-07-29
 

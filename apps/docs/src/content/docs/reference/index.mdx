@@ -24,14 +24,14 @@ API and never call capability handlers directly.
 | Package | Public role | Start here |
 | --- | --- | --- |
 | `@invokta/tooling` | Validate a built, tracked capability composition in development or CI | [Tooling reference](/reference/tooling/) |
-| `@invokta/installer` | Current read-only inventory of supported local MCP client targets | [Installer reference](/reference/installer/) |
+| `@invokta/installer` | Install and manage Action Engine MCP servers in supported local clients | [Installer reference](/reference/installer/) |
 | `@invokta/deploy` | Scaffold and package HTTP deployment artifacts and probe an endpoint | [Deploy reference](/reference/deploy/) |
 | `create-invokta-engine` | Create a standalone starter engine and install its dependencies | [Creator reference](/reference/create-invokta-engine/) |
 
 Supporting packages do not create another capability execution path. The creator
 writes a project, tooling imports a trusted composition module, the installer
-inventory never invokes an engine, and deploy generates files or makes one probe
-request.
+updates client configuration without invoking an engine, and deploy generates
+files or makes one probe request.
 
 ## Shared requirements
 

@@ -91,8 +91,8 @@ and delivery adapters:
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure
   stateless HTTP while keeping the official MCP SDK behind the adapter boundary;
 - `@invokta/tooling` validates composed capabilities during development;
-- `@invokta/installer` currently provides a read-only inventory of supported
-  local MCP client targets without changing their configuration;
+- `@invokta/installer` detects supported local MCP clients, installs local or
+  remote Action Engines across selected clients, and manages those entries;
 - `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes
   deployed endpoints.
 - `create-invokta-engine` creates a standalone starter with direct, CLI, and MCP
@@ -112,7 +112,13 @@ Create a standalone engine:
 npm create invokta-engine@latest my-engine
 cd my-engine
 npm run check
+npm run mcp:install
 ```
+
+`mcp:install` builds the generated engine, detects eligible MCP clients,
+preselects them, and asks for one confirmation before updating their user
+configuration. See the [installer reference](./apps/docs/src/content/docs/reference/installer.mdx)
+for remote HTTP registration and lifecycle commands.
 
 To work on Invokta itself:
 

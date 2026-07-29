@@ -245,7 +245,7 @@ test("all required routes are reachable from the sidebar", async () => {
   }
 });
 
-test("an empty installer registry is documented as read-only", async () => {
+test("an empty installer registry does not hide direct installation", async () => {
   const registry = JSON.parse(
     await readFile(
       join(
@@ -270,14 +270,15 @@ test("an empty installer registry is documented as read-only", async () => {
   );
   const rootReadme = await readFile(join(repositoryRoot, "README.md"), "utf8");
 
-  for (const [name, source] of [
-    ["installer reference", reference],
-    ["installation guide", installation],
-    ["root README", rootReadme],
-  ]) {
-    assert.match(source, /read-only/iu, name);
-  }
-  assert.match(reference, /does not\s+install/iu);
+  assert.match(
+    reference,
+    /argument-free command remains a read-only inventory/iu,
+  );
+  assert.match(reference, /bundled capability registry may remain empty/iu);
+  assert.match(reference, /install --engine/iu);
+  assert.match(reference, /install --http/iu);
+  assert.match(installation, /npm run mcp:install/iu);
+  assert.match(rootReadme, /npm run mcp:install/iu);
 });
 
 test("the capability package guide covers authoring, publishing, and consuming", async () => {
