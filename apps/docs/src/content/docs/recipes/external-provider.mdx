@@ -1,0 +1,153 @@
+---
+title: Wrap an external provider
+description: Put provider credentials and HTTP details behind an engine-owned port.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Use an outbound adapter when a capability depends on an external API. The
+capability should describe the domain operation, while one infrastructure module
+owns authentication, transport, provider payloads, and error translation.
+
+This recipe follows the `crawl-engine` example, which publishes a stable web
+crawling contract backed by Firecrawl.
+
+## Build the boundary
+
+<Steps>
+
+1. Declare an engine-owned provider port
+
+   ```ts
+   export interface WebCrawler {
+     scrapePage(
+       request: { readonly target: CrawlTarget },
+       options: { readonly signal: AbortSignal },
+     ): Promise<ScrapedPage>;
+   }
+
+   export interface CrawlDependencies {
+     readonly crawler: WebCrawler;
+     readonly permissions: CrawlPermissionChecker;
+   }
+   ```
+
+   Keep provider request and response types out of this interface. A different
+   crawler can implement the same domain operation later.
+
+2. Depend on the port from the capability
+
+   ```ts
+   export function createScrapePage({
+     crawler,
+     permissions,
+   }: CrawlDependencies) {
+     return defineCapability({
+       title: "Scrape page",
+       description:
+         "Fetch one public web page and return its main content as Markdown.",
+       input: z.object({ url: crawlTargetUrl }),
+       output: scrapedPageOutput,
+       access: async ({ principal, input }) => {
+         if (principal === null) return false;
+         const target = parseCrawlTarget(input.url);
+         return target !== null &&
+           permissions.can(principal, "crawl:scrape", target);
+       },
+       timeoutMs: 60_000,
+       async run({ input, context }) {
+         return crawler.scrapePage(
+           { target: requireCrawlTarget(input.url) },
+           { signal: context.signal },
+         );
+       },
+     });
+   }
+   ```
+
+   The capability owns validation, authorization, the timeout, and the public
+   output. The adapter receives the invocation's cancellation signal.
+
+3. Translate provider failures at the adapter boundary
+
+   ```ts
+   if (!response.ok) {
+     throw new EngineError({
+       code: "EXECUTION_FAILED",
+       message: "Firecrawl rejected the request.",
+       publicDetails: {
+         provider: "firecrawl",
+         status: response.status,
+       },
+     });
+   }
+   ```
+
+   Keep the raw response body and credentials out of `publicDetails`. The full
+   adapter also validates provider payloads, bounds polling, and rejects
+   cross-origin pagination targets.
+
+4. Read credentials at the composition root
+
+   ```ts
+   export function createFirecrawlCrawlEngine(
+     environment: FirecrawlEnvironment = process.env,
+   ) {
+     const apiKey = environment.FIRECRAWL_API_KEY;
+     if (apiKey === undefined || apiKey === "") {
+       throw new Error("FIRECRAWL_API_KEY is required.");
+     }
+
+     return createCrawlEngine({
+       crawler: createFirecrawlWebCrawler({ apiKey }),
+       permissions: createAttributeCrawlPermissionChecker(),
+     });
+   }
+   ```
+
+   The credential is deployment configuration. It never becomes capability
+   input, output, or trusted invocation context.
+
+</Steps>
+
+<Aside type="danger" title="Validate network targets before making a request">
+  A crawler reachable from an agent or the network can become an SSRF path. The
+  complete example rejects loopback, private, link-local, credential-bearing,
+  and non-HTTP targets in the input schema before authorization or provider I/O.
+</Aside>
+
+## Run it
+
+Provide a Firecrawl API key, build the repository, and invoke one public URL:
+
+```sh
+export FIRECRAWL_API_KEY='fc-...'
+yarn build
+node examples/crawl-engine/dist/direct.js https://example.com/
+```
+
+The same capability is available through the CLI:
+
+```sh
+node examples/crawl-engine/dist/cli.js run crawl.scrape-page \
+  --input '{"url":"https://example.com/"}'
+```
+
+The bundled local principal allows `example.com` and `firecrawl.dev`. Change the
+trusted principal configuration before using another host.
+
+## Verify it
+
+The tests use a local Firecrawl-compatible stub and never call the public API, so
+they do not require a real credential:
+
+```sh
+yarn workspace @invokta/example-crawl test
+yarn workspace @invokta/example-crawl typecheck
+yarn workspace @invokta/example-crawl build
+```
+
+Read the complete
+[`crawl-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/crawl-engine)
+example for target validation, provider payload checks, bounded polling,
+cancellation, authorization, and all four inbound entry points.

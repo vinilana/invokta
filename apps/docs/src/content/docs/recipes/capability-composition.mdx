@@ -1,0 +1,160 @@
+---
+title: Compose capabilities
+description: Combine local, atomic, and library capabilities under deliberate engine IDs.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Use composition when one engine should publish capabilities from its own package
+and from reusable packages. The consuming engine owns the final IDs, supplies all
+dependencies, and detects collisions before serving traffic.
+
+This recipe follows the `composed-engine` example. It combines one local
+capability, two atomic exports, and two selected capabilities from a library.
+
+## Build the composition
+
+<Steps>
+
+1. Keep the composition module safe to import
+
+   Create `src/capabilities.ts` as a module that starts no adapter and creates no
+   engine. This lets the build gate inspect it without starting the application.
+
+2. Add the local and imported capabilities
+
+   ```ts
+   import {
+     composeCapabilities,
+     importCapabilities,
+     importCapability,
+   } from "@invokta/core";
+   import {
+     createScoreTicketPriorityExport,
+   } from "@invokta/example-community-capabilities";
+   import {
+     createClassifyTicketExport,
+   } from "@invokta/example-community-capabilities/classify-ticket";
+   import {
+     createCommunitySupportLibrary,
+   } from "@invokta/example-community-capabilities/library";
+
+   import type { OperationsDependencies } from "./application/ports.js";
+   import { createGenerateReport } from "./capabilities/generate-report.js";
+   import {
+     createDefaultOperationsDependencies,
+   } from "./infrastructure/default-dependencies.js";
+
+   export function createOperationsCapabilities(
+     dependencies: OperationsDependencies,
+   ) {
+     return composeCapabilities({
+       local: {
+         "operations.generate-report":
+           createGenerateReport(dependencies.reports),
+       },
+       imports: [
+         importCapability(
+           createScoreTicketPriorityExport(dependencies.community),
+         ),
+         importCapability(
+           createClassifyTicketExport(dependencies.community),
+           { as: "operations.classify-ticket" },
+         ),
+         importCapabilities(
+           createCommunitySupportLibrary(dependencies.community),
+           {
+             include: [
+               "community.search-knowledge-base",
+               "community.draft-reply",
+             ],
+             remap: {
+               "community.draft-reply": "operations.draft-reply",
+             },
+           },
+         ),
+       ],
+     });
+   }
+
+   export const capabilities = createOperationsCapabilities(
+     createDefaultOperationsDependencies(),
+   );
+   ```
+
+   `as` and `remap` replace a default ID. They do not create aliases. The
+   effective capability set is:
+
+   ```text
+   operations.generate-report
+   community.score-ticket-priority
+   operations.classify-ticket
+   community.search-knowledge-base
+   operations.draft-reply
+   ```
+
+3. Create the engine from the composed map
+
+   ```ts
+   import { createEngine } from "@invokta/core";
+
+   import { capabilities } from "./capabilities.js";
+
+   export const engine = createEngine({
+     name: "composed-engine",
+     version: "0.1.0",
+     capabilities,
+   });
+   ```
+
+   Local and imported capabilities now use the same `engine.invoke` pipeline.
+   The engine composition root remains responsible for constructing every
+   repository, classifier, policy checker, and other dependency.
+
+</Steps>
+
+<Aside type="caution" title="Treat remapping as a contract change">
+  A consumer must invoke the effective ID. In this example,
+  `community.draft-reply` is absent and returns `CAPABILITY_NOT_FOUND`; only
+  `operations.draft-reply` is published.
+</Aside>
+
+## Run it
+
+From the repository root, build and run the direct example:
+
+```sh
+yarn build
+node examples/composed-engine/dist/direct.js
+```
+
+Inspect the effective IDs, then invoke an atomic and a remapped library
+capability through the CLI:
+
+```sh
+node examples/composed-engine/dist/cli.js list
+node examples/composed-engine/dist/cli.js run community.score-ticket-priority \
+  --input '{"ticketId":"T-789"}'
+node examples/composed-engine/dist/cli.js run operations.draft-reply \
+  --input '{"ticketId":"T-123","tone":"friendly"}'
+```
+
+## Verify it
+
+Run the composition build gate before the example tests and type checks:
+
+```sh
+yarn workspace @invokta/example-composed check:capabilities
+yarn workspace @invokta/example-composed test
+yarn workspace @invokta/example-composed typecheck
+yarn workspace @invokta/example-composed build
+```
+
+`check:capabilities` imports the built composition module and rejects duplicate
+effective IDs, invalid selections, and untracked raw maps without starting an
+adapter.
+
+Read the complete
+[`composed-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/composed-engine)
+example for the export package, injected dependencies, inbound adapters, and
+collision tests.

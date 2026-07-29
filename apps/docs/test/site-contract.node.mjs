@@ -7,6 +7,13 @@ import { fileURLToPath } from "node:url";
 const appRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const contentRoot = join(appRoot, "src", "content", "docs");
 
+const requiredRecipeRoutes = [
+  "/recipes/dependency-injection/",
+  "/recipes/domain-authorization/",
+  "/recipes/capability-composition/",
+  "/recipes/external-provider/",
+];
+
 const requiredRoutes = [
   "/",
   "/getting-started/installation/",
@@ -16,6 +23,8 @@ const requiredRoutes = [
   "/concepts/invocation-pipeline/",
   "/guides/execution-channels/",
   "/guides/deployment/",
+  "/recipes/",
+  ...requiredRecipeRoutes,
   "/reference/core/",
   "/reference/cli/",
   "/reference/mcp/",
@@ -91,6 +100,27 @@ test("root-relative links resolve to a documentation route", async () => {
   }
 
   assert.deepEqual(failures, []);
+});
+
+test("recipes provide runnable commands, verification, and full examples", async () => {
+  const files = (await collectFiles(contentRoot)).filter((path) =>
+    [".md", ".mdx"].includes(extname(path)),
+  );
+  const recipeFiles = files.filter((path) =>
+    requiredRecipeRoutes.includes(sourceRoute(path)),
+  );
+
+  assert.equal(recipeFiles.length, requiredRecipeRoutes.length);
+  for (const path of recipeFiles) {
+    const source = await readFile(path, "utf8");
+    assert.match(source, /^## Run it$/mu, relative(appRoot, path));
+    assert.match(source, /^## Verify it$/mu, relative(appRoot, path));
+    assert.match(
+      source,
+      /https:\/\/github\.com\/vinilana\/ai-engines\/tree\/main\/examples\//u,
+      relative(appRoot, path),
+    );
+  }
 });
 
 test("public copy avoids unsupported hype and prohibited phrasing", async () => {

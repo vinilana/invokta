@@ -68,6 +68,16 @@ export default defineConfig({
           ],
         },
         {
+          label: "Recipes",
+          items: [
+            { slug: "recipes" },
+            { slug: "recipes/dependency-injection" },
+            { slug: "recipes/domain-authorization" },
+            { slug: "recipes/capability-composition" },
+            { slug: "recipes/external-provider" },
+          ],
+        },
+        {
           label: "Reference",
           items: [
             { slug: "reference/core" },

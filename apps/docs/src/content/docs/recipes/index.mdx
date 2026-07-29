@@ -1,0 +1,55 @@
+---
+title: Recipes
+description: Practical Invokta patterns backed by runnable examples and tests.
+sidebar:
+  label: Overview
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Recipes start from a task you are likely to face while building an Action
+Engine. Each one uses code from a tested example in the Invokta repository, then
+shows how to run and verify the result locally.
+
+<CardGrid>
+  <Card title="Inject a dependency" icon="puzzle">
+    Put a repository and classifier behind engine-owned ports, then wire their
+    implementations at the composition root.
+
+    [Open recipe](/recipes/dependency-injection/)
+  </Card>
+  <Card title="Authorize with domain data" icon="lock">
+    Check a principal's permission and resource constraint before the capability
+    loads a ticket or calls a model.
+
+    [Open recipe](/recipes/domain-authorization/)
+  </Card>
+  <Card title="Compose capabilities" icon="merge">
+    Combine a local capability, atomic package exports, and a selected library
+    without losing ID ownership.
+
+    [Open recipe](/recipes/capability-composition/)
+  </Card>
+  <Card title="Wrap an external provider" icon="transfer">
+    Keep a provider credential and HTTP contract behind an outbound port while
+    cancellation and safe errors cross the boundary.
+
+    [Open recipe](/recipes/external-provider/)
+  </Card>
+</CardGrid>
+
+## Before you start
+
+Run the recipes from the repository root with Node.js 22.20.0 or later and Yarn
+1.22.22:
+
+```sh
+git clone https://github.com/vinilana/ai-engines.git
+cd ai-engines
+yarn install --frozen-lockfile
+yarn build
+```
+
+If this is your first Invokta engine, build the
+[first-engine walkthrough](/getting-started/first-engine/) before using these
+patterns.

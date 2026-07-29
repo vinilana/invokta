@@ -1,0 +1,167 @@
+---
+title: Inject a dependency
+description: Keep repositories and model-backed services behind engine-owned ports.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Use this pattern when a capability needs a database, model client, external API,
+or another dependency that should remain replaceable. The custom engine owns the
+interfaces. Concrete implementations enter through a factory at the composition
+root.
+
+This recipe follows the repository's `support-engine` example. It classifies a
+support ticket with a repository, classifier, and permission checker.
+
+## Build the boundary
+
+<Steps>
+
+1. Declare engine-owned ports
+
+   Create `src/application/ports.ts`:
+
+   ```ts
+   import type { Principal } from "@invokta/core";
+
+   import type { Ticket, TicketClassification } from "../domain/ticket.js";
+
+   export interface TicketRepository {
+     findById(ticketId: string): Promise<Ticket | null>;
+   }
+
+   export interface TicketClassifier {
+     classify(
+       ticket: Ticket,
+       options: { readonly signal: AbortSignal },
+     ): Promise<TicketClassification>;
+   }
+
+   export interface PermissionChecker {
+     can(
+       principal: Principal,
+       permission: "ticket:classify",
+       ticketId: string,
+     ): boolean | Promise<boolean>;
+   }
+
+   export interface SupportDependencies {
+     readonly tickets: TicketRepository;
+     readonly classifier: TicketClassifier;
+     readonly permissions: PermissionChecker;
+   }
+   ```
+
+   These interfaces describe what the capability needs. They do not expose a
+   provider SDK or create a framework-wide dependency registry.
+
+2. Capture dependencies in the capability factory
+
+   ```ts
+   import { defineCapability, EngineError } from "@invokta/core";
+   import { z } from "zod";
+
+   import type { SupportDependencies } from "../application/ports.js";
+
+   export function createClassifyTicket({
+     tickets,
+     classifier,
+     permissions,
+   }: SupportDependencies) {
+     return defineCapability({
+       description: "Classify a support ticket into an operational category.",
+       input: z.object({ ticketId: z.string().trim().min(1) }),
+       output: z.object({
+         category: z.enum(["billing", "technical", "commercial", "other"]),
+         confidence: z.number().min(0).max(1),
+         rationale: z.string().min(1),
+       }),
+       access: async ({ principal, input }) =>
+         principal !== null &&
+         permissions.can(principal, "ticket:classify", input.ticketId),
+       timeoutMs: 30_000,
+       async run({ input, context }) {
+         const ticket = await tickets.findById(input.ticketId);
+         if (ticket === null) {
+           throw new EngineError({
+             code: "EXECUTION_FAILED",
+             message: "Ticket not found.",
+             publicDetails: { ticketId: input.ticketId },
+           });
+         }
+         return classifier.classify(ticket, { signal: context.signal });
+       },
+     });
+   }
+   ```
+
+   The closure makes the dependencies available to `access` and `run`. The
+   execution context stays limited to request state.
+
+3. Wire implementations at the composition root
+
+   ```ts
+   export function createSupportEngine(dependencies: SupportDependencies) {
+     return createEngine({
+       name: "support-engine",
+       version: "1.0.0",
+       capabilities: {
+         "support.classify-ticket": createClassifyTicket(dependencies),
+       },
+     });
+   }
+
+   export const engine = createSupportEngine({
+     tickets: createInMemoryTicketRepository(seedTickets),
+     classifier: createRuleBasedTicketClassifier(),
+     permissions: createAttributePermissionChecker(),
+   });
+   ```
+
+   A production composition can pass a database repository and a model-backed
+   classifier without changing the capability schema or inbound adapters.
+
+</Steps>
+
+<Aside type="tip" title="Propagate cancellation">
+  Give long-running ports the `context.signal`. The runtime then carries caller
+  cancellation and the capability timeout into the dependency that is doing the
+  work.
+</Aside>
+
+## Run it
+
+From the repository root:
+
+```sh
+yarn build
+node examples/support-engine/dist/direct.js
+```
+
+The deterministic adapters return:
+
+```json
+{"category":"billing","confidence":0.9,"rationale":"The ticket contains language associated with billing."}
+```
+
+Invoke the same capability through the CLI:
+
+```sh
+node examples/support-engine/dist/cli.js run support.classify-ticket \
+  --input '{"ticketId":"T-123"}'
+```
+
+## Verify it
+
+The example tests dependency substitution, output validation, safe failures,
+cancellation, and the four inbound entry points:
+
+```sh
+yarn workspace @invokta/example-support test
+yarn workspace @invokta/example-support typecheck
+yarn workspace @invokta/example-support build
+```
+
+Read the complete
+[`support-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/support-engine)
+example when you need the domain types and deterministic adapters used above.

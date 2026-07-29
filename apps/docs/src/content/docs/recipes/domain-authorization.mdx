@@ -1,0 +1,138 @@
+---
+title: Authorize with domain data
+description: Enforce a permission and resource constraint before capability execution.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Use a function access rule when authentication alone is not enough. The rule can
+check the trusted principal against validated domain input before `run` loads
+data or calls a provider.
+
+This recipe grants `ticket:classify` only when the principal has the permission
+and, when present, the requested ticket is in `allowedTicketIds`.
+
+## Build the rule
+
+<Steps>
+
+1. Define the permission port
+
+   ```ts
+   export interface PermissionChecker {
+     can(
+       principal: Principal,
+       permission: "ticket:classify",
+       ticketId: string,
+     ): boolean | Promise<boolean>;
+   }
+   ```
+
+   The capability depends on a domain decision. Your engine can implement it
+   from principal attributes or delegate it to an existing policy service.
+
+2. Implement a fail-closed attribute checker
+
+   ```ts
+   function stringArray(value: unknown): ReadonlyArray<string> | null {
+     return Array.isArray(value) &&
+       value.every((item) => typeof item === "string")
+       ? value
+       : null;
+   }
+
+   export function createAttributePermissionChecker(): PermissionChecker {
+     return {
+       can(principal, permission, ticketId) {
+         const permissions = stringArray(principal.attributes?.permissions);
+         if (permissions?.includes(permission) !== true) return false;
+
+         const constraint = principal.attributes?.allowedTicketIds;
+         if (constraint === undefined) return true;
+
+         const allowedTicketIds = stringArray(constraint);
+         return allowedTicketIds?.includes(ticketId) === true;
+       },
+     };
+   }
+   ```
+
+   A malformed permission list or resource constraint denies access. The
+   checker does not guess how to interpret caller-controlled values.
+
+3. Call the port from `access`
+
+   ```ts
+   access: async ({ principal, input }) => {
+     if (principal === null) return false;
+     return permissions.can(
+       principal,
+       "ticket:classify",
+       input.ticketId,
+     );
+   },
+   ```
+
+   Invokta has already validated and transformed `input` at this point. A denial
+   stops the pipeline before `run` receives the request.
+
+4. Supply trusted identity at the composition root
+
+   ```ts
+   export const localPrincipal: Principal = Object.freeze({
+     id: "local:support-operator",
+     attributes: Object.freeze({
+       permissions: Object.freeze(["ticket:classify"]),
+       allowedTicketIds: Object.freeze(["T-123", "T-456"]),
+     }),
+   });
+
+   process.exitCode = await runCli(engine, {
+     principal: localPrincipal,
+   });
+   ```
+
+   The CLI user cannot select another identity with an argument. HTTP identity
+   should come from the adapter's authentication hook.
+
+</Steps>
+
+<Aside type="caution" title="Keep authorization out of tool input">
+  A field such as `role` or `allowedTicketIds` in the capability input lets the
+  caller choose its own authority. Put identity data in the trusted `Principal`
+  and keep the requested resource in the validated domain input.
+</Aside>
+
+## Run it
+
+Build the repository, then invoke an allowed ticket:
+
+```sh
+yarn build
+node examples/support-engine/dist/cli.js run support.classify-ticket \
+  --input '{"ticketId":"T-123"}'
+```
+
+Now request a ticket outside the principal's resource constraint:
+
+```sh
+node examples/support-engine/dist/cli.js run support.classify-ticket \
+  --input '{"ticketId":"T-999"}'
+```
+
+The second command returns `FORBIDDEN`. The repository and classifier are never
+called for that request.
+
+## Verify it
+
+The support-engine tests assert the call order and confirm that denied access
+does not touch either outbound dependency:
+
+```sh
+yarn workspace @invokta/example-support test
+```
+
+Read the complete
+[`support-engine`](https://github.com/vinilana/ai-engines/tree/main/examples/support-engine)
+example for the permission port, local principal, HTTP authentication hook, and
+denial tests.
