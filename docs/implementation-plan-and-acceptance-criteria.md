@@ -43,8 +43,10 @@ persistence, configuration field, or operational limit:
 | `AE-SCOPE-01..04`, `AE-LIMIT-01..05` | Manifest and API review prove package roles and the absence of deferred abstractions |
 
 Supporting packages require focused contract tests for their own authority:
-creator scaffolds remain deterministic, non-overwriting, and independently
-buildable; composition diagnostics remain deterministic and payload-free;
+engine, atomic capability, and capability-library creator scaffolds remain
+deterministic, non-overwriting, and independently buildable; generated
+capability packages compose only through the public core API; composition
+diagnostics remain deterministic and payload-free;
 installer writes remain confirmed, atomic, reversible, and secret-free; deploy
 outputs remain deterministic, marked, and non-destructive; and every published
 tarball passes an isolated consumer smoke test.

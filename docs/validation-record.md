@@ -1,8 +1,8 @@
 # Validation record
 
 - Last reviewed: 2026-07-29
-- Public API changes: Action Engine creator installation scaffold and installer
-  CLI commands accepted in ADR 0013
+- Public API changes: standalone atomic capability and capability-library
+  creators accepted in ADR 0014
 
 ## Reuse evidence
 
@@ -34,12 +34,15 @@ consumer can use the protocol surface without coupling to engine code.
   creates no cross-request session state.
 - Capability composition preserves explicit imports and fails deterministically
   on effective-ID collisions.
-- The installer and deploy packages remain outside the capability call graph and
-  exercise only their documented local configuration and generation authority.
+- The creators, installer, and deploy packages remain outside the capability
+  call graph and exercise only their documented project creation, local
+  configuration, and generation authority.
 - Packed creator smoke tests build a generated engine and exercise its
-  `mcp:install` path; installer tests cover local manifests, remote descriptors,
-  multi-client transactions, lifecycle management, eleven target adapters, and
-  forbidden process, network, and write sentinels.
+  `mcp:install` path. They also build generated atomic and library packages,
+  compose their public root exports through `@invokta/core`, and invoke them
+  through `engine.invoke`. Installer tests cover local manifests, remote
+  descriptors, multi-client transactions, lifecycle management, eleven target
+  adapters, and forbidden process, network, and write sentinels.
 
 ## Ownership conclusions
 

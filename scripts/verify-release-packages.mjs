@@ -56,6 +56,18 @@ const publicPackages = [
     // The creator is binary-only and ships no import API.
     requiredFiles: ["dist/bin.js"],
   },
+  {
+    directory: "create-invokta-capability",
+    name: "create-invokta-capability",
+    // The creator is binary-only and ships no import API.
+    requiredFiles: ["dist/bin.js"],
+  },
+  {
+    directory: "create-invokta-capability-library",
+    name: "create-invokta-capability-library",
+    // The creator is binary-only and ships no import API.
+    requiredFiles: ["dist/bin.js"],
+  },
 ];
 
 function run(command, args, options = {}) {
@@ -535,6 +547,90 @@ try {
   }
   writeGeneratedMcpSmoke(generatedProjectDirectory);
   run("node", ["mcp-smoke.mjs"], { cwd: generatedProjectDirectory });
+
+  const capabilityCreatorCases = [
+    {
+      command: "create-invokta-capability",
+      target: "release-capability",
+      expectedExports: ["createWelcomeMessageExport"],
+    },
+    {
+      command: "create-invokta-capability-library",
+      target: "release-capability-library",
+      expectedExports: ["onboardingCapabilityLibrary"],
+    },
+  ];
+  for (const creatorCase of capabilityCreatorCases) {
+    const command = join(
+      consumerDirectory,
+      "node_modules",
+      ".bin",
+      creatorCase.command,
+    );
+    const version = run(command, ["--version"], {
+      cwd: generatedDirectory,
+      capture: true,
+      env: { NODE_OPTIONS: `--no-warnings --import=${networkSentinel}` },
+    });
+    if (version !== `${releaseVersion}\n`) {
+      throw new Error(`${creatorCase.command} binary version smoke failed`);
+    }
+    const output = run(
+      command,
+      [creatorCase.target, "--package-manager", "npm", "--no-install"],
+      {
+        cwd: generatedDirectory,
+        capture: true,
+        env: { NODE_OPTIONS: `--no-warnings --import=${networkSentinel}` },
+      },
+    );
+    if (
+      !output.startsWith(`Created ${creatorCase.target} without installing`)
+    ) {
+      throw new Error(`${creatorCase.command} scaffold smoke failed`);
+    }
+
+    const projectDirectory = join(generatedDirectory, creatorCase.target);
+    const manifest = JSON.parse(
+      readFileSync(join(projectDirectory, "package.json"), "utf8"),
+    );
+    if (
+      manifest.private !== true ||
+      manifest.dependencies?.["@invokta/core"] !== releaseVersion
+    ) {
+      throw new Error(
+        `${creatorCase.command} generated manifest is not release-aligned`,
+      );
+    }
+    const coreTarball = tarballsByName.get("@invokta/core");
+    if (coreTarball === undefined) {
+      throw new Error("generated capability consumer tarball is incomplete");
+    }
+    run(
+      "npm",
+      ["install", "--ignore-scripts", "--no-audit", "--no-fund", coreTarball],
+      { cwd: projectDirectory },
+    );
+    run("npm", ["run", "--silent", "check"], { cwd: projectDirectory });
+
+    const exportedNames = JSON.parse(
+      run(
+        "node",
+        [
+          "--input-type=module",
+          "--eval",
+          'import("./dist/index.js").then((module) => process.stdout.write(JSON.stringify(Object.keys(module)) + "\\n"))',
+        ],
+        { cwd: projectDirectory, capture: true },
+      ),
+    );
+    if (
+      JSON.stringify(exportedNames) !==
+      JSON.stringify(creatorCase.expectedExports)
+    ) {
+      throw new Error(`${creatorCase.command} root export smoke failed`);
+    }
+  }
 
   const installerVersion = run(installerCommand, ["--version"], {
     cwd: consumerDirectory,

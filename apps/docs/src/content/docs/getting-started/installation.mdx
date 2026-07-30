@@ -55,6 +55,26 @@ confirmation before writing user configuration. See the
 [installer reference](/reference/installer/) for supported clients, remote HTTP
 registration, and lifecycle management.
 
+## Create reusable capability packages
+
+Create one atomic exported capability:
+
+```sh
+npm create invokta-capability@latest my-capability
+```
+
+Create a related capability library:
+
+```sh
+npm create invokta-capability-library@latest my-library
+```
+
+Both starters are private, deterministic ESM packages. Their tests compose the
+generated exports into an engine and invoke them through `engine.invoke`. See
+the [atomic creator](/reference/create-invokta-capability/) and
+[capability-library creator](/reference/create-invokta-capability-library/)
+references for the complete contracts.
+
 ## Install the core
 
 <Tabs syncKey="package-manager">
@@ -106,6 +126,8 @@ Install the CLI or MCP adapter when the engine needs that boundary.
 | `@invokta/installer` | Install and manage local or remote Action Engine MCP servers in supported clients |
 | `@invokta/deploy` | Reviewable container packaging and endpoint probes |
 | `create-invokta-engine` | Standalone starter Action Engine creation |
+| `create-invokta-capability` | Standalone atomic capability package creation |
+| `create-invokta-capability-library` | Standalone capability-library package creation |
 
 <Aside type="note" title="ESM only">
   Invokta publishes native ESM entry points. Use `import` syntax and include file

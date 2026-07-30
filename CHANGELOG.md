@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added `create-invokta-capability` and
+  `create-invokta-capability-library`, with deterministic private ESM starters
+  that prove atomic and library composition through `engine.invoke`.
+
 ## [0.2.0] - 2026-07-29
 
 ### Added

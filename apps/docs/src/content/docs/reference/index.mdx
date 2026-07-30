@@ -5,7 +5,7 @@ sidebar:
   label: Overview
 ---
 
-Invokta publishes three runtime packages and four supporting packages. Each has
+Invokta publishes three runtime packages and six supporting packages. Each has
 one bounded responsibility.
 
 ## Runtime packages
@@ -27,11 +27,13 @@ API and never call capability handlers directly.
 | `@invokta/installer` | Install and manage Action Engine MCP servers in supported local clients | [Installer reference](/reference/installer/) |
 | `@invokta/deploy` | Scaffold and package HTTP deployment artifacts and probe an endpoint | [Deploy reference](/reference/deploy/) |
 | `create-invokta-engine` | Create a standalone starter engine and install its dependencies | [Creator reference](/reference/create-invokta-engine/) |
+| `create-invokta-capability` | Create a standalone atomic capability package | [Atomic creator reference](/reference/create-invokta-capability/) |
+| `create-invokta-capability-library` | Create a standalone capability-library package | [Library creator reference](/reference/create-invokta-capability-library/) |
 
-Supporting packages do not create another capability execution path. The creator
-writes a project, tooling imports a trusted composition module, the installer
-updates client configuration without invoking an engine, and deploy generates
-files or makes one probe request.
+Supporting packages do not create another capability execution path. The
+creators write projects, tooling imports a trusted composition module, the
+installer updates client configuration without invoking an engine, and deploy
+generates files or makes one probe request.
 
 ## Shared requirements
 

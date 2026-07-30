@@ -140,9 +140,13 @@ and delivery adapters:
 - `@invokta/installer` detects supported local MCP clients, installs local or
   remote Action Engines across selected clients, and manages those entries;
 - `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes
-  deployed endpoints.
+  deployed endpoints;
 - `create-invokta-engine` creates a standalone starter with direct, CLI, and MCP
-  stdio entry points.
+  stdio entry points;
+- `create-invokta-capability` creates a standalone atomic capability package;
+  and
+- `create-invokta-capability-library` creates a standalone capability-library
+  package.
 
 Invokta does not provide identity, model routing, an agent harness, a
 workflow engine, or a production observability platform. Custom engines inject
@@ -165,6 +169,14 @@ npm run mcp:install
 preselects them, and asks for one confirmation before updating their user
 configuration. See the [installer reference](./apps/docs/src/content/docs/reference/installer.mdx)
 for remote HTTP registration and lifecycle commands.
+
+Create reusable package boundaries directly when an engine is not the owning
+project:
+
+```sh
+npm create invokta-capability@latest my-capability
+npm create invokta-capability-library@latest my-library
+```
 
 To work on Invokta itself:
 
