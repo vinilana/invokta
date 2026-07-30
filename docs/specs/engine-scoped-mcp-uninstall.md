@@ -145,10 +145,11 @@ values.
 
 Global preflight gates run in this order after the CLI TTY check: validate the
 project source, detect the finite target catalog and load valid state, then scan
-for an identity mismatch. A global gate failure emits its stable diagnostic,
-returns `1`, requests no confirmation, emits no per-target result, and performs
-no write. Per-target blocked evidence is not a global target-detection failure;
-it is included in the summary after all global gates succeed.
+for an identity mismatch. An operational global-gate failure emits its stable
+diagnostic and returns `1`; initialization failures retain exit status `2`.
+Either failure requests no confirmation, emits no per-target result, and
+performs no write. Per-target blocked evidence is not a global target-detection
+failure; it is included in the summary after all global gates succeed.
 
 The preflight summary MUST identify every matching client and whether its entry
 is removable or blocked. All removable matches are in scope; the engine-scoped
