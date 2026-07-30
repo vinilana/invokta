@@ -18,6 +18,13 @@ contracts below define one implementation of that concept.
 6. [Architecture decision records](./adr/README.md)
 7. [Validation record](./validation-record.md)
 
+## Proposed changes
+
+Proposed specifications are non-normative until their required architecture
+decision is accepted and the implementation evidence is complete.
+
+- [Engine-scoped MCP uninstall](./specs/engine-scoped-mcp-uninstall.md)
+
 ## Guides and examples
 
 These guides apply the normative contracts above. When a guide or example
