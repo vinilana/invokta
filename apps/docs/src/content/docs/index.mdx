@@ -64,35 +64,50 @@ code, the CLI, MCP stdio, or stateless MCP Streamable HTTP.
   boundary.
 </Aside>
 
-## Reusable actions across the company
+## Reusable engines across the company
 
 The same boundary applies whenever a team repeatedly reconstructs context,
-rules, and expected output for different agents or applications.
+provider calls, scripts, templates, rules, and expected output for different
+agents or applications.
 
 <CardGrid>
+  <Card title="Content and creative" icon="puzzle">
+    Build a Video Production Engine around ElevenLabs STT, Cartesia TTS, GPT
+    Image 2.0, Seedance 2.0, and trusted editing scripts—or a Social Carousel
+    Engine that already knows your formats, CTA policy, and visual system.
+
+    [Explore content and creative use cases](/use-cases/#content-and-creative)
+  </Card>
   <Card title="Engineering" icon="rocket">
     Turn a ticket into implementation-ready work with repository context,
     architecture, design, risks, acceptance criteria, and a test strategy.
 
     [Explore engineering use cases](/use-cases/#engineering)
   </Card>
-  <Card title="Marketing" icon="puzzle">
+  <Card title="Marketing" icon="open-book">
     Turn a product launch into an on-brand campaign using positioning, audience
     research, approved evidence, previous performance, and channel rules.
 
     [Explore marketing use cases](/use-cases/#marketing)
   </Card>
-  <Card title="Support and customer success" icon="approve-check">
-    Turn customer context into consistent classifications, grounded responses,
-    escalations, and account reviews.
+  <Card title="Sales" icon="transfer">
+    Generate a customer-specific commercial proposal from CRM context while
+    preserving the approved template, visual identity, pricing, and claims.
 
-    [Explore support use cases](/use-cases/#support-and-customer-success)
+    [Explore sales use cases](/use-cases/#sales)
   </Card>
-  <Card title="Operations" icon="setting">
-    Turn fragmented incident signals, runbooks, ownership, and policy into a
-    bounded handoff or readiness decision.
+  <Card title="Healthcare operations" icon="approve-check">
+    List clinic-approved appointment slots, revalidate the selected time, and
+    write the confirmed appointment through an authorized Google Calendar
+    adapter.
 
-    [Explore operations use cases](/use-cases/#operations)
+    [Explore scheduling use cases](/use-cases/#healthcare-operations)
+  </Card>
+  <Card title="People and recruiting" icon="refresh">
+    Apply an explicit job rubric, persist screening evidence in the recruiting
+    system, and notify the hiring team in Slack when human review is warranted.
+
+    [Explore recruiting use cases](/use-cases/#people-and-recruiting)
   </Card>
 </CardGrid>
 
@@ -106,10 +121,11 @@ An [Action Engine](/concepts/action-engines/) packages an AI-supported domain
 outcome behind a stable contract, independently of the agents, applications, and
 interfaces that invoke it.
 
-The implementation-ready brief, selected context, next safe step, or classified
-ticket is the durable asset. MCP, CLI, HTTP, and direct APIs are delivery paths
-to that asset. Models, prompts, retrieval strategies, providers, and interfaces
-can change while consumers continue to request the same outcome.
+The implementation-ready brief, rendered video, approved carousel, commercial
+proposal, booked appointment, or screening result is the durable asset. MCP, CLI,
+HTTP, and direct APIs are delivery paths to that asset. Models, prompts,
+providers, scripts, templates, and interfaces can change while consumers
+continue to request the same outcome.
 
 ## What Invokta provides
 
