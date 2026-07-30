@@ -7,6 +7,12 @@ import { fileURLToPath } from "node:url";
 const appRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const contentRoot = join(appRoot, "src", "content", "docs");
 const repositoryRoot = join(appRoot, "..", "..");
+const actionEngineDiagramPath = join(
+  appRoot,
+  "public",
+  "images",
+  "how-an-action-engine-works.svg",
+);
 
 test("the docs expose concrete use cases by company area", async () => {
   const useCases = await readFile(
@@ -16,6 +22,7 @@ test("the docs expose concrete use cases by company area", async () => {
   const home = await readFile(join(contentRoot, "index.mdx"), "utf8");
   const config = await readFile(join(appRoot, "astro.config.mjs"), "utf8");
   const rootReadme = await readFile(join(repositoryRoot, "README.md"), "utf8");
+  const actionEngineDiagram = await readFile(actionEngineDiagramPath, "utf8");
 
   for (const heading of [
     "Content and creative",
@@ -73,6 +80,7 @@ test("the docs expose concrete use cases by company area", async () => {
   assert.match(home, /Google Calendar/u);
   assert.match(home, /recruiting\.screen-candidate/u);
   assert.match(home, /\]\(\/use-cases\//u);
+  assert.match(home, /\/images\/how-an-action-engine-works\.svg/u);
 
   assert.match(
     rootReadme,
@@ -85,6 +93,16 @@ test("the docs expose concrete use cases by company area", async () => {
   assert.match(rootReadme, /Recruiting and Selection Engine/u);
   assert.match(rootReadme, /video\.apply-edit/u);
   assert.match(rootReadme, /appointments\.schedule/u);
+  assert.match(
+    rootReadme,
+    /apps\/docs\/public\/images\/how-an-action-engine-works\.svg/u,
+  );
+
+  for (const label of ["Claude Code", "Codex", "Hermes", "CLI"]) {
+    assert.match(actionEngineDiagram, new RegExp(label, "u"), label);
+  }
+  assert.match(actionEngineDiagram, /Action Engine/u);
+  assert.match(actionEngineDiagram, /Validated result/u);
 
   assert.doesNotMatch(home, /engineering\.create-bug-fix-spec/u);
   assert.doesNotMatch(rootReadme, /engineering\.create-bug-fix-spec/u);
