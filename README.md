@@ -14,6 +14,14 @@ implementation through direct calls, the CLI, or MCP.
 Invokta is the TypeScript framework for building these reusable actions. We call
 them [Action Engines](./docs/action-engines.md).
 
+## How an Action Engine works
+
+![How an Action Engine works](./apps/docs/public/images/how-an-action-engine-works.svg)
+
+Claude Code, Codex, Hermes, and the CLI can invoke the same domain action. The
+engine owns the providers, scripts, data, templates, permissions, contracts, and
+rules required to return a validated result.
+
 ## The problem Invokta solves
 
 A useful AI process rarely lives in one place. For example, preparing a ticket
