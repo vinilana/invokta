@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   loadEngineInstallManifest,
+  loadEngineRemovalManifest,
   validateEngineInstallManifestBytes,
 } from "../src/engine-manifest.js";
 import { createNodeFileSystem } from "../src/node-file-system.js";
@@ -150,5 +151,43 @@ describe("loadEngineInstallManifest", () => {
         projectDirectory,
       }),
     ).rejects.toMatchObject({ code: "ENGINE_PATH_UNSAFE" });
+  });
+});
+
+describe("loadEngineRemovalManifest", () => {
+  it("validates owned manifest metadata without requiring the entry point", async () => {
+    const projectDirectory = createProject();
+    rmSync(join(projectDirectory, "dist/mcp-stdio.js"));
+
+    const source = await loadEngineRemovalManifest({
+      currentUserId: process.getuid?.() ?? 0,
+      fileSystem: createNodeFileSystem(),
+      projectDirectory,
+    });
+
+    expect(source).toEqual({
+      manifestPath: join(projectDirectory, "invokta.mcp.json"),
+      id: "support-engine",
+      title: "Support Engine",
+      serverName: "support-engine",
+    });
+    expect(Object.isFrozen(source)).toBe(true);
+  });
+
+  it("retains strict manifest validation when the entry point is absent", async () => {
+    const projectDirectory = createProject();
+    rmSync(join(projectDirectory, "dist/mcp-stdio.js"));
+    writeFileSync(
+      join(projectDirectory, "invokta.mcp.json"),
+      '{"schemaVersion":1,"id":"support-engine","unexpected":true}',
+    );
+
+    await expect(
+      loadEngineRemovalManifest({
+        currentUserId: process.getuid?.() ?? 0,
+        fileSystem: createNodeFileSystem(),
+        projectDirectory,
+      }),
+    ).rejects.toMatchObject({ code: "ENGINE_MANIFEST_INVALID" });
   });
 });

@@ -19,6 +19,7 @@ import {
   installDescriptorAcrossTargets,
   type MutationCoordinatorDependencies,
   mutateDescriptorAcrossTargets,
+  removeEngineDescriptorFromTarget,
 } from "../src/mutation-coordinator.js";
 import { createNodeFileSystem } from "../src/node-file-system.js";
 import type { CapabilityInstallDescriptor } from "../src/registry.js";
@@ -452,6 +453,96 @@ describe("installer mutation coordinator", () => {
 
     expect(views).toHaveLength(1);
     expect(views[0]).toMatchObject({ status: "unavailable", actions: [] });
+  });
+
+  it("distinguishes a concurrent complete removal from lost ownership", async () => {
+    const homeDirectory = mkdtempSync(join(tmpdir(), "invokta-mutation-"));
+    temporaryDirectories.push(homeDirectory);
+    const detected = snapshot(homeDirectory);
+    const deps = dependencies();
+    await installDescriptorAcrossTargets({
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: detected,
+      targetIds: ["codex"],
+    });
+    const statePath = join(
+      homeDirectory,
+      ".local/state/invokta/installer.json",
+    );
+    writeFileSync(statePath, '{"schemaVersion":1,"installations":{}}\n');
+    writeFileSync(
+      join(homeDirectory, ".codex/config.toml"),
+      "# removed concurrently\n",
+    );
+
+    await expect(
+      removeEngineDescriptorFromTarget({
+        dependencies: deps,
+        descriptor: descriptor(),
+        manifestServerName: "support-engine",
+        snapshot: detected,
+        targetId: "codex",
+      }),
+    ).resolves.toEqual({ targetId: "codex", outcome: "unchanged" });
+
+    await installDescriptorAcrossTargets({
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: detected,
+      targetIds: ["codex"],
+    });
+    writeFileSync(statePath, '{"schemaVersion":1,"installations":{}}\n');
+
+    await expect(
+      removeEngineDescriptorFromTarget({
+        dependencies: deps,
+        descriptor: descriptor(),
+        manifestServerName: "support-engine",
+        snapshot: detected,
+        targetId: "codex",
+      }),
+    ).resolves.toEqual({
+      targetId: "codex",
+      outcome: "failed",
+      code: "INSTALLATION_UNAVAILABLE",
+    });
+  });
+
+  it("revalidates engine identity under the transaction locks", async () => {
+    const homeDirectory = mkdtempSync(join(tmpdir(), "invokta-mutation-"));
+    temporaryDirectories.push(homeDirectory);
+    const detected = snapshot(homeDirectory);
+    const deps = dependencies();
+    await installDescriptorAcrossTargets({
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: detected,
+      targetIds: ["codex"],
+    });
+    await installDescriptorAcrossTargets({
+      dependencies: deps,
+      descriptor: { ...descriptor(), id: "different-engine" },
+      snapshot: detected,
+      targetIds: ["cursor"],
+    });
+
+    await expect(
+      removeEngineDescriptorFromTarget({
+        dependencies: deps,
+        descriptor: descriptor(),
+        manifestServerName: "support-engine",
+        snapshot: detected,
+        targetId: "codex",
+      }),
+    ).resolves.toEqual({
+      targetId: "codex",
+      outcome: "failed",
+      code: "ENGINE_IDENTITY_MISMATCH",
+    });
+    expect(
+      readFileSync(join(homeDirectory, ".codex/config.toml"), "utf8"),
+    ).toContain("support-engine");
   });
 
   it("reports a missing runtime as an explicit status state", async () => {

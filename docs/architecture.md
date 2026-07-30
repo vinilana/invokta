@@ -299,6 +299,8 @@ names but no environment values or credentials.
 **AE-INSTALL-02 — Confirmed user scope.** Installation targets only the finite
 catalog of supported default user configurations. All compatible eligible
 targets are preselected, but no mutation occurs without explicit confirmation.
+Engine-scoped removal preflights every matching managed target and one
+confirmation authorizes its complete ordered removable set.
 Creating a missing configuration requires installed-client evidence. Project,
 profile, remote-workspace, organization-managed, and Windows configuration
 mutation are not provided by this profile.
@@ -306,9 +308,12 @@ mutation are not provided by this profile.
 **AE-INSTALL-03 — Managed lifecycle.** New ownership records persist the
 normalized launch descriptor. `status`, `enable`, `disable`, and `remove`
 re-inspect current configuration and fail closed on conflicts, drift, an unsafe
-path, a missing runtime, or unavailable legacy metadata. Removal deletes only a
-definition whose managed identity still matches and then removes its ownership
-record.
+path, or unavailable legacy metadata. Status and enablement report or fail on a
+missing runtime when execution would require it. Removal does not require the
+engine runtime: it deletes only a definition whose persisted managed identity
+and ownership evidence still match, then removes its ownership record. The
+engine-scoped overload applies that rule independently to every state record
+selected by one validated manifest ID.
 
 **AE-INSTALL-04 — Per-target transaction.** Each client mutation acquires the
 shared state lock before its configuration lock, revalidates after locking,

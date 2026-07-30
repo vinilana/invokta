@@ -83,9 +83,11 @@ release; generated files are user-owned and are never upgraded in place.
 
 The generated version-one `invokta.mcp.json` manifest statically identifies the
 compiled MCP stdio entry point and declared starter capability. The package adds
-`@invokta/installer` as a development dependency and an `mcp:install` script
-that builds before starting the interactive project-local installation defined
-by ADR 0013.
+`@invokta/installer` as a development dependency plus `mcp:install` and
+`mcp:uninstall` scripts. Install builds before starting the interactive
+project-local installation defined by ADR 0013. Uninstall invokes the
+engine-scoped removal defined by ADR 0017 without building or requiring the
+compiled entry point.
 
 Unless `--no-install` is present, the creator runs exactly one package-manager
 install as a direct child process without a shell. An explicit package manager

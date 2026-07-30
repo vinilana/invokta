@@ -47,6 +47,7 @@ function invalidState(): never {
 function normalizeAndSerializeInstallerState(
   state: InstallerState,
   targetContracts: StateTargetContracts,
+  options: { readonly allowUnavailableTargetContracts?: boolean } = {},
 ): NormalizedStateSerialization {
   let bytes: Uint8Array;
   try {
@@ -54,7 +55,11 @@ function normalizeAndSerializeInstallerState(
   } catch {
     return invalidState();
   }
-  const validation = validateInstallerStateBytes(bytes, targetContracts);
+  const validation = validateInstallerStateBytes(
+    bytes,
+    targetContracts,
+    options,
+  );
   if (!validation.ok) return invalidState();
   return Object.freeze({ state: validation.state, bytes });
 }
@@ -62,8 +67,10 @@ function normalizeAndSerializeInstallerState(
 export function serializeInstallerState(
   state: InstallerState,
   targetContracts: StateTargetContracts,
+  options: { readonly allowUnavailableTargetContracts?: boolean } = {},
 ): Uint8Array {
-  return normalizeAndSerializeInstallerState(state, targetContracts).bytes;
+  return normalizeAndSerializeInstallerState(state, targetContracts, options)
+    .bytes;
 }
 
 function plansMatch(

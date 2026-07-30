@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -9,6 +9,7 @@ import {
   readFileSync,
   readlinkSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,6 +22,9 @@ const checkoutDirectory = join(temporaryRoot, "checkout");
 const artifactDirectory = join(temporaryRoot, "artifacts");
 const consumerDirectory = join(temporaryRoot, "consumer");
 const generatedDirectory = join(temporaryRoot, "generated");
+const scriptExecutable = execFileSync("which", ["script"], {
+  encoding: "utf8",
+}).trim();
 const distEntryFiles = ["dist/index.js", "dist/index.d.ts"];
 const repositoryUrl = "git+https://github.com/vinilana/invokta.git";
 const issuesUrl = "https://github.com/vinilana/invokta/issues";
@@ -98,6 +102,67 @@ function run(command, args, options = {}) {
   }
 
   return result.stdout ?? "";
+}
+
+function shellQuote(value) {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function runInteractive(command, args, options) {
+  return new Promise((resolveInteractive, rejectInteractive) => {
+    const child = spawn(
+      scriptExecutable,
+      [
+        "--quiet",
+        "--return",
+        "--command",
+        [command, ...args].map(shellQuote).join(" "),
+        "/dev/null",
+      ],
+      {
+        cwd: options.cwd,
+        env: { ...process.env, ...options.env },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    let stdout = "";
+    let stderr = "";
+    let submitted = false;
+    const timeout = setTimeout(() => {
+      child.kill();
+      rejectInteractive(
+        new Error(`interactive command timed out\n${stdout}\n${stderr}`),
+      );
+    }, 10_000);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      if (!submitted && stdout.includes(options.waitFor)) {
+        submitted = true;
+        setTimeout(() => child.stdin.write(options.input), 250);
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      rejectInteractive(error);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      if (code !== 0) {
+        rejectInteractive(
+          new Error(
+            `interactive command failed with exit code ${String(code)}\n${stdout}\n${stderr}`,
+          ),
+        );
+        return;
+      }
+      resolveInteractive(stdout);
+    });
+  });
 }
 
 function failReleaseMetadata(message) {
@@ -361,6 +426,69 @@ function writeGeneratedMcpSmoke(projectDirectory) {
   writeFileSync(join(projectDirectory, "mcp-smoke.mjs"), program);
 }
 
+function writeGeneratedInstallerFixture(projectDirectory) {
+  const program = `
+    import assert from "node:assert/strict";
+    import { join } from "node:path";
+
+    import { loadEngineInstallManifest } from "./node_modules/@invokta/installer/dist/engine-manifest.js";
+    import { installDescriptorAcrossTargets } from "./node_modules/@invokta/installer/dist/mutation-coordinator.js";
+    import { createNodeFileSystem } from "./node_modules/@invokta/installer/dist/node-file-system.js";
+    import { configurationTargetAdapters } from "./node_modules/@invokta/installer/dist/target-adapters.js";
+
+    const homeDirectory = process.env.HOME;
+    assert.ok(homeDirectory);
+    const fileSystem = createNodeFileSystem();
+    const source = await loadEngineInstallManifest({
+      currentUserId: process.getuid?.() ?? 0,
+      fileSystem,
+      nodeExecutable: process.execPath,
+      projectDirectory: process.cwd(),
+    });
+    let now = Date.parse("2026-07-30T12:00:00.000Z");
+    const results = await installDescriptorAcrossTargets({
+      dependencies: {
+        adapters: configurationTargetAdapters,
+        currentUserId: process.getuid?.() ?? 0,
+        environment: { get: (name) => process.env[name] },
+        fileSystem,
+        lock: {
+          clock: {
+            monotonicNow: () => now,
+            now: () => now,
+            wait: async (milliseconds) => { now += milliseconds; },
+          },
+          processId: process.pid,
+          randomBytes: (length) => new Uint8Array(length).fill(7),
+        },
+        now: () => new Date(now).toISOString(),
+      },
+      descriptor: source.descriptor,
+      snapshot: {
+        homeDirectory,
+        surfaces: [],
+        targets: [{
+          id: "codex",
+          displayName: "Codex",
+          surfaceIds: [],
+          evidence: "configuration-only",
+          executables: [],
+          configuration: {
+            kind: "present",
+            path: join(homeDirectory, ".codex", "config.toml"),
+          },
+          eligible: true,
+          mayCreateConfiguration: false,
+          reloadHint: "Reload Codex.",
+        }],
+      },
+      targetIds: ["codex"],
+    });
+    assert.deepEqual(results, [{ targetId: "codex", outcome: "installed" }]);
+  `;
+  writeFileSync(join(projectDirectory, "installer-fixture.mjs"), program);
+}
+
 try {
   mkdirSync(checkoutDirectory);
   mkdirSync(artifactDirectory);
@@ -558,6 +686,14 @@ try {
       "generated @invokta/installer version is not release-aligned",
     );
   }
+  if (
+    generatedManifest.scripts?.["mcp:install"] !==
+      "tsc -p tsconfig.json --pretty false && invokta-installer install --engine ." ||
+    generatedManifest.scripts?.["mcp:uninstall"] !==
+      "invokta-installer remove --engine ."
+  ) {
+    throw new Error("generated MCP lifecycle scripts are invalid");
+  }
   if (existsSync(join(generatedProjectDirectory, "src", "mcp-http.ts"))) {
     throw new Error("creator unexpectedly generated an HTTP entry point");
   }
@@ -612,6 +748,63 @@ try {
   }
   writeGeneratedMcpSmoke(generatedProjectDirectory);
   run("node", ["mcp-smoke.mjs"], { cwd: generatedProjectDirectory });
+
+  const installerFixtureHome = join(temporaryRoot, "installer-home");
+  const installerFixtureBin = join(installerFixtureHome, "bin");
+  const installerFixtureState = join(installerFixtureHome, ".state");
+  const installerFixtureConfig = join(
+    installerFixtureHome,
+    ".codex",
+    "config.toml",
+  );
+  mkdirSync(installerFixtureBin, { recursive: true });
+  mkdirSync(dirname(installerFixtureConfig), { recursive: true });
+  mkdirSync(installerFixtureState, { recursive: true });
+  symlinkSync(process.execPath, join(installerFixtureBin, "node"));
+  symlinkSync("/bin/sh", join(installerFixtureBin, "sh"));
+  const configurationPreimage = "# packed uninstall fixture\n";
+  writeFileSync(installerFixtureConfig, configurationPreimage);
+  const installerFixtureEnvironment = {
+    HOME: installerFixtureHome,
+    PATH: installerFixtureBin,
+    XDG_STATE_HOME: installerFixtureState,
+  };
+  writeGeneratedInstallerFixture(generatedProjectDirectory);
+  run(process.execPath, ["installer-fixture.mjs"], {
+    cwd: generatedProjectDirectory,
+    env: installerFixtureEnvironment,
+  });
+  if (
+    !readFileSync(installerFixtureConfig, "utf8").includes("release-engine")
+  ) {
+    throw new Error("packed installer fixture did not install the engine");
+  }
+  rmSync(join(generatedProjectDirectory, "dist", "mcp-stdio.js"));
+  const npmExecutable = execFileSync("which", ["npm"], {
+    encoding: "utf8",
+  }).trim();
+  await runInteractive(npmExecutable, ["run", "--silent", "mcp:uninstall"], {
+    cwd: generatedProjectDirectory,
+    env: installerFixtureEnvironment,
+    input: "y\n",
+    waitFor: "Engine uninstall preflight",
+  });
+  const uninstalledConfiguration = readFileSync(installerFixtureConfig, "utf8");
+  if (
+    !uninstalledConfiguration.includes(configurationPreimage.trim()) ||
+    uninstalledConfiguration.includes("release-engine")
+  ) {
+    throw new Error("generated uninstall did not preserve unrelated config");
+  }
+  const installerFixtureStateReport = JSON.parse(
+    readFileSync(
+      join(installerFixtureState, "invokta", "installer.json"),
+      "utf8",
+    ),
+  );
+  if (Object.keys(installerFixtureStateReport.installations).length !== 0) {
+    throw new Error("generated uninstall left managed engine state behind");
+  }
 
   const capabilityCreatorCases = [
     {

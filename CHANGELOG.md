@@ -17,6 +17,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Every generated engine, atomic capability, and capability-library project now
   includes a valid `develop-invokta-project` skill tailored to its architecture
   and test-first workflow.
+- Generated engines now include a build-free `mcp:uninstall` command that
+  removes the same managed engine identity from every configured MCP client
+  through one confirmed, ownership-safe operation.
 
 ## [0.2.0] - 2026-07-29
 

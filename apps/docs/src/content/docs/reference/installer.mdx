@@ -15,6 +15,8 @@ The shortest path is generated with every starter engine:
 npm create invokta-engine@latest my-engine
 cd my-engine
 npm run mcp:install
+# Later, remove the same logical engine from every managed client:
+npm run mcp:uninstall
 ```
 
 `mcp:install` builds the engine, validates its local installation manifest,
@@ -51,6 +53,7 @@ invokta-installer status
 invokta-installer enable
 invokta-installer disable
 invokta-installer remove
+invokta-installer remove --engine <project-directory>
 invokta-installer --help
 invokta-installer --version
 ```
@@ -72,7 +75,8 @@ recommended interface:
 ```json
 {
   "scripts": {
-    "mcp:install": "tsc -p tsconfig.json --pretty false && invokta-installer install --engine ."
+    "mcp:install": "tsc -p tsconfig.json --pretty false && invokta-installer install --engine .",
+    "mcp:uninstall": "invokta-installer remove --engine ."
   }
 }
 ```
@@ -103,6 +107,12 @@ entry-point path. It does not import, reflect on, or execute project code.
 
 Moving or deleting the project invalidates the recorded launch descriptor.
 Build and install again from the new location to update it explicitly.
+
+The uninstall script is intentionally build-free. It validates the project
+manifest but does not require the compiled entry point, recorded Node
+executable, forwarded environment variables, or an installed client executable.
+The manifest `id` selects the same logical engine across every managed target;
+project location and mutable manifest metadata are not provenance.
 
 ### Install a remote HTTP server
 
@@ -151,6 +161,19 @@ deletes the surrounding client configuration.
 
 An entry changed outside the installer is drift and is never overwritten or
 removed automatically. A different server using the same name is a conflict.
+
+`remove --engine <project-directory>` is the project-scoped overload. It
+preflights every state record matching the manifest ID in stable target order,
+shows removable and blocked clients, and requests one confirmation for the
+complete removable set. Each target remains an independent transaction, so a
+failure stays unchanged without rolling back a different target that already
+committed. Repeating a successful removal is an idempotent no-op.
+
+Every removable record must contain its persisted launch descriptor. Legacy
+records without one remain unavailable, and this command never reconstructs
+ownership metadata from the current manifest or bundled registry. A record
+using the manifest's current server name under another identity fails the whole
+preflight as `ENGINE_IDENTITY_MISMATCH` before confirmation or writes.
 
 ## Supported targets
 

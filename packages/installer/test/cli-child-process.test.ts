@@ -77,6 +77,7 @@ describe("invokta-installer executable", () => {
   invokta-installer enable
   invokta-installer disable
   invokta-installer remove
+  invokta-installer remove --engine <project-directory>
   invokta-installer --help
   invokta-installer --version
 `);

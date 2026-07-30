@@ -29,6 +29,10 @@ function renderReadme(
   packageManager: PackageManager,
 ): string {
   const commands = packageManagerCommands[packageManager];
+  const runScript = (name: string) =>
+    packageManager === "yarn"
+      ? `yarn ${name}`
+      : `${packageManager} run ${name}`;
   return `# ${projectName}
 
 A standalone [Invokta](https://docs.invokta.dev/) Action Engine with one
@@ -63,7 +67,14 @@ MCP stdio reserves standard output for protocol messages. Install this engine in
 all detected MCP clients with:
 
 \`\`\`sh
-${packageManager === "yarn" ? "yarn mcp:install" : `${packageManager} run mcp:install`}
+${runScript("mcp:install")}
+\`\`\`
+
+Remove this engine from every client where Invokta still owns its definition
+without rebuilding it:
+
+\`\`\`sh
+${runScript("mcp:uninstall")}
 \`\`\`
 
 Add stateless HTTP only when needed. Install \`@invokta/deploy\`, run
@@ -159,6 +170,7 @@ function renderPackageManifest(
       "mcp:stdio": "node dist/mcp-stdio.js",
       "mcp:install":
         "tsc -p tsconfig.json --pretty false && invokta-installer install --engine .",
+      "mcp:uninstall": "invokta-installer remove --engine .",
     },
     dependencies: {
       "@invokta/cli": invoktaVersion,

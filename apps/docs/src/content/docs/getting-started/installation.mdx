@@ -48,10 +48,14 @@ clients with one command:
 cd my-engine
 npm run check
 npm run mcp:install
+# Later, remove the engine from every managed MCP client:
+npm run mcp:uninstall
 ```
 
 The script builds first, preselects every eligible client, and requires one
-confirmation before writing user configuration. See the
+confirmation before writing user configuration. The build-free uninstall script
+uses the manifest ID to remove that engine from every installer-managed client
+after one confirmation, even when its compiled entry point is absent. See the
 [installer reference](/reference/installer/) for supported clients, remote HTTP
 registration, and lifecycle management.
 
