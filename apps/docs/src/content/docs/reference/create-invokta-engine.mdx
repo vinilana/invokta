@@ -47,18 +47,22 @@ has a valid lowercase kebab-case name and is empty.
 
 The target may be absent or an empty real directory. A symbolic-link target,
 symbolic-link path component, non-directory target, or any existing entry fails
-before scaffold writes. Every file is created exclusively; an entry that appears
-during creation is preserved and reported as `SCAFFOLD_CONFLICT`.
+before scaffold writes. Every scaffold entry is created exclusively; an entry
+that appears during creation is preserved and reported as
+`SCAFFOLD_CONFLICT`.
 
 A pre-install write failure removes only paths created by that invocation. The
 creator never overwrites a file. Concurrent creation in one target is unsupported.
 
 ## Generated project
 
-Files are deterministic UTF-8 text with LF endings and one trailing newline:
+Text files are deterministic UTF-8 with LF endings and one trailing newline.
+The fixed entries are:
 
 ```text
 .gitignore
+AGENTS.md
+CLAUDE.md -> AGENTS.md
 README.md
 invokta.mcp.json
 package.json
@@ -71,6 +75,13 @@ test/engine.test.ts
 tsconfig.json
 tsconfig.test.json
 ```
+
+`AGENTS.md` records the starter's architecture and test-first delivery
+constraints. `CLAUDE.md` is an actual symbolic link whose stored target is the
+relative path `AGENTS.md`, so both agent discovery names use one instruction
+source and the project remains relocatable. If link creation is unsupported or
+fails, the creator reports `WRITE_FAILED` and rolls back its entries; it does
+not fall back to a copied file.
 
 The public `onboarding.create-welcome-message` capability is deterministic and
 requires no credential or provider account. Direct, CLI, and MCP stdio entry
@@ -132,7 +143,7 @@ inherits the terminal streams.
 | `TARGET_UNSAFE` | A path component is a symlink, not a directory, or cannot be inspected safely |
 | `TARGET_NOT_EMPTY` | The target contains at least one entry |
 | `SCAFFOLD_CONFLICT` | A fixed scaffold path appeared after preflight |
-| `WRITE_FAILED` | A scaffold write or rollback failed |
+| `WRITE_FAILED` | A scaffold file or symbolic-link write, or rollback, failed |
 | `INSTALL_FAILED` | The selected package manager was unavailable or unsuccessful |
 
 Diagnostics may identify a generated project-relative path or package-manager

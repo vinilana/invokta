@@ -1,9 +1,11 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -51,10 +53,15 @@ describe("createStarterProject", () => {
 
     expect(result.projectName).toBe("my-engine");
     expect(result.directory).toBe(join(cwd, "engines/my-engine"));
-    expect(result.files).toHaveLength(12);
+    expect(result.files).toHaveLength(14);
     expect(
       JSON.parse(readFileSync(join(result.directory, "package.json"), "utf8")),
     ).toMatchObject({ name: "my-engine", private: true });
+    expect(lstatSync(join(result.directory, "AGENTS.md")).isFile()).toBe(true);
+    expect(
+      lstatSync(join(result.directory, "CLAUDE.md")).isSymbolicLink(),
+    ).toBe(true);
+    expect(readlinkSync(join(result.directory, "CLAUDE.md"))).toBe("AGENTS.md");
   });
 
   it("creates the starter in an existing empty directory", async () => {
@@ -65,6 +72,8 @@ describe("createStarterProject", () => {
 
     expect(readdirSync(join(cwd, "my-engine")).sort()).toEqual([
       ".gitignore",
+      "AGENTS.md",
+      "CLAUDE.md",
       "README.md",
       "invokta.mcp.json",
       "package.json",
@@ -208,13 +217,77 @@ describe("createStarterProject", () => {
     expect(readdirSync(target)).toEqual([".gitignore"]);
   });
 
+  it("preserves a symbolic link that wins an exclusive-create race", async () => {
+    const cwd = createWorkingDirectory();
+    const target = join(cwd, "my-engine");
+    const fileSystem: ScaffoldFileSystem = {
+      ...defaultScaffoldFileSystem,
+      async symlink(linkTarget, path) {
+        symlinkSync("external-agents.md", path);
+        await defaultScaffoldFileSystem.symlink(linkTarget, path);
+      },
+    };
+
+    await expect(
+      createStarterProject({
+        cwd,
+        target: "my-engine",
+        invoktaVersion: "1.2.3",
+        packageManager: "npm",
+        fileSystem,
+      }),
+    ).rejects.toMatchObject({
+      code: "SCAFFOLD_CONFLICT",
+      exitCode: 1,
+      details: ["CLAUDE.md"],
+    });
+    expect(readdirSync(target)).toEqual(["CLAUDE.md"]);
+    expect(readlinkSync(join(target, "CLAUDE.md"))).toBe("external-agents.md");
+  });
+
+  it("normalizes a symbolic-link creation failure and rolls back", async () => {
+    const cwd = createWorkingDirectory();
+    const target = join(cwd, "my-engine");
+    mkdirSync(target);
+    const fileSystem: ScaffoldFileSystem = {
+      ...defaultScaffoldFileSystem,
+      async symlink() {
+        const error = new Error(
+          "fixture link failure",
+        ) as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      },
+    };
+
+    await expect(
+      createStarterProject({
+        cwd,
+        target: "my-engine",
+        invoktaVersion: "1.2.3",
+        packageManager: "npm",
+        fileSystem,
+      }),
+    ).rejects.toMatchObject({
+      code: "WRITE_FAILED",
+      exitCode: 1,
+      details: ["CLAUDE.md"],
+    });
+    expect(readdirSync(target)).toEqual([]);
+  });
+
   it("rolls back only paths created by a failed scaffold write", async () => {
     const cwd = createWorkingDirectory();
     const target = join(cwd, "my-engine");
     mkdirSync(target);
     let writes = 0;
+    let linkCreated = false;
     const fileSystem: ScaffoldFileSystem = {
       ...defaultScaffoldFileSystem,
+      async symlink(linkTarget, path) {
+        await defaultScaffoldFileSystem.symlink(linkTarget, path);
+        linkCreated = true;
+      },
       async writeFile(path, contents, options) {
         writes += 1;
         if (writes === 3) {
@@ -237,6 +310,7 @@ describe("createStarterProject", () => {
         fileSystem,
       }),
     ).rejects.toBeInstanceOf(CreatorError);
+    expect(linkCreated).toBe(true);
     expect(existsSync(target)).toBe(true);
     expect(readdirSync(target)).toEqual([]);
   });

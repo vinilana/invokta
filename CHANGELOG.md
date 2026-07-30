@@ -12,6 +12,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added `create-invokta-capability` and
   `create-invokta-capability-library`, with deterministic private ESM starters
   that prove atomic and library composition through `engine.invoke`.
+- Generated engine and capability-library projects now include one `AGENTS.md`
+  instruction source and a relative `CLAUDE.md` symbolic-link alias.
 
 ## [0.2.0] - 2026-07-29
 

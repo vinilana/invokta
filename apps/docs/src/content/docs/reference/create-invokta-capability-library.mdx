@@ -33,6 +33,8 @@ directory. Unknown, repeated, incomplete, or extra arguments produce exit code
 
 ```text
 .gitignore
+AGENTS.md
+CLAUDE.md -> AGENTS.md
 README.md
 package.json
 src/capabilities/create-farewell-message.ts
@@ -42,6 +44,13 @@ test/library.test.ts
 tsconfig.json
 tsconfig.test.json
 ```
+
+`AGENTS.md` records the starter's capability-contract and test-first delivery
+constraints. `CLAUDE.md` is an actual symbolic link whose stored target is the
+relative path `AGENTS.md`, so both agent discovery names use one instruction
+source and the project remains relocatable. If link creation is unsupported or
+fails, the creator reports `WRITE_FAILED` and rolls back its entries; it does
+not fall back to a copied file.
 
 The root export contains the explicit default IDs
 `onboarding.create-welcome-message` and
@@ -62,10 +71,11 @@ Symbolic-link path components, non-directory targets, and non-empty targets are
 refused before a scaffold write.
 
 The path is limited to 1,024 Unicode scalars and 32 non-dot segments. The final
-project name is limited to 214 characters. Files use deterministic UTF-8 text,
-LF endings, one trailing newline, and exclusive creation. A write failure rolls
-back only paths created by that invocation. Concurrent creation in one target
-is unsupported; neither invocation overwrites the other.
+project name is limited to 214 characters. Text files use deterministic UTF-8,
+LF endings, and one trailing newline. Files and symbolic links use exclusive
+creation. A write failure rolls back only paths created by that invocation.
+Concurrent creation in one target is unsupported; neither invocation overwrites
+the other.
 
 ## Dependency installation
 

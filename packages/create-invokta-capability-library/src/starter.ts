@@ -3,11 +3,20 @@ import {
   packageManagerCommands,
 } from "./package-manager.js";
 
-export interface StarterFile {
-  /** Project-relative POSIX path. */
-  readonly path: string;
-  readonly contents: string;
-}
+export type StarterEntry =
+  | Readonly<{
+      kind: "file";
+      /** Project-relative POSIX path. */
+      path: string;
+      contents: string;
+    }>
+  | Readonly<{
+      kind: "symlink";
+      /** Project-relative POSIX path. */
+      path: string;
+      /** Project-relative symbolic-link target. */
+      target: string;
+    }>;
 
 export interface CreateStarterFilesOptions {
   readonly projectName: string;
@@ -37,6 +46,30 @@ ${commands.check}
 The starter is private. Before publishing, choose the final package and library
 names, version, default capability IDs, and compatibility policy, then remove
 \`"private": true\` from \`package.json\`.
+`;
+}
+
+function renderAgentInstructions(packageManager: PackageManager): string {
+  const commands = packageManagerCommands[packageManager];
+  return `# Project Instructions
+
+## Language
+
+Write all project content in English, including documentation, source comments,
+public errors, examples, tests, commits, and release notes.
+
+## Capability contracts
+
+- Treat default capability IDs as stable public API.
+- Keep IDs literal and compose explicitly through \`@invokta/core\`.
+- Inject repositories, providers, models, and policy checks through factories or closures.
+- Do not add runtime discovery, registries, adapters, or execution entry points.
+
+## Delivery
+
+- Follow RED, GREEN, REFACTOR for executable behavior.
+- Run \`${commands.check}\` before completing a change.
+- Keep \`CLAUDE.md\` as a symbolic link to this file so agent instructions have one source of truth.
 `;
 }
 
@@ -224,17 +257,29 @@ const tsconfigTest = `{
 }
 `;
 
-/** Returns the complete starter as deterministic, project-relative text files. */
+/** Returns the complete starter as deterministic project-relative entries. */
 export function createStarterFiles(
   options: CreateStarterFilesOptions,
-): readonly StarterFile[] {
+): readonly StarterEntry[] {
   return Object.freeze([
-    { path: ".gitignore", contents: "node_modules/\ndist/\n*.tsbuildinfo\n" },
     {
+      kind: "file",
+      path: ".gitignore",
+      contents: "node_modules/\ndist/\n*.tsbuildinfo\n",
+    },
+    {
+      kind: "file",
+      path: "AGENTS.md",
+      contents: renderAgentInstructions(options.packageManager),
+    },
+    { kind: "symlink", path: "CLAUDE.md", target: "AGENTS.md" },
+    {
+      kind: "file",
       path: "README.md",
       contents: renderReadme(options.projectName, options.packageManager),
     },
     {
+      kind: "file",
       path: "package.json",
       contents: renderPackageManifest(
         options.projectName,
@@ -242,19 +287,30 @@ export function createStarterFiles(
       ),
     },
     {
+      kind: "file",
       path: "src/capabilities/create-farewell-message.ts",
       contents: farewellCapabilityModule,
     },
     {
+      kind: "file",
       path: "src/capabilities/create-welcome-message.ts",
       contents: welcomeCapabilityModule,
     },
     {
+      kind: "file",
       path: "src/index.ts",
       contents: renderIndexModule(options.projectName),
     },
-    { path: "test/library.test.ts", contents: libraryTestModule },
-    { path: "tsconfig.json", contents: tsconfig },
-    { path: "tsconfig.test.json", contents: tsconfigTest },
+    {
+      kind: "file",
+      path: "test/library.test.ts",
+      contents: libraryTestModule,
+    },
+    { kind: "file", path: "tsconfig.json", contents: tsconfig },
+    {
+      kind: "file",
+      path: "tsconfig.test.json",
+      contents: tsconfigTest,
+    },
   ]);
 }

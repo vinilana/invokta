@@ -1,8 +1,10 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -50,6 +52,8 @@ describe("the capability library starter", () => {
 
     expect(files.map((file) => file.path)).toEqual([
       ".gitignore",
+      "AGENTS.md",
+      "CLAUDE.md",
       "README.md",
       "package.json",
       "src/capabilities/create-farewell-message.ts",
@@ -61,10 +65,21 @@ describe("the capability library starter", () => {
     ]);
     expect(files).toEqual(createStarterFiles(options));
     for (const file of files) {
+      if (!("contents" in file)) continue;
       expect(file.contents).not.toContain("\r");
       expect(file.contents.endsWith("\n")).toBe(true);
       expect(file.contents.endsWith("\n\n")).toBe(false);
     }
+    const instructions = files.find((file) => file.path === "AGENTS.md");
+    expect(instructions).toMatchObject({ kind: "file", path: "AGENTS.md" });
+    expect(
+      instructions && "contents" in instructions ? instructions.contents : "",
+    ).toContain("Treat default capability IDs as stable public API.");
+    expect(files.find((file) => file.path === "CLAUDE.md")).toEqual({
+      kind: "symlink",
+      path: "CLAUDE.md",
+      target: "AGENTS.md",
+    });
   });
 
   it("pins the core and publishes one explicit library root export", () => {
@@ -73,7 +88,9 @@ describe("the capability library starter", () => {
         projectName: "onboarding-capabilities",
         invoktaVersion: "1.2.3-beta.1",
         packageManager: "npm",
-      }).map((file) => [file.path, file.contents]),
+      }).flatMap((file) =>
+        "contents" in file ? [[file.path, file.contents] as const] : [],
+      ),
     );
     const manifest = JSON.parse(contents.get("package.json") ?? "") as Record<
       string,
@@ -117,8 +134,15 @@ describe("createStarterProject", () => {
       packageManager: "npm",
     });
 
-    expect(project.files).toHaveLength(9);
+    expect(project.files).toHaveLength(11);
     expect(existsSync(join(project.directory, "src/index.ts"))).toBe(true);
+    expect(lstatSync(join(project.directory, "AGENTS.md")).isFile()).toBe(true);
+    expect(
+      lstatSync(join(project.directory, "CLAUDE.md")).isSymbolicLink(),
+    ).toBe(true);
+    expect(readlinkSync(join(project.directory, "CLAUDE.md"))).toBe(
+      "AGENTS.md",
+    );
 
     const outside = createWorkingDirectory();
     symlinkSync(outside, join(cwd, "linked"), "dir");
@@ -214,13 +238,77 @@ describe("createStarterProject", () => {
     expect(readdirSync(target)).toEqual([".gitignore"]);
   });
 
+  it("preserves a symbolic link that wins an exclusive-create race", async () => {
+    const cwd = createWorkingDirectory();
+    const target = join(cwd, "onboarding-capabilities");
+    const fileSystem: ScaffoldFileSystem = {
+      ...defaultScaffoldFileSystem,
+      async symlink(linkTarget, path) {
+        symlinkSync("external-agents.md", path);
+        await defaultScaffoldFileSystem.symlink(linkTarget, path);
+      },
+    };
+
+    await expect(
+      createStarterProject({
+        cwd,
+        target: "onboarding-capabilities",
+        invoktaVersion: "1.2.3",
+        packageManager: "npm",
+        fileSystem,
+      }),
+    ).rejects.toMatchObject({
+      code: "SCAFFOLD_CONFLICT",
+      exitCode: 1,
+      details: ["CLAUDE.md"],
+    });
+    expect(readdirSync(target)).toEqual(["CLAUDE.md"]);
+    expect(readlinkSync(join(target, "CLAUDE.md"))).toBe("external-agents.md");
+  });
+
+  it("normalizes a symbolic-link creation failure and rolls back", async () => {
+    const cwd = createWorkingDirectory();
+    const target = join(cwd, "onboarding-capabilities");
+    mkdirSync(target);
+    const fileSystem: ScaffoldFileSystem = {
+      ...defaultScaffoldFileSystem,
+      async symlink() {
+        const error = new Error(
+          "fixture link failure",
+        ) as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      },
+    };
+
+    await expect(
+      createStarterProject({
+        cwd,
+        target: "onboarding-capabilities",
+        invoktaVersion: "1.2.3",
+        packageManager: "npm",
+        fileSystem,
+      }),
+    ).rejects.toMatchObject({
+      code: "WRITE_FAILED",
+      exitCode: 1,
+      details: ["CLAUDE.md"],
+    });
+    expect(readdirSync(target)).toEqual([]);
+  });
+
   it("rolls back only paths created by a failed write", async () => {
     const cwd = createWorkingDirectory();
     const target = join(cwd, "onboarding-capabilities");
     mkdirSync(target);
     let writes = 0;
+    let linkCreated = false;
     const fileSystem: ScaffoldFileSystem = {
       ...defaultScaffoldFileSystem,
+      async symlink(linkTarget, path) {
+        await defaultScaffoldFileSystem.symlink(linkTarget, path);
+        linkCreated = true;
+      },
       async writeFile(path, contents, options) {
         writes += 1;
         if (writes === 3) {
@@ -241,6 +329,7 @@ describe("createStarterProject", () => {
         fileSystem,
       }),
     ).rejects.toMatchObject({ code: "WRITE_FAILED", exitCode: 1 });
+    expect(linkCreated).toBe(true);
     expect(readdirSync(target)).toEqual([]);
   });
 });

@@ -31,6 +31,8 @@ to generate files without starting a package manager or performing network I/O.
 
 ```text
 .gitignore
+AGENTS.md
+CLAUDE.md -> AGENTS.md
 README.md
 invokta.mcp.json
 package.json
@@ -44,8 +46,13 @@ tsconfig.json
 tsconfig.test.json
 ```
 
-Generated Invokta dependencies use the exact creator version. The files become
-project-owned immediately and are never updated in place by the creator.
+`AGENTS.md` documents the starter's architecture and test-first delivery
+constraints. `CLAUDE.md` is a real relative symbolic link to that file, keeping
+agent instructions in one source of truth. If the filesystem cannot create the
+link, creation fails and rolls back instead of copying the instructions.
+
+Generated Invokta dependencies use the exact creator version. The entries
+become project-owned immediately and are never updated in place by the creator.
 
 The starter also includes `@invokta/installer` and a build-first installation
 command:

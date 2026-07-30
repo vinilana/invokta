@@ -3,11 +3,20 @@ import {
   packageManagerCommands,
 } from "./package-manager.js";
 
-export interface StarterFile {
-  /** Project-relative POSIX path. */
-  readonly path: string;
-  readonly contents: string;
-}
+export type StarterEntry =
+  | Readonly<{
+      kind: "file";
+      /** Project-relative POSIX path. */
+      path: string;
+      contents: string;
+    }>
+  | Readonly<{
+      kind: "symlink";
+      /** Project-relative POSIX path. */
+      path: string;
+      /** Project-relative symbolic-link target. */
+      target: string;
+    }>;
 
 export interface CreateStarterFilesOptions {
   readonly projectName: string;
@@ -60,6 +69,30 @@ ${packageManager === "yarn" ? "yarn mcp:install" : `${packageManager} run mcp:in
 Add stateless HTTP only when needed. Install \`@invokta/deploy\`, run
 \`invokta-deploy init\`, and implement its fail-closed authentication hook before
 exposing the endpoint.
+`;
+}
+
+function renderAgentInstructions(packageManager: PackageManager): string {
+  const commands = packageManagerCommands[packageManager];
+  return `# Project Instructions
+
+## Language
+
+Write all project content in English, including documentation, source comments,
+public errors, examples, tests, commits, and release notes.
+
+## Architecture
+
+- Define domain actions as capabilities with explicit input, output, access, and execution contracts.
+- Keep direct, CLI, and MCP entry points on the single \`engine.invoke\` path.
+- Keep models, prompts, providers, data stores, and tools behind replaceable engine-owned dependencies.
+- Do not add framework-wide registries, service locators, or adapter-specific business logic.
+
+## Delivery
+
+- Follow RED, GREEN, REFACTOR for executable behavior.
+- Run \`${commands.check}\` before completing a change.
+- Keep \`CLAUDE.md\` as a symbolic link to this file so agent instructions have one source of truth.
 `;
 }
 
@@ -246,21 +279,34 @@ const tsconfigTest = `{
 }
 `;
 
-/** Returns the complete starter as deterministic, project-relative text files. */
+/** Returns the complete starter as deterministic project-relative entries. */
 export function createStarterFiles(
   options: CreateStarterFilesOptions,
-): readonly StarterFile[] {
+): readonly StarterEntry[] {
   return Object.freeze([
-    { path: ".gitignore", contents: "node_modules/\ndist/\n*.tsbuildinfo\n" },
     {
+      kind: "file",
+      path: ".gitignore",
+      contents: "node_modules/\ndist/\n*.tsbuildinfo\n",
+    },
+    {
+      kind: "file",
+      path: "AGENTS.md",
+      contents: renderAgentInstructions(options.packageManager),
+    },
+    { kind: "symlink", path: "CLAUDE.md", target: "AGENTS.md" },
+    {
+      kind: "file",
       path: "README.md",
       contents: renderReadme(options.projectName, options.packageManager),
     },
     {
+      kind: "file",
       path: "invokta.mcp.json",
       contents: renderMcpInstallManifest(options.projectName),
     },
     {
+      kind: "file",
       path: "package.json",
       contents: renderPackageManifest(
         options.projectName,
@@ -268,18 +314,28 @@ export function createStarterFiles(
       ),
     },
     {
+      kind: "file",
       path: "src/capabilities/create-welcome-message.ts",
       contents: capabilityModule,
     },
-    { path: "src/cli.ts", contents: cliModule },
-    { path: "src/direct.ts", contents: directModule },
+    { kind: "file", path: "src/cli.ts", contents: cliModule },
+    { kind: "file", path: "src/direct.ts", contents: directModule },
     {
+      kind: "file",
       path: "src/engine.ts",
       contents: renderEngineModule(options.projectName),
     },
-    { path: "src/mcp-stdio.ts", contents: mcpStdioModule },
-    { path: "test/engine.test.ts", contents: engineTestModule },
-    { path: "tsconfig.json", contents: tsconfig },
-    { path: "tsconfig.test.json", contents: tsconfigTest },
+    { kind: "file", path: "src/mcp-stdio.ts", contents: mcpStdioModule },
+    {
+      kind: "file",
+      path: "test/engine.test.ts",
+      contents: engineTestModule,
+    },
+    { kind: "file", path: "tsconfig.json", contents: tsconfig },
+    {
+      kind: "file",
+      path: "tsconfig.test.json",
+      contents: tsconfigTest,
+    },
   ]);
 }

@@ -71,6 +71,8 @@ The library creator writes these fixed paths in lexicographic order:
 
 ```text
 .gitignore
+AGENTS.md
+CLAUDE.md -> AGENTS.md
 README.md
 package.json
 src/capabilities/create-farewell-message.ts
@@ -80,6 +82,9 @@ test/library.test.ts
 tsconfig.json
 tsconfig.test.json
 ```
+
+`AGENTS.md` is a regular UTF-8 text file. `CLAUDE.md` is the relative symbolic
+link defined by ADR 0015 rather than a second text file.
 
 The project root exports one `defineCapabilityLibrary` value containing the
 literal default IDs `onboarding.create-welcome-message` and

@@ -4,6 +4,7 @@ import {
   mkdir,
   readdir,
   rmdir,
+  symlink,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -11,7 +12,7 @@ import { basename, dirname, isAbsolute, join, resolve, win32 } from "node:path";
 
 import { CreatorError } from "./errors.js";
 import type { PackageManager } from "./package-manager.js";
-import { createStarterFiles, type StarterFile } from "./starter.js";
+import { createStarterFiles, type StarterEntry } from "./starter.js";
 
 export const creatorTargetLimits = Object.freeze({
   maxPathScalars: 1_024,
@@ -26,6 +27,7 @@ export interface ScaffoldFileSystem {
   readonly mkdir: (path: string) => Promise<void>;
   readonly readdir: (path: string) => Promise<string[]>;
   readonly rmdir: (path: string) => Promise<void>;
+  readonly symlink: (target: string, path: string) => Promise<void>;
   readonly unlink: (path: string) => Promise<void>;
   readonly writeFile: (
     path: string,
@@ -44,6 +46,9 @@ const nodeScaffoldFileSystem: ScaffoldFileSystem = {
   },
   async rmdir(path) {
     await rmdir(path);
+  },
+  async symlink(target, path) {
+    await symlink(target, path);
   },
   async unlink(path) {
     await unlink(path);
@@ -211,7 +216,7 @@ async function ensureDirectory(
 async function prepareDirectories(
   cwd: string,
   target: ResolvedTarget,
-  files: readonly StarterFile[],
+  entries: readonly StarterEntry[],
   fileSystem: ScaffoldFileSystem,
   createdDirectories: string[],
 ): Promise<void> {
@@ -221,8 +226,8 @@ async function prepareDirectories(
     await ensureDirectory(current, fileSystem, createdDirectories);
   }
   for (const directory of new Set(
-    files
-      .map((file) => dirname(file.path))
+    entries
+      .map((entry) => dirname(entry.path))
       .filter((path) => path !== ".")
       .sort(),
   )) {
@@ -236,11 +241,11 @@ async function prepareDirectories(
 
 async function rollback(
   fileSystem: ScaffoldFileSystem,
-  createdFiles: readonly string[],
+  createdEntries: readonly string[],
   createdDirectories: readonly string[],
 ): Promise<boolean> {
   let failed = false;
-  for (const path of [...createdFiles].reverse()) {
+  for (const path of [...createdEntries].reverse()) {
     try {
       await fileSystem.unlink(path);
     } catch (error) {
@@ -265,36 +270,40 @@ export async function createStarterProject(
   const fileSystem = options.fileSystem ?? defaultScaffoldFileSystem;
   const target = resolveTarget(options.cwd, options.target);
   await inspectTarget(options.cwd, target, fileSystem);
-  const files = createStarterFiles({
+  const entries = createStarterFiles({
     projectName: target.projectName,
     invoktaVersion: options.invoktaVersion,
     packageManager: options.packageManager,
   });
-  const createdFiles: string[] = [];
+  const createdEntries: string[] = [];
   const createdDirectories: string[] = [];
-  let activeFile: StarterFile | undefined;
+  let activeEntry: StarterEntry | undefined;
 
   try {
     await prepareDirectories(
       options.cwd,
       target,
-      files,
+      entries,
       fileSystem,
       createdDirectories,
     );
-    for (const file of files) {
-      activeFile = file;
-      const path = join(target.directory, ...file.path.split("/"));
-      await fileSystem.writeFile(path, file.contents, {
-        encoding: "utf8",
-        flag: "wx",
-      });
-      createdFiles.push(path);
+    for (const entry of entries) {
+      activeEntry = entry;
+      const path = join(target.directory, ...entry.path.split("/"));
+      if (entry.kind === "file") {
+        await fileSystem.writeFile(path, entry.contents, {
+          encoding: "utf8",
+          flag: "wx",
+        });
+      } else {
+        await fileSystem.symlink(entry.target, path);
+      }
+      createdEntries.push(path);
     }
   } catch (error) {
     const rolledBack = await rollback(
       fileSystem,
-      createdFiles,
+      createdEntries,
       createdDirectories,
     );
     if (!rolledBack) throw new CreatorError("WRITE_FAILED");
@@ -302,18 +311,18 @@ export async function createStarterProject(
     if (readErrorCode(error) === "EEXIST") {
       throw new CreatorError(
         "SCAFFOLD_CONFLICT",
-        activeFile === undefined ? [] : [activeFile.path],
+        activeEntry === undefined ? [] : [activeEntry.path],
       );
     }
     throw new CreatorError(
       "WRITE_FAILED",
-      activeFile === undefined ? [] : [activeFile.path],
+      activeEntry === undefined ? [] : [activeEntry.path],
     );
   }
 
   return Object.freeze({
     directory: target.directory,
     projectName: target.projectName,
-    files: Object.freeze(files.map((file) => file.path)),
+    files: Object.freeze(entries.map((entry) => entry.path)),
   });
 }

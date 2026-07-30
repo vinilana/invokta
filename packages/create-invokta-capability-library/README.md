@@ -30,6 +30,8 @@ to generate files without starting a package manager or performing network I/O.
 
 ```text
 .gitignore
+AGENTS.md
+CLAUDE.md -> AGENTS.md
 README.md
 package.json
 src/capabilities/create-farewell-message.ts
@@ -40,10 +42,15 @@ tsconfig.json
 tsconfig.test.json
 ```
 
+`AGENTS.md` documents the starter's capability-contract and test-first delivery
+constraints. `CLAUDE.md` is a real relative symbolic link to that file, keeping
+agent instructions in one source of truth. If the filesystem cannot create the
+link, creation fails and rolls back instead of copying the instructions.
+
 The private ESM starter pins `@invokta/core` to the creator version and exports
 one deterministic example library. Its test selects and remaps one capability,
-then invokes it through `engine.invoke`. Generated files are project-owned and
-are never updated in place.
+then invokes it through `engine.invoke`. Generated entries are project-owned
+and are never updated in place.
 
 The creator does not publish the package, discover dependencies, start an
 adapter, or execute a capability.

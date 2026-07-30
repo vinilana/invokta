@@ -3,9 +3,11 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -105,6 +107,20 @@ function failReleaseMetadata(message) {
 function requireEqual(actual, expected, label) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     failReleaseMetadata(`${label} must be ${JSON.stringify(expected)}`);
+  }
+}
+
+function verifyGeneratedAgentInstructions(projectDirectory, creatorName) {
+  const agentsPath = join(projectDirectory, "AGENTS.md");
+  const claudePath = join(projectDirectory, "CLAUDE.md");
+  if (!lstatSync(agentsPath).isFile()) {
+    throw new Error(`${creatorName} did not generate AGENTS.md as a file`);
+  }
+  if (!lstatSync(claudePath).isSymbolicLink()) {
+    throw new Error(`${creatorName} did not generate CLAUDE.md as a symlink`);
+  }
+  if (readlinkSync(claudePath) !== "AGENTS.md") {
+    throw new Error(`${creatorName} generated an invalid CLAUDE.md target`);
   }
 }
 
@@ -476,6 +492,10 @@ try {
   }
 
   const generatedProjectDirectory = join(generatedDirectory, "release-engine");
+  verifyGeneratedAgentInstructions(
+    generatedProjectDirectory,
+    "create-invokta-engine",
+  );
   const generatedManifest = JSON.parse(
     readFileSync(join(generatedProjectDirectory, "package.json"), "utf8"),
   );
@@ -553,11 +573,13 @@ try {
       command: "create-invokta-capability",
       target: "release-capability",
       expectedExports: ["createWelcomeMessageExport"],
+      generatesAgentInstructions: false,
     },
     {
       command: "create-invokta-capability-library",
       target: "release-capability-library",
       expectedExports: ["onboardingCapabilityLibrary"],
+      generatesAgentInstructions: true,
     },
   ];
   for (const creatorCase of capabilityCreatorCases) {
@@ -591,6 +613,9 @@ try {
     }
 
     const projectDirectory = join(generatedDirectory, creatorCase.target);
+    if (creatorCase.generatesAgentInstructions) {
+      verifyGeneratedAgentInstructions(projectDirectory, creatorCase.command);
+    }
     const manifest = JSON.parse(
       readFileSync(join(projectDirectory, "package.json"), "utf8"),
     );
