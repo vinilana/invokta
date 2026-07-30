@@ -2,10 +2,17 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { InstallerError } from "../src/installer-error.js";
 import { runInstallerCli } from "../src/run-installer-cli.js";
 
 const helpText = `Usage:
   invokta-installer
+  invokta-installer install --engine <project-directory>
+  invokta-installer install --http <server-name> <url> [--bearer-token-env <NAME>] [--header-env <HEADER=NAME>]...
+  invokta-installer status
+  invokta-installer enable
+  invokta-installer disable
+  invokta-installer remove
   invokta-installer --help
   invokta-installer --version
 `;
@@ -177,6 +184,116 @@ describe("runInstallerCli", () => {
       expect(output.stderr).toEqual([]);
     },
   );
+
+  it("parses a project-local engine installation before lazy interactive loading", async () => {
+    const output = createIo();
+    const loadInteractiveSession = vi.fn(async () => 0 as const);
+
+    const result = await runInstallerCli({
+      argv: ["install", "--engine", "projects/support-engine"],
+      io: output.io,
+      loadInteractiveSession,
+    });
+
+    expect(result).toBe(0);
+    expect(loadInteractiveSession).toHaveBeenCalledWith({
+      kind: "install-engine",
+      projectDirectory: "projects/support-engine",
+    });
+    expect(output.stdout).toEqual([]);
+    expect(output.stderr).toEqual([]);
+  });
+
+  it("parses a remote HTTP installation with environment-only credentials", async () => {
+    const output = createIo();
+    const loadInteractiveSession = vi.fn(async () => 0 as const);
+
+    const result = await runInstallerCli({
+      argv: [
+        "install",
+        "--http",
+        "support-api",
+        "https://support.example.com/mcp",
+        "--bearer-token-env",
+        "SUPPORT_TOKEN",
+        "--header-env",
+        "X-Tenant=SUPPORT_TENANT",
+        "--header-env",
+        "X-Key=SUPPORT_KEY",
+      ],
+      io: output.io,
+      loadInteractiveSession,
+    });
+
+    expect(result).toBe(0);
+    expect(loadInteractiveSession).toHaveBeenCalledWith({
+      kind: "install-http",
+      serverName: "support-api",
+      url: "https://support.example.com/mcp",
+      bearerTokenEnvironment: "SUPPORT_TOKEN",
+      headerEnvironment: ["X-Tenant=SUPPORT_TENANT", "X-Key=SUPPORT_KEY"],
+    });
+  });
+
+  it("rejects remote installation options outside the documented order", async () => {
+    const output = createIo();
+    const loadInteractiveSession = vi.fn(async () => 0 as const);
+
+    const result = await runInstallerCli({
+      argv: [
+        "install",
+        "--http",
+        "support-api",
+        "https://support.example.com/mcp",
+        "--header-env",
+        "X-Tenant=SUPPORT_TENANT",
+        "--bearer-token-env",
+        "SUPPORT_TOKEN",
+      ],
+      io: output.io,
+      loadInteractiveSession,
+    });
+
+    expect(result).toBe(2);
+    expect(loadInteractiveSession).not.toHaveBeenCalled();
+    expect(output.stderr).toEqual([
+      'Invalid arguments. Run "invokta-installer --help".\n',
+    ]);
+  });
+
+  it.each(["status", "enable", "disable", "remove"] as const)(
+    "parses the %s lifecycle command",
+    async (kind) => {
+      const output = createIo();
+      const loadInteractiveSession = vi.fn(async () => 0 as const);
+
+      const result = await runInstallerCli({
+        argv: [kind],
+        io: output.io,
+        loadInteractiveSession,
+      });
+
+      expect(result).toBe(0);
+      expect(loadInteractiveSession).toHaveBeenCalledWith({ kind });
+    },
+  );
+
+  it("maps a stable operational failure to exit code 1", async () => {
+    const output = createIo();
+
+    const result = await runInstallerCli({
+      argv: ["install", "--engine", "."],
+      io: output.io,
+      loadInteractiveSession: async () => {
+        throw new InstallerError("ENGINE_ENTRYPOINT_MISSING");
+      },
+    });
+
+    expect(result).toBe(1);
+    expect(output.stderr).toEqual([
+      "ENGINE_ENTRYPOINT_MISSING: The Action Engine entry point was not found.\n",
+    ]);
+  });
 
   it("sanitizes an unexpected interactive initialization failure", async () => {
     const output = createIo();

@@ -32,6 +32,7 @@ const defaultConfigPaths = [
   ".kimi-code/mcp.json",
   ".openclaw/openclaw.json",
   ".config/opencode/opencode.json",
+  ".config/Code/User/mcp.json",
 ] as const;
 
 beforeAll(() => {
@@ -58,7 +59,9 @@ beforeAll(() => {
   for (const candidate of [
     "agy",
     "antigravity",
+    "Claude",
     "claude",
+    "code",
     "codex",
     "cursor",
     "grok",
@@ -121,7 +124,7 @@ describe("harness detection safety sentinels", () => {
     );
   }
 
-  it("detects all ten surfaces while process, network, and filesystem writes are forbidden", () => {
+  it("detects all twelve surfaces while process, network, and filesystem writes are forbidden", () => {
     const result = runScenario(executableDirectory, homeWithoutConfigs);
 
     expect(result.status, result.stderr).toBe(0);
@@ -130,6 +133,7 @@ describe("harness detection safety sentinels", () => {
         "antigravity-cli",
         "antigravity-ide",
         "claude-code",
+        "claude-desktop",
         "codex",
         "cursor",
         "grok-build",
@@ -137,6 +141,7 @@ describe("harness detection safety sentinels", () => {
         "kimi-code",
         "openclaw",
         "opencode-v2",
+        "vscode",
       ],
       eligibleTargets: [
         "antigravity",
@@ -148,6 +153,7 @@ describe("harness detection safety sentinels", () => {
         "kimi-code",
         "openclaw",
         "opencode-v2",
+        "vscode",
       ],
       configurationOnlyTargets: [],
       creationTargets: [
@@ -160,6 +166,7 @@ describe("harness detection safety sentinels", () => {
         "kimi-code",
         "openclaw",
         "opencode-v2",
+        "vscode",
       ],
     });
     expect(existsSync(marker)).toBe(false);
@@ -182,6 +189,7 @@ describe("harness detection safety sentinels", () => {
         "kimi-code",
         "openclaw",
         "opencode-v2",
+        "vscode",
       ],
       configurationOnlyTargets: [
         "antigravity",
@@ -193,6 +201,7 @@ describe("harness detection safety sentinels", () => {
         "kimi-code",
         "openclaw",
         "opencode-v2",
+        "vscode",
       ],
       creationTargets: [],
     });

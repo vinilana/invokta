@@ -60,6 +60,7 @@ Files are deterministic UTF-8 text with LF endings and one trailing newline:
 ```text
 .gitignore
 README.md
+invokta.mcp.json
 package.json
 src/capabilities/create-welcome-message.ts
 src/cli.ts
@@ -76,6 +77,19 @@ requires no credential or provider account. Direct, CLI, and MCP stdio entry
 points import the same engine. Generated Invokta dependencies use the exact
 creator version; generated files are project-owned and are never upgraded in
 place.
+
+The project includes `@invokta/installer`, a strict local install manifest, and
+an `mcp:install` script. It builds the engine before client detection so a build
+failure cannot lead to a partial MCP configuration update:
+
+```sh
+npm run mcp:install
+```
+
+The installer preselects eligible clients and requests one confirmation. It
+validates the built entry point without importing or executing the engine. See
+the [installer reference](/reference/installer/) for the manifest contract and
+management commands.
 
 The starter contains no HTTP endpoint, authentication implementation, model
 provider, telemetry, Git initialization, or template selector. Add stateless

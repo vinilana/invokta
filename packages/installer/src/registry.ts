@@ -4,6 +4,7 @@ import { InstallerError } from "./installer-error.js";
 export const configurationTargetIds = Object.freeze([
   "antigravity",
   "claude-code",
+  "claude-desktop",
   "codex",
   "cursor",
   "grok-build",
@@ -11,6 +12,7 @@ export const configurationTargetIds = Object.freeze([
   "kimi-code",
   "openclaw",
   "opencode-v2",
+  "vscode",
 ] as const);
 
 export type ConfigurationTargetId = (typeof configurationTargetIds)[number];

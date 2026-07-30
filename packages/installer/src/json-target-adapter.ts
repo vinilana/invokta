@@ -41,7 +41,13 @@ import {
   unsupportedDefinition,
 } from "./target-adapter.js";
 
-type JsonDialect = "antigravity" | "claude" | "cursor" | "kimi" | "opencode";
+type JsonDialect =
+  | "antigravity"
+  | "claude"
+  | "cursor"
+  | "kimi"
+  | "opencode"
+  | "vscode";
 
 interface JsonInspectionState {
   readonly dialect: JsonDialect;
@@ -65,7 +71,13 @@ interface AstInspection {
 interface JsonTargetOptions {
   readonly targetId: Extract<
     ConfigurationTargetId,
-    "antigravity" | "claude-code" | "cursor" | "kimi-code" | "opencode-v2"
+    | "antigravity"
+    | "claude-code"
+    | "claude-desktop"
+    | "cursor"
+    | "kimi-code"
+    | "opencode-v2"
+    | "vscode"
   >;
   readonly dialect: JsonDialect;
   readonly toggleStrategy: ToggleStrategy;
@@ -127,7 +139,9 @@ function serverPath(
 ): readonly string[] {
   return dialect === "opencode"
     ? ["mcp", "servers", serverName]
-    : ["mcpServers", serverName];
+    : dialect === "vscode"
+      ? ["servers", serverName]
+      : ["mcpServers", serverName];
 }
 
 function inspectAst(
@@ -319,7 +333,10 @@ function finalizationOptions(
     httpHeadersField: "headers",
     rawTransportPolicy: "reject" as const,
     toggleStrategy,
-    typePolicy: dialect === "claude" ? ("claude" as const) : ("none" as const),
+    typePolicy:
+      dialect === "claude" || dialect === "vscode"
+        ? ("claude" as const)
+        : ("none" as const),
   };
 }
 
@@ -368,10 +385,15 @@ function parseAndInspect(
   let astInspection: AstInspection;
   try {
     document = parse(source.text, {
-      mode: options.dialect === "opencode" ? "jsonc" : "json",
+      mode:
+        options.dialect === "opencode" || options.dialect === "vscode"
+          ? "jsonc"
+          : "json",
       ranges: true,
       tokens: true,
-      ...(options.dialect === "opencode" ? { allowTrailingCommas: true } : {}),
+      ...(options.dialect === "opencode" || options.dialect === "vscode"
+        ? { allowTrailingCommas: true }
+        : {}),
     });
     astInspection = inspectAst(document, serverName, options.dialect);
   } catch (cause) {
@@ -389,7 +411,9 @@ function parseAndInspect(
     objectValue(
       memberState,
       options.dialect === "opencode" ? mcp : root,
-      options.dialect === "opencode" ? "servers" : "mcpServers",
+      options.dialect === "opencode" || options.dialect === "vscode"
+        ? "servers"
+        : "mcpServers",
     ),
   );
   const serverMember = objectMember(memberState, servers, serverName);
@@ -521,7 +545,7 @@ function mappedConfigDefinition(
       ? stdio
         ? ["command", "args", "disabled"]
         : ["serverUrl", "disabled"]
-      : dialect === "claude"
+      : dialect === "claude" || dialect === "vscode"
         ? stdio
           ? ["type", "command", "args", "env"]
           : ["type", "url", "headers"]
@@ -590,7 +614,7 @@ const reservedHeaderNames: ReadonlySet<string> = new Set([
 
 function validEnvironmentPlaceholders(
   value: unknown,
-  dialect: Extract<JsonDialect, "claude" | "cursor" | "opencode">,
+  dialect: Extract<JsonDialect, "claude" | "cursor" | "opencode" | "vscode">,
 ): boolean {
   if (!stringRecord(value)) return false;
   return Object.entries(value as Record<string, string>).every(
@@ -599,7 +623,7 @@ function validEnvironmentPlaceholders(
       placeholder ===
         (dialect === "claude"
           ? `\${${name}}`
-          : dialect === "cursor"
+          : dialect === "cursor" || dialect === "vscode"
             ? `\${env:${name}}`
             : `{env:${name}}`),
   );
@@ -607,19 +631,19 @@ function validEnvironmentPlaceholders(
 
 function validHeaderPlaceholders(
   value: unknown,
-  dialect: Extract<JsonDialect, "claude" | "cursor" | "opencode">,
+  dialect: Extract<JsonDialect, "claude" | "cursor" | "opencode" | "vscode">,
 ): boolean {
   if (!stringRecord(value)) return false;
   const barePattern =
     dialect === "claude"
       ? /^\$\{[A-Z_][A-Z0-9_]{0,127}\}$/u
-      : dialect === "cursor"
+      : dialect === "cursor" || dialect === "vscode"
         ? /^\$\{env:[A-Z_][A-Z0-9_]{0,127}\}$/u
         : /^\{env:[A-Z_][A-Z0-9_]{0,127}\}$/u;
   const bearerPattern =
     dialect === "claude"
       ? /^Bearer \$\{[A-Z_][A-Z0-9_]{0,127}\}$/u
-      : dialect === "cursor"
+      : dialect === "cursor" || dialect === "vscode"
         ? /^Bearer \$\{env:[A-Z_][A-Z0-9_]{0,127}\}$/u
         : /^Bearer \{env:[A-Z_][A-Z0-9_]{0,127}\}$/u;
   return Object.entries(value as Record<string, string>).every(
@@ -653,7 +677,7 @@ function validateMappedDefinition(
       ? stdio
         ? ["transport", "command", "args", "disabled"]
         : ["transport", "serverUrl", "disabled"]
-      : dialect === "claude"
+      : dialect === "claude" || dialect === "vscode"
         ? stdio
           ? ["transport", "type", "command", "args", "env"]
           : ["transport", "type", "url", "headers"]
@@ -687,9 +711,15 @@ function validateMappedDefinition(
     ) {
       invalid();
     }
-    if (dialect === "claude" && definition.type !== "stdio") invalid();
+    if (
+      (dialect === "claude" || dialect === "vscode") &&
+      definition.type !== "stdio"
+    ) {
+      invalid();
+    }
     if (
       (dialect === "claude" ||
+        dialect === "vscode" ||
         dialect === "cursor" ||
         dialect === "opencode") &&
       !validEnvironmentPlaceholders(
@@ -707,7 +737,12 @@ function validateMappedDefinition(
     ) {
       invalid();
     }
-    if (dialect === "claude" && definition.type !== "http") invalid();
+    if (
+      (dialect === "claude" || dialect === "vscode") &&
+      definition.type !== "http"
+    ) {
+      invalid();
+    }
     if (
       dialect === "opencode" &&
       (definition.type !== "remote" || definition.oauth !== false)
@@ -716,6 +751,7 @@ function validateMappedDefinition(
     }
     if (
       (dialect === "claude" ||
+        dialect === "vscode" ||
         dialect === "cursor" ||
         dialect === "opencode") &&
       !validHeaderPlaceholders(definition.headers, dialect)
@@ -780,6 +816,14 @@ function constructPatch(
     }
     validateMappedDefinition(request.definition, options.dialect);
     insertedDefinition = request.definition;
+  } else if (request.action === "remove") {
+    if (
+      request.inspection.currentServer.kind !== "present" ||
+      state.servers === undefined ||
+      state.serverMember === undefined
+    ) {
+      invalid();
+    }
   } else if (options.toggleStrategy === "detached") {
     if (request.action === "disable") {
       if (request.inspection.currentServer.kind === "absent") {
@@ -835,7 +879,7 @@ function constructPatch(
               },
             }
           : {
-              mcpServers: {
+              [options.dialect === "vscode" ? "servers" : "mcpServers"]: {
                 [state.serverName]: mappedConfigDefinition(
                   insertedDefinition,
                   options.dialect,
@@ -859,7 +903,9 @@ function constructPatch(
       postText = insertProperty(
         source.text,
         options.dialect === "opencode" ? (state.mcp as ObjectNode) : state.root,
-        options.dialect === "opencode" ? "servers" : "mcpServers",
+        options.dialect === "opencode" || options.dialect === "vscode"
+          ? "servers"
+          : "mcpServers",
         `{${JSON.stringify(state.serverName)}:${entry}}`,
         source.newline,
         state.tokens,
@@ -874,6 +920,16 @@ function constructPatch(
         state.tokens,
       );
     }
+  } else if (request.action === "remove") {
+    if (state.servers === undefined || state.serverMember === undefined) {
+      invalid();
+    }
+    postText = removeMember(
+      source.text,
+      state,
+      state.servers,
+      state.serverMember,
+    );
   } else if (options.toggleStrategy === "detached") {
     if (
       state.servers === undefined ||
@@ -938,9 +994,16 @@ export function createJsonTargetAdapter(
     metadata: Object.freeze({
       targetId: options.targetId,
       targetContractVersion: 1,
-      format: options.dialect === "opencode" ? "jsonc" : "json",
+      format:
+        options.dialect === "opencode" || options.dialect === "vscode"
+          ? "jsonc"
+          : "json",
       parentPath: Object.freeze(
-        options.dialect === "opencode" ? ["mcp", "servers"] : ["mcpServers"],
+        options.dialect === "opencode"
+          ? ["mcp", "servers"]
+          : options.dialect === "vscode"
+            ? ["servers"]
+            : ["mcpServers"],
       ),
       toggleStrategy: options.toggleStrategy,
     }),

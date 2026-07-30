@@ -51,7 +51,7 @@ describe("createStarterProject", () => {
 
     expect(result.projectName).toBe("my-engine");
     expect(result.directory).toBe(join(cwd, "engines/my-engine"));
-    expect(result.files).toHaveLength(11);
+    expect(result.files).toHaveLength(12);
     expect(
       JSON.parse(readFileSync(join(result.directory, "package.json"), "utf8")),
     ).toMatchObject({ name: "my-engine", private: true });
@@ -66,6 +66,7 @@ describe("createStarterProject", () => {
     expect(readdirSync(join(cwd, "my-engine")).sort()).toEqual([
       ".gitignore",
       "README.md",
+      "invokta.mcp.json",
       "package.json",
       "src",
       "test",

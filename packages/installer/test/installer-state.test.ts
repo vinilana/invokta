@@ -35,6 +35,7 @@ const supportedAdapters = Object.freeze(
 const toggleStrategies = {
   antigravity: "native-disabled",
   "claude-code": "detached",
+  "claude-desktop": "detached",
   codex: "native-enabled",
   cursor: "detached",
   "grok-build": "native-enabled",
@@ -42,6 +43,7 @@ const toggleStrategies = {
   "kimi-code": "native-enabled",
   openclaw: "native-enabled",
   "opencode-v2": "native-disabled",
+  vscode: "detached",
 } as const;
 
 const targetContracts = Object.freeze(
@@ -566,14 +568,14 @@ describe("installer state validation", () => {
     },
   );
 
-  it("accepts exactly 9,000 records and rejects record 9,001", () => {
-    const records = Array.from({ length: 9_001 }, (_, index) =>
+  it("accepts exactly 11,000 records and rejects record 11,001", () => {
+    const records = Array.from({ length: 11_001 }, (_, index) =>
       record({ entryId: `historical-${index}` }),
     );
 
     expect(
       validateInstallerStateBytes(
-        stateBytes(records.slice(0, 9_000)),
+        stateBytes(records.slice(0, 11_000)),
         targetContracts,
       ).ok,
     ).toBe(true);

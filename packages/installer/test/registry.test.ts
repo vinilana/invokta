@@ -101,10 +101,11 @@ function expectIssue(
 }
 
 describe("local capability registry", () => {
-  it("defines exactly the nine first-release compatibility targets", () => {
+  it("defines exactly the eleven compatibility targets", () => {
     expect(configurationTargetIds).toEqual([
       "antigravity",
       "claude-code",
+      "claude-desktop",
       "codex",
       "cursor",
       "grok-build",
@@ -112,6 +113,7 @@ describe("local capability registry", () => {
       "kimi-code",
       "openclaw",
       "opencode-v2",
+      "vscode",
     ]);
   });
 
@@ -169,7 +171,7 @@ describe("local capability registry", () => {
     expect(Object.isFrozen(result.registry)).toBe(true);
     expect(Object.isFrozen(result.registry.entries)).toBe(true);
     expect(Object.isFrozen(result.registry.entries[1]?.descriptor)).toBe(true);
-    expect(compatibility.calls).toHaveLength(18);
+    expect(compatibility.calls).toHaveLength(22);
   });
 
   it("uses the stable id as the display-order tie breaker", () => {
@@ -189,7 +191,7 @@ describe("local capability registry", () => {
     ).toEqual(["a-engine", "z-engine"]);
   });
 
-  it("accepts exactly 1,000 entries and calls every one of nine adapters once", () => {
+  it("accepts exactly 1,000 entries and calls every one of eleven adapters once", () => {
     const entries = Array.from({ length: 1_000 }, (_, index) =>
       stdioEntry(index),
     );
@@ -209,14 +211,14 @@ describe("local capability registry", () => {
 
     expect(result.ok).toBe(true);
     expect(counters.entryValidationPasses).toBe(1_000);
-    expect(counters.compatibilityCalls).toBe(9_000);
-    expect(compatibility.calls).toHaveLength(9_000);
+    expect(counters.compatibilityCalls).toBe(11_000);
+    expect(compatibility.calls).toHaveLength(11_000);
     for (const adapter of Object.values(compatibility.adapters)) {
       expect(adapter).toHaveBeenCalledTimes(1_000);
     }
   });
 
-  it("runs the 9,000-call boundary through all nine shipping adapters", () => {
+  it("runs the 11,000-call boundary through all eleven shipping adapters", () => {
     const counters = {
       pathLinksCreated: 0,
       pathSegmentsRendered: 0,
@@ -236,7 +238,7 @@ describe("local capability registry", () => {
     expect(result.ok).toBe(true);
     expect(counters).toMatchObject({
       entryValidationPasses: 1_000,
-      compatibilityCalls: 9_000,
+      compatibilityCalls: 11_000,
     });
   });
 
@@ -793,7 +795,7 @@ describe("local capability registry", () => {
       partial.adapters,
     );
     expect(partialResult.ok).toBe(true);
-    expect(partial.calls).toHaveLength(9);
+    expect(partial.calls).toHaveLength(11);
 
     const unsupported = compatibilityAdapters(() => false);
     const unsupportedResult = validateRegistryBytes(
@@ -801,7 +803,7 @@ describe("local capability registry", () => {
       unsupported.adapters,
     );
     expect(unsupportedResult.ok).toBe(false);
-    expect(unsupported.calls).toHaveLength(9);
+    expect(unsupported.calls).toHaveLength(11);
     if (unsupportedResult.ok) throw new Error("Expected validation to fail.");
     expect(unsupportedResult.issues).toContainEqual({
       pointer: "/entries/0/server/transport",

@@ -180,7 +180,7 @@ describe("runCreateEngineCli", () => {
         "  npm\n",
     );
     expect(existsSync(join(cwd, "my-engine/package.json"))).toBe(true);
-    expect(readdirSync(join(cwd, "my-engine"))).toHaveLength(7);
+    expect(readdirSync(join(cwd, "my-engine"))).toHaveLength(8);
   });
 
   it.each(invalidArgumentCases)(

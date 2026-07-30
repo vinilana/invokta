@@ -43,6 +43,7 @@ interface TomlSyntax {
   readonly serverTable: AST.TOMLTable | undefined;
   readonly dottedInsertion: DottedInsertion | undefined;
   readonly enabledValue: AST.TOMLContentNode | undefined;
+  readonly serverRemovalRange: readonly [number, number] | undefined;
 }
 
 interface TomlAstInspection extends TomlSyntax {
@@ -341,6 +342,7 @@ function inspectTomlAst(
   let serverTable: AST.TOMLTable | undefined;
   let dottedInsertion: DottedInsertion | undefined;
   let enabledValue: AST.TOMLContentNode | undefined;
+  let serverRemovalRange: readonly [number, number] | undefined;
 
   const inspectPair = (
     pair: AST.TOMLKeyValue,
@@ -392,7 +394,7 @@ function inspectTomlAst(
     serverPresent = true;
   };
 
-  for (const item of ast.body[0].body) {
+  for (const [itemIndex, item] of ast.body[0].body.entries()) {
     if (item.type === "TOMLTable") {
       const tablePath = item.resolvedKey.map(String);
       checkedDepth(1 + tablePath.length);
@@ -406,6 +408,11 @@ function inspectTomlAst(
       if (samePath(tablePath, selectedPath)) {
         serverTable = item;
         serverPresent = true;
+        const following = ast.body[0].body[itemIndex + 1];
+        serverRemovalRange = [
+          item.range[0],
+          following?.range[0] ?? Number.POSITIVE_INFINITY,
+        ];
       } else if (startsWithPath(tablePath, selectedPath)) {
         serverPresent = true;
       }
@@ -475,6 +482,7 @@ function inspectTomlAst(
     serverTable,
     dottedInsertion,
     enabledValue,
+    serverRemovalRange,
   };
 }
 
@@ -501,6 +509,7 @@ function parseAndInspect(
         serverTable: undefined,
         dottedInsertion: undefined,
         enabledValue: undefined,
+        serverRemovalRange: undefined,
       } satisfies TomlInspectionState,
       undefined,
       inspectionOwner,
@@ -789,6 +798,13 @@ function constructPatch(
       throw new InstallerError("CONFIG_CONFLICT");
     }
     if (dialect === "grok") validateGrokDefinition(request.definition);
+  } else if (request.action === "remove") {
+    if (
+      request.inspection.currentServer.kind !== "present" ||
+      state.serverRemovalRange === undefined
+    ) {
+      invalid();
+    }
   } else {
     if (request.inspection.currentServer.kind !== "present") invalid();
     const desired = request.action === "enable";
@@ -817,6 +833,13 @@ function constructPatch(
         ),
       );
     }
+  } else if (request.action === "remove") {
+    if (state.serverRemovalRange === undefined) invalid();
+    const [start, rawEnd] = state.serverRemovalRange;
+    const lineStart =
+      state.source.text.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const end = Math.min(rawEnd, state.source.text.length);
+    postText = `${state.source.text.slice(0, lineStart)}${state.source.text.slice(end)}`;
   } else {
     const desired = request.action === "enable";
     if (state.enabledValue !== undefined) {

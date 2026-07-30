@@ -32,6 +32,7 @@ to generate files without starting a package manager or performing network I/O.
 ```text
 .gitignore
 README.md
+invokta.mcp.json
 package.json
 src/capabilities/create-welcome-message.ts
 src/cli.ts
@@ -45,6 +46,18 @@ tsconfig.test.json
 
 Generated Invokta dependencies use the exact creator version. The files become
 project-owned immediately and are never updated in place by the creator.
+
+The starter also includes `@invokta/installer` and a build-first installation
+command:
+
+```sh
+npm run mcp:install
+```
+
+That command validates `invokta.mcp.json`, detects eligible MCP clients,
+preselects all of them, and requires one confirmation before changing user
+configuration. The installer never imports or executes the engine while
+discovering its MCP entry point.
 
 HTTP scaffolding remains a separate, explicit step owned by `@invokta/deploy`.
 The starter contains no HTTP server, authentication implementation, model

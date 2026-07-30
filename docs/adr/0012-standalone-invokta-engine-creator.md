@@ -51,6 +51,7 @@ The fixed starter contains these paths in lexicographic order:
 ```text
 .gitignore
 README.md
+invokta.mcp.json
 package.json
 src/capabilities/create-welcome-message.ts
 src/cli.ts
@@ -69,6 +70,12 @@ telemetry, or Git initialization. HTTP preparation remains owned by
 `@invokta/deploy`. Generated Invokta dependency versions exactly match the
 creator version. Template changes affect only projects created by that creator
 release; generated files are user-owned and are never upgraded in place.
+
+The generated version-one `invokta.mcp.json` manifest statically identifies the
+compiled MCP stdio entry point and declared starter capability. The package adds
+`@invokta/installer` as a development dependency and an `mcp:install` script
+that builds before starting the interactive project-local installation defined
+by ADR 0013.
 
 Unless `--no-install` is present, the creator runs exactly one package-manager
 install as a direct child process without a shell. An explicit package manager

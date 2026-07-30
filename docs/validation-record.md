@@ -1,7 +1,8 @@
 # Validation record
 
 - Last reviewed: 2026-07-29
-- Public API changes: none
+- Public API changes: Action Engine creator installation scaffold and installer
+  CLI commands accepted in ADR 0013
 
 ## Reuse evidence
 
@@ -35,6 +36,10 @@ consumer can use the protocol surface without coupling to engine code.
   on effective-ID collisions.
 - The installer and deploy packages remain outside the capability call graph and
   exercise only their documented local configuration and generation authority.
+- Packed creator smoke tests build a generated engine and exercise its
+  `mcp:install` path; installer tests cover local manifests, remote descriptors,
+  multi-client transactions, lifecycle management, eleven target adapters, and
+  forbidden process, network, and write sentinels.
 
 ## Ownership conclusions
 

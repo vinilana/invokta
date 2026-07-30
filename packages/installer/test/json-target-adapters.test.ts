@@ -163,6 +163,83 @@ describe("strict JSON target adapters", () => {
     ).toEqual([]);
   });
 
+  it("writes Claude Desktop and VS Code user-config shapes with native environment placeholders", () => {
+    const claudeDesktop = configurationTargetAdapters["claude-desktop"];
+    const claudePatch = claudeDesktop.constructPatch({
+      action: "install",
+      definition: claudeDesktop.descriptorToDefinition(stdioDescriptor([])),
+      inspection: claudeDesktop.inspect({
+        source: undefined,
+        serverName: "invokta-support",
+      }),
+    });
+    expect(claudePatch.kind).toBe("changed");
+    if (claudePatch.kind !== "changed") return;
+    expect(JSON.parse(decoder.decode(claudePatch.postImage))).toEqual({
+      mcpServers: {
+        "invokta-support": {
+          type: "stdio",
+          command: "support-engine-mcp",
+          args: ["serve", "--stdio"],
+        },
+      },
+    });
+
+    const vscode = configurationTargetAdapters.vscode;
+    expect(vscode.descriptorToDefinition(stdioDescriptor())).toEqual({
+      transport: "stdio",
+      type: "stdio",
+      command: "support-engine-mcp",
+      args: ["serve", "--stdio"],
+      env: { SUPPORT_API_TOKEN: `\${env:SUPPORT_API_TOKEN}` },
+    });
+    expect(vscode.descriptorToDefinition(httpDescriptor())).toEqual({
+      transport: "streamable-http",
+      type: "http",
+      url: "https://support.example.com/mcp",
+      headers: {
+        authorization: `Bearer \${env:SUPPORT_API_TOKEN}`,
+        "x-support-tenant": `\${env:SUPPORT_TENANT}`,
+      },
+    });
+
+    const vscodePatch = vscode.constructPatch({
+      action: "install",
+      definition: vscode.descriptorToDefinition(stdioDescriptor()),
+      inspection: vscode.inspect({
+        source: encoder.encode(
+          '{\n  // keep profile settings\n  "inputs": [],\n  "servers": {\n    "other": { "type": "stdio", "command": "other", },\n  },\n}\n',
+        ),
+        serverName: "invokta-support",
+      }),
+    });
+    expect(vscodePatch.kind).toBe("changed");
+    if (vscodePatch.kind !== "changed") return;
+    const vscodeText = decoder.decode(vscodePatch.postImage);
+    expect(vscodeText).toContain("// keep profile settings");
+    expect(vscodeText).toContain('"other": { "type": "stdio"');
+    expect(vscodeText).toContain('"invokta-support":');
+    expect(vscodeText).toContain(
+      `"SUPPORT_API_TOKEN":"\${env:SUPPORT_API_TOKEN}"`,
+    );
+  });
+
+  it("limits Claude Desktop file installation to credential-free stdio servers", () => {
+    const adapter = configurationTargetAdapters["claude-desktop"];
+
+    expect(adapter.compatibility(stdioDescriptor([]))).toEqual({
+      supported: true,
+    });
+    expect(adapter.compatibility(stdioDescriptor(["TOKEN"]))).toEqual({
+      supported: false,
+      reason: "claude-desktop-forward-env-unsupported",
+    });
+    expect(adapter.compatibility(credentialFreeHttpDescriptor())).toEqual({
+      supported: false,
+      reason: "claude-desktop-http-config-unsupported",
+    });
+  });
+
   it.each(["claude-code", "cursor"] as const)(
     "installs, detaches, and exactly restores %s",
     (targetId) => {

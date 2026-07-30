@@ -15,11 +15,16 @@ export interface CreateNodeTargetConfigEvidenceProbesOptions {
   readonly environment: InstallerEnvironment;
   readonly fileSystem: InstallerFileSystem;
   readonly currentUserId?: number;
+  readonly platform?: NodeJS.Platform;
 }
 
 interface ResolvedTargetConfigEvidenceProbeOptions
-  extends Omit<CreateNodeTargetConfigEvidenceProbesOptions, "currentUserId"> {
+  extends Omit<
+    CreateNodeTargetConfigEvidenceProbesOptions,
+    "currentUserId" | "platform"
+  > {
   readonly currentUserId: number | undefined;
+  readonly platform: NodeJS.Platform;
 }
 
 type ConfigEvidenceCode = Extract<
@@ -432,7 +437,26 @@ export function createNodeTargetConfigEvidenceProbes(
     currentUserId:
       options.currentUserId ??
       (typeof process.getuid === "function" ? process.getuid() : undefined),
+    platform: options.platform ?? process.platform,
   };
+  const unsupportedProbe: TargetConfigEvidenceProbe = async () =>
+    blocked("TARGET_UNSUPPORTED");
+  const claudeDesktop =
+    resolvedOptions.platform === "darwin"
+      ? singleConfigProbe(
+          resolvedOptions,
+          "Library/Application Support/Claude/claude_desktop_config.json",
+        )
+      : unsupportedProbe;
+  const vscode =
+    resolvedOptions.platform === "win32"
+      ? unsupportedProbe
+      : singleConfigProbe(
+          resolvedOptions,
+          resolvedOptions.platform === "darwin"
+            ? "Library/Application Support/Code/User/mcp.json"
+            : ".config/Code/User/mcp.json",
+        );
   return Object.freeze({
     antigravity: singleConfigProbe(
       resolvedOptions,
@@ -442,6 +466,7 @@ export function createNodeTargetConfigEvidenceProbes(
       name: "CLAUDE_CONFIG_DIR",
       fileName: ".claude.json",
     }),
+    "claude-desktop": claudeDesktop,
     codex: singleConfigProbe(resolvedOptions, ".codex/config.toml", {
       name: "CODEX_HOME",
       fileName: "config.toml",
@@ -461,5 +486,6 @@ export function createNodeTargetConfigEvidenceProbes(
     }),
     openclaw: openClawProbe(resolvedOptions),
     "opencode-v2": openCodeProbe(resolvedOptions),
+    vscode,
   });
 }

@@ -13,7 +13,9 @@ function stdioDescriptor(
   targetId: ConfigurationTargetId,
 ): CapabilityInstallDescriptor {
   const supportsEnvironment =
-    targetId !== "antigravity" && targetId !== "kimi-code";
+    targetId !== "antigravity" &&
+    targetId !== "claude-desktop" &&
+    targetId !== "kimi-code";
   return {
     id: "support-engine",
     version: "1.0.0",
@@ -79,6 +81,42 @@ function expectInstallerCode(
 
 describe("target descriptor inverse mappings", () => {
   it.each(Object.keys(configurationTargetAdapters) as ConfigurationTargetId[])(
+    "removes a generated installation for %s",
+    (targetId) => {
+      const adapter = configurationTargetAdapters[targetId];
+      const descriptor = stdioDescriptor(targetId);
+      const empty = adapter.inspect({
+        source: undefined,
+        serverName: descriptor.server.name,
+      });
+      const installed = adapter.constructPatch({
+        action: "install",
+        definition: adapter.descriptorToDefinition(descriptor),
+        inspection: empty,
+      });
+      if (installed.kind !== "changed") throw new Error("Expected install.");
+      const present = adapter.inspect({
+        source: installed.postImage,
+        serverName: descriptor.server.name,
+      });
+
+      const removed = adapter.constructPatch({
+        action: "remove",
+        inspection: present,
+      });
+
+      expect(removed.kind).toBe("changed");
+      if (removed.kind !== "changed") throw new Error("Expected removal.");
+      expect(
+        adapter.inspect({
+          source: removed.postImage,
+          serverName: descriptor.server.name,
+        }).currentServer,
+      ).toEqual({ kind: "absent" });
+    },
+  );
+
+  it.each(Object.keys(configurationTargetAdapters) as ConfigurationTargetId[])(
     "round-trips installed stdio and HTTP definitions for %s",
     (targetId) => {
       const adapter = configurationTargetAdapters[targetId];
@@ -86,6 +124,7 @@ describe("target descriptor inverse mappings", () => {
         stdioDescriptor(targetId),
         httpDescriptor(targetId),
       ]) {
+        if (!adapter.compatibility(descriptor).supported) continue;
         const installedDefinition = adapter.descriptorToDefinition(descriptor);
         const suspended = adapter.definitionToSuspendedDescriptor(
           descriptor.server.name,
@@ -180,9 +219,9 @@ describe("target descriptor inverse mappings", () => {
     "rejects every noncanonical or credential-bearing HTTP URL for %s",
     (targetId) => {
       const adapter = configurationTargetAdapters[targetId];
-      const definition = adapter.descriptorToDefinition(
-        httpDescriptor(targetId),
-      );
+      const descriptor = httpDescriptor(targetId);
+      if (!adapter.compatibility(descriptor).supported) return;
+      const definition = adapter.descriptorToDefinition(descriptor);
       const urlField = targetId === "antigravity" ? "serverUrl" : "url";
       const adversarialUrls = [
         `https://user:${secretSentinel}@example.com/mcp`,
@@ -215,6 +254,7 @@ describe("target descriptor inverse mappings", () => {
       const adapter = configurationTargetAdapters[targetId];
       for (const url of ["http://127.0.0.1/mcp", "http://[::1]/mcp"]) {
         const source = httpDescriptor(targetId);
+        if (!adapter.compatibility(source).supported) return;
         if (source.server.transport.type !== "streamable-http") {
           throw new Error("Expected HTTP descriptor.");
         }

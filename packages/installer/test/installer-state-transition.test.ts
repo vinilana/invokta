@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { InstallerError } from "../src/installer-error.js";
 import {
   createEmptyInstallerState,
-  installationKey,
   type InstallerState,
+  installationKey,
   type ManagedInstallation,
   type StateTargetContracts,
 } from "../src/installer-state.js";
@@ -19,8 +19,8 @@ import {
 } from "../src/ownership-planner.js";
 import {
   type CapabilityInstallDescriptor,
-  configurationTargetIds,
   type ConfigurationTargetId,
+  configurationTargetIds,
 } from "../src/registry.js";
 import { configurationTargetAdapters } from "../src/target-adapters.js";
 
@@ -199,6 +199,7 @@ describe("immutable installer state transitions", () => {
           definition,
           "native-enabled",
         ),
+        launchDescriptor: selected.server,
       });
       expect(Object.isFrozen(result)).toBe(true);
       expect(Object.isFrozen(result.state)).toBe(true);
@@ -259,6 +260,43 @@ describe("immutable installer state transitions", () => {
       updatedAt: "2026-07-28T16:00:00.000Z",
     });
   });
+
+  it.each(configurationTargetIds)(
+    "updates an outdated %s installation to the selected registry descriptor",
+    (targetId) => {
+      const oldDescriptor = descriptor("1.0.0", "support-engine-mcp-v1");
+      const currentDescriptor = descriptor("2.0.0", "support-engine-mcp-v2");
+      const adapter = configurationTargetAdapters[targetId];
+      if (!adapter.compatibility(currentDescriptor).supported) return;
+      const oldDefinition = adapter.descriptorToDefinition(oldDescriptor);
+      const currentDefinition =
+        adapter.descriptorToDefinition(currentDescriptor);
+      const initial = managedState(targetId, currentDescriptor, oldDefinition, {
+        adopted: true,
+        launchDescriptor: oldDescriptor.server,
+      });
+      const planning = planningInput(targetId, currentDescriptor, initial, {
+        kind: "present",
+        definition: oldDefinition,
+      });
+
+      const updated = transition(planning, "install");
+
+      expect(updated).toBeDefined();
+      if (updated === undefined) throw new Error("Expected update transition.");
+      expect(updated.installation).toEqual({
+        ...firstInstallation(initial),
+        registryVersion: currentDescriptor.version,
+        definitionSha256: fingerprintNormalizedDefinition(
+          currentDefinition,
+          adapter.metadata.toggleStrategy,
+        ),
+        launchDescriptor: currentDescriptor.server,
+        adopted: false,
+        updatedAt: occurredAt,
+      });
+    },
+  );
 
   it("snapshots and restores the historical detached descriptor", () => {
     const targetId = "cursor";
@@ -481,8 +519,8 @@ describe("deterministic installer state serialization", () => {
     expect(Object.isFrozen(reverse.installations)).toBe(false);
   });
 
-  it("accepts exactly 9,000 records and 16,777,216 bytes, then rejects either successor", () => {
-    const base = boundaryState(9_000);
+  it("accepts exactly 11,000 records and 16,777,216 bytes, then rejects either successor", () => {
+    const base = boundaryState(11_000);
     const baseBytes = serializeInstallerState(base, targetContracts);
     const exact = withVersionPadding(
       base,
@@ -490,7 +528,7 @@ describe("deterministic installer state serialization", () => {
     );
     const exactBytes = serializeInstallerState(exact, targetContracts);
 
-    expect(Object.keys(exact.installations)).toHaveLength(9_000);
+    expect(Object.keys(exact.installations)).toHaveLength(11_000);
     expect(exactBytes.byteLength).toBe(stateByteLimit);
 
     const firstEntry = Object.entries(exact.installations)[0];
@@ -512,7 +550,7 @@ describe("deterministic installer state serialization", () => {
       ),
     );
     expectStateInvalid(() =>
-      serializeInstallerState(boundaryState(9_001), targetContracts),
+      serializeInstallerState(boundaryState(11_001), targetContracts),
     );
   }, 60_000);
 });

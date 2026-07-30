@@ -5,9 +5,9 @@ import {
   isPair,
   isScalar,
   isSeq,
-  parseDocument,
   type Node,
   type Pair,
+  parseDocument,
   type YAMLMap,
 } from "yaml";
 
@@ -17,25 +17,25 @@ import {
   assertPostImageDefinition,
   assertServerName,
   assertTargetInspectionConsistency,
+  type DecodedTargetSource,
   decodeTargetSource,
   encodeTargetPostImage,
   finalizeInspectedMcpDefinition,
   freezeDefinition,
   frozenTargetInspection,
+  type InspectedJsonValue,
   inspectedJsonArray,
   inspectedJsonRecord,
   inspectedJsonScalar,
   inspectionPass,
   parsePass,
   patchPass,
-  targetInspectionStateFor,
-  type DecodedTargetSource,
   type TargetAdapter,
   type TargetAdapterCounters,
   type TargetConfigInspection,
   type TargetPatch,
   type TargetPatchRequest,
-  type InspectedJsonValue,
+  targetInspectionStateFor,
   unsupportedDefinition,
 } from "./target-adapter.js";
 
@@ -43,7 +43,9 @@ interface YamlInspectionState {
   readonly source: DecodedTargetSource;
   readonly serverName: string;
   readonly root: YAMLMap | undefined;
+  readonly parentPair: Pair | undefined;
   readonly parent: YAMLMap | undefined;
+  readonly serverPair: Pair | undefined;
   readonly server: YAMLMap | undefined;
   readonly enabled: Node | null | undefined;
   readonly members: ReadonlyMap<YAMLMap, ReadonlyMap<string, Pair>>;
@@ -334,7 +336,9 @@ function parseAndInspect(
         source,
         serverName,
         root: undefined,
+        parentPair: undefined,
         parent: undefined,
+        serverPair: undefined,
         server: undefined,
         enabled: undefined,
         members: new Map(),
@@ -380,7 +384,9 @@ function parseAndInspect(
         source,
         serverName,
         root: undefined,
+        parentPair: undefined,
         parent: undefined,
+        serverPair: undefined,
         server: undefined,
         enabled: undefined,
         members: new Map(),
@@ -393,11 +399,18 @@ function parseAndInspect(
   if (!isMap(document.contents)) invalid();
   const astInspection = inspectYamlAst(document.contents, serverName);
   const root = document.contents;
+  const parentPair = astInspection.members.get(root)?.get("mcp_servers");
   const parent = mapValue(astInspection.members, root, "mcp_servers");
-  const server =
+  const serverPair =
     parent === undefined
       ? undefined
-      : mapValue(astInspection.members, parent, serverName);
+      : astInspection.members.get(parent)?.get(serverName);
+  const server =
+    serverPair === undefined
+      ? undefined
+      : isMap(serverPair.value)
+        ? serverPair.value
+        : invalid();
   const inspectedServer =
     server === undefined ? undefined : astInspection.values.get(server);
   if (server !== undefined && inspectedServer?.kind !== "record") invalid();
@@ -431,7 +444,9 @@ function parseAndInspect(
       source,
       serverName,
       root,
+      parentPair,
       parent,
+      serverPair,
       server,
       enabled,
       members: astInspection.members,
@@ -603,6 +618,45 @@ function insertEmptyDocumentBlock(
   return `${prefix}${prefix.length > 0 && !prefix.endsWith("\n") ? source.newline : ""}${block}${suffix.length > 0 || source.trailingNewline ? source.newline : ""}${suffix}`;
 }
 
+function pairRange(pair: Pair): readonly [number, number] {
+  if (!isNode(pair.key) || !isNode(pair.value)) invalid();
+  const keyRange = pair.key.range;
+  const valueRange = pair.value.range;
+  if (
+    keyRange === undefined ||
+    keyRange === null ||
+    valueRange === undefined ||
+    valueRange === null
+  ) {
+    invalid();
+  }
+  return [keyRange[0], valueRange[1]];
+}
+
+function removePair(text: string, parent: YAMLMap, pair: Pair): string {
+  const [start, end] = pairRange(pair);
+  const index = parent.items.indexOf(pair);
+  if (index < 0) invalid();
+  if (!parent.flow) {
+    const lineStart = text.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const followingNewline = text.indexOf("\n", end);
+    const lineEnd = followingNewline < 0 ? text.length : followingNewline + 1;
+    return `${text.slice(0, lineStart)}${text.slice(lineEnd)}`;
+  }
+  if (parent.items.length === 1) {
+    return `${text.slice(0, start)}${text.slice(end)}`;
+  }
+  if (index < parent.items.length - 1) {
+    const [nextStart] = pairRange(parent.items[index + 1] as Pair);
+    return `${text.slice(0, start)}${text.slice(nextStart)}`;
+  }
+  const previous = parent.items[index - 1] as Pair;
+  const [, previousEnd] = pairRange(previous);
+  const comma = text.lastIndexOf(",", start);
+  if (comma < previousEnd) invalid();
+  return `${text.slice(0, comma)}${text.slice(end)}`;
+}
+
 function constructPatch(
   request: TargetPatchRequest,
   inspectionOwner: object,
@@ -615,6 +669,14 @@ function constructPatch(
   if (request.action === "install") {
     if (request.inspection.currentServer.kind === "present") {
       throw new InstallerError("CONFIG_CONFLICT");
+    }
+  } else if (request.action === "remove") {
+    if (
+      request.inspection.currentServer.kind !== "present" ||
+      state.parent === undefined ||
+      state.serverPair === undefined
+    ) {
+      invalid();
     }
   } else {
     if (
@@ -687,6 +749,19 @@ function constructPatch(
         ),
       );
     }
+  } else if (request.action === "remove") {
+    if (
+      state.root === undefined ||
+      state.parentPair === undefined ||
+      state.parent === undefined ||
+      state.serverPair === undefined
+    ) {
+      invalid();
+    }
+    postText =
+      state.parent.items.length === 1
+        ? removePair(state.source.text, state.root, state.parentPair)
+        : removePair(state.source.text, state.parent, state.serverPair);
   } else {
     const desired = request.action === "enable";
     if (state.enabled !== undefined && state.enabled !== null) {

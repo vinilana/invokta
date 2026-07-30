@@ -39,6 +39,7 @@ export interface ManagedInstallation {
   readonly definitionSha256: string;
   readonly targetContractVersion: 1;
   readonly toggleStrategy: ToggleStrategy;
+  readonly launchDescriptor?: SuspendedDescriptor;
   readonly suspendedDescriptor?: SuspendedDescriptor;
   readonly adopted: boolean;
   readonly installedAt: string;
@@ -93,6 +94,7 @@ export type InstallerStateValidationResult =
   | { readonly ok: false; readonly issues: readonly StateIssue[] };
 
 export interface LoadInstallerStateOptions {
+  readonly allowUnavailableTargetContracts?: boolean;
   readonly currentUserId: number | undefined;
   readonly environment: InstallerEnvironment;
   readonly fileSystem: InstallerFileSystem;
@@ -108,7 +110,7 @@ export interface LoadedInstallerState {
 type JsonRecord = Record<string, unknown>;
 
 const stateByteLimit = 16_777_216;
-const installationLimit = 9_000;
+const installationLimit = 11_000;
 const stringLimit = 4_096;
 const idPattern = /^[a-z][a-z0-9-]{0,127}$/u;
 const serverNamePattern = /^[a-z][a-z0-9_-]{0,63}$/u;
@@ -127,6 +129,7 @@ const installationKeys = new Set([
   "definitionSha256",
   "targetContractVersion",
   "toggleStrategy",
+  "launchDescriptor",
   "suspendedDescriptor",
   "adopted",
   "installedAt",
@@ -595,6 +598,14 @@ function normalizeTransport(
 }
 
 function normalizeInstallation(value: JsonRecord): ManagedInstallation {
+  const rawLaunch = value.launchDescriptor as JsonRecord | undefined;
+  const launchDescriptor =
+    rawLaunch === undefined
+      ? undefined
+      : Object.freeze({
+          name: rawLaunch.name as string,
+          transport: normalizeTransport(rawLaunch.transport as JsonRecord),
+        });
   const rawSuspended = value.suspendedDescriptor as JsonRecord | undefined;
   const suspendedDescriptor =
     rawSuspended === undefined
@@ -612,6 +623,7 @@ function normalizeInstallation(value: JsonRecord): ManagedInstallation {
     definitionSha256: value.definitionSha256 as string,
     targetContractVersion: 1,
     toggleStrategy: value.toggleStrategy as ToggleStrategy,
+    ...(launchDescriptor === undefined ? {} : { launchDescriptor }),
     ...(suspendedDescriptor === undefined ? {} : { suspendedDescriptor }),
     adopted: value.adopted as boolean,
     installedAt: value.installedAt as string,
@@ -651,6 +663,7 @@ function validateInstallation(
   value: unknown,
   pointer: string,
   targetContracts: StateTargetContracts,
+  allowUnavailableTargetContracts: boolean,
   seenPairs: Set<string>,
   issues: StateIssue[],
 ): value is JsonRecord {
@@ -803,7 +816,9 @@ function validateInstallation(
 
   if (validTargetId) {
     const contract = targetContracts[value.targetId as ConfigurationTargetId];
-    if (!isRecord(contract) || contract.targetContractVersion !== 1) {
+    if (contract === undefined && allowUnavailableTargetContracts) {
+      // Status still validates intrinsic state when a target cannot be detected.
+    } else if (!isRecord(contract) || contract.targetContractVersion !== 1) {
       addIssue(
         issues,
         childPointer(pointer, "targetId"),
@@ -848,6 +863,14 @@ function validateInstallation(
     validateSuspendedDescriptor(
       value.suspendedDescriptor,
       childPointer(pointer, "suspendedDescriptor"),
+      value.serverName,
+      issues,
+    );
+  }
+  if (value.launchDescriptor !== undefined) {
+    validateSuspendedDescriptor(
+      value.launchDescriptor,
+      childPointer(pointer, "launchDescriptor"),
       value.serverName,
       issues,
     );
@@ -987,6 +1010,7 @@ export function createEmptyInstallerState(): InstallerState {
 export function validateInstallerStateBytes(
   bytes: Uint8Array,
   targetContracts: StateTargetContracts,
+  options: { readonly allowUnavailableTargetContracts?: boolean } = {},
 ): InstallerStateValidationResult {
   if (bytes.byteLength > stateByteLimit) {
     return invalid([{ pointer: "", code: "STATE_TOO_LARGE" }]);
@@ -1045,6 +1069,7 @@ export function validateInstallerStateBytes(
         value,
         recordPointer,
         targetContracts,
+        options.allowUnavailableTargetContracts === true,
         seenPairs,
         issues,
       )
@@ -1184,7 +1209,10 @@ export async function loadInstallerState(
   } catch (cause) {
     throw new InstallerError("STATE_READ_FAILED", cause);
   }
-  const result = validateInstallerStateBytes(bytes, options.targetContracts);
+  const result = validateInstallerStateBytes(bytes, options.targetContracts, {
+    allowUnavailableTargetContracts:
+      options.allowUnavailableTargetContracts === true,
+  });
   if (!result.ok) {
     throw new InstallerError(
       "STATE_INVALID",

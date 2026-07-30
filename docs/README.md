@@ -28,6 +28,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [Integrating an identity provider at the HTTP boundary](./http-authentication.md)
 - [Integrating a PDP through a capability access rule](./capability-authorization.md)
 - [Authoring and composing community capabilities](./capability-composition.md)
+- [Installing Action Engines in MCP clients](../apps/docs/src/content/docs/reference/installer.mdx)
 - [Scope and maturity matrix](./scope-matrix.md)
 - [`hello-engine`: minimal onboarding example](../examples/hello-engine/)
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)

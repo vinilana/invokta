@@ -41,6 +41,20 @@ with direct, CLI, and MCP stdio entry points. Use `--no-install` for an offline
 scaffold. See the [`create-invokta-engine` reference](/reference/create-invokta-engine/)
 for target, package-manager, and failure behavior.
 
+After validating the generated project, install its MCP server in detected
+clients with one command:
+
+```sh
+cd my-engine
+npm run check
+npm run mcp:install
+```
+
+The script builds first, preselects every eligible client, and requires one
+confirmation before writing user configuration. See the
+[installer reference](/reference/installer/) for supported clients, remote HTTP
+registration, and lifecycle management.
+
 ## Install the core
 
 <Tabs syncKey="package-manager">
@@ -89,7 +103,7 @@ Install the CLI or MCP adapter when the engine needs that boundary.
 | `@invokta/cli` | `list`, `describe`, and `run` commands |
 | `@invokta/mcp` | MCP tools over stdio or stateless Streamable HTTP |
 | `@invokta/tooling` | Capability-composition checks during development |
-| `@invokta/installer` | Read-only inventory of supported local MCP client targets in its current release |
+| `@invokta/installer` | Install and manage local or remote Action Engine MCP servers in supported clients |
 | `@invokta/deploy` | Reviewable container packaging and endpoint probes |
 | `create-invokta-engine` | Standalone starter Action Engine creation |
 
