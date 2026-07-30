@@ -1,9 +1,9 @@
 ---
 title: Invokta
-description: The TypeScript framework for building Action Engines.
+description: Build repeatable AI-assisted tasks once and invoke them from any agent, CLI, or application.
 template: splash
 hero:
-  tagline: Package reusable, AI-supported domain actions behind stable contracts. Define the action once, then invoke the same validated runtime from application code, the CLI, or MCP.
+  tagline: Stop teaching every AI agent the same process. Turn repeatable AI-assisted work into one reusable action that Cursor, Claude Code, Codex, your CLI, and your applications can invoke.
   actions:
     - text: Start building
       link: /getting-started/installation/
@@ -17,24 +17,61 @@ hero:
 
 import { Aside, Card, CardGrid, LinkButton } from '@astrojs/starlight/components';
 
-## The domain outcome is the durable asset
+## Build the task once. Invoke it anywhere.
 
-If your MCP tool or CLI command creates a specification, retrieves project
-context, guides a workflow, reviews code, or classifies a ticket, it already
-contains the core of an Action Engine.
+A useful AI process often lives across a harness configuration, several MCP
+tools, prompts, rules, and a skill that explains how to combine them. It works
+until the same process must run in another agent or application.
+
+For example, creating a bug-fix specification may require project context,
+incident data from Sentry, design context from Figma, and internal rules. Without
+an owned action, every harness needs the same tool setup and another copy of the
+instructions:
+
+```text
+Cursor      -> context MCP + Sentry MCP + Figma MCP + skill
+Claude Code -> context MCP + Sentry MCP + Figma MCP + copied skill
+Codex       -> context MCP + Sentry MCP + Figma MCP + another copy
+```
+
+The first setup ships quickly. The copies then drift: tools are called
+differently, permissions and validation change, and each agent may produce a
+different result.
+
+Invokta turns that process into one reusable action:
+
+```text
+Cursor ───────┐
+Claude Code ──┤
+Codex ────────┤
+CLI ──────────┼──> engineering.create-bug-fix-spec
+Application ──┘              |
+                              ├── project context
+                              ├── incident data
+                              ├── design context
+                              ├── internal rules
+                              └── validated specification
+```
+
+The action owns its integrations, rules, permissions, validation, and output
+contract. Every consumer reaches the same implementation through application
+code, the CLI, MCP stdio, or stateless MCP Streamable HTTP.
+
+<Aside type="tip" title="Expose the outcome, not the setup">
+  MCP connects tools and data. Prompts, rules, and skills guide agent behavior.
+  Invokta gives the reusable action one implementation, contract, and execution
+  boundary.
+</Aside>
+
+## We call these reusable actions Action Engines
+
+An [Action Engine](/concepts/action-engines/) packages an AI-supported domain
+outcome behind a stable contract, independently of the agents, applications, and
+interfaces that invoke it.
 
 The reviewed specification, selected context, next safe step, or classified
-ticket is what consumers depend on. MCP, CLI, HTTP, and direct APIs are delivery
-paths to that outcome.
-
-Teams often build each delivery path separately. The first integration ships,
-then the next consumer needs its own schema conversion, authentication, error
-mapping, cancellation, logging, and tests. Protocol upgrades and business-rule
-changes must be kept consistent across every copy.
-
-An Action Engine gives the domain action one owned, versioned boundary. The
-model, prompt, provider, data source, and interface can change while consumers
-continue to use the same validated contract.
+ticket is the durable asset. Models, prompts, retrieval strategies, providers,
+and interfaces can change while consumers continue to request the same outcome.
 
 ## What Invokta provides
 
@@ -56,8 +93,8 @@ the CLI, MCP stdio, and stateless MCP Streamable HTTP.
     stdio and bounded stateless HTTP.
   </Card>
   <Card title="Supporting tools" icon="setting">
-    Check capability composition, inspect supported local MCP client targets,
-    and prepare reviewable HTTP deployment artifacts.
+    Check capability composition, install engines in supported local MCP
+    clients, and prepare reviewable HTTP deployment artifacts.
   </Card>
 </CardGrid>
 
