@@ -114,6 +114,12 @@ Authors MUST assign a different `id` to every distinct logical engine. This
 feature does not add a project-origin field or change installer state schema
 version `1`.
 
+The identity namespace is shared by bundled, local-engine, and direct-remote
+install sources. Reusing an `id` across source kinds intentionally denotes the
+same logical engine and puts all records with that `entryId` in removal scope.
+Because state schema version `1` does not persist source kind, removal MUST NOT
+infer project provenance from a transport, command, URL, or historical path.
+
 Changing `id` creates a different engine identity. Before confirmation or any
 write, the command MUST scan all managed state records. If any record uses the
 current manifest server name under another `entryId`, the complete operation
@@ -136,6 +142,13 @@ matching managed record, the current supported target contract, a safe
 configuration path, and exact ownership evidence; it MUST NOT depend on client
 executable evidence, engine runtime availability, or environment variable
 values.
+
+Global preflight gates run in this order after the CLI TTY check: validate the
+project source, detect the finite target catalog and load valid state, then scan
+for an identity mismatch. A global gate failure emits its stable diagnostic,
+returns `1`, requests no confirmation, emits no per-target result, and performs
+no write. Per-target blocked evidence is not a global target-detection failure;
+it is included in the summary after all global gates succeed.
 
 The preflight summary MUST identify every matching client and whether its entry
 is removable or blocked. All removable matches are in scope; the engine-scoped
@@ -166,6 +179,12 @@ It MUST reuse the applicable existing installer codes, including
 `TARGET_UNSUPPORTED`, and `INSTALLATION_UNAVAILABLE`. A blocked target MUST NOT
 prevent an independent removable target from being attempted after confirmation,
 but it makes the final operation unsuccessful.
+
+Every removable matching record MUST contain its persisted `launchDescriptor`.
+A version-one legacy record without that field is blocked as
+`INSTALLATION_UNAVAILABLE`, even if the bundled registry currently contains an
+entry with the same `id`. The engine-scoped flow MUST NOT use the registry or the
+current manifest to reconstruct missing ownership metadata.
 
 Removal deletes only the owned server definition, including a natively disabled
 definition, and its matching state record. A detached-disabled definition is
@@ -241,11 +260,11 @@ requires failing tests before implementation.
 | `AC-02` | Creator tests prove that every generated package contains the exact build-first `mcp:install` and build-free `mcp:uninstall` scripts and documents both package-manager commands. |
 | `AC-03` | A packed-creator consumer installs the generated engine into fixture clients and then removes it through the generated `mcp:uninstall` script. |
 | `AC-04` | Source tests accept a valid owned manifest when `dist/mcp-stdio.js` is absent and still reject an unsafe project path, malformed manifest, invalid entry-point syntax, oversized bytes, duplicate keys, and unknown fields. |
-| `AC-05` | Identity tests match the persisted `entryId` across manifest version, metadata, location, server-name, and entry-point changes; prove that copied manifests with one `id` select one logical engine; and remove the persisted server definition rather than a definition reconstructed from the current manifest. |
+| `AC-05` | Identity tests match the persisted `entryId` across manifest version, metadata, location, server-name, entry-point, and install-source changes; prove that copied manifests with one `id` select one logical engine; and remove the persisted server definition rather than a definition reconstructed from the current manifest or registry. |
 | `AC-06` | A same-server-name record with another `entryId` produces `ENGINE_IDENTITY_MISMATCH`, exit `1`, no confirmation, and zero writes both with and without exact-`id` matches. |
 | `AC-07` | No matching state record returns `0`, makes no confirmation request, opens no write handle, and remains identical on repeated runs. |
 | `AC-08` | Preflight lists all matching targets in catalog order; one confirmation covers all removable matches; declining or cancelling produces zero writes and the specified exit status; an all-blocked set returns `1` without confirmation. |
-| `AC-09` | Enabled, natively disabled, detached-disabled, and outdated owned entries are removed without changing unrelated bytes; drifted, conflicting, unsafe, unsupported, or legacy-unavailable entries remain untouched with the required code. |
+| `AC-09` | Enabled, natively disabled, detached-disabled, and outdated owned entries are removed without changing unrelated bytes; drifted, conflicting, unsafe, unsupported, or legacy-unavailable entries remain untouched with the required code, and legacy records never receive a registry fallback. |
 | `AC-10` | A multi-target fixture proves deterministic partial completion: successful targets stay committed, failed targets stay unchanged, every target receives one result, and the final status is `1`. |
 | `AC-11` | Concurrency tests revalidate after state/config locks; a concurrent complete removal becomes `already absent`, while a missing record with a remaining definition fails closed. |
 | `AC-12` | State-commit failure restores the exact configuration pre-image; rollback failure remains separately reported with existing safe artifacts. |
