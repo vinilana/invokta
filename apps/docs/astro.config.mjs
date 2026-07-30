@@ -11,7 +11,8 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Invokta",
-      description: "The TypeScript framework for building Action Engines.",
+      description:
+        "Build repeatable AI-assisted tasks once and invoke them from any agent, CLI, or application.",
       favicon: "/favicon.svg",
       logo: {
         src: "./src/assets/invokta-mark.svg",
@@ -44,6 +45,7 @@ export default defineConfig({
       ],
       sidebar: [
         { label: "Overview", slug: "index" },
+        { label: "Use cases", slug: "use-cases" },
         {
           label: "Getting started",
           items: [
