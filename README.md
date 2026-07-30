@@ -2,11 +2,7 @@
 
 **Stop teaching every AI agent the same process.**
 
-Invokta turns repeatable AI-assisted work—preparing implementation, creating a
-specification, reviewing code, editing
-videos, producing on-brand carousels, generating commercial proposals,
-scheduling appointments, or screening candidates—into reusable actions that
-agents, applications, automations, and people can invoke.
+Invokta turns repeatable AI-assisted work—preparing implementation, creating a specification, reviewing code, editing videos, producing on-brand carousels, generating commercial proposals, scheduling appointments, or screening candidates—into reusable actions that agents, applications, automations, and people can invoke.
 
 Instead of copying prompts, skills, tool instructions, validation, permissions,
 and output rules into every harness, define the action once. Cursor, Claude Code,
