@@ -29,6 +29,8 @@ to generate files without starting a package manager or performing network I/O.
 ## Generated project
 
 ```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
 .gitignore
 README.md
 package.json
@@ -38,6 +40,12 @@ test/capability.test.ts
 tsconfig.json
 tsconfig.test.json
 ```
+
+The generated `develop-invokta-project` skill teaches an agent to preserve the
+atomic publication boundary, evolve capability contracts with
+RED/GREEN/REFACTOR, and prove consumption through `importCapability` and
+`engine.invoke`. Its metadata includes a ready-to-use
+`$develop-invokta-project` prompt.
 
 The private ESM starter pins `@invokta/core` to the creator version and exports
 one deterministic example capability. Its test composes that export into an

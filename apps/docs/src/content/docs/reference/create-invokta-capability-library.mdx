@@ -32,6 +32,8 @@ directory. Unknown, repeated, incomplete, or extra arguments produce exit code
 ## Generated project
 
 ```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
 .gitignore
 AGENTS.md
 CLAUDE.md -> AGENTS.md
@@ -44,6 +46,13 @@ test/library.test.ts
 tsconfig.json
 tsconfig.test.json
 ```
+
+The generated `develop-invokta-project` skill teaches an agent to preserve the
+library's literal ordered default IDs, follow RED/GREEN/REFACTOR, and prove
+selection and remapping through `importCapabilities` and `engine.invoke`. The
+skill is static project guidance; it adds no runtime discovery, registry,
+adapter, or execution path. Its metadata includes a ready-to-use
+`$develop-invokta-project` prompt.
 
 `AGENTS.md` records the starter's capability-contract and test-first delivery
 constraints. `CLAUDE.md` is an actual symbolic link whose stored target is the

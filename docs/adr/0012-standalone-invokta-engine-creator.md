@@ -49,6 +49,8 @@ writes ensure neither invocation overwrites the other.
 The fixed starter contains these paths in lexicographic order:
 
 ```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
 .gitignore
 AGENTS.md
 CLAUDE.md -> AGENTS.md
@@ -67,6 +69,9 @@ tsconfig.test.json
 
 `AGENTS.md` is a regular UTF-8 text file. `CLAUDE.md` is the relative symbolic
 link defined by ADR 0015 rather than a second text file.
+
+The `develop-invokta-project` skill is the Action Engine development workflow
+defined by ADR 0016.
 
 It defines one deterministic public capability and reuses it through direct
 invocation, `@invokta/cli`, and MCP stdio. It contains no model provider,

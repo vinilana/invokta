@@ -53,7 +53,7 @@ describe("createStarterProject", () => {
 
     expect(result.projectName).toBe("my-engine");
     expect(result.directory).toBe(join(cwd, "engines/my-engine"));
-    expect(result.files).toHaveLength(14);
+    expect(result.files).toHaveLength(16);
     expect(
       JSON.parse(readFileSync(join(result.directory, "package.json"), "utf8")),
     ).toMatchObject({ name: "my-engine", private: true });
@@ -62,6 +62,15 @@ describe("createStarterProject", () => {
       lstatSync(join(result.directory, "CLAUDE.md")).isSymbolicLink(),
     ).toBe(true);
     expect(readlinkSync(join(result.directory, "CLAUDE.md"))).toBe("AGENTS.md");
+    expect(
+      readFileSync(
+        join(
+          result.directory,
+          ".agents/skills/develop-invokta-project/SKILL.md",
+        ),
+        "utf8",
+      ),
+    ).toContain("# Develop This Action Engine");
   });
 
   it("creates the starter in an existing empty directory", async () => {
@@ -71,6 +80,7 @@ describe("createStarterProject", () => {
     await createProject(cwd);
 
     expect(readdirSync(join(cwd, "my-engine")).sort()).toEqual([
+      ".agents",
       ".gitignore",
       "AGENTS.md",
       "CLAUDE.md",
@@ -213,8 +223,13 @@ describe("createStarterProject", () => {
         fileSystem,
       }),
     ).rejects.toMatchObject({ code: "SCAFFOLD_CONFLICT", exitCode: 1 });
-    expect(readFileSync(join(target, ".gitignore"), "utf8")).toBe("mine\n");
-    expect(readdirSync(target)).toEqual([".gitignore"]);
+    expect(
+      readFileSync(
+        join(target, ".agents/skills/develop-invokta-project/SKILL.md"),
+        "utf8",
+      ),
+    ).toBe("mine\n");
+    expect(readdirSync(target)).toEqual([".agents"]);
   });
 
   it("preserves a symbolic link that wins an exclusive-create race", async () => {
@@ -290,7 +305,7 @@ describe("createStarterProject", () => {
       },
       async writeFile(path, contents, options) {
         writes += 1;
-        if (writes === 3) {
+        if (writes === 5) {
           const error = new Error(
             "fixture write failure",
           ) as NodeJS.ErrnoException;

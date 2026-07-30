@@ -49,6 +49,8 @@ describe("the atomic capability starter", () => {
     const files = createStarterFiles(options);
 
     expect(files.map((file) => file.path)).toEqual([
+      ".agents/skills/develop-invokta-project/SKILL.md",
+      ".agents/skills/develop-invokta-project/agents/openai.yaml",
       ".gitignore",
       "README.md",
       "package.json",
@@ -64,6 +66,31 @@ describe("the atomic capability starter", () => {
       expect(file.contents.endsWith("\n")).toBe(true);
       expect(file.contents.endsWith("\n\n")).toBe(false);
     }
+  });
+
+  it("scaffolds a focused atomic-capability development skill", () => {
+    const contents = new Map(
+      createStarterFiles({
+        projectName: "welcome-capability",
+        invoktaVersion: "1.2.3",
+        packageManager: "pnpm",
+      }).map((file) => [file.path, file.contents]),
+    );
+    const skill =
+      contents.get(".agents/skills/develop-invokta-project/SKILL.md") ?? "";
+    const metadata =
+      contents.get(
+        ".agents/skills/develop-invokta-project/agents/openai.yaml",
+      ) ?? "";
+
+    expect(skill).toMatch(
+      /^---\nname: develop-invokta-project\ndescription: .+\n---\n/u,
+    );
+    expect(skill).toContain("Publish through `defineExportedCapability`");
+    expect(skill).toContain("Run `pnpm run check`");
+    expect(skill).not.toContain("TODO");
+    expect(metadata).toContain('display_name: "Develop Invokta Capability"');
+    expect(metadata).toContain("$develop-invokta-project");
   });
 
   it("pins the core and publishes one explicit atomic root export", () => {
@@ -113,9 +140,18 @@ describe("createStarterProject", () => {
       packageManager: "npm",
     });
 
-    expect(project.files).toHaveLength(8);
+    expect(project.files).toHaveLength(10);
     expect(project.projectName).toBe("welcome-capability");
     expect(existsSync(join(project.directory, "src/index.ts"))).toBe(true);
+    expect(
+      readFileSync(
+        join(
+          project.directory,
+          ".agents/skills/develop-invokta-project/SKILL.md",
+        ),
+        "utf8",
+      ),
+    ).toContain("# Develop This Atomic Capability");
 
     await expect(
       createStarterProject({
@@ -228,8 +264,13 @@ describe("createStarterProject", () => {
         fileSystem,
       }),
     ).rejects.toMatchObject({ code: "SCAFFOLD_CONFLICT", exitCode: 1 });
-    expect(readFileSync(join(target, ".gitignore"), "utf8")).toBe("mine\n");
-    expect(readdirSync(target)).toEqual([".gitignore"]);
+    expect(
+      readFileSync(
+        join(target, ".agents/skills/develop-invokta-project/SKILL.md"),
+        "utf8",
+      ),
+    ).toBe("mine\n");
+    expect(readdirSync(target)).toEqual([".agents"]);
   });
 
   it("rolls back only paths created by a failed write", async () => {

@@ -14,6 +14,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   that prove atomic and library composition through `engine.invoke`.
 - Generated engine and capability-library projects now include one `AGENTS.md`
   instruction source and a relative `CLAUDE.md` symbolic-link alias.
+- Every generated engine, atomic capability, and capability-library project now
+  includes a valid `develop-invokta-project` skill tailored to its architecture
+  and test-first workflow.
 
 ## [0.2.0] - 2026-07-29
 

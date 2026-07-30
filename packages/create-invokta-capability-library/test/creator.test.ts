@@ -51,6 +51,8 @@ describe("the capability library starter", () => {
     const files = createStarterFiles(options);
 
     expect(files.map((file) => file.path)).toEqual([
+      ".agents/skills/develop-invokta-project/SKILL.md",
+      ".agents/skills/develop-invokta-project/agents/openai.yaml",
       ".gitignore",
       "AGENTS.md",
       "CLAUDE.md",
@@ -80,6 +82,27 @@ describe("the capability library starter", () => {
       path: "CLAUDE.md",
       target: "AGENTS.md",
     });
+    const contents = new Map(
+      files.flatMap((file) =>
+        "contents" in file ? [[file.path, file.contents] as const] : [],
+      ),
+    );
+    const skill =
+      contents.get(".agents/skills/develop-invokta-project/SKILL.md") ?? "";
+    const metadata =
+      contents.get(
+        ".agents/skills/develop-invokta-project/agents/openai.yaml",
+      ) ?? "";
+    expect(skill).toMatch(
+      /^---\nname: develop-invokta-project\ndescription: .+\n---\n/u,
+    );
+    expect(skill).toContain("Publish through `defineCapabilityLibrary`");
+    expect(skill).toContain("Run `yarn run check`");
+    expect(skill).not.toContain("TODO");
+    expect(metadata).toContain(
+      'display_name: "Develop Invokta Capability Library"',
+    );
+    expect(metadata).toContain("$develop-invokta-project");
   });
 
   it("pins the core and publishes one explicit library root export", () => {
@@ -134,7 +157,7 @@ describe("createStarterProject", () => {
       packageManager: "npm",
     });
 
-    expect(project.files).toHaveLength(11);
+    expect(project.files).toHaveLength(13);
     expect(existsSync(join(project.directory, "src/index.ts"))).toBe(true);
     expect(lstatSync(join(project.directory, "AGENTS.md")).isFile()).toBe(true);
     expect(
@@ -143,6 +166,15 @@ describe("createStarterProject", () => {
     expect(readlinkSync(join(project.directory, "CLAUDE.md"))).toBe(
       "AGENTS.md",
     );
+    expect(
+      readFileSync(
+        join(
+          project.directory,
+          ".agents/skills/develop-invokta-project/SKILL.md",
+        ),
+        "utf8",
+      ),
+    ).toContain("# Develop This Capability Library");
 
     const outside = createWorkingDirectory();
     symlinkSync(outside, join(cwd, "linked"), "dir");
@@ -234,8 +266,13 @@ describe("createStarterProject", () => {
         fileSystem,
       }),
     ).rejects.toMatchObject({ code: "SCAFFOLD_CONFLICT", exitCode: 1 });
-    expect(readFileSync(join(target, ".gitignore"), "utf8")).toBe("mine\n");
-    expect(readdirSync(target)).toEqual([".gitignore"]);
+    expect(
+      readFileSync(
+        join(target, ".agents/skills/develop-invokta-project/SKILL.md"),
+        "utf8",
+      ),
+    ).toBe("mine\n");
+    expect(readdirSync(target)).toEqual([".agents"]);
   });
 
   it("preserves a symbolic link that wins an exclusive-create race", async () => {
@@ -311,7 +348,7 @@ describe("createStarterProject", () => {
       },
       async writeFile(path, contents, options) {
         writes += 1;
-        if (writes === 3) {
+        if (writes === 5) {
           const error = new Error("fixture failure") as NodeJS.ErrnoException;
           error.code = "EACCES";
           throw error;

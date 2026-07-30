@@ -60,6 +60,8 @@ Text files are deterministic UTF-8 with LF endings and one trailing newline.
 The fixed entries are:
 
 ```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
 .gitignore
 AGENTS.md
 CLAUDE.md -> AGENTS.md
@@ -75,6 +77,13 @@ test/engine.test.ts
 tsconfig.json
 tsconfig.test.json
 ```
+
+The generated `develop-invokta-project` skill teaches an agent to evolve the
+Action Engine through explicit capability contracts, engine-owned dependency
+injection, RED/GREEN/REFACTOR, and the single `engine.invoke` path. The skill is
+static project guidance; it adds no runtime discovery, registry, plugin, or
+execution path. Its `agents/openai.yaml` metadata includes a ready-to-use
+`$develop-invokta-project` prompt.
 
 `AGENTS.md` records the starter's architecture and test-first delivery
 constraints. `CLAUDE.md` is an actual symbolic link whose stored target is the

@@ -44,9 +44,10 @@ persistence, configuration field, or operational limit:
 
 Supporting packages require focused contract tests for their own authority:
 engine, atomic capability, and capability-library creator scaffolds remain
-deterministic, non-overwriting, and independently buildable; generated
-capability packages compose only through the public core API; composition
-diagnostics remain deterministic and payload-free;
+deterministic, non-overwriting, and independently buildable; every creator
+emits a valid project-specific development skill; generated capability packages
+compose only through the public core API; composition diagnostics remain
+deterministic and payload-free;
 installer writes remain confirmed, atomic, reversible, and secret-free; deploy
 outputs remain deterministic, marked, and non-destructive; and every published
 tarball passes an isolated consumer smoke test.

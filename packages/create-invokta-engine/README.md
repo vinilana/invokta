@@ -30,6 +30,8 @@ to generate files without starting a package manager or performing network I/O.
 ## Generated project
 
 ```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
 .gitignore
 AGENTS.md
 CLAUDE.md -> AGENTS.md
@@ -45,6 +47,11 @@ test/engine.test.ts
 tsconfig.json
 tsconfig.test.json
 ```
+
+The generated `develop-invokta-project` skill teaches an agent to evolve the
+Action Engine through explicit capability contracts, engine-owned dependencies,
+RED/GREEN/REFACTOR, and the single `engine.invoke` path. Its metadata includes a
+ready-to-use `$develop-invokta-project` prompt.
 
 `AGENTS.md` documents the starter's architecture and test-first delivery
 constraints. `CLAUDE.md` is a real relative symbolic link to that file, keeping

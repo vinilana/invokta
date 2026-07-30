@@ -3,7 +3,8 @@
 - Last reviewed: 2026-07-30
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
-  instruction aliases accepted in ADR 0015
+  instruction aliases accepted in ADR 0015; generated development skills
+  accepted in ADR 0016
 
 ## Reuse evidence
 
@@ -41,12 +42,14 @@ consumer can use the protocol surface without coupling to engine code.
 - Packed creator smoke tests build a generated engine and exercise its
   `mcp:install` path. They verify that generated engine and capability-library
   projects contain a regular `AGENTS.md`, a symbolic-link `CLAUDE.md`, and the
-  exact relative target `AGENTS.md`. They also build generated atomic and
-  library packages, compose their public root exports through `@invokta/core`,
-  and invoke them through `engine.invoke`. Installer tests cover local
-  manifests, remote descriptors, multi-client transactions, lifecycle
-  management, eleven target adapters, and forbidden process, network, and
-  write sentinels.
+  exact relative target `AGENTS.md`. All three generated project types contain
+  a valid `develop-invokta-project` skill with tailored contract and composition
+  guidance and deterministic UI metadata. Packed tests also build generated
+  atomic and library packages, compose their public root exports through
+  `@invokta/core`, and invoke them through `engine.invoke`. Installer tests
+  cover local manifests, remote descriptors, multi-client transactions,
+  lifecycle management, eleven target adapters, and forbidden process,
+  network, and write sentinels.
 
 ## Ownership conclusions
 

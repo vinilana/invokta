@@ -32,6 +32,8 @@ directory. Unknown, repeated, incomplete, or extra arguments produce exit code
 ## Generated project
 
 ```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
 .gitignore
 README.md
 package.json
@@ -41,6 +43,14 @@ test/capability.test.ts
 tsconfig.json
 tsconfig.test.json
 ```
+
+The generated `develop-invokta-project` skill teaches an agent to keep the
+atomic definition and `defineExportedCapability` descriptor separate, treat the
+default ID and source metadata as compatibility surfaces, follow
+RED/GREEN/REFACTOR, and prove consumption through `importCapability` and
+`engine.invoke`. The skill is static project guidance and adds no runtime
+behavior. Its metadata includes a ready-to-use `$develop-invokta-project`
+prompt.
 
 The root export has the explicit default ID
 `onboarding.create-welcome-message`. The test imports the exported descriptor,

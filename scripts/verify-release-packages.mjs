@@ -124,6 +124,46 @@ function verifyGeneratedAgentInstructions(projectDirectory, creatorName) {
   }
 }
 
+function verifyGeneratedDevelopmentSkill(
+  projectDirectory,
+  creatorName,
+  expectedHeading,
+) {
+  const skillDirectory = join(
+    projectDirectory,
+    ".agents",
+    "skills",
+    "develop-invokta-project",
+  );
+  const skillPath = join(skillDirectory, "SKILL.md");
+  const metadataPath = join(skillDirectory, "agents", "openai.yaml");
+  if (!lstatSync(skillPath).isFile() || !lstatSync(metadataPath).isFile()) {
+    throw new Error(`${creatorName} did not generate regular skill files`);
+  }
+
+  const skill = readFileSync(skillPath, "utf8");
+  if (
+    !/^---\nname: develop-invokta-project\ndescription: [^\n]+\n---\n/u.test(
+      skill,
+    ) ||
+    !skill.includes(expectedHeading) ||
+    skill.includes("TODO")
+  ) {
+    throw new Error(`${creatorName} generated an invalid development skill`);
+  }
+
+  const metadata = readFileSync(metadataPath, "utf8");
+  if (
+    !metadata.startsWith("interface:\n") ||
+    !metadata.includes("display_name:") ||
+    !metadata.includes("short_description:") ||
+    !metadata.includes("default_prompt:") ||
+    !metadata.includes("$develop-invokta-project")
+  ) {
+    throw new Error(`${creatorName} generated invalid skill metadata`);
+  }
+}
+
 function verifyRootReleaseMetadata(packageReport) {
   const releaseVersion = packageReport.version;
   if (
@@ -492,6 +532,11 @@ try {
   }
 
   const generatedProjectDirectory = join(generatedDirectory, "release-engine");
+  verifyGeneratedDevelopmentSkill(
+    generatedProjectDirectory,
+    "create-invokta-engine",
+    "# Develop This Action Engine",
+  );
   verifyGeneratedAgentInstructions(
     generatedProjectDirectory,
     "create-invokta-engine",
@@ -574,12 +619,14 @@ try {
       target: "release-capability",
       expectedExports: ["createWelcomeMessageExport"],
       generatesAgentInstructions: false,
+      expectedSkillHeading: "# Develop This Atomic Capability",
     },
     {
       command: "create-invokta-capability-library",
       target: "release-capability-library",
       expectedExports: ["onboardingCapabilityLibrary"],
       generatesAgentInstructions: true,
+      expectedSkillHeading: "# Develop This Capability Library",
     },
   ];
   for (const creatorCase of capabilityCreatorCases) {
@@ -613,6 +660,11 @@ try {
     }
 
     const projectDirectory = join(generatedDirectory, creatorCase.target);
+    verifyGeneratedDevelopmentSkill(
+      projectDirectory,
+      creatorCase.command,
+      creatorCase.expectedSkillHeading,
+    );
     if (creatorCase.generatesAgentInstructions) {
       verifyGeneratedAgentInstructions(projectDirectory, creatorCase.command);
     }

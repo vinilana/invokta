@@ -40,6 +40,46 @@ remove \`"private": true\` from \`package.json\`.
 `;
 }
 
+function renderDevelopmentSkill(packageManager: PackageManager): string {
+  const commands = packageManagerCommands[packageManager];
+  return `---
+name: develop-invokta-project
+description: Develop this generated Invokta atomic capability package when changing its capability contract, dependencies, publication descriptor, tests, or package export. Use for implementation, refactoring, debugging, and compatibility review in this project.
+---
+
+# Develop This Atomic Capability
+
+## Establish the publication contract
+
+1. Read \`README.md\`, \`package.json\`, \`src/capability.ts\`, \`src/index.ts\`, and \`test/capability.test.ts\`.
+2. Identify the input, output, access rule, annotations, timeout, default ID, source metadata, and root export affected by the change.
+3. Treat schemas, access behavior, \`defaultId\`, source identity, and package exports as compatibility surfaces. Request an explicit decision before breaking one.
+
+## Preserve the atomic boundary
+
+- Define the domain action with \`defineCapability\` in \`src/capability.ts\`.
+- Publish through \`defineExportedCapability\` in \`src/index.ts\` with a literal, domain-oriented default ID.
+- Inject repositories, providers, models, tools, and policy checks through a factory or closure when dependencies are needed.
+- Keep the capability independent from CLI, MCP, HTTP, and any consuming engine.
+- Do not add runtime discovery, a registry, a service locator, an adapter, or an engine entry point.
+
+## Deliver the change
+
+1. Add or update a test that imports the public descriptor, composes it with \`importCapability\`, invokes it through \`engine.invoke\`, and fails for the missing behavior.
+2. Implement the smallest capability or publication change that makes the test pass.
+3. Cover invalid input, denied access, output validation, cancellation, or dependency failure when relevant to the contract.
+4. Keep \`private: true\` until package identity, versioning, default-ID compatibility, and publication are deliberate decisions.
+5. Update project documentation when the public contract or package usage changes.
+6. Run \`${commands.check}\` and resolve every type, test, formatting, and build failure before completion.
+`;
+}
+
+const developmentSkillMetadata = `interface:
+  display_name: "Develop Invokta Capability"
+  short_description: "Develop this Invokta capability safely"
+  default_prompt: "Use $develop-invokta-project to implement this atomic capability change and validate its public export contract."
+`;
+
 function renderPackageManifest(
   projectName: string,
   invoktaVersion: string,
@@ -197,6 +237,14 @@ export function createStarterFiles(
   options: CreateStarterFilesOptions,
 ): readonly StarterFile[] {
   return Object.freeze([
+    {
+      path: ".agents/skills/develop-invokta-project/SKILL.md",
+      contents: renderDevelopmentSkill(options.packageManager),
+    },
+    {
+      path: ".agents/skills/develop-invokta-project/agents/openai.yaml",
+      contents: developmentSkillMetadata,
+    },
     { path: ".gitignore", contents: "node_modules/\ndist/\n*.tsbuildinfo\n" },
     {
       path: "README.md",

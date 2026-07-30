@@ -51,6 +51,8 @@ entry. The commands expose the same stable diagnostic codes:
 The atomic creator writes these fixed paths in lexicographic order:
 
 ```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
 .gitignore
 README.md
 package.json
@@ -70,6 +72,8 @@ effective capability through `engine.invoke`.
 The library creator writes these fixed paths in lexicographic order:
 
 ```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
 .gitignore
 AGENTS.md
 CLAUDE.md -> AGENTS.md
@@ -85,6 +89,10 @@ tsconfig.test.json
 
 `AGENTS.md` is a regular UTF-8 text file. `CLAUDE.md` is the relative symbolic
 link defined by ADR 0015 rather than a second text file.
+
+Each creator renders the project-specific `develop-invokta-project` workflow
+defined by ADR 0016. The atomic and library skills keep their distinct
+publication boundaries.
 
 The project root exports one `defineCapabilityLibrary` value containing the
 literal default IDs `onboarding.create-welcome-message` and
