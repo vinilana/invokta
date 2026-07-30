@@ -410,6 +410,13 @@ describe("pure installer ownership planning", () => {
         enablement: "enabled",
         actions: ["disable"],
       });
+      expect(planInstallerAction(planningInput, "install")).toEqual({
+        outcome: "write",
+        action: "install",
+        configEffect: "replace",
+        stateEffect: "update",
+        definitionSource: "registry",
+      });
       expect(planInstallerAction(planningInput, "disable")).toEqual({
         outcome: "write",
         action: "disable",
@@ -458,6 +465,14 @@ describe("pure installer ownership planning", () => {
         status: "outdated",
         enablement: "disabled",
         actions: ["enable"],
+      });
+      expect(planInstallerAction(planningInput, "install")).toEqual({
+        outcome: "write",
+        action: "install",
+        configEffect:
+          toggleStrategy === "detached" ? "none" : "replace-disabled",
+        stateEffect: "update",
+        definitionSource: "registry",
       });
       expect(planInstallerAction(planningInput, "enable")).toEqual({
         outcome: "write",

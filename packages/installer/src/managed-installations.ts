@@ -119,6 +119,7 @@ export async function inspectManagedInstallations(
     fileSystem: options.dependencies.fileSystem,
     homeDirectory: options.snapshot.homeDirectory,
     targetContracts: contracts,
+    allowUnavailableTargetContracts: true,
   });
   const homeRoot = await capturePathRoot(options.dependencies.fileSystem, {
     rootKind: "home",
@@ -136,9 +137,11 @@ export async function inspectManagedInstallations(
     const target = options.snapshot.targets.find(
       ({ id }) => id === installation.targetId,
     );
+    const adapter = options.dependencies.adapters[installation.targetId];
     const displayName = target?.displayName ?? installation.targetId;
     if (
       descriptor === undefined ||
+      !adapter.compatibility(descriptor).supported ||
       target === undefined ||
       target.configuration.kind === "blocked" ||
       target.configuration.path !== installation.configPath ||
@@ -157,7 +160,6 @@ export async function inspectManagedInstallations(
     ).catch((cause) => {
       throw new InstallerError("HARNESS_CONFIG_UNSAFE", cause);
     });
-    const adapter = options.dependencies.adapters[installation.targetId];
     const inspection = adapter.inspect({
       source: await readConfig(options, identity),
       serverName: installation.serverName,

@@ -235,6 +235,32 @@ describe("runInstallerCli", () => {
     });
   });
 
+  it("rejects remote installation options outside the documented order", async () => {
+    const output = createIo();
+    const loadInteractiveSession = vi.fn(async () => 0 as const);
+
+    const result = await runInstallerCli({
+      argv: [
+        "install",
+        "--http",
+        "support-api",
+        "https://support.example.com/mcp",
+        "--header-env",
+        "X-Tenant=SUPPORT_TENANT",
+        "--bearer-token-env",
+        "SUPPORT_TOKEN",
+      ],
+      io: output.io,
+      loadInteractiveSession,
+    });
+
+    expect(result).toBe(2);
+    expect(loadInteractiveSession).not.toHaveBeenCalled();
+    expect(output.stderr).toEqual([
+      'Invalid arguments. Run "invokta-installer --help".\n',
+    ]);
+  });
+
   it.each(["status", "enable", "disable", "remove"] as const)(
     "parses the %s lifecycle command",
     async (kind) => {

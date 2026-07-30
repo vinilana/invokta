@@ -178,12 +178,42 @@ function applyUpdate(
 } {
   if (
     plan.stateEffect !== "update" ||
-    (plan.action !== "enable" && plan.action !== "disable")
+    (plan.action !== "install" &&
+      plan.action !== "enable" &&
+      plan.action !== "disable")
   ) {
     return invalidState();
   }
   if (!isInstallerTimestampAfter(occurredAt, installation.updatedAt)) {
     return invalidState();
+  }
+  if (plan.action === "install") {
+    if (plan.definitionSource !== "registry") return invalidState();
+    const suspendedDescriptor =
+      planning.target.toggleStrategy === "detached" &&
+      planning.currentServer.kind === "absent"
+        ? planning.descriptor.server
+        : undefined;
+    return {
+      installation: {
+        entryId: planning.descriptor.id,
+        registryVersion: planning.descriptor.version,
+        targetId: planning.targetId,
+        configPath: planning.target.configPath,
+        serverName: planning.descriptor.server.name,
+        definitionSha256: fingerprintNormalizedDefinition(
+          planning.registryDefinition,
+          planning.target.toggleStrategy,
+        ),
+        targetContractVersion: planning.target.targetContractVersion,
+        toggleStrategy: planning.target.toggleStrategy,
+        launchDescriptor: planning.descriptor.server,
+        ...(suspendedDescriptor === undefined ? {} : { suspendedDescriptor }),
+        adopted: false,
+        installedAt: installation.installedAt,
+        updatedAt: occurredAt,
+      },
+    };
   }
   if (planning.target.toggleStrategy !== "detached") {
     if (plan.definitionSource !== "managed") return invalidState();

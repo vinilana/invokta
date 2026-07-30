@@ -261,6 +261,43 @@ describe("immutable installer state transitions", () => {
     });
   });
 
+  it.each(configurationTargetIds)(
+    "updates an outdated %s installation to the selected registry descriptor",
+    (targetId) => {
+      const oldDescriptor = descriptor("1.0.0", "support-engine-mcp-v1");
+      const currentDescriptor = descriptor("2.0.0", "support-engine-mcp-v2");
+      const adapter = configurationTargetAdapters[targetId];
+      if (!adapter.compatibility(currentDescriptor).supported) return;
+      const oldDefinition = adapter.descriptorToDefinition(oldDescriptor);
+      const currentDefinition =
+        adapter.descriptorToDefinition(currentDescriptor);
+      const initial = managedState(targetId, currentDescriptor, oldDefinition, {
+        adopted: true,
+        launchDescriptor: oldDescriptor.server,
+      });
+      const planning = planningInput(targetId, currentDescriptor, initial, {
+        kind: "present",
+        definition: oldDefinition,
+      });
+
+      const updated = transition(planning, "install");
+
+      expect(updated).toBeDefined();
+      if (updated === undefined) throw new Error("Expected update transition.");
+      expect(updated.installation).toEqual({
+        ...firstInstallation(initial),
+        registryVersion: currentDescriptor.version,
+        definitionSha256: fingerprintNormalizedDefinition(
+          currentDefinition,
+          adapter.metadata.toggleStrategy,
+        ),
+        launchDescriptor: currentDescriptor.server,
+        adopted: false,
+        updatedAt: occurredAt,
+      });
+    },
+  );
+
   it("snapshots and restores the historical detached descriptor", () => {
     const targetId = "cursor";
     const oldDescriptor = descriptor("1.0.0", "support-engine-mcp-v1");

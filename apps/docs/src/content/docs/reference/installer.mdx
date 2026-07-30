@@ -176,9 +176,12 @@ share one target. Claude Desktop mutation is macOS-only; it is unsupported on
 Linux. Windows configuration mutation is not supported in this release.
 
 VS Code uses its JSONC `servers` object and `${env:NAME}` variables. Claude
-Desktop uses the JSON `mcpServers` object. Existing comments, trailing commas,
-unrelated servers, byte-order marks, newline conventions, and safe file modes
-are preserved according to each target contract.
+Desktop uses the JSON `mcpServers` object for credential-free local stdio
+servers. Its file contract cannot safely express forwarded environment names,
+and remote servers must be added through Claude's connector interface, so those
+descriptors are filtered out for this target. Existing comments, trailing
+commas, unrelated servers, byte-order marks, newline conventions, and safe file
+modes are preserved according to each target contract.
 
 Established client-specific path overrides remain supported, including
 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, `HERMES_HOME`,

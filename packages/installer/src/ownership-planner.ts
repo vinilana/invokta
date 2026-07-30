@@ -72,6 +72,8 @@ export type InstallerActionPlan =
       readonly configEffect:
         | "none"
         | "install"
+        | "replace"
+        | "replace-disabled"
         | "set-enabled"
         | "set-disabled"
         | "detach"
@@ -369,9 +371,23 @@ export function planInstallerAction(
       : status === "enabled"
         ? "enabled"
         : "disabled";
+  if (status === "outdated" && action === "install") {
+    return freezePlan({
+      outcome: "write",
+      action,
+      configEffect:
+        enablement === "enabled"
+          ? "replace"
+          : input.target.toggleStrategy === "detached"
+            ? "none"
+            : "replace-disabled",
+      stateEffect: "update",
+      definitionSource: "registry",
+    });
+  }
   if (
     action === "adopt" ||
-    (action === "install" && enablement === "enabled") ||
+    action === "install" ||
     (action === "enable" && enablement === "enabled") ||
     (action === "disable" && enablement === "disabled")
   ) {

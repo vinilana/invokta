@@ -39,7 +39,8 @@ function cancel(prompter: InteractivePrompter): 130 {
 }
 
 function statusLine(view: ManagedInstallationView, runtime?: string): string {
-  return `${view.installation.serverName} · ${view.displayName}: ${view.status}${runtime === undefined ? "" : ` (${runtime})`}`;
+  const status = runtime === undefined ? view.status : "missing-runtime";
+  return `${view.installation.serverName} · ${view.displayName}: ${status}${runtime === undefined ? "" : ` (${runtime})`}`;
 }
 
 async function showStatus(

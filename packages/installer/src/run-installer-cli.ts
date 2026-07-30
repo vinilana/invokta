@@ -88,14 +88,18 @@ function parseCommand(argv: readonly string[]): InstallerCommand | undefined {
     if (serverName === undefined || url === undefined) return undefined;
     let bearerTokenEnvironment: string | undefined;
     const headerEnvironment: string[] = [];
+    let headerOptionSeen = false;
     for (let index = 4; index < argv.length; index += 2) {
       const flag = argv[index];
       const value = argv[index + 1];
       if (value === undefined) return undefined;
       if (flag === "--bearer-token-env") {
-        if (bearerTokenEnvironment !== undefined) return undefined;
+        if (bearerTokenEnvironment !== undefined || headerOptionSeen) {
+          return undefined;
+        }
         bearerTokenEnvironment = value;
       } else if (flag === "--header-env") {
+        headerOptionSeen = true;
         headerEnvironment.push(value);
       } else {
         return undefined;

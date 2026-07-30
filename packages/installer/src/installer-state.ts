@@ -94,6 +94,7 @@ export type InstallerStateValidationResult =
   | { readonly ok: false; readonly issues: readonly StateIssue[] };
 
 export interface LoadInstallerStateOptions {
+  readonly allowUnavailableTargetContracts?: boolean;
   readonly currentUserId: number | undefined;
   readonly environment: InstallerEnvironment;
   readonly fileSystem: InstallerFileSystem;
@@ -662,6 +663,7 @@ function validateInstallation(
   value: unknown,
   pointer: string,
   targetContracts: StateTargetContracts,
+  allowUnavailableTargetContracts: boolean,
   seenPairs: Set<string>,
   issues: StateIssue[],
 ): value is JsonRecord {
@@ -814,7 +816,9 @@ function validateInstallation(
 
   if (validTargetId) {
     const contract = targetContracts[value.targetId as ConfigurationTargetId];
-    if (!isRecord(contract) || contract.targetContractVersion !== 1) {
+    if (contract === undefined && allowUnavailableTargetContracts) {
+      // Status still validates intrinsic state when a target cannot be detected.
+    } else if (!isRecord(contract) || contract.targetContractVersion !== 1) {
       addIssue(
         issues,
         childPointer(pointer, "targetId"),
@@ -1006,6 +1010,7 @@ export function createEmptyInstallerState(): InstallerState {
 export function validateInstallerStateBytes(
   bytes: Uint8Array,
   targetContracts: StateTargetContracts,
+  options: { readonly allowUnavailableTargetContracts?: boolean } = {},
 ): InstallerStateValidationResult {
   if (bytes.byteLength > stateByteLimit) {
     return invalid([{ pointer: "", code: "STATE_TOO_LARGE" }]);
@@ -1064,6 +1069,7 @@ export function validateInstallerStateBytes(
         value,
         recordPointer,
         targetContracts,
+        options.allowUnavailableTargetContracts === true,
         seenPairs,
         issues,
       )
@@ -1203,7 +1209,10 @@ export async function loadInstallerState(
   } catch (cause) {
     throw new InstallerError("STATE_READ_FAILED", cause);
   }
-  const result = validateInstallerStateBytes(bytes, options.targetContracts);
+  const result = validateInstallerStateBytes(bytes, options.targetContracts, {
+    allowUnavailableTargetContracts:
+      options.allowUnavailableTargetContracts === true,
+  });
   if (!result.ok) {
     throw new InstallerError(
       "STATE_INVALID",

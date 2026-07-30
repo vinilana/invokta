@@ -1040,6 +1040,22 @@ function claudeDefinition(
   );
 }
 
+function claudeDesktopCompatibility(descriptor: CapabilityInstallDescriptor) {
+  const transport = descriptor.server.transport;
+  if (transport.type === "streamable-http") {
+    return {
+      supported: false as const,
+      reason: "claude-desktop-http-config-unsupported",
+    };
+  }
+  return transport.forwardEnv.length === 0
+    ? ({ supported: true } as const)
+    : ({
+        supported: false,
+        reason: "claude-desktop-forward-env-unsupported",
+      } as const);
+}
+
 function cursorDefinition(
   descriptor:
     | CapabilityInstallDescriptor
@@ -1332,8 +1348,13 @@ const claudeDesktop = createJsonTargetAdapter({
   targetId: "claude-desktop",
   dialect: "claude",
   toggleStrategy: "detached",
-  compatibility: portableCompatibility,
-  descriptorToDefinition: claudeDefinition,
+  compatibility: claudeDesktopCompatibility,
+  descriptorToDefinition: (descriptor) => {
+    if (!claudeDesktopCompatibility(descriptor).supported) {
+      throw new InstallerError("TARGET_UNSUPPORTED");
+    }
+    return claudeDefinition(descriptor);
+  },
   definitionToSuspendedDescriptor: (serverName, definition) =>
     definitionToSuspendedDescriptor("claude-desktop", serverName, definition),
 });

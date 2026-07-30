@@ -167,7 +167,7 @@ describe("strict JSON target adapters", () => {
     const claudeDesktop = configurationTargetAdapters["claude-desktop"];
     const claudePatch = claudeDesktop.constructPatch({
       action: "install",
-      definition: claudeDesktop.descriptorToDefinition(stdioDescriptor()),
+      definition: claudeDesktop.descriptorToDefinition(stdioDescriptor([])),
       inspection: claudeDesktop.inspect({
         source: undefined,
         serverName: "invokta-support",
@@ -181,7 +181,6 @@ describe("strict JSON target adapters", () => {
           type: "stdio",
           command: "support-engine-mcp",
           args: ["serve", "--stdio"],
-          env: { SUPPORT_API_TOKEN: `\${SUPPORT_API_TOKEN}` },
         },
       },
     });
@@ -223,6 +222,22 @@ describe("strict JSON target adapters", () => {
     expect(vscodeText).toContain(
       `"SUPPORT_API_TOKEN":"\${env:SUPPORT_API_TOKEN}"`,
     );
+  });
+
+  it("limits Claude Desktop file installation to credential-free stdio servers", () => {
+    const adapter = configurationTargetAdapters["claude-desktop"];
+
+    expect(adapter.compatibility(stdioDescriptor([]))).toEqual({
+      supported: true,
+    });
+    expect(adapter.compatibility(stdioDescriptor(["TOKEN"]))).toEqual({
+      supported: false,
+      reason: "claude-desktop-forward-env-unsupported",
+    });
+    expect(adapter.compatibility(credentialFreeHttpDescriptor())).toEqual({
+      supported: false,
+      reason: "claude-desktop-http-config-unsupported",
+    });
   });
 
   it.each(["claude-code", "cursor"] as const)(

@@ -58,6 +58,10 @@ export async function runInstallSession(
     initialValues: targetIds,
   });
   if (selection.kind === "cancelled") return cancelled(options.prompter);
+  if (selection.value.length === 0) {
+    options.prompter.outro("No changes were made.");
+    return 0;
+  }
   const confirmed = await options.prompter.confirm(
     `Update ${String(selection.value.length)} MCP client configuration${selection.value.length === 1 ? "" : "s"}?`,
   );

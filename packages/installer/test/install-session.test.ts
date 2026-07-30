@@ -123,4 +123,75 @@ describe("interactive install session", () => {
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(prompter.outro).toHaveBeenCalledWith("No changes were made.");
   });
+
+  it("exits without confirmation or mutation when no target is selected", async () => {
+    const confirm = vi.fn(async () => ({
+      kind: "submitted" as const,
+      value: true,
+    }));
+    const prompter: InteractivePrompter = {
+      intro: vi.fn(),
+      outro: vi.fn(),
+      cancel: vi.fn(),
+      autocomplete: vi.fn(),
+      select: vi.fn(),
+      multiselect: vi.fn(async () => ({
+        kind: "submitted" as const,
+        value: [],
+      })) as InteractivePrompter["multiselect"],
+      note: vi.fn(),
+      confirm,
+      spinner: vi.fn(),
+      log: vi.fn(),
+    };
+    const target = {
+      id: "codex",
+      displayName: "Codex",
+      surfaceIds: [],
+      evidence: "installed",
+      executables: [],
+      configuration: {
+        kind: "absent",
+        path: "/users/tester/.codex/config.toml",
+      },
+      eligible: true,
+      mayCreateConfiguration: true,
+      reloadHint: "Reload Codex.",
+    } as const;
+
+    const result = await runInstallSession({
+      dependencies: {
+        adapters: configurationTargetAdapters,
+        currentUserId: 1,
+        environment: { get: () => undefined },
+        fileSystem: createNodeFileSystem(),
+        lock: {
+          clock: {
+            monotonicNow: () => 0,
+            now: () => 0,
+            wait: async () => undefined,
+          },
+          processId: 1,
+          randomBytes: (length) => new Uint8Array(length),
+        },
+        now: () => "2026-07-29T12:00:00.000Z",
+      },
+      descriptor: descriptor(),
+      prompter,
+      resolveExecutable: async (candidate) => ({
+        path: candidate,
+        identity: { device: 1, inode: 2, realPath: candidate },
+      }),
+      snapshot: {
+        homeDirectory: "/users/tester",
+        surfaces: [],
+        targets: [target],
+      },
+    });
+
+    expect(result).toBe(0);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(prompter.log).not.toHaveBeenCalled();
+    expect(prompter.outro).toHaveBeenCalledWith("No changes were made.");
+  });
 });

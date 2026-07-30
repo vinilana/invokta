@@ -107,6 +107,9 @@ Desktop. VS Code uses the default user profile on Linux and macOS. Claude Deskto
 uses its documented macOS configuration and is unsupported on Linux. Windows
 configuration mutation remains unsupported until the installer has an
 equivalent no-follow ownership and atomic-write contract for that platform.
+Claude Desktop's file contract is compatible only with credential-free local
+stdio descriptors; environment forwarding and remote servers require client
+surfaces that can obtain credential values without persisting them.
 
 ### Persistence and management
 

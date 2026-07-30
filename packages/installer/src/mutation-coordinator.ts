@@ -203,11 +203,17 @@ async function atomicReplace(
   const temporaryPath = `${identity.targetPath}.tmp.${randomToken(dependencies.lock.randomBytes)}`;
   let created = false;
   let handle: InstallerWriteHandle | undefined;
+  const existing =
+    identity.missingPaths.length === 0 ? identity.components.at(-1) : undefined;
+  const targetMode = existing === undefined ? 0o600 : existing.mode & 0o7777;
   try {
     handle = await fileSystem.createExclusiveNoFollow(temporaryPath, 0o600);
     created = true;
     await handle.writeAll(bytes);
-    await handle.chmod(0o600);
+    if (existing !== undefined) {
+      await handle.chown(existing.uid, existing.gid);
+    }
+    await handle.chmod(targetMode);
     await handle.sync();
     await handle.close();
     handle = undefined;
@@ -220,6 +226,35 @@ async function atomicReplace(
     if (cause instanceof InstallerError) throw cause;
     throw new InstallerError(failureCode, cause);
   }
+}
+
+function installReplacementPatch(
+  adapter: TargetAdapter,
+  inspection: ReturnType<TargetAdapter["inspect"]>,
+  serverName: string,
+  definition: Readonly<Record<string, unknown>>,
+  disabled: boolean,
+): TargetPatch {
+  if (inspection.currentServer.kind !== "present") {
+    throw new InstallerError("STATE_INVALID");
+  }
+  const removed = adapter.constructPatch({ action: "remove", inspection });
+  if (removed.kind !== "changed") throw new InstallerError("STATE_INVALID");
+  const absent = adapter.inspect({
+    source: removed.postImage,
+    serverName,
+  });
+  const installed = adapter.constructPatch({
+    action: "install",
+    definition,
+    inspection: absent,
+  });
+  if (installed.kind !== "changed" || !disabled) return installed;
+  const enabled = adapter.inspect({
+    source: installed.postImage,
+    serverName,
+  });
+  return adapter.constructPatch({ action: "disable", inspection: enabled });
 }
 
 async function rollbackConfig(
@@ -439,22 +474,35 @@ async function mutateTarget(
       if (transition === undefined) throw new InstallerError("STATE_INVALID");
       stateBytes = serializeInstallerState(transition.state, contracts);
       patch =
-        input.action === "install"
-          ? adapter.constructPatch({
-              action: "install",
-              definition: registryDefinition,
-              inspection,
-            })
-          : input.action === "enable"
-            ? adapter.constructPatch({
-                action: "enable",
-                ...(transition.restoreDefinition === undefined
-                  ? {}
-                  : { restoreDefinition: transition.restoreDefinition }),
+        plan.configEffect === "none"
+          ? ({ kind: "unchanged" } as const)
+          : plan.configEffect === "replace" ||
+              plan.configEffect === "replace-disabled"
+            ? installReplacementPatch(
+                adapter,
                 inspection,
-              })
-            : adapter.constructPatch({ action: "disable", inspection });
-      if (patch.kind !== "changed") throw new InstallerError("STATE_INVALID");
+                descriptor.server.name,
+                registryDefinition,
+                plan.configEffect === "replace-disabled",
+              )
+            : input.action === "install"
+              ? adapter.constructPatch({
+                  action: "install",
+                  definition: registryDefinition,
+                  inspection,
+                })
+              : input.action === "enable"
+                ? adapter.constructPatch({
+                    action: "enable",
+                    ...(transition.restoreDefinition === undefined
+                      ? {}
+                      : { restoreDefinition: transition.restoreDefinition }),
+                    inspection,
+                  })
+                : adapter.constructPatch({ action: "disable", inspection });
+      if (patch.kind !== "changed" && plan.configEffect !== "none") {
+        throw new InstallerError("STATE_INVALID");
+      }
     }
 
     const configPostImage =
