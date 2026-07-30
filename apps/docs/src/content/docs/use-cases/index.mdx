@@ -1,16 +1,20 @@
 ---
 title: Use cases by company area
-description: See how teams package distributed context, integrations, and company rules into reusable Action Engine outcomes.
+description: See how teams package providers, scripts, templates, company context, and rules into reusable Action Engines.
 ---
 
 import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-Action Engines are most useful when the same business outcome must be produced
-by multiple agents, applications, or automations. Instead of giving every
-consumer the same tools and another document explaining how to use them, the
-engine owns the integrations, rules, validation, permissions, and result.
+Action Engines are most useful when several agents, applications, or automations
+need the same business outcome. Instead of giving every consumer the same tools
+and another document explaining how to use them, the engine owns the providers,
+scripts, templates, rules, validation, permissions, and result.
 
 <CardGrid>
+  <Card title="Content and creative" icon="puzzle">
+    Edit videos and produce social carousels through branded, provider-backed
+    capabilities instead of rebuilding the creative process in every agent.
+  </Card>
   <Card title="Engineering" icon="rocket">
     Turn a ticket into implementation-ready work using repository context,
     architecture, design, and engineering rules.
@@ -19,13 +23,21 @@ engine owns the integrations, rules, validation, permissions, and result.
     Turn research, feedback, analytics, and design constraints into a reviewable
     discovery or handoff brief.
   </Card>
-  <Card title="Marketing" icon="puzzle">
+  <Card title="Marketing" icon="open-book">
     Turn a product launch into an on-brand campaign grounded in positioning,
     audience research, evidence, and channel constraints.
   </Card>
   <Card title="Sales" icon="transfer">
-    Turn account context, product fit, and approved claims into a consistent
-    account brief or proposal.
+    Generate account-specific proposals from CRM context while preserving the
+    approved template, visual identity, pricing, and claims.
+  </Card>
+  <Card title="Healthcare operations" icon="approve-check">
+    List valid appointment slots and schedule a patient through clinic policy and
+    an authorized Google Calendar integration.
+  </Card>
+  <Card title="People and recruiting" icon="refresh">
+    Apply a reviewable job rubric, record screening evidence in the recruiting
+    system, and notify the hiring team when human review is warranted.
   </Card>
   <Card title="Support and customer success" icon="approve-check">
     Turn tickets and account signals into classifications, safe responses, and
@@ -38,24 +50,95 @@ engine owns the integrations, rules, validation, permissions, and result.
 </CardGrid>
 
 <Aside type="note" title="These are illustrative domain contracts">
-  The capability IDs below describe useful Action Engine boundaries; they are
-  not built-in Invokta features. Your engine owns the prompts, models, data
-  integrations, rules, evaluations, and outcome quality. Invokta supplies the
-  reusable contract and execution mechanics.
+  The engine names, capability IDs, and provider combinations below are examples,
+  not built-in Invokta features. Your engine owns prompts, models, data
+  integrations, scripts, templates, rules, evaluations, and outcome quality.
+  Invokta supplies the reusable contract and execution mechanics.
 </Aside>
 
-## The company-wide pattern
+## How to read these examples
+
+An Action Engine may publish several related capabilities around one owned domain.
+A Video Production Engine, for example, can expose transcription, edit planning,
+asset generation, and rendering as independent actions. An agent or application
+still decides which capability to call and in what order; Invokta does not become
+a workflow engine.
 
 ```text
 agent, application, or automation
-  -> reusable domain action
-      -> company context + integrations + rules
-      -> validated business outcome
+  -> domain capability
+      -> engine-owned providers + scripts + company context + rules
+      -> validated result or stable failure
 ```
 
-The action should describe what the consumer needs, not the providers used to
-produce it. For example, prefer `marketing.prepare-campaign` over a sequence such
-as `notion.search`, `analytics.query`, and `llm.complete`.
+The public capability describes the result the consumer needs. Provider APIs,
+filesystem layouts, CRM schemas, calendar event formats, and command-line scripts
+remain replaceable implementation details inside the engine.
+
+## Content and creative
+
+### Video Production Engine
+
+A team should not need to teach every editing agent how to call five providers,
+interpret their responses, apply brand pacing, and run local editing commands.
+A Video Production Engine can own those decisions and publish a small set of
+reviewable capabilities:
+
+| Capability | Engine-owned behavior | Result |
+| --- | --- | --- |
+| `video.transcribe-source` | Sends the source audio to an ElevenLabs STT adapter and normalizes timestamps, speakers, and confidence data | A bounded, timestamped transcript |
+| `video.plan-edit` | Applies the creative brief, transcript, pacing rules, brand style, and target format | An edit decision list with cuts, zooms, captions, inserts, and asset requests |
+| `video.generate-voiceover` | Sends approved narration and voice settings to a Cartesia TTS adapter | A voiceover asset with duration and provenance metadata |
+| `video.generate-visual` | Uses a GPT Image 2.0 adapter with approved visual references | A still, background, or cutaway image that follows the requested visual contract |
+| `video.generate-cutscene` | Uses a Seedance 2.0 adapter with a bounded scene specification | A generated cutscene clip with duration and source metadata |
+| `video.apply-edit` | Invokes a trusted script for cuts, zooms, captions, audio mixing, and rendering | A rendered video plus the commands and evidence used to produce it |
+
+```text
+editor, agent, or media application
+  -> Video Production Engine
+      -> ElevenLabs STT
+      -> Cartesia TTS
+      -> GPT Image 2.0
+      -> Seedance 2.0
+      -> trusted editing scripts
+      -> transcript, edit plan, assets, and rendered video
+```
+
+Consumers never need the provider response formats or shell commands in their
+prompts. The engine can replace a provider, alter the rendering script, or change
+its internal media pipeline without changing the capability contracts.
+
+### Social Carousel Engine
+
+A carousel is not only a sequence of generated images. The team usually has a
+catalog of formats, rules for hooks and pacing, a preferred CTA, and a visual
+system that must survive across every slide.
+
+A Social Carousel Engine can publish:
+
+- `carousel.prepare-series`, which chooses an approved format such as an
+  educational breakdown, checklist, story, case study, before-and-after, or
+  myth-versus-reality series; writes the hook and slide sequence; and applies the
+  team's CTA-to-follow policy;
+- `carousel.render-series`, which loads visual references from Figma or a local
+  design-system directory and uses a GPT Image 2.0 adapter to render an ordered
+  set of slides; and
+- `carousel.assess-readiness`, which checks slide count, CTA placement, copy
+  density, visual consistency, safe areas, and required brand elements before
+  publication.
+
+```text
+campaign brief
+  -> carousel.prepare-series
+      -> approved carousel type + hook + narrative + CTA
+  -> carousel.render-series
+      -> Figma or design-system references + GPT Image 2.0
+  -> carousel.assess-readiness
+      -> publishable series or explicit blockers
+```
+
+The durable asset is the approved carousel series. The image provider and the
+location of the visual references remain internal to the engine.
 
 ## Engineering
 
@@ -128,26 +211,82 @@ Related actions:
 
 The [`crawl-engine`](/examples/) and [`image-engine`](/examples/) demonstrate
 provider integration and outcome-based media production boundaries that can be
-used inside a marketing engine.
+used inside a marketing or content engine.
 
 ## Sales
 
-### Give every seller and agent the same account context
+### Commercial Proposal Engine
 
-`sales.prepare-account-brief` can combine:
+A proposal generator becomes valuable when it owns more than text generation. It
+must use the approved document structure and visual identity, retrieve the right
+customer and opportunity context, enforce pricing and claim policy, and produce a
+reviewable artifact.
 
-| Uses | Returns |
-| --- | --- |
-| CRM records, recent conversations, product usage, support history, approved positioning, and account research | A bounded brief with the account situation, relevant pains, product fit, risks, open questions, and recommended next action |
+| Capability | Engine-owned behavior | Result |
+| --- | --- | --- |
+| `sales.prepare-proposal` | Reads the account, opportunity, contacts, recent conversations, product fit, and approved commercial data from the CRM | A structured proposal plan with customer pains, scope, proof, pricing inputs, and open approvals |
+| `sales.render-proposal` | Applies the existing proposal template, visual identity, approved case studies, and finalized commercial data | A customer-specific proposal document and its structured source data |
+| `sales.assess-proposal-readiness` | Verifies required CRM fields, pricing validity, claims, approvals, and template sections | A ready decision or explicit blockers before the proposal is sent |
+
+The same engine can serve a seller, CRM automation, Slack command, or internal
+application without copying the template-selection and customer-research logic.
 
 Related actions:
 
-- `sales.prepare-proposal` applies approved packaging, claims, evidence, and
-  account requirements to produce a reviewable proposal draft.
-- `sales.prepare-call` selects the relevant account context and discovery
-  questions without giving the consumer unrestricted access to every system.
+- `sales.prepare-call` selects relevant account context and discovery questions
+  without giving the consumer unrestricted access to every system.
 - `sales.assess-opportunity` applies one qualification policy across agents,
-  automations, and internal applications.
+  automations, and applications.
+- `sales.prepare-account-brief` turns CRM, product usage, support history, and
+  approved positioning into a bounded pre-call or handoff brief.
+
+## Healthcare operations
+
+### Appointment Scheduling Engine
+
+An Appointment Scheduling Engine can keep calendar-specific details and clinic
+policy out of every assistant while exposing explicit read and write actions:
+
+| Capability | Engine-owned behavior | Result |
+| --- | --- | --- |
+| `appointments.list-valid-slots` | Validates the patient request, appointment type, practitioner or location constraints, clinic hours, buffers, and Google Calendar availability | A bounded list of slots that the clinic permits the caller to offer |
+| `appointments.schedule` | Revalidates the chosen slot, enforces authorization and booking rules, writes the event through a Google Calendar adapter, and handles a stale-slot conflict | A confirmed appointment or a stable failure explaining why it was not booked |
+| `appointments.reschedule` | Checks the current appointment, replacement availability, notice policy, and calendar ownership before moving it | A confirmed replacement appointment and updated identifiers |
+| `appointments.cancel` | Applies cancellation policy and removes or updates the authorized calendar event | A cancellation confirmation with the resulting status |
+
+```text
+patient-facing application or scheduling agent
+  -> appointments.list-valid-slots
+      -> clinic policy + Google Calendar availability
+  -> appointments.schedule
+      -> final slot validation + authorized calendar write
+      -> confirmation or stable conflict
+```
+
+<Aside type="caution" title="Scheduling is not clinical decision-making">
+  The clinic remains responsible for identity, consent, patient-data handling,
+  tenancy, authorization, retention, and which appointment types may be booked.
+  The example publishes scheduling outcomes; it does not diagnose, prioritize
+  clinical urgency, or replace professional review.
+</Aside>
+
+## People and recruiting
+
+### Recruiting and Selection Engine
+
+A recruiting engine can apply one explicit rubric while keeping the ATS and
+notification integrations behind controlled actions:
+
+| Capability | Engine-owned behavior | Result |
+| --- | --- | --- |
+| `recruiting.screen-candidate` | Reads the job requirements, approved rubric, application, and screening responses; scores only declared job criteria and records evidence per criterion | An evidence-backed screening result with strengths, gaps, uncertainty, and a recommended human-review status |
+| `recruiting.record-screening` | Maps the normalized screening result and candidate responses to the recruiting system's schema | A persisted ATS record with stable identifiers and write evidence |
+| `recruiting.notify-review` | Applies the team's review threshold and sends a bounded Slack notification with a link to the recruiting record | A notification receipt or an explicit reason no notification was sent |
+
+The engine should exclude protected characteristics from scoring, expose the
+rubric and evidence used, and require human review for consequential decisions.
+It can notify a recruiter that a candidate merits attention without silently
+turning an opaque model score into an automatic rejection.
 
 ## Support and customer success
 
@@ -190,17 +329,30 @@ Related actions:
 - `operations.collect-service-context` hides provider-specific monitoring and
   inventory APIs behind one normalized result.
 
-## Choose a good first action
+## More engines with a strong fit
 
-Start with an outcome that:
+| Area | Example engine | Reusable outcome |
+| --- | --- | --- |
+| Customer onboarding | `success.prepare-onboarding-plan` | Combines CRM, contract, product configuration, goals, documentation, and ownership into milestones, risks, and the next customer action |
+| E-commerce | `commerce.publish-product-listing` | Turns product data, brand rules, marketplace constraints, translations, and approved images into a validated channel listing |
+| Finance and procurement | `finance.review-vendor-invoice` | Matches invoice data to purchase orders and policy, then returns an approved match or a bounded exception for review |
+| Legal operations | `legal.prepare-contract-review` | Applies an approved clause playbook and customer context to produce a review packet with deviations and source evidence for qualified human review |
+| Internal enablement | `enablement.prepare-role-brief` | Selects current policies, product knowledge, examples, and required training for a specific role or task |
+| Executive operations | `executive.prepare-weekly-business-review` | Normalizes metrics from several systems into a versioned report with definitions, source evidence, changes, and unresolved questions |
+
+## Choose a good first engine
+
+Start with a domain that:
 
 1. is repeated across more than one agent, application, or execution channel;
-2. currently depends on distributed context, several integrations, or copied
-   instructions;
-3. has a result your team can validate, review, and version;
-4. needs consistent permissions, limits, errors, or evidence; and
-5. should survive a change of model, prompt, provider, agent, or interface.
+2. currently depends on distributed context, several integrations, local scripts,
+   templates, or copied instructions;
+3. has one or more results your team can validate, review, and version;
+4. needs consistent permissions, limits, errors, approvals, or evidence; and
+5. should survive a change of model, prompt, provider, agent, interface, or
+   internal implementation.
 
-Then define its input, output, access rule, execution behavior, and public
-failures as a [capability contract](/concepts/capabilities/), or follow the
-[first-engine guide](/getting-started/first-engine/) to build one.
+Then identify the engine's related capabilities and define each input, output,
+access rule, execution behavior, and public failure as a
+[capability contract](/concepts/capabilities/). Follow the
+[first-engine guide](/getting-started/first-engine/) to build the first one.
