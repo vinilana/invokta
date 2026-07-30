@@ -2,9 +2,10 @@
 
 **Stop teaching every AI agent the same process.**
 
-Invokta turns repeatable AI-assisted work—investigating a bug, creating a
-specification, reviewing code, or collecting incident context—into reusable
-actions that agents, applications, automations, and people can invoke.
+Invokta turns repeatable AI-assisted work—preparing implementation, editing
+videos, producing on-brand carousels, generating commercial proposals,
+scheduling appointments, or screening candidates—into reusable actions that
+agents, applications, automations, and people can invoke.
 
 Instead of copying prompts, skills, tool instructions, validation, permissions,
 and output rules into every harness, define the action once. Cursor, Claude Code,
@@ -18,17 +19,17 @@ them [Action Engines](./docs/action-engines.md).
 
 ## The problem Invokta solves
 
-A useful AI process rarely lives in one place. For example, creating a bug-fix
-specification may require project context, incident data from Sentry, design
-context from Figma, and internal rules that explain how to combine them.
+A useful AI process rarely lives in one place. For example, preparing a ticket
+for implementation may require intent from Linear or Jira, repository context,
+architecture decisions, Figma designs, and internal engineering rules.
 
 Without an owned action, every harness needs the same integrations and a copy of
 the instructions:
 
 ```text
-Cursor      -> context MCP + Sentry MCP + Figma MCP + skill
-Claude Code -> context MCP + Sentry MCP + Figma MCP + copied skill
-Codex       -> context MCP + Sentry MCP + Figma MCP + another copy
+Cursor      -> Linear MCP + GitHub MCP + Figma MCP + planning skill
+Claude Code -> Linear MCP + GitHub MCP + Figma MCP + copied skill
+Codex       -> the same setup + another version of the instructions
 ```
 
 The first setup ships quickly. The copies then drift: tools are called
@@ -41,22 +42,46 @@ With Invokta, every consumer invokes one domain outcome:
 Cursor ───────┐
 Claude Code ──┤
 Codex ────────┤
-CLI ──────────┼──> engineering.create-bug-fix-spec
-Application ──┘              |
-                              ├── project context
-                              ├── incident data
-                              ├── design context
-                              ├── internal rules
-                              └── validated specification
+CLI ──────────┼──> engineering.prepare-implementation
+Application ──┘                  |
+                                  ├── ticket intent
+                                  ├── repository context
+                                  ├── architecture
+                                  ├── design
+                                  ├── engineering rules
+                                  └── implementation-ready brief
 ```
 
-The Action Engine owns how that specification is produced. Its model, prompts,
-tools, data sources, and providers can change without teaching every consumer
-the process again.
+The Action Engine owns how that brief is produced. Its model, prompts, tools,
+data sources, and providers can change without teaching every consumer the
+process again.
 
 > MCP connects tools and data. Prompts, rules, and skills guide agent behavior.
 > Invokta gives the reusable action one implementation, contract, and execution
 > boundary.
+
+## What an Action Engine can own
+
+An engine may publish several related capabilities around one domain. Provider
+APIs, local scripts, templates, design-system files, and SaaS schemas remain
+replaceable implementation details rather than instructions copied into every
+agent.
+
+| Example engine | Capabilities | Engine-owned integrations and rules | Durable outcome |
+| --- | --- | --- | --- |
+| Video Production Engine | `video.transcribe-source`, `video.plan-edit`, `video.generate-voiceover`, `video.generate-visual`, `video.generate-cutscene`, `video.apply-edit` | ElevenLabs STT, Cartesia TTS, GPT Image 2.0, Seedance 2.0, brand pacing, and trusted scripts for cuts, zooms, captions, mixing, and rendering | A transcript, edit plan, generated assets, and rendered video with evidence |
+| Social Carousel Engine | `carousel.prepare-series`, `carousel.render-series`, `carousel.assess-readiness` | Approved carousel formats, hook and CTA policy, Figma or design-system references, and a GPT Image 2.0 adapter | An ordered, on-brand carousel that is ready to publish or has explicit blockers |
+| Commercial Proposal Engine | `sales.prepare-proposal`, `sales.render-proposal`, `sales.assess-proposal-readiness` | CRM context, approved pricing and claims, the existing proposal template, case studies, and visual identity | A customer-specific proposal and a readiness decision |
+| Appointment Scheduling Engine | `appointments.list-valid-slots`, `appointments.schedule`, `appointments.reschedule`, `appointments.cancel` | Clinic rules, authorization, buffers, and an authorized Google Calendar adapter | Valid appointment options and a confirmed calendar write or stable conflict |
+| Recruiting and Selection Engine | `recruiting.screen-candidate`, `recruiting.record-screening`, `recruiting.notify-review` | The job rubric, candidate responses, the recruiting system, review thresholds, and Slack notifications | An evidence-backed screening record and a human-review notification |
+
+The consumer still decides which capability to call and in what order. Invokta
+does not become a workflow engine; it gives each domain action one validated,
+reusable execution boundary.
+
+Browse [use cases by company area](./apps/docs/src/content/docs/use-cases/index.mdx)
+for detailed examples across content and creative, engineering, product,
+marketing, sales, healthcare operations, recruiting, support, and operations.
 
 ## Why Action Engines matter
 
@@ -122,12 +147,12 @@ framework layer around it. Define the capability once with its input, output,
 access rule, and execution behavior; Invokta runs it through the same validated
 pipeline from application code, the CLI, or MCP.
 
-Use that boundary to build engines for spec-driven development (creating and
-reviewing specifications), context retrieval, workflow guidance, code review,
-image production, support operations, or another domain outcome. Your team owns
-the domain contract, business rules, prompts, model and data integrations,
-evaluations, and outcome quality. Invokta supplies the shared runtime mechanics
-and delivery adapters:
+Use that boundary to build engines for media production, implementation
+planning, context retrieval, code review, campaign production, document
+generation, appointment scheduling, recruiting, support operations, or another
+domain outcome. Your team owns the domain contract, business rules, prompts,
+models, data integrations, scripts, templates, evaluations, and outcome quality.
+Invokta supplies the shared runtime mechanics and delivery adapters:
 
 - `@invokta/core` defines capabilities, validates Standard Schema input and
   output, enforces access rules, propagates cancellation, and emits minimal
@@ -208,11 +233,12 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
 
 ## Documentation
 
-Start with the framework-neutral [Action Engines community
-definition](./docs/action-engines.md). The [documentation
-index](./docs/README.md) links Invokta's normative architecture, scope,
-acceptance criteria, ADRs, HTTP authentication guide, capability authorization
-guide, and explicit scope matrix.
+Start with [use cases by company area](./apps/docs/src/content/docs/use-cases/index.mdx)
+to identify a domain outcome worth packaging. Then read the framework-neutral
+[Action Engines community definition](./docs/action-engines.md). The
+[documentation index](./docs/README.md) links Invokta's normative architecture,
+scope, acceptance criteria, ADRs, HTTP authentication guide, capability
+authorization guide, and explicit scope matrix.
 
 The [changelog](./CHANGELOG.md) records release-level additions, security
 hardening, and known limitations.
