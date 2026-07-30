@@ -9,8 +9,8 @@ hero:
       link: /getting-started/installation/
       icon: right-arrow
       variant: primary
-    - text: Explore examples
-      link: /examples/
+    - text: Explore use cases
+      link: /use-cases/
       icon: open-book
       variant: secondary
 ---
@@ -23,15 +23,15 @@ A useful AI process often lives across a harness configuration, several MCP
 tools, prompts, rules, and a skill that explains how to combine them. It works
 until the same process must run in another agent or application.
 
-For example, creating a bug-fix specification may require project context,
-incident data from Sentry, design context from Figma, and internal rules. Without
-an owned action, every harness needs the same tool setup and another copy of the
-instructions:
+For example, preparing a ticket for implementation may require intent from
+Linear or Jira, repository context, architecture decisions, Figma designs, and
+internal engineering rules. Without an owned action, every harness needs the
+same tool setup and another copy of the instructions:
 
 ```text
-Cursor      -> context MCP + Sentry MCP + Figma MCP + skill
-Claude Code -> context MCP + Sentry MCP + Figma MCP + copied skill
-Codex       -> context MCP + Sentry MCP + Figma MCP + another copy
+Cursor      -> Linear MCP + GitHub MCP + Figma MCP + planning skill
+Claude Code -> Linear MCP + GitHub MCP + Figma MCP + copied skill
+Codex       -> the same setup + another version of the instructions
 ```
 
 The first setup ships quickly. The copies then drift: tools are called
@@ -44,13 +44,14 @@ Invokta turns that process into one reusable action:
 Cursor ───────┐
 Claude Code ──┤
 Codex ────────┤
-CLI ──────────┼──> engineering.create-bug-fix-spec
-Application ──┘              |
-                              ├── project context
-                              ├── incident data
-                              ├── design context
-                              ├── internal rules
-                              └── validated specification
+CLI ──────────┼──> engineering.prepare-implementation
+Application ──┘                  |
+                                  ├── ticket intent
+                                  ├── repository context
+                                  ├── architecture
+                                  ├── design
+                                  ├── engineering rules
+                                  └── implementation-ready brief
 ```
 
 The action owns its integrations, rules, permissions, validation, and output
@@ -63,13 +64,49 @@ code, the CLI, MCP stdio, or stateless MCP Streamable HTTP.
   boundary.
 </Aside>
 
+## Reusable actions across the company
+
+The same boundary applies whenever a team repeatedly reconstructs context,
+rules, and expected output for different agents or applications.
+
+<CardGrid>
+  <Card title="Engineering" icon="rocket">
+    Turn a ticket into implementation-ready work with repository context,
+    architecture, design, risks, acceptance criteria, and a test strategy.
+
+    [Explore engineering use cases](/use-cases/#engineering)
+  </Card>
+  <Card title="Marketing" icon="puzzle">
+    Turn a product launch into an on-brand campaign using positioning, audience
+    research, approved evidence, previous performance, and channel rules.
+
+    [Explore marketing use cases](/use-cases/#marketing)
+  </Card>
+  <Card title="Support and customer success" icon="approve-check">
+    Turn customer context into consistent classifications, grounded responses,
+    escalations, and account reviews.
+
+    [Explore support use cases](/use-cases/#support-and-customer-success)
+  </Card>
+  <Card title="Operations" icon="setting">
+    Turn fragmented incident signals, runbooks, ownership, and policy into a
+    bounded handoff or readiness decision.
+
+    [Explore operations use cases](/use-cases/#operations)
+  </Card>
+</CardGrid>
+
+<LinkButton href="/use-cases/" icon="right-arrow">
+  Explore use cases by company area
+</LinkButton>
+
 ## We call these reusable actions Action Engines
 
 An [Action Engine](/concepts/action-engines/) packages an AI-supported domain
 outcome behind a stable contract, independently of the agents, applications, and
 interfaces that invoke it.
 
-The reviewed specification, selected context, next safe step, or classified
+The implementation-ready brief, selected context, next safe step, or classified
 ticket is the durable asset. Models, prompts, retrieval strategies, providers,
 and interfaces can change while consumers continue to request the same outcome.
 
@@ -140,6 +177,10 @@ contract and implementation that every entry point reuses.
 ## Choose your next step
 
 <CardGrid>
+  <Card title="Find a company use case" icon="document">
+    Browse [use cases by company area](/use-cases/) and identify an outcome that
+    your agents or applications repeatedly reconstruct today.
+  </Card>
   <Card title="Explore complete engines" icon="rocket">
     Browse [example engines](/examples/) for specifications, context retrieval,
     code review, image production, observability, and support operations.
