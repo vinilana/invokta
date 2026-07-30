@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { createStarterFiles } from "../src/starter.js";
 
 const expectedPaths = [
+  ".agents/skills/develop-invokta-project/SKILL.md",
+  ".agents/skills/develop-invokta-project/agents/openai.yaml",
   ".gitignore",
+  "AGENTS.md",
+  "CLAUDE.md",
   "README.md",
   "invokta.mcp.json",
   "package.json",
@@ -34,11 +38,61 @@ describe("createStarterFiles", () => {
       }),
     );
     for (const file of files) {
+      if (!("contents" in file)) continue;
       expect(file.contents).not.toContain("\r");
       expect(file.contents).not.toContain("\u0000");
       expect(file.contents.endsWith("\n")).toBe(true);
       expect(file.contents.endsWith("\n\n")).toBe(false);
     }
+  });
+
+  it("scaffolds a focused Action Engine development skill", () => {
+    const files = createStarterFiles({
+      projectName: "customer-support-engine",
+      invoktaVersion: "1.2.3",
+      packageManager: "npm",
+    });
+    const contents = new Map(
+      files.flatMap((file) =>
+        "contents" in file ? [[file.path, file.contents] as const] : [],
+      ),
+    );
+    const skill =
+      contents.get(".agents/skills/develop-invokta-project/SKILL.md") ?? "";
+    const metadata =
+      contents.get(
+        ".agents/skills/develop-invokta-project/agents/openai.yaml",
+      ) ?? "";
+
+    expect(skill).toMatch(
+      /^---\nname: develop-invokta-project\ndescription: .+\n---\n/u,
+    );
+    expect(skill).toContain("Keep every execution channel on `engine.invoke`");
+    expect(skill).toContain("Run `npm run check`");
+    expect(skill).not.toContain("TODO");
+    expect(metadata).toContain('display_name: "Develop Invokta Action Engine"');
+    expect(metadata).toContain("$develop-invokta-project");
+  });
+
+  it("uses one agent-instruction file through a relative Claude alias", () => {
+    const files = createStarterFiles({
+      projectName: "customer-support-engine",
+      invoktaVersion: "1.2.3",
+      packageManager: "npm",
+    });
+    const instructions = files.find((file) => file.path === "AGENTS.md");
+
+    expect(instructions).toMatchObject({ kind: "file", path: "AGENTS.md" });
+    expect(
+      instructions && "contents" in instructions ? instructions.contents : "",
+    ).toContain(
+      "Keep direct, CLI, and MCP entry points on the single `engine.invoke` path.",
+    );
+    expect(files.find((file) => file.path === "CLAUDE.md")).toEqual({
+      kind: "symlink",
+      path: "CLAUDE.md",
+      target: "AGENTS.md",
+    });
   });
 
   it("pins Invokta packages to the creator version in a private ESM project", () => {
@@ -48,10 +102,9 @@ describe("createStarterFiles", () => {
       packageManager: "npm",
     });
     const manifestFile = files.find((file) => file.path === "package.json");
-    const manifest = JSON.parse(manifestFile?.contents ?? "") as Record<
-      string,
-      unknown
-    >;
+    const manifest = JSON.parse(
+      manifestFile && "contents" in manifestFile ? manifestFile.contents : "",
+    ) as Record<string, unknown>;
 
     expect(manifest).toMatchObject({
       name: "customer-support-engine",
@@ -80,7 +133,11 @@ describe("createStarterFiles", () => {
       invoktaVersion: "1.2.3",
       packageManager: "npm",
     });
-    const contents = new Map(files.map((file) => [file.path, file.contents]));
+    const contents = new Map(
+      files.flatMap((file) =>
+        "contents" in file ? [[file.path, file.contents] as const] : [],
+      ),
+    );
     const packageManifest = JSON.parse(contents.get("package.json") ?? "") as {
       readonly scripts: Readonly<Record<string, string>>;
     };
@@ -109,7 +166,11 @@ describe("createStarterFiles", () => {
       invoktaVersion: "1.2.3",
       packageManager: "npm",
     });
-    const contents = new Map(files.map((file) => [file.path, file.contents]));
+    const contents = new Map(
+      files.flatMap((file) =>
+        "contents" in file ? [[file.path, file.contents] as const] : [],
+      ),
+    );
 
     expect(
       contents.get("src/capabilities/create-welcome-message.ts"),
@@ -139,9 +200,10 @@ describe("createStarterFiles", () => {
         packageManager: manager,
       });
 
-      expect(
-        files.find((file) => file.path === "README.md")?.contents,
-      ).toContain(command);
+      const readme = files.find((file) => file.path === "README.md");
+      expect(readme && "contents" in readme ? readme.contents : "").toContain(
+        command,
+      );
     },
   );
 });

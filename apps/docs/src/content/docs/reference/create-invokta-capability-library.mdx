@@ -1,0 +1,112 @@
+---
+title: 'create-invokta-capability-library'
+description: Complete command, generated-project, filesystem, package-manager, and diagnostic contract for the Invokta capability-library creator.
+---
+
+`create-invokta-capability-library` creates one standalone TypeScript package
+that publishes a related set of capabilities through `defineCapabilityLibrary`.
+
+## Install
+
+```sh
+npm create invokta-capability-library@latest my-library
+```
+
+The generated package is private by default. It is ready for local composition
+and testing; publishing requires explicit library identity, default-ID, and
+compatibility decisions from its author.
+
+## Commands
+
+```text
+create-invokta-capability-library <project-directory>
+  [--package-manager npm|pnpm|yarn] [--no-install]
+create-invokta-capability-library --help
+create-invokta-capability-library --version
+```
+
+Creation is non-interactive. Options may appear before or after the one project
+directory. Unknown, repeated, incomplete, or extra arguments produce exit code
+`2` without creating a project.
+
+## Generated project
+
+```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
+.gitignore
+AGENTS.md
+CLAUDE.md -> AGENTS.md
+README.md
+package.json
+src/capabilities/create-farewell-message.ts
+src/capabilities/create-welcome-message.ts
+src/index.ts
+test/library.test.ts
+tsconfig.json
+tsconfig.test.json
+```
+
+The generated `develop-invokta-project` skill teaches an agent to preserve the
+library's literal ordered default IDs, follow RED/GREEN/REFACTOR, and prove
+selection and remapping through `importCapabilities` and `engine.invoke`. The
+skill is static project guidance; it adds no runtime discovery, registry,
+adapter, or execution path. Its metadata includes a ready-to-use
+`$develop-invokta-project` prompt.
+
+`AGENTS.md` records the starter's capability-contract and test-first delivery
+constraints. `CLAUDE.md` is an actual symbolic link whose stored target is the
+relative path `AGENTS.md`, so both agent discovery names use one instruction
+source and the project remains relocatable. If link creation is unsupported or
+fails, the creator reports `WRITE_FAILED` and rolls back its entries; it does
+not fall back to a copied file.
+
+The root export contains the explicit default IDs
+`onboarding.create-welcome-message` and
+`onboarding.create-farewell-message`. The test selects and remaps the welcome
+capability, composes it into an engine, and invokes it through `engine.invoke`.
+The creator does not add an adapter, server, engine entry point, registry, or
+publish step.
+
+The manifest pins `@invokta/core` exactly to the creator version. Generated
+files are owned by the project and are never upgraded in place.
+
+## Target safety and limits
+
+The target is relative to the current working directory. Absolute paths,
+parent-directory segments, empty segments, and invalid lowercase kebab-case
+project names are rejected. A target may be absent or an empty real directory.
+Symbolic-link path components, non-directory targets, and non-empty targets are
+refused before a scaffold write.
+
+The path is limited to 1,024 Unicode scalars and 32 non-dot segments. The final
+project name is limited to 214 characters. Text files use deterministic UTF-8,
+LF endings, and one trailing newline. Files and symbolic links use exclusive
+creation. A write failure rolls back only paths created by that invocation.
+Concurrent creation in one target is unsupported; neither invocation overwrites
+the other.
+
+## Dependency installation
+
+Without `--no-install`, the command starts exactly one shell-free foreground
+install: `npm install --no-audit --no-fund`, `pnpm install`, or `yarn install`.
+An explicit package manager wins; otherwise the invoking manager is inferred
+from `npm_config_user_agent`, with npm as the fallback.
+
+The creator makes no network request itself and adds no timeout or retry. An
+installation failure preserves the completed scaffold for a manual retry.
+
+## Output, errors, and exit codes
+
+Help, version, and success output use stdout. Diagnostics use stderr. Rejected
+arguments, environment values, child errors, causes, and stacks are never
+printed.
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Help, version, or project creation succeeded |
+| `1` | Target safety, filesystem creation, or dependency installation failed |
+| `2` | Usage, project path, or project name was invalid |
+
+Stable diagnostics are `TARGET_INVALID`, `TARGET_UNSAFE`, `TARGET_NOT_EMPTY`,
+`SCAFFOLD_CONFLICT`, `WRITE_FAILED`, and `INSTALL_FAILED`.

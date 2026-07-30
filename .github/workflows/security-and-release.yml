@@ -43,7 +43,7 @@ jobs:
 
       - name: Dry-run public packages
         run: |
-          for package_directory in ./packages/core ./packages/cli ./packages/mcp ./packages/tooling ./packages/installer ./packages/deploy ./packages/create-invokta-engine; do
+          for package_directory in ./packages/core ./packages/cli ./packages/mcp ./packages/tooling ./packages/installer ./packages/deploy ./packages/create-invokta-engine ./packages/create-invokta-capability ./packages/create-invokta-capability-library; do
             npm pack --dry-run "$package_directory"
           done
 

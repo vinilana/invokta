@@ -4,7 +4,6 @@ import {
   mkdir,
   readdir,
   rmdir,
-  symlink,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -12,7 +11,7 @@ import { basename, dirname, isAbsolute, join, resolve, win32 } from "node:path";
 
 import { CreatorError } from "./errors.js";
 import type { PackageManager } from "./package-manager.js";
-import { createStarterFiles, type StarterEntry } from "./starter.js";
+import { createStarterFiles, type StarterFile } from "./starter.js";
 
 export const creatorTargetLimits = Object.freeze({
   maxPathScalars: 1_024,
@@ -27,7 +26,6 @@ export interface ScaffoldFileSystem {
   readonly mkdir: (path: string) => Promise<void>;
   readonly readdir: (path: string) => Promise<string[]>;
   readonly rmdir: (path: string) => Promise<void>;
-  readonly symlink: (target: string, path: string) => Promise<void>;
   readonly unlink: (path: string) => Promise<void>;
   readonly writeFile: (
     path: string,
@@ -46,9 +44,6 @@ const nodeScaffoldFileSystem: ScaffoldFileSystem = {
   },
   async rmdir(path) {
     await rmdir(path);
-  },
-  async symlink(target, path) {
-    await symlink(target, path);
   },
   async unlink(path) {
     await unlink(path);
@@ -151,7 +146,7 @@ async function inspectTarget(
   cwd: string,
   target: ResolvedTarget,
   fileSystem: ScaffoldFileSystem,
-): Promise<boolean> {
+): Promise<void> {
   let current = resolve(cwd);
   if (target.segments.length === 0) {
     const status = await readStatus(fileSystem, current);
@@ -166,7 +161,7 @@ async function inspectTarget(
     for (const segment of target.segments) {
       current = join(current, segment);
       const status = await readStatus(fileSystem, current);
-      if (status === undefined) return false;
+      if (status === undefined) return;
       if (status.isSymbolicLink() || !status.isDirectory()) {
         throw new CreatorError("TARGET_UNSAFE");
       }
@@ -180,7 +175,6 @@ async function inspectTarget(
     throw new CreatorError("TARGET_UNSAFE");
   }
   if (entries.length > 0) throw new CreatorError("TARGET_NOT_EMPTY");
-  return true;
 }
 
 async function ensureDirectory(
@@ -216,7 +210,7 @@ async function ensureDirectory(
 async function prepareDirectories(
   cwd: string,
   target: ResolvedTarget,
-  entries: readonly StarterEntry[],
+  files: readonly StarterFile[],
   fileSystem: ScaffoldFileSystem,
   createdDirectories: string[],
 ): Promise<void> {
@@ -226,8 +220,8 @@ async function prepareDirectories(
     await ensureDirectory(current, fileSystem, createdDirectories);
   }
   for (const directory of new Set(
-    entries
-      .map((entry) => dirname(entry.path))
+    files
+      .map((file) => dirname(file.path))
       .filter((path) => path !== ".")
       .sort(),
   )) {
@@ -241,11 +235,11 @@ async function prepareDirectories(
 
 async function rollback(
   fileSystem: ScaffoldFileSystem,
-  createdEntries: readonly string[],
+  createdFiles: readonly string[],
   createdDirectories: readonly string[],
 ): Promise<boolean> {
   let failed = false;
-  for (const path of [...createdEntries].reverse()) {
+  for (const path of [...createdFiles].reverse()) {
     try {
       await fileSystem.unlink(path);
     } catch (error) {
@@ -270,40 +264,36 @@ export async function createStarterProject(
   const fileSystem = options.fileSystem ?? defaultScaffoldFileSystem;
   const target = resolveTarget(options.cwd, options.target);
   await inspectTarget(options.cwd, target, fileSystem);
-  const entries = createStarterFiles({
+  const files = createStarterFiles({
     projectName: target.projectName,
     invoktaVersion: options.invoktaVersion,
     packageManager: options.packageManager,
   });
-  const createdEntries: string[] = [];
+  const createdFiles: string[] = [];
   const createdDirectories: string[] = [];
-  let activeEntry: StarterEntry | undefined;
+  let activeFile: StarterFile | undefined;
 
   try {
     await prepareDirectories(
       options.cwd,
       target,
-      entries,
+      files,
       fileSystem,
       createdDirectories,
     );
-    for (const entry of entries) {
-      activeEntry = entry;
-      const path = join(target.directory, ...entry.path.split("/"));
-      if (entry.kind === "file") {
-        await fileSystem.writeFile(path, entry.contents, {
-          encoding: "utf8",
-          flag: "wx",
-        });
-      } else {
-        await fileSystem.symlink(entry.target, path);
-      }
-      createdEntries.push(path);
+    for (const file of files) {
+      activeFile = file;
+      const path = join(target.directory, ...file.path.split("/"));
+      await fileSystem.writeFile(path, file.contents, {
+        encoding: "utf8",
+        flag: "wx",
+      });
+      createdFiles.push(path);
     }
   } catch (error) {
     const rolledBack = await rollback(
       fileSystem,
-      createdEntries,
+      createdFiles,
       createdDirectories,
     );
     if (!rolledBack) throw new CreatorError("WRITE_FAILED");
@@ -311,18 +301,18 @@ export async function createStarterProject(
     if (readErrorCode(error) === "EEXIST") {
       throw new CreatorError(
         "SCAFFOLD_CONFLICT",
-        activeEntry === undefined ? [] : [activeEntry.path],
+        activeFile === undefined ? [] : [activeFile.path],
       );
     }
     throw new CreatorError(
       "WRITE_FAILED",
-      activeEntry === undefined ? [] : [activeEntry.path],
+      activeFile === undefined ? [] : [activeFile.path],
     );
   }
 
   return Object.freeze({
     directory: target.directory,
     projectName: target.projectName,
-    files: Object.freeze(entries.map((entry) => entry.path)),
+    files: Object.freeze(files.map((file) => file.path)),
   });
 }

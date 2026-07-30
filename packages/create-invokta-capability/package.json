@@ -1,0 +1,35 @@
+{
+  "name": "create-invokta-capability",
+  "version": "0.2.0",
+  "description": "Create a standalone Invokta atomic capability package.",
+  "author": "Vini Lana <vini@aicoders.academy>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vinilana/invokta.git",
+    "directory": "packages/create-invokta-capability"
+  },
+  "homepage": "https://docs.invokta.dev/reference/create-invokta-capability/",
+  "bugs": {
+    "url": "https://github.com/vinilana/invokta/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {},
+  "bin": {
+    "create-invokta-capability": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "prepack": "npm run --silent build"
+  }
+}

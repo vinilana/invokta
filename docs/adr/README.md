@@ -20,3 +20,6 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0011](0011-http-engine-deploy-toolkit.md) | HTTP engine deployment toolkit | Accepted | 2026-07-28 |
 | [0012](0012-standalone-invokta-engine-creator.md) | Standalone Invokta engine creator | Accepted | 2026-07-29 |
 | [0013](0013-action-engine-mcp-installation-and-management.md) | Action Engine MCP installation and management | Accepted | 2026-07-29 |
+| [0014](0014-standalone-capability-project-creators.md) | Standalone capability project creators | Accepted | 2026-07-29 |
+| [0015](0015-generated-agent-instruction-aliases.md) | Generated agent instruction aliases | Accepted | 2026-07-30 |
+| [0016](0016-generated-invokta-development-skills.md) | Generated Invokta development skills | Accepted | 2026-07-30 |

@@ -38,18 +38,22 @@ engine name. It must be lowercase kebab-case and at most 214 characters.
 
 The target may be absent or an empty real directory. A symbolic-link target, a
 symbolic-link path component, a non-directory target, or any existing directory
-entry fails before a scaffold write. Generated files are fixed, deterministic
-UTF-8 text with LF endings and one trailing newline. Writes use exclusive
-creation and never replace an existing file. A pre-install failure rolls back
-only files and directories created by that invocation; a rollback failure is
-reported and may leave those new paths for manual inspection. Concurrent
-creation in one target is unsupported, while exclusive writes ensure neither
-invocation overwrites the other.
+entry fails before a scaffold write. Generated text files are fixed,
+deterministic UTF-8 with LF endings and one trailing newline. Files and symbolic
+links use exclusive creation and never replace an existing entry. A pre-install
+failure rolls back only entries and directories created by that invocation; a
+rollback failure is reported and may leave those new paths for manual
+inspection. Concurrent creation in one target is unsupported, while exclusive
+writes ensure neither invocation overwrites the other.
 
 The fixed starter contains these paths in lexicographic order:
 
 ```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
 .gitignore
+AGENTS.md
+CLAUDE.md -> AGENTS.md
 README.md
 invokta.mcp.json
 package.json
@@ -62,6 +66,12 @@ test/engine.test.ts
 tsconfig.json
 tsconfig.test.json
 ```
+
+`AGENTS.md` is a regular UTF-8 text file. `CLAUDE.md` is the relative symbolic
+link defined by ADR 0015 rather than a second text file.
+
+The `develop-invokta-project` skill is the Action Engine development workflow
+defined by ADR 0016.
 
 It defines one deterministic public capability and reuses it through direct
 invocation, `@invokta/cli`, and MCP stdio. It contains no model provider,

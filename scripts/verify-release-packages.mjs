@@ -3,9 +3,11 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -56,6 +58,18 @@ const publicPackages = [
     // The creator is binary-only and ships no import API.
     requiredFiles: ["dist/bin.js"],
   },
+  {
+    directory: "create-invokta-capability",
+    name: "create-invokta-capability",
+    // The creator is binary-only and ships no import API.
+    requiredFiles: ["dist/bin.js"],
+  },
+  {
+    directory: "create-invokta-capability-library",
+    name: "create-invokta-capability-library",
+    // The creator is binary-only and ships no import API.
+    requiredFiles: ["dist/bin.js"],
+  },
 ];
 
 function run(command, args, options = {}) {
@@ -93,6 +107,60 @@ function failReleaseMetadata(message) {
 function requireEqual(actual, expected, label) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     failReleaseMetadata(`${label} must be ${JSON.stringify(expected)}`);
+  }
+}
+
+function verifyGeneratedAgentInstructions(projectDirectory, creatorName) {
+  const agentsPath = join(projectDirectory, "AGENTS.md");
+  const claudePath = join(projectDirectory, "CLAUDE.md");
+  if (!lstatSync(agentsPath).isFile()) {
+    throw new Error(`${creatorName} did not generate AGENTS.md as a file`);
+  }
+  if (!lstatSync(claudePath).isSymbolicLink()) {
+    throw new Error(`${creatorName} did not generate CLAUDE.md as a symlink`);
+  }
+  if (readlinkSync(claudePath) !== "AGENTS.md") {
+    throw new Error(`${creatorName} generated an invalid CLAUDE.md target`);
+  }
+}
+
+function verifyGeneratedDevelopmentSkill(
+  projectDirectory,
+  creatorName,
+  expectedHeading,
+) {
+  const skillDirectory = join(
+    projectDirectory,
+    ".agents",
+    "skills",
+    "develop-invokta-project",
+  );
+  const skillPath = join(skillDirectory, "SKILL.md");
+  const metadataPath = join(skillDirectory, "agents", "openai.yaml");
+  if (!lstatSync(skillPath).isFile() || !lstatSync(metadataPath).isFile()) {
+    throw new Error(`${creatorName} did not generate regular skill files`);
+  }
+
+  const skill = readFileSync(skillPath, "utf8");
+  if (
+    !/^---\nname: develop-invokta-project\ndescription: [^\n]+\n---\n/u.test(
+      skill,
+    ) ||
+    !skill.includes(expectedHeading) ||
+    skill.includes("TODO")
+  ) {
+    throw new Error(`${creatorName} generated an invalid development skill`);
+  }
+
+  const metadata = readFileSync(metadataPath, "utf8");
+  if (
+    !metadata.startsWith("interface:\n") ||
+    !metadata.includes("display_name:") ||
+    !metadata.includes("short_description:") ||
+    !metadata.includes("default_prompt:") ||
+    !metadata.includes("$develop-invokta-project")
+  ) {
+    throw new Error(`${creatorName} generated invalid skill metadata`);
   }
 }
 
@@ -464,6 +532,15 @@ try {
   }
 
   const generatedProjectDirectory = join(generatedDirectory, "release-engine");
+  verifyGeneratedDevelopmentSkill(
+    generatedProjectDirectory,
+    "create-invokta-engine",
+    "# Develop This Action Engine",
+  );
+  verifyGeneratedAgentInstructions(
+    generatedProjectDirectory,
+    "create-invokta-engine",
+  );
   const generatedManifest = JSON.parse(
     readFileSync(join(generatedProjectDirectory, "package.json"), "utf8"),
   );
@@ -535,6 +612,102 @@ try {
   }
   writeGeneratedMcpSmoke(generatedProjectDirectory);
   run("node", ["mcp-smoke.mjs"], { cwd: generatedProjectDirectory });
+
+  const capabilityCreatorCases = [
+    {
+      command: "create-invokta-capability",
+      target: "release-capability",
+      expectedExports: ["createWelcomeMessageExport"],
+      generatesAgentInstructions: false,
+      expectedSkillHeading: "# Develop This Atomic Capability",
+    },
+    {
+      command: "create-invokta-capability-library",
+      target: "release-capability-library",
+      expectedExports: ["onboardingCapabilityLibrary"],
+      generatesAgentInstructions: true,
+      expectedSkillHeading: "# Develop This Capability Library",
+    },
+  ];
+  for (const creatorCase of capabilityCreatorCases) {
+    const command = join(
+      consumerDirectory,
+      "node_modules",
+      ".bin",
+      creatorCase.command,
+    );
+    const version = run(command, ["--version"], {
+      cwd: generatedDirectory,
+      capture: true,
+      env: { NODE_OPTIONS: `--no-warnings --import=${networkSentinel}` },
+    });
+    if (version !== `${releaseVersion}\n`) {
+      throw new Error(`${creatorCase.command} binary version smoke failed`);
+    }
+    const output = run(
+      command,
+      [creatorCase.target, "--package-manager", "npm", "--no-install"],
+      {
+        cwd: generatedDirectory,
+        capture: true,
+        env: { NODE_OPTIONS: `--no-warnings --import=${networkSentinel}` },
+      },
+    );
+    if (
+      !output.startsWith(`Created ${creatorCase.target} without installing`)
+    ) {
+      throw new Error(`${creatorCase.command} scaffold smoke failed`);
+    }
+
+    const projectDirectory = join(generatedDirectory, creatorCase.target);
+    verifyGeneratedDevelopmentSkill(
+      projectDirectory,
+      creatorCase.command,
+      creatorCase.expectedSkillHeading,
+    );
+    if (creatorCase.generatesAgentInstructions) {
+      verifyGeneratedAgentInstructions(projectDirectory, creatorCase.command);
+    }
+    const manifest = JSON.parse(
+      readFileSync(join(projectDirectory, "package.json"), "utf8"),
+    );
+    if (
+      manifest.private !== true ||
+      manifest.dependencies?.["@invokta/core"] !== releaseVersion
+    ) {
+      throw new Error(
+        `${creatorCase.command} generated manifest is not release-aligned`,
+      );
+    }
+    const coreTarball = tarballsByName.get("@invokta/core");
+    if (coreTarball === undefined) {
+      throw new Error("generated capability consumer tarball is incomplete");
+    }
+    run(
+      "npm",
+      ["install", "--ignore-scripts", "--no-audit", "--no-fund", coreTarball],
+      { cwd: projectDirectory },
+    );
+    run("npm", ["run", "--silent", "check"], { cwd: projectDirectory });
+
+    const exportedNames = JSON.parse(
+      run(
+        "node",
+        [
+          "--input-type=module",
+          "--eval",
+          'import("./dist/index.js").then((module) => process.stdout.write(JSON.stringify(Object.keys(module)) + "\\n"))',
+        ],
+        { cwd: projectDirectory, capture: true },
+      ),
+    );
+    if (
+      JSON.stringify(exportedNames) !==
+      JSON.stringify(creatorCase.expectedExports)
+    ) {
+      throw new Error(`${creatorCase.command} root export smoke failed`);
+    }
+  }
 
   const installerVersion = run(installerCommand, ["--version"], {
     cwd: consumerDirectory,

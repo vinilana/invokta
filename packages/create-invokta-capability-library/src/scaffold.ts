@@ -151,7 +151,7 @@ async function inspectTarget(
   cwd: string,
   target: ResolvedTarget,
   fileSystem: ScaffoldFileSystem,
-): Promise<boolean> {
+): Promise<void> {
   let current = resolve(cwd);
   if (target.segments.length === 0) {
     const status = await readStatus(fileSystem, current);
@@ -166,7 +166,7 @@ async function inspectTarget(
     for (const segment of target.segments) {
       current = join(current, segment);
       const status = await readStatus(fileSystem, current);
-      if (status === undefined) return false;
+      if (status === undefined) return;
       if (status.isSymbolicLink() || !status.isDirectory()) {
         throw new CreatorError("TARGET_UNSAFE");
       }
@@ -180,7 +180,6 @@ async function inspectTarget(
     throw new CreatorError("TARGET_UNSAFE");
   }
   if (entries.length > 0) throw new CreatorError("TARGET_NOT_EMPTY");
-  return true;
 }
 
 async function ensureDirectory(

@@ -1,0 +1,100 @@
+---
+title: 'create-invokta-capability'
+description: Complete command, generated-project, filesystem, package-manager, and diagnostic contract for the Invokta atomic capability creator.
+---
+
+`create-invokta-capability` creates one standalone TypeScript package that
+publishes an atomic capability through `defineExportedCapability`.
+
+## Install
+
+```sh
+npm create invokta-capability@latest my-capability
+```
+
+The generated package is private by default. It is ready for local composition
+and testing; publishing requires an explicit package identity and compatibility
+decision from its author.
+
+## Commands
+
+```text
+create-invokta-capability <project-directory>
+  [--package-manager npm|pnpm|yarn] [--no-install]
+create-invokta-capability --help
+create-invokta-capability --version
+```
+
+Creation is non-interactive. Options may appear before or after the one project
+directory. Unknown, repeated, incomplete, or extra arguments produce exit code
+`2` without creating a project.
+
+## Generated project
+
+```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
+.gitignore
+README.md
+package.json
+src/capability.ts
+src/index.ts
+test/capability.test.ts
+tsconfig.json
+tsconfig.test.json
+```
+
+The generated `develop-invokta-project` skill teaches an agent to keep the
+atomic definition and `defineExportedCapability` descriptor separate, treat the
+default ID and source metadata as compatibility surfaces, follow
+RED/GREEN/REFACTOR, and prove consumption through `importCapability` and
+`engine.invoke`. The skill is static project guidance and adds no runtime
+behavior. Its metadata includes a ready-to-use `$develop-invokta-project`
+prompt.
+
+The root export has the explicit default ID
+`onboarding.create-welcome-message`. The test imports the exported descriptor,
+composes it into an engine, and invokes it through `engine.invoke`. The creator
+does not add an adapter, server, engine entry point, registry, or publish step.
+
+The manifest pins `@invokta/core` exactly to the creator version. Generated
+files are owned by the project and are never upgraded in place.
+
+## Target safety and limits
+
+The target is relative to the current working directory. Absolute paths,
+parent-directory segments, empty segments, and invalid lowercase kebab-case
+project names are rejected. A target may be absent or an empty real directory.
+Symbolic-link path components, non-directory targets, and non-empty targets are
+refused before a scaffold write.
+
+The path is limited to 1,024 Unicode scalars and 32 non-dot segments. The final
+project name is limited to 214 characters. Files use deterministic UTF-8 text,
+LF endings, one trailing newline, and exclusive creation. A write failure rolls
+back only paths created by that invocation. Concurrent creation in one target
+is unsupported; neither invocation overwrites the other.
+
+## Dependency installation
+
+Without `--no-install`, the command starts exactly one shell-free foreground
+install: `npm install --no-audit --no-fund`, `pnpm install`, or `yarn install`.
+An explicit package manager wins; otherwise the invoking manager is inferred
+from `npm_config_user_agent`, with npm as the fallback.
+
+The creator makes no network request itself and adds no timeout or retry. An
+installation failure preserves the completed scaffold for a manual retry.
+
+## Output, errors, and exit codes
+
+Help, version, and success output use stdout. Diagnostics use stderr. Rejected
+arguments, environment values, child errors, causes, and stacks are never
+printed.
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Help, version, or project creation succeeded |
+| `1` | Target safety, filesystem creation, or dependency installation failed |
+| `2` | Usage, project path, or project name was invalid |
+
+Stable diagnostics are `TARGET_INVALID`, `TARGET_UNSAFE`, `TARGET_NOT_EMPTY`,
+`SCAFFOLD_CONFLICT`, `WRITE_FAILED`, and `INSTALL_FAILED`.
