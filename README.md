@@ -1,21 +1,67 @@
 # Invokta
 
-The TypeScript framework for building **Action Engines**.
+**Stop teaching every AI agent the same process.**
 
-An [Action Engine](./docs/action-engines.md) packages reusable, AI-supported
-domain actions behind stable contracts, independently of the agents,
-applications, and interfaces that invoke them. Define a capability once with
-Invokta, then invoke the same runtime through application code, the CLI, MCP
-stdio, or stateless MCP Streamable HTTP.
+Invokta turns repeatable AI-assisted work—investigating a bug, creating a
+specification, reviewing code, or collecting incident context—into reusable
+actions that agents, applications, automations, and people can invoke.
+
+Instead of copying prompts, skills, tool instructions, validation, permissions,
+and output rules into every harness, define the action once. Cursor, Claude Code,
+Codex, application code, and automations all reach the same validated
+implementation through direct calls, the CLI, or MCP.
+
+**Build the task once. Invoke it anywhere.**
+
+Invokta is the TypeScript framework for building these reusable actions. We call
+them [Action Engines](./docs/action-engines.md).
+
+## The problem Invokta solves
+
+A useful AI process rarely lives in one place. For example, creating a bug-fix
+specification may require project context, incident data from Sentry, design
+context from Figma, and internal rules that explain how to combine them.
+
+Without an owned action, every harness needs the same integrations and a copy of
+the instructions:
+
+```text
+Cursor      -> context MCP + Sentry MCP + Figma MCP + skill
+Claude Code -> context MCP + Sentry MCP + Figma MCP + copied skill
+Codex       -> context MCP + Sentry MCP + Figma MCP + another copy
+```
+
+The first setup ships quickly. The copies then drift: tools are called
+differently, permissions and validation change, and each agent may produce a
+different shape of result.
+
+With Invokta, every consumer invokes one domain outcome:
+
+```text
+Cursor ───────┐
+Claude Code ──┤
+Codex ────────┤
+CLI ──────────┼──> engineering.create-bug-fix-spec
+Application ──┘              |
+                              ├── project context
+                              ├── incident data
+                              ├── design context
+                              ├── internal rules
+                              └── validated specification
+```
+
+The Action Engine owns how that specification is produced. Its model, prompts,
+tools, data sources, and providers can change without teaching every consumer
+the process again.
+
+> MCP connects tools and data. Prompts, rules, and skills guide agent behavior.
+> Invokta gives the reusable action one implementation, contract, and execution
+> boundary.
 
 ## Why Action Engines matter
 
-> If your MCP tool or CLI command creates a specification, retrieves project
-> context, guides a workflow, reviews code, or classifies a ticket, you are
-> already building an Action Engine.
-
-The result of that action is the durable asset. MCP, CLI, HTTP, and direct APIs
-are delivery paths that let consumers reach it.
+The result of an action is the durable asset. MCP, CLI, HTTP, and direct APIs are
+delivery paths that let consumers reach it.
 
 Many projects still begin with the delivery path. Each use case gets its own MCP
 server, CLI parsing, schema conversion, authentication, error mapping,
