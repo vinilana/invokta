@@ -98,7 +98,7 @@ describe("createStarterFiles", () => {
   it.each([
     ["npm", "npm run check"],
     ["pnpm", "pnpm run check"],
-    ["yarn", "yarn check"],
+    ["yarn", "yarn run check"],
   ] as const)(
     "renders %s commands in the generated README",
     (manager, command) => {

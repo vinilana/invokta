@@ -152,8 +152,9 @@ describe("runCreateEngineCli", () => {
       packageManager: "yarn",
     });
     expect(readFileSync(join(cwd, "my-engine/README.md"), "utf8")).toContain(
-      "yarn check",
+      "yarn run check",
     );
+    expect(io.stdout.join("")).toContain("yarn run check");
   });
 
   it("preserves the complete scaffold when installation fails", async () => {

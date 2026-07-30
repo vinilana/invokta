@@ -36,7 +36,7 @@ export const packageManagerCommands = Object.freeze({
     installExecutable: "yarn",
     installArguments: Object.freeze(["install"]),
     installDisplay: "yarn install",
-    check: "yarn check",
+    check: "yarn run check",
     direct: "yarn direct Ada",
     list: "yarn cli list",
     run: 'yarn cli run onboarding.create-welcome-message --input \'{"name":"Ada"}\'',
