@@ -1,0 +1,206 @@
+---
+title: Use cases by company area
+description: See how teams package distributed context, integrations, and company rules into reusable Action Engine outcomes.
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+Action Engines are most useful when the same business outcome must be produced
+by multiple agents, applications, or automations. Instead of giving every
+consumer the same tools and another document explaining how to use them, the
+engine owns the integrations, rules, validation, permissions, and result.
+
+<CardGrid>
+  <Card title="Engineering" icon="rocket">
+    Turn a ticket into implementation-ready work using repository context,
+    architecture, design, and engineering rules.
+  </Card>
+  <Card title="Product and design" icon="document">
+    Turn research, feedback, analytics, and design constraints into a reviewable
+    discovery or handoff brief.
+  </Card>
+  <Card title="Marketing" icon="puzzle">
+    Turn a product launch into an on-brand campaign grounded in positioning,
+    audience research, evidence, and channel constraints.
+  </Card>
+  <Card title="Sales" icon="transfer">
+    Turn account context, product fit, and approved claims into a consistent
+    account brief or proposal.
+  </Card>
+  <Card title="Support and customer success" icon="approve-check">
+    Turn tickets and account signals into classifications, safe responses, and
+    customer-ready reviews.
+  </Card>
+  <Card title="Operations" icon="setting">
+    Turn incident data, runbooks, and operational policy into bounded context,
+    handoffs, and readiness decisions.
+  </Card>
+</CardGrid>
+
+<Aside type="note" title="These are illustrative domain contracts">
+  The capability IDs below describe useful Action Engine boundaries; they are
+  not built-in Invokta features. Your engine owns the prompts, models, data
+  integrations, rules, evaluations, and outcome quality. Invokta supplies the
+  reusable contract and execution mechanics.
+</Aside>
+
+## The company-wide pattern
+
+```text
+agent, application, or automation
+  -> reusable domain action
+      -> company context + integrations + rules
+      -> validated business outcome
+```
+
+The action should describe what the consumer needs, not the providers used to
+produce it. For example, prefer `marketing.prepare-campaign` over a sequence such
+as `notion.search`, `analytics.query`, and `llm.complete`.
+
+## Engineering
+
+### Turn any ticket into implementation-ready work
+
+`engineering.prepare-implementation` can combine:
+
+| Uses | Returns |
+| --- | --- |
+| Linear or Jira intent, repository context, architecture decisions, Figma designs, and engineering rules | A brief with the objective, acceptance criteria, affected modules, risks, implementation plan, and test strategy |
+
+Cursor, Claude Code, Codex, a CLI, and an internal application can all request
+the same brief without maintaining another planning skill or rebuilding the
+integration flow.
+
+Related actions:
+
+- `review.assess-task-readiness` requires acceptance evidence, tests, and review
+  gates before an agent can declare work complete.
+- `observability.collect-incident-context` normalizes issues, logs, and telemetry
+  into one bounded incident result.
+- `engineering.prepare-migration` combines target architecture, dependency
+  constraints, rollout policy, and repository evidence into an executable plan.
+
+Start with the [`spec-engine`](/examples/), [`review-engine`](/examples/), and
+[`observability-engine`](/examples/) examples for related implementation
+patterns.
+
+## Product and design
+
+### Turn distributed discovery evidence into one reviewable brief
+
+`product.prepare-discovery-brief` can combine:
+
+| Uses | Returns |
+| --- | --- |
+| Product strategy, customer interviews, support themes, analytics, competitive research, and current design constraints | A brief with the problem, target segment, evidence, assumptions, risks, open questions, and recommended next step |
+
+Related actions:
+
+- `design.prepare-engineering-handoff` combines approved Figma designs, design
+  system rules, interaction notes, and ticket scope into a stable handoff.
+- `product.assess-release-readiness` applies one release policy to acceptance
+  evidence, documentation, rollout constraints, and unresolved risks.
+- `product.synthesize-feedback` normalizes feedback from interviews, support,
+  sales, and product analytics without exposing each source contract to every
+  consumer.
+
+## Marketing
+
+### Turn any product launch into an on-brand campaign
+
+`marketing.prepare-campaign` can combine:
+
+| Uses | Returns |
+| --- | --- |
+| Product documentation, positioning, ICP and personas, brand guidelines, customer research, previous performance, and channel rules | A campaign-ready brief with the audience, problem, value proposition, approved claims, proof, objections, offer, concept, channel plan, and required assets |
+
+Every agent or application starts from the same positioning and evidence instead
+of reconstructing how the company communicates from a collection of documents.
+
+Related actions:
+
+- `marketing.adapt-campaign` turns one approved campaign brief into channel-ready
+  deliverables while preserving claims, proof, and brand voice.
+- `marketing.prepare-content-brief` combines search intent, customer questions,
+  product expertise, and editorial rules into a reviewable content contract.
+- `marketing.assess-asset-readiness` checks whether required claims, approvals,
+  formats, and evidence are present before publication.
+
+The [`crawl-engine`](/examples/) and [`image-engine`](/examples/) demonstrate
+provider integration and outcome-based media production boundaries that can be
+used inside a marketing engine.
+
+## Sales
+
+### Give every seller and agent the same account context
+
+`sales.prepare-account-brief` can combine:
+
+| Uses | Returns |
+| --- | --- |
+| CRM records, recent conversations, product usage, support history, approved positioning, and account research | A bounded brief with the account situation, relevant pains, product fit, risks, open questions, and recommended next action |
+
+Related actions:
+
+- `sales.prepare-proposal` applies approved packaging, claims, evidence, and
+  account requirements to produce a reviewable proposal draft.
+- `sales.prepare-call` selects the relevant account context and discovery
+  questions without giving the consumer unrestricted access to every system.
+- `sales.assess-opportunity` applies one qualification policy across agents,
+  automations, and internal applications.
+
+## Support and customer success
+
+### Produce consistent decisions and responses from customer context
+
+`support.classify-ticket` can combine:
+
+| Uses | Returns |
+| --- | --- |
+| Ticket content, customer tier, product area, known incidents, support policy, and routing rules | A validated category, priority, destination, explanation, and safe public failure when classification cannot be completed |
+
+Related actions:
+
+- `support.prepare-customer-response` combines product documentation, ticket
+  history, incident status, and response policy into a grounded draft.
+- `success.prepare-account-review` combines adoption, outcomes, open issues,
+  goals, and renewal context into a customer-ready review brief.
+- `support.assess-escalation` applies one escalation policy regardless of which
+  agent, inbox automation, or application invokes it.
+
+The [`support-engine`](/examples/) shows injected repositories, classification,
+authorization, and stable errors behind one support outcome.
+
+## Operations
+
+### Turn fragmented operational signals into a bounded handoff
+
+`operations.prepare-incident-handoff` can combine:
+
+| Uses | Returns |
+| --- | --- |
+| Incident timeline, alerts, logs, telemetry, ownership, runbooks, changes, and communication policy | A handoff with current impact, evidence, actions taken, unresolved risks, owners, and the next safe step |
+
+Related actions:
+
+- `operations.assess-change-readiness` evaluates deployment evidence, approvals,
+  rollback plans, and operational limits through one versioned policy.
+- `operations.prepare-runbook-step` selects the next permitted action from the
+  current state without moving orchestration into the Invokta framework.
+- `operations.collect-service-context` hides provider-specific monitoring and
+  inventory APIs behind one normalized result.
+
+## Choose a good first action
+
+Start with an outcome that:
+
+1. is repeated across more than one agent, application, or execution channel;
+2. currently depends on distributed context, several integrations, or copied
+   instructions;
+3. has a result your team can validate, review, and version;
+4. needs consistent permissions, limits, errors, or evidence; and
+5. should survive a change of model, prompt, provider, agent, or interface.
+
+Then define its input, output, access rule, execution behavior, and public
+failures as a [capability contract](/concepts/capabilities/), or follow the
+[first-engine guide](/getting-started/first-engine/) to build one.
