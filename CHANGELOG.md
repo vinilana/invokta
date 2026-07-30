@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-29
+
 ### Added
 
 - Added `create-invokta-engine`, a non-interactive standalone engine creator with
@@ -74,5 +76,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/vinilana/invokta/releases/tag/v0.2.0
 [0.1.0]: https://github.com/vinilana/invokta/releases/tag/v0.1.0

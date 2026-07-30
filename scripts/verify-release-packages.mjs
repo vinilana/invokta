@@ -474,16 +474,24 @@ try {
       );
     }
   }
+  if (
+    generatedManifest.devDependencies?.["@invokta/installer"] !== releaseVersion
+  ) {
+    throw new Error(
+      "generated @invokta/installer version is not release-aligned",
+    );
+  }
   if (existsSync(join(generatedProjectDirectory, "src", "mcp-http.ts"))) {
     throw new Error("creator unexpectedly generated an HTTP entry point");
   }
 
-  const generatedRuntimeTarballs = [
+  const generatedDependencyTarballs = [
     tarballsByName.get("@invokta/core"),
     tarballsByName.get("@invokta/cli"),
     tarballsByName.get("@invokta/mcp"),
+    tarballsByName.get("@invokta/installer"),
   ];
-  if (generatedRuntimeTarballs.some((tarball) => tarball === undefined)) {
+  if (generatedDependencyTarballs.some((tarball) => tarball === undefined)) {
     throw new Error("generated consumer tarballs are incomplete");
   }
   run(
@@ -493,7 +501,7 @@ try {
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
-      ...generatedRuntimeTarballs,
+      ...generatedDependencyTarballs,
     ],
     { cwd: generatedProjectDirectory },
   );
