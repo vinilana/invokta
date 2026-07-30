@@ -3,6 +3,8 @@ export const installerErrorMessages = Object.freeze({
   ENGINE_MANIFEST_INVALID: "The Action Engine manifest is invalid.",
   ENGINE_PATH_UNSAFE: "The Action Engine path is unsafe.",
   ENGINE_ENTRYPOINT_MISSING: "The Action Engine entry point was not found.",
+  ENGINE_IDENTITY_MISMATCH:
+    "The manifest does not match the managed Action Engine identity.",
   REMOTE_INVALID: "The remote MCP server definition is invalid.",
   INSTALLATION_UNAVAILABLE: "The managed installation is unavailable.",
   INSTALLER_INITIALIZATION_FAILED: "The installer could not be initialized.",

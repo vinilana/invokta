@@ -1,7 +1,11 @@
 import { randomBytes } from "node:crypto";
 
 import { createClackInteractivePrompter } from "./clack-interactive-prompter.js";
-import { loadEngineInstallManifest } from "./engine-manifest.js";
+import {
+  loadEngineInstallManifest,
+  loadEngineRemovalManifest,
+} from "./engine-manifest.js";
+import { runEngineRemovalSession } from "./engine-removal-session.js";
 import type {
   InstallerFileSystem,
   InstallerTransactionFileSystem,
@@ -55,17 +59,52 @@ export interface RunInteractiveSessionOptions {
   readonly platform?: NodeJS.Platform;
 }
 
+function mutationDependencies(
+  currentUserId: number,
+  environment: InstallerEnvironment,
+  fileSystem: InstallerTransactionFileSystem,
+): MutationCoordinatorDependencies {
+  return {
+    adapters: configurationTargetAdapters,
+    currentUserId,
+    environment,
+    fileSystem,
+    lock: {
+      clock: {
+        monotonicNow: () => performance.now(),
+        now: () => Date.now(),
+        wait: (milliseconds) =>
+          new Promise((resolveWait) => setTimeout(resolveWait, milliseconds)),
+      },
+      processId: process.pid,
+      randomBytes: (length) => randomBytes(length),
+    },
+    now: () => new Date().toISOString(),
+  };
+}
+
 export async function runInteractiveSession(
   options: RunInteractiveSessionOptions = {},
 ): Promise<InstallerExitCode> {
   const prompter = options.prompter ?? createClackInteractivePrompter();
   prompter.intro("Invokta capability installer");
+  const command = options.command ?? { kind: "inventory" as const };
+  const nodeFileSystem = createNodeFileSystem();
+  const fileSystem = options.fileSystem ?? nodeFileSystem;
+  const transactionFileSystem = options.transactionFileSystem ?? nodeFileSystem;
+  const currentUserId = process.getuid?.() ?? -1;
+  const removalSource =
+    command.kind === "remove-engine"
+      ? await loadEngineRemovalManifest({
+          currentUserId,
+          fileSystem: transactionFileSystem,
+          projectDirectory: command.projectDirectory,
+        })
+      : undefined;
   const progress = prompter.spinner();
   progress.start("Detecting supported AI harnesses");
+  let detectionComplete = false;
   try {
-    const command = options.command ?? { kind: "inventory" as const };
-    const nodeFileSystem = createNodeFileSystem();
-    const fileSystem = options.fileSystem ?? nodeFileSystem;
     const registry =
       command.kind === "inventory" ||
       command.kind === "status" ||
@@ -96,44 +135,40 @@ export async function runInteractiveSession(
         }),
     });
     progress.stop("Harness detection complete");
+    detectionComplete = true;
     if (command.kind === "inventory") {
       return await runReadOnlyInventory(snapshot, prompter);
     }
+    if (command.kind === "remove-engine" && removalSource !== undefined) {
+      return await runEngineRemovalSession({
+        dependencies: mutationDependencies(
+          currentUserId,
+          environment,
+          transactionFileSystem,
+        ),
+        prompter,
+        snapshot,
+        source: removalSource,
+      });
+    }
     if (command.kind === "install-engine" || command.kind === "install-http") {
-      const transactionFileSystem =
-        options.transactionFileSystem ?? nodeFileSystem;
       const descriptor =
         command.kind === "install-engine"
           ? (
               await loadEngineInstallManifest({
-                currentUserId: process.getuid?.() ?? -1,
+                currentUserId,
                 fileSystem: transactionFileSystem,
                 nodeExecutable: process.execPath,
                 projectDirectory: command.projectDirectory,
               })
             ).descriptor
           : createRemoteInstallDescriptor(command);
-      const dependencies: MutationCoordinatorDependencies = {
-        adapters: configurationTargetAdapters,
-        currentUserId: process.getuid?.() ?? -1,
-        environment,
-        fileSystem: transactionFileSystem,
-        lock: {
-          clock: {
-            monotonicNow: () => performance.now(),
-            now: () => Date.now(),
-            wait: (milliseconds) =>
-              new Promise((resolveWait) =>
-                setTimeout(resolveWait, milliseconds),
-              ),
-          },
-          processId: process.pid,
-          randomBytes: (length) => randomBytes(length),
-        },
-        now: () => new Date().toISOString(),
-      };
       return await runInstallSession({
-        dependencies,
+        dependencies: mutationDependencies(
+          currentUserId,
+          environment,
+          transactionFileSystem,
+        ),
         descriptor,
         prompter,
         resolveExecutable,
@@ -147,29 +182,13 @@ export async function runInteractiveSession(
         command.kind === "remove") &&
       registry !== undefined
     ) {
-      const transactionFileSystem =
-        options.transactionFileSystem ?? nodeFileSystem;
       return await runManagementSession({
         action: command.kind,
-        dependencies: {
-          adapters: configurationTargetAdapters,
-          currentUserId: process.getuid?.() ?? -1,
+        dependencies: mutationDependencies(
+          currentUserId,
           environment,
-          fileSystem: transactionFileSystem,
-          lock: {
-            clock: {
-              monotonicNow: () => performance.now(),
-              now: () => Date.now(),
-              wait: (milliseconds) =>
-                new Promise((resolveWait) =>
-                  setTimeout(resolveWait, milliseconds),
-                ),
-            },
-            processId: process.pid,
-            randomBytes: (length) => randomBytes(length),
-          },
-          now: () => new Date().toISOString(),
-        },
+          transactionFileSystem,
+        ),
         prompter,
         registry,
         resolveExecutable,
@@ -178,7 +197,7 @@ export async function runInteractiveSession(
     }
     throw new InstallerError("INSTALLER_INITIALIZATION_FAILED");
   } catch (error) {
-    progress.error("Harness detection failed");
+    if (!detectionComplete) progress.error("Harness detection failed");
     throw error;
   }
 }

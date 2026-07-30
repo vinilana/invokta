@@ -87,6 +87,14 @@ export interface MutateDescriptorAcrossTargetsInput
     | "remove";
 }
 
+export interface RemoveEngineDescriptorFromTargetInput {
+  readonly dependencies: MutationCoordinatorDependencies;
+  readonly descriptor: CapabilityInstallDescriptor;
+  readonly manifestServerName: string;
+  readonly snapshot: HarnessDetectionSnapshot;
+  readonly targetId: ConfigurationTargetId;
+}
+
 const temporaryTokenBytes = 12;
 
 function inside(root: string, candidate: string): boolean {
@@ -330,6 +338,11 @@ async function mutateTarget(
   input: MutateDescriptorAcrossTargetsInput,
   targetId: ConfigurationTargetId,
   contracts: StateTargetContracts,
+  options: {
+    readonly allowAlreadyAbsentRemoval?: boolean;
+    readonly allowUnavailableStateContracts?: boolean;
+    readonly manifestServerName?: string;
+  } = {},
 ): Promise<"disabled" | "enabled" | "installed" | "removed" | "unchanged"> {
   const { dependencies, descriptor, snapshot } = input;
   const target = findTarget(snapshot, targetId);
@@ -337,13 +350,22 @@ async function mutateTarget(
   const adapter = dependencies.adapters[targetId];
   const compatibility = adapter.compatibility(descriptor);
   if (!compatibility.supported) throw new InstallerError("TARGET_UNSUPPORTED");
+  const stateContracts =
+    options.allowUnavailableStateContracts === true
+      ? (Object.freeze({
+          [targetId]: contracts[targetId],
+        }) as StateTargetContracts)
+      : contracts;
 
   const loadedBeforeLock = await loadInstallerState({
     currentUserId: dependencies.currentUserId,
     environment: dependencies.environment,
     fileSystem: dependencies.fileSystem,
     homeDirectory: snapshot.homeDirectory,
-    targetContracts: contracts,
+    targetContracts: stateContracts,
+    ...(options.allowUnavailableStateContracts === true
+      ? { allowUnavailableTargetContracts: true }
+      : {}),
   });
   const homeRoot = await capturePathRoot(dependencies.fileSystem, {
     rootKind: "home",
@@ -386,10 +408,23 @@ async function mutateTarget(
       environment: dependencies.environment,
       fileSystem: dependencies.fileSystem,
       homeDirectory: snapshot.homeDirectory,
-      targetContracts: contracts,
+      targetContracts: stateContracts,
+      ...(options.allowUnavailableStateContracts === true
+        ? { allowUnavailableTargetContracts: true }
+        : {}),
     });
     if (loaded.path !== loadedBeforeLock.path) {
       throw new InstallerError("STATE_CHANGED");
+    }
+    if (
+      options.manifestServerName !== undefined &&
+      Object.values(loaded.state.installations).some(
+        (installation) =>
+          installation.entryId !== descriptor.id &&
+          installation.serverName === options.manifestServerName,
+      )
+    ) {
+      throw new InstallerError("ENGINE_IDENTITY_MISMATCH");
     }
     const configIdentity = await capturePathIdentity(dependencies.fileSystem, {
       root: homeRoot,
@@ -436,6 +471,12 @@ async function mutateTarget(
     let patch: TargetPatch;
     if (input.action === "remove") {
       if (managedInstallation === undefined) {
+        if (
+          options.allowAlreadyAbsentRemoval === true &&
+          inspection.currentServer.kind === "absent"
+        ) {
+          return "unchanged";
+        }
         throw new InstallerError("INSTALLATION_UNAVAILABLE");
       }
       const ownership = planOwnership(planning);
@@ -451,7 +492,10 @@ async function mutateTarget(
       ];
       stateBytes = serializeInstallerState(
         { schemaVersion: 1, installations: nextInstallations },
-        contracts,
+        stateContracts,
+        options.allowUnavailableStateContracts === true
+          ? { allowUnavailableTargetContracts: true }
+          : {},
       );
       patch =
         inspection.currentServer.kind === "absent"
@@ -547,6 +591,44 @@ export async function installDescriptorAcrossTargets(
   input: InstallDescriptorAcrossTargetsInput,
 ): Promise<readonly TargetMutationResult[]> {
   return mutateDescriptorAcrossTargets({ ...input, action: "install" });
+}
+
+export async function removeEngineDescriptorFromTarget(
+  input: RemoveEngineDescriptorFromTargetInput,
+): Promise<TargetMutationResult> {
+  const contracts = buildStateTargetContracts(
+    input.snapshot,
+    input.dependencies.adapters,
+  );
+  try {
+    const outcome = await mutateTarget(
+      {
+        action: "remove",
+        dependencies: input.dependencies,
+        descriptor: input.descriptor,
+        snapshot: input.snapshot,
+        targetIds: [input.targetId],
+      },
+      input.targetId,
+      contracts,
+      {
+        allowAlreadyAbsentRemoval: true,
+        allowUnavailableStateContracts: true,
+        manifestServerName: input.manifestServerName,
+      },
+    );
+    return Object.freeze({ targetId: input.targetId, outcome });
+  } catch (cause) {
+    const error =
+      cause instanceof InstallerError
+        ? cause
+        : new InstallerError("INSTALLER_INITIALIZATION_FAILED", cause);
+    return Object.freeze({
+      targetId: input.targetId,
+      outcome: "failed",
+      code: error.code,
+    });
+  }
 }
 
 export async function mutateDescriptorAcrossTargets(

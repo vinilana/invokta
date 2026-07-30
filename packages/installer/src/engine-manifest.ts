@@ -57,10 +57,30 @@ export interface LoadEngineInstallManifestOptions {
   readonly projectDirectory: string;
 }
 
+export interface LoadEngineRemovalManifestOptions {
+  readonly currentUserId: number;
+  readonly fileSystem: InstallerTransactionFileSystem;
+  readonly projectDirectory: string;
+}
+
 export interface EngineInstallSource {
   readonly manifestPath: string;
   readonly entrypointPath: string;
   readonly descriptor: CapabilityInstallDescriptor;
+}
+
+export interface EngineRemovalSource {
+  readonly manifestPath: string;
+  readonly id: string;
+  readonly title: string;
+  readonly serverName: string;
+}
+
+interface LoadedEngineManifest {
+  readonly manifest: ValidatedEngineManifest;
+  readonly manifestPath: string;
+  readonly projectDirectory: string;
+  readonly root: InstallerPathRootIdentity;
 }
 
 function manifestInvalid(cause?: unknown): never {
@@ -293,14 +313,12 @@ async function readCapturedManifest(
   }
 }
 
-export async function loadEngineInstallManifest(
-  options: LoadEngineInstallManifestOptions,
-): Promise<EngineInstallSource> {
+async function loadOwnedEngineManifest(
+  options: LoadEngineRemovalManifestOptions,
+): Promise<LoadedEngineManifest> {
   if (
     !Number.isSafeInteger(options.currentUserId) ||
     options.currentUserId < 0 ||
-    !isAbsolute(options.nodeExecutable) ||
-    options.nodeExecutable.includes("\0") ||
     !isAbsolute(resolve(options.projectDirectory)) ||
     options.projectDirectory.includes("\0")
   ) {
@@ -329,6 +347,37 @@ export async function loadEngineInstallManifest(
   const manifest = validateEngineInstallManifestBytes(
     await readCapturedManifest(options.fileSystem, manifestIdentity),
   );
+  return Object.freeze({
+    manifest,
+    manifestPath: manifestIdentity.targetPath,
+    projectDirectory,
+    root,
+  });
+}
+
+export async function loadEngineRemovalManifest(
+  options: LoadEngineRemovalManifestOptions,
+): Promise<EngineRemovalSource> {
+  const loaded = await loadOwnedEngineManifest(options);
+  return Object.freeze({
+    manifestPath: loaded.manifestPath,
+    id: loaded.manifest.id,
+    title: loaded.manifest.title,
+    serverName: loaded.manifest.server.name,
+  });
+}
+
+export async function loadEngineInstallManifest(
+  options: LoadEngineInstallManifestOptions,
+): Promise<EngineInstallSource> {
+  if (
+    !isAbsolute(options.nodeExecutable) ||
+    options.nodeExecutable.includes("\0")
+  ) {
+    throw new InstallerError("ENGINE_PATH_UNSAFE");
+  }
+  const loaded = await loadOwnedEngineManifest(options);
+  const { manifest, projectDirectory, root } = loaded;
   const entrypointPath = join(
     projectDirectory,
     ...manifest.server.entrypoint.split("/"),
@@ -362,7 +411,7 @@ export async function loadEngineInstallManifest(
     server: Object.freeze({ name: manifest.server.name, transport }),
   });
   return Object.freeze({
-    manifestPath: manifestIdentity.targetPath,
+    manifestPath: loaded.manifestPath,
     entrypointPath,
     descriptor,
   });

@@ -163,12 +163,16 @@ npm create invokta-engine@latest my-engine
 cd my-engine
 npm run check
 npm run mcp:install
+# Later, remove the engine from every managed MCP client:
+npm run mcp:uninstall
 ```
 
 `mcp:install` builds the generated engine, detects eligible MCP clients,
 preselects them, and asks for one confirmation before updating their user
-configuration. See the [installer reference](./apps/docs/src/content/docs/reference/installer.mdx)
-for remote HTTP registration and lifecycle commands.
+configuration. `mcp:uninstall` is build-free and removes the same logical engine
+from every installer-managed client after one confirmation. See the
+[installer reference](./apps/docs/src/content/docs/reference/installer.mdx) for
+remote HTTP registration and lifecycle commands.
 
 Create reusable package boundaries directly when an engine is not the owning
 project:

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TargetConfigEvidenceProbes } from "../src/harness-detection.js";
 import type { InteractivePrompter } from "../src/interactive-prompter.js";
 import { runInteractiveSession } from "../src/interactive-session.js";
+import { createNodeFileSystem } from "../src/node-file-system.js";
 import type { RegistryCompatibilityAdapters } from "../src/registry.js";
 import { configurationTargetIds } from "../src/registry.js";
 
@@ -43,6 +44,87 @@ function absentConfigProbes(events: string[]): TargetConfigEvidenceProbes {
 }
 
 describe("interactive detection session", () => {
+  it("validates an engine-removal source before target detection", async () => {
+    const projectDirectory = mkdtempSync(
+      join(tmpdir(), "invokta-interactive-remove-project-"),
+    );
+    const homeDirectory = mkdtempSync(
+      join(tmpdir(), "invokta-interactive-remove-home-"),
+    );
+    temporaryDirectories.push(projectDirectory, homeDirectory);
+    writeFileSync(
+      join(projectDirectory, "invokta.mcp.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        id: "support-engine",
+        version: "1.0.0",
+        title: "Support Engine",
+        description: "Support actions.",
+        capabilityIds: ["tickets.summarize"],
+        server: {
+          name: "support-engine",
+          entrypoint: "dist/mcp-stdio.js",
+          forwardEnv: [],
+        },
+      })}\n`,
+    );
+    const events: string[] = [];
+    const fileSystem = createNodeFileSystem();
+    const observedFileSystem = new Proxy(fileSystem, {
+      get(target, property, receiver) {
+        if (property === "openReadNoFollow") {
+          return async (path: string) => {
+            if (path.endsWith("invokta.mcp.json")) events.push("manifest");
+            return target.openReadNoFollow(path);
+          };
+        }
+        const value = Reflect.get(target, property, receiver) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const prompts: InteractivePrompter = {
+      intro: vi.fn(),
+      outro: vi.fn(),
+      cancel: vi.fn(),
+      autocomplete: vi.fn(),
+      select: vi.fn(),
+      multiselect: vi.fn(),
+      note: vi.fn(),
+      confirm: vi.fn(),
+      spinner: vi.fn(() => ({
+        start: vi.fn(),
+        stop: vi.fn(),
+        cancel: vi.fn(),
+        error: vi.fn(),
+        message: vi.fn(),
+        clear: vi.fn(),
+      })),
+      log: vi.fn(),
+    };
+
+    const result = await runInteractiveSession({
+      command: { kind: "remove-engine", projectDirectory },
+      prompter: prompts,
+      fileSystem: observedFileSystem,
+      transactionFileSystem: observedFileSystem,
+      environment: { get: () => undefined },
+      resolveHomeDirectory: () => {
+        events.push("home");
+        return homeDirectory;
+      },
+      resolveExecutable: async () => undefined,
+      configEvidenceProbes: absentConfigProbes(events),
+    });
+
+    expect(result).toBe(0);
+    expect(events.indexOf("manifest")).toBeGreaterThanOrEqual(0);
+    expect(events.indexOf("manifest")).toBeLessThan(events.indexOf("home"));
+    expect(prompts.confirm).not.toHaveBeenCalled();
+    expect(prompts.outro).toHaveBeenCalledWith(
+      "Support Engine is already uninstalled.",
+    );
+  });
+
   it("loads the empty registry, captures one read-only snapshot, and dismisses without mutation", async () => {
     const events: string[] = [];
     const note = vi.fn();

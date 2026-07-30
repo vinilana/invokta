@@ -278,9 +278,14 @@ test("an empty installer registry does not hide direct installation", async () =
   );
   assert.match(reference, /bundled capability registry may remain empty/iu);
   assert.match(reference, /install --engine/iu);
+  assert.match(reference, /remove --engine/iu);
+  assert.match(reference, /mcp:uninstall/iu);
+  assert.match(reference, /build-free/iu);
   assert.match(reference, /install --http/iu);
   assert.match(installation, /npm run mcp:install/iu);
+  assert.match(installation, /npm run mcp:uninstall/iu);
   assert.match(rootReadme, /npm run mcp:install/iu);
+  assert.match(rootReadme, /npm run mcp:uninstall/iu);
 });
 
 test("the capability package guide covers authoring, publishing, and consuming", async () => {

@@ -145,6 +145,9 @@ describe("createStarterFiles", () => {
     expect(packageManifest.scripts["mcp:install"]).toBe(
       "tsc -p tsconfig.json --pretty false && invokta-installer install --engine .",
     );
+    expect(packageManifest.scripts["mcp:uninstall"]).toBe(
+      "invokta-installer remove --engine .",
+    );
     expect(JSON.parse(contents.get("invokta.mcp.json") ?? "")).toEqual({
       schemaVersion: 1,
       id: "customer-support-engine",
@@ -188,12 +191,17 @@ describe("createStarterFiles", () => {
   });
 
   it.each([
-    ["npm", "npm run check"],
-    ["pnpm", "pnpm run check"],
-    ["yarn", "yarn run check"],
+    ["npm", "npm run check", "npm run mcp:install", "npm run mcp:uninstall"],
+    [
+      "pnpm",
+      "pnpm run check",
+      "pnpm run mcp:install",
+      "pnpm run mcp:uninstall",
+    ],
+    ["yarn", "yarn run check", "yarn mcp:install", "yarn mcp:uninstall"],
   ] as const)(
     "renders %s commands in the generated README",
-    (manager, command) => {
+    (manager, check, install, uninstall) => {
       const files = createStarterFiles({
         projectName: "customer-support-engine",
         invoktaVersion: "1.2.3",
@@ -201,9 +209,10 @@ describe("createStarterFiles", () => {
       });
 
       const readme = files.find((file) => file.path === "README.md");
-      expect(readme && "contents" in readme ? readme.contents : "").toContain(
-        command,
-      );
+      const contents = readme && "contents" in readme ? readme.contents : "";
+      expect(contents).toContain(check);
+      expect(contents).toContain(install);
+      expect(contents).toContain(uninstall);
     },
   );
 });

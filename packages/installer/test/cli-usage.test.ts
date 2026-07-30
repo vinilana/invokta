@@ -13,6 +13,7 @@ const helpText = `Usage:
   invokta-installer enable
   invokta-installer disable
   invokta-installer remove
+  invokta-installer remove --engine <project-directory>
   invokta-installer --help
   invokta-installer --version
 `;
@@ -202,6 +203,47 @@ describe("runInstallerCli", () => {
     });
     expect(output.stdout).toEqual([]);
     expect(output.stderr).toEqual([]);
+  });
+
+  it("parses project-local engine removal before lazy interactive loading", async () => {
+    const output = createIo();
+    const loadInteractiveSession = vi.fn(async () => 0 as const);
+
+    const result = await runInstallerCli({
+      argv: ["remove", "--engine", "projects/support-engine"],
+      io: output.io,
+      loadInteractiveSession,
+    });
+
+    expect(result).toBe(0);
+    expect(loadInteractiveSession).toHaveBeenCalledWith({
+      kind: "remove-engine",
+      projectDirectory: "projects/support-engine",
+    });
+    expect(output.stdout).toEqual([]);
+    expect(output.stderr).toEqual([]);
+  });
+
+  it.each([
+    ["remove", "--engine"],
+    ["remove", "--engine", ".", "extra"],
+    ["--engine", ".", "remove"],
+    ["remove", "--engine", ".", "--engine", "."],
+  ])("rejects an invalid engine-removal vector: %j", async (...argv) => {
+    const output = createIo();
+    const loadInteractiveSession = vi.fn(async () => 0 as const);
+
+    const result = await runInstallerCli({
+      argv,
+      io: output.io,
+      loadInteractiveSession,
+    });
+
+    expect(result).toBe(2);
+    expect(loadInteractiveSession).not.toHaveBeenCalled();
+    expect(output.stderr).toEqual([
+      'Invalid arguments. Run "invokta-installer --help".\n',
+    ]);
   });
 
   it("parses a remote HTTP installation with environment-only credentials", async () => {

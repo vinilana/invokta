@@ -61,17 +61,20 @@ link, creation fails and rolls back instead of copying the instructions.
 Generated Invokta dependencies use the exact creator version. The entries
 become project-owned immediately and are never updated in place by the creator.
 
-The starter also includes `@invokta/installer` and a build-first installation
-command:
+The starter also includes `@invokta/installer`, a build-first installation
+command, and its build-free inverse:
 
 ```sh
 npm run mcp:install
+npm run mcp:uninstall
 ```
 
-That command validates `invokta.mcp.json`, detects eligible MCP clients,
+The install command validates `invokta.mcp.json`, detects eligible MCP clients,
 preselects all of them, and requires one confirmation before changing user
-configuration. The installer never imports or executes the engine while
-discovering its MCP entry point.
+configuration. The uninstall command uses the manifest ID to remove that engine
+from every installer-managed client after one confirmation. It does not build,
+import, or execute the engine and remains usable when its compiled entry point
+is absent.
 
 HTTP scaffolding remains a separate, explicit step owned by `@invokta/deploy`.
 The starter contains no HTTP server, authentication implementation, model
