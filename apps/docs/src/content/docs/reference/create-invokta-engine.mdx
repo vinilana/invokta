@@ -1,0 +1,126 @@
+---
+title: 'create-invokta-engine'
+description: Complete command, generated-project, filesystem, package-manager, and diagnostic contract for the Invokta engine creator.
+---
+
+`create-invokta-engine` creates one standalone TypeScript Action Engine with a
+public capability shared by direct invocation, the Invokta CLI adapter, and MCP
+stdio. It is a binary-only development package, not a runtime adapter or template
+framework.
+
+## Install
+
+Run the current release without adding it to an existing project:
+
+```sh
+npm create invokta-engine@latest my-engine
+```
+
+The package is native ESM and requires Node.js 22.20.0 or later. The npm
+initializer maps `invokta-engine` to the `create-invokta-engine` package and
+executable.
+
+## Commands
+
+```text
+create-invokta-engine <project-directory>
+  [--package-manager npm|pnpm|yarn] [--no-install]
+create-invokta-engine --help
+create-invokta-engine --version
+```
+
+Creation is non-interactive. Options may appear before or after the one project
+directory. `--package-manager` accepts a separate `npm`, `pnpm`, or `yarn` value;
+duplicates, unknown options, `--option=value`, or another positional are invalid.
+
+## Target contract
+
+The project directory is relative to the current working directory. Absolute
+paths and `..` segments are rejected. `.` is accepted when the current directory
+has a valid lowercase kebab-case name and is empty.
+
+| Limit | Value |
+| --- | --- |
+| Project path | At most 1,024 Unicode scalars |
+| Non-dot path segments | At most 32 |
+| Project and engine name | Lowercase kebab-case, at most 214 characters |
+
+The target may be absent or an empty real directory. A symbolic-link target,
+symbolic-link path component, non-directory target, or any existing entry fails
+before scaffold writes. Every file is created exclusively; an entry that appears
+during creation is preserved and reported as `SCAFFOLD_CONFLICT`.
+
+A pre-install write failure removes only paths created by that invocation. The
+creator never overwrites a file. Concurrent creation in one target is unsupported.
+
+## Generated project
+
+Files are deterministic UTF-8 text with LF endings and one trailing newline:
+
+```text
+.gitignore
+README.md
+package.json
+src/capabilities/create-welcome-message.ts
+src/cli.ts
+src/direct.ts
+src/engine.ts
+src/mcp-stdio.ts
+test/engine.test.ts
+tsconfig.json
+tsconfig.test.json
+```
+
+The public `onboarding.create-welcome-message` capability is deterministic and
+requires no credential or provider account. Direct, CLI, and MCP stdio entry
+points import the same engine. Generated Invokta dependencies use the exact
+creator version; generated files are project-owned and are never upgraded in
+place.
+
+The starter contains no HTTP endpoint, authentication implementation, model
+provider, telemetry, Git initialization, or template selector. Add stateless
+HTTP later with `@invokta/deploy`, whose fail-closed authentication scaffold
+remains the only official HTTP generator.
+
+## Package-manager behavior
+
+An explicit `--package-manager` wins. Otherwise the creator recognizes npm,
+pnpm, or Yarn from `npm_config_user_agent` and falls back to npm.
+
+| Manager | Install command |
+| --- | --- |
+| npm | `npm install --no-audit --no-fund` |
+| pnpm | `pnpm install` |
+| Yarn | `yarn install` |
+
+Exactly one foreground install is started directly without a shell, retry, or
+creator-owned timeout. An unavailable manager, non-zero exit, or signal is
+`INSTALL_FAILED`; the complete scaffold remains so installation can be retried.
+
+`--no-install` starts no child process and performs no network operation. The
+creator itself never makes a network request.
+
+## Output and errors
+
+Help, version, and the final success summary use standard output. Creator
+diagnostics use standard error. During installation, the selected package manager
+inherits the terminal streams.
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Help, version, or project creation succeeded |
+| `1` | Target safety, filesystem creation, or dependency installation failed |
+| `2` | Usage, project path, or project name was invalid |
+
+| Code | Meaning |
+| --- | --- |
+| `TARGET_INVALID` | The path shape or derived project name is invalid |
+| `TARGET_UNSAFE` | A path component is a symlink, not a directory, or cannot be inspected safely |
+| `TARGET_NOT_EMPTY` | The target contains at least one entry |
+| `SCAFFOLD_CONFLICT` | A fixed scaffold path appeared after preflight |
+| `WRITE_FAILED` | A scaffold write or rollback failed |
+| `INSTALL_FAILED` | The selected package manager was unavailable or unsuccessful |
+
+Diagnostics may identify a generated project-relative path or package-manager
+name. They never include a rejected argument, environment value, child error,
+stack, or cause.

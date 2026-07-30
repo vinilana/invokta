@@ -95,6 +95,7 @@ export default defineConfig({
             { slug: "reference/tooling" },
             { slug: "reference/installer" },
             { slug: "reference/deploy" },
+            { slug: "reference/create-invokta-engine" },
             { slug: "reference/errors" },
           ],
         },

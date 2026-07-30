@@ -25,6 +25,7 @@ const packageReferences = [
   ["tooling", "@invokta/tooling"],
   ["installer", "@invokta/installer"],
   ["deploy", "@invokta/deploy"],
+  ["create-invokta-engine", "create-invokta-engine"],
 ];
 
 const requiredRoutes = [
