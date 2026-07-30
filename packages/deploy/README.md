@@ -65,6 +65,24 @@ a scaffolded engine can never serve an unverified request. The adapter's
 `dangerously-disabled-for-development` mode is deliberately absent from every
 template; it remains a manual, local-only choice.
 
+The same five bytes are available to other development-time generators through
+the pure public scaffold subpath:
+
+```ts
+import {
+  createMcpHttpScaffoldFiles,
+  starterDeployManifest,
+} from "@invokta/deploy/scaffold";
+
+const files = createMcpHttpScaffoldFiles(starterDeployManifest);
+```
+
+The planner returns immutable project-relative UTF-8 text entries in
+lexicographic order. It performs no filesystem, process, network, engine, or
+capability operation. `@invokta/deploy` remains the single template authority;
+the engine creator consumes this subpath instead of copying templates or
+invoking `init`.
+
 ## invokta-deploy package
 
 Generates the deployment package. It validates in a fixed order — manifest,

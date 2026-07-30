@@ -327,3 +327,55 @@ uses the current absolute Node executable and the validated absolute compiled
 entry point. The configured MCP adapter continues to call only
 `engine.invoke`; installer operations never enter the capability execution
 path.
+
+## Engine project creation
+
+**AE-CREATE-PROFILE-01..03 — Interaction and authorization.**
+`create-invokta-engine` accepts an optional relative target and one of the
+closed profiles `complete`, `mcp-stdio`, `mcp-http`, or `cli`. Without `--yes`,
+it is interactive only when standard input and standard error are both TTYs.
+It prompts for missing location and profile decisions, builds and preflights the
+complete immutable plan, and requires one final confirmation before mutation.
+The confirmation names only the normalized relative target, profile,
+package-manager choice, and installation behavior. Non-terminal execution never
+prompts: an explicit target uses the explicit profile or `complete`, while a
+missing target is `INTERACTIVE_REQUIRED`. `--yes` requires a target and skips
+all prompts.
+
+**AE-CREATE-PROFILE-04..07 — Profile and execution boundaries.** Every profile
+contains the engine, capability, direct entry point, test, instructions, and
+development skill. `complete` adds CLI, MCP stdio, and MCP HTTP; each focused
+profile adds exactly its named adapter. Dependencies, scripts, manifests, and
+documentation are the exact set union for those generated channels. Every
+entry point imports the shared engine and executes only through `engine.invoke`
+or an official adapter that uses it.
+
+MCP HTTP bytes remain owned by `@invokta/deploy`. Its public
+`@invokta/deploy/scaffold` subpath exposes the pure
+`createMcpHttpScaffoldFiles` planner and `starterDeployManifest`. The planner
+returns immutable, lexicographically ordered project-relative text entries and
+performs no filesystem, process, network, engine, or capability operation. The
+creator merges that complete plan before any write and never invokes the deploy
+CLI or imports an internal deploy path.
+
+**AE-CREATE-PROFILE-08..11 — Limits and transaction.** One prompt answer is a
+strict UTF-8 line of at most 4,096 encoded bytes including its terminator. A
+limit or decoding violation, or three invalid answers to one question, is
+`PROMPT_INVALID`; EOF, interruption, or prompt I/O failure is
+`PROMPT_ABORTED`. A negative confirmation returns success and has no side
+effect. Prompt diagnostics never echo rejected data.
+
+Planning performs no mutation or process execution. After confirmation, target
+state is revalidated through the existing no-follow, empty-target, exclusive
+creation, deterministic-byte, and rollback boundary. At most one shell-free
+package-manager install starts, only after the selected scaffold is complete.
+`--no-install`, cancellation, and prompt failure start no process or network
+operation. Generated documentation and agent guidance name exactly the selected
+channels and cannot advertise an omitted adapter.
+
+**AE-CREATE-PROFILE-12 — Evolution.** The `complete` profile is the release
+conformance fixture for direct, CLI, MCP stdio, and MCP HTTP reuse. Focused
+profiles are bounded bootstrap projects rather than a weakening of the reuse or
+single-invocation-path invariants. Adding another profile, prompt decision,
+template authority, or in-place conversion requires another architectural
+decision.

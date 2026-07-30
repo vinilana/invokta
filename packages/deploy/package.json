@@ -29,6 +29,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./scaffold": {
+      "types": "./dist/scaffold-public.d.ts",
+      "import": "./dist/scaffold-public.js"
     }
   },
   "bin": {

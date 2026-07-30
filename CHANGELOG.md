@@ -20,6 +20,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Generated engines now include a build-free `mcp:uninstall` command that
   removes the same managed engine identity from every configured MCP client
   through one confirmed, ownership-safe operation.
+- Added the pure `@invokta/deploy/scaffold` planner so development-time
+  generators can reuse the fail-closed MCP HTTP templates without copying them
+  or invoking another CLI.
+
+### Changed
+
+- `create-invokta-engine` now guides terminal users through a project directory,
+  one of the `complete`, `mcp-stdio`, `mcp-http`, or `cli` profiles, and a final
+  confirmation. Terminal automation must pass `--yes`.
+- The default `complete` starter now includes MCP HTTP and the matching
+  `@invokta/deploy` development dependency. Focused profiles include and
+  document only their selected adapter.
+- Non-terminal positional creation remains compatible. Automation that requires
+  the former syntax and new deterministic default maps as follows:
+
+  ```text
+  create-invokta-engine my-engine --no-install
+  create-invokta-engine my-engine --profile complete --no-install --yes
+  ```
 
 ## [0.2.0] - 2026-07-29
 

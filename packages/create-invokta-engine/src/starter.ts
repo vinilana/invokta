@@ -1,7 +1,41 @@
 import {
+  createMcpHttpScaffoldFiles,
+  starterDeployManifest,
+} from "@invokta/deploy/scaffold";
+
+import {
   type PackageManager,
   packageManagerCommands,
 } from "./package-manager.js";
+
+export const engineStarterProfiles = Object.freeze([
+  "complete",
+  "mcp-stdio",
+  "mcp-http",
+  "cli",
+] as const);
+
+export type EngineStarterProfile = (typeof engineStarterProfiles)[number];
+
+export function isEngineStarterProfile(
+  value: string,
+): value is EngineStarterProfile {
+  return engineStarterProfiles.some((profile) => profile === value);
+}
+
+interface ProfileFeatures {
+  readonly cli: boolean;
+  readonly mcpStdio: boolean;
+  readonly mcpHttp: boolean;
+}
+
+function profileFeatures(profile: EngineStarterProfile): ProfileFeatures {
+  return Object.freeze({
+    cli: profile === "complete" || profile === "cli",
+    mcpStdio: profile === "complete" || profile === "mcp-stdio",
+    mcpHttp: profile === "complete" || profile === "mcp-http",
+  });
+}
 
 export type StarterEntry =
   | Readonly<{
@@ -22,41 +56,42 @@ export interface CreateStarterFilesOptions {
   readonly projectName: string;
   readonly invoktaVersion: string;
   readonly packageManager: PackageManager;
+  readonly profile: EngineStarterProfile;
 }
 
 function renderReadme(
   projectName: string,
   packageManager: PackageManager,
+  profile: EngineStarterProfile,
 ): string {
   const commands = packageManagerCommands[packageManager];
   const runScript = (name: string) =>
     packageManager === "yarn"
       ? `yarn ${name}`
       : `${packageManager} run ${name}`;
-  return `# ${projectName}
-
-A standalone [Invokta](https://docs.invokta.dev/) Action Engine with one
-deterministic capability shared by direct, CLI, and MCP stdio entry points.
-
-## Validate
-
-\`\`\`sh
-${commands.check}
-\`\`\`
-
-## Invoke directly
-
-\`\`\`sh
-${commands.direct}
-\`\`\`
-
+  const features = profileFeatures(profile);
+  const generatedChannels = [
+    "direct invocation",
+    ...(features.cli ? ["CLI"] : []),
+    ...(features.mcpStdio ? ["MCP stdio"] : []),
+    ...(features.mcpHttp ? ["MCP HTTP"] : []),
+  ];
+  const channelSummary =
+    generatedChannels.length === 2
+      ? generatedChannels.join(" and ")
+      : `${generatedChannels.slice(0, -1).join(", ")}, and ${generatedChannels.at(-1)}`;
+  const cliSection = features.cli
+    ? `
 ## Use the CLI
 
 \`\`\`sh
 ${commands.list}
 ${commands.run}
 \`\`\`
-
+`
+    : "";
+  const stdioSection = features.mcpStdio
+    ? `
 ## Start MCP stdio
 
 \`\`\`sh
@@ -76,15 +111,67 @@ without rebuilding it:
 \`\`\`sh
 ${runScript("mcp:uninstall")}
 \`\`\`
+`
+    : "";
+  const httpSection = features.mcpHttp
+    ? `
+## Start MCP HTTP
 
-Add stateless HTTP only when needed. Install \`@invokta/deploy\`, run
-\`invokta-deploy init\`, and implement its fail-closed authentication hook before
-exposing the endpoint.
-`;
+Implement the fail-closed authentication hook in \`src/http-auth.ts\` before the
+server can start. Then run:
+
+\`\`\`sh
+${runScript("mcp:http")}
+\`\`\`
+
+Package the server and probe an existing endpoint with:
+
+\`\`\`sh
+${runScript("deploy:package")}
+${runScript("deploy:probe")}
+\`\`\`
+`
+    : "";
+  return `# ${projectName}
+
+A standalone [Invokta](https://docs.invokta.dev/) Action Engine with one
+deterministic capability shared by ${channelSummary} entry points.
+
+## Validate
+
+\`\`\`sh
+${commands.check}
+\`\`\`
+
+## Invoke directly
+
+\`\`\`sh
+${commands.direct}
+\`\`\`
+${cliSection}${stdioSection}${httpSection}`;
 }
 
-function renderAgentInstructions(packageManager: PackageManager): string {
+function renderAgentInstructions(
+  packageManager: PackageManager,
+  profile: EngineStarterProfile,
+): string {
   const commands = packageManagerCommands[packageManager];
+  const features = profileFeatures(profile);
+  const entryPoints = [
+    "direct",
+    ...(features.cli ? ["CLI"] : []),
+    ...(features.mcpStdio ? ["MCP stdio"] : []),
+    ...(features.mcpHttp ? ["MCP HTTP"] : []),
+  ].join(", ");
+  const adapterPaths = [
+    "`src/direct.ts`",
+    ...(features.cli ? ["`src/cli.ts`"] : []),
+    ...(features.mcpStdio ? ["`src/mcp-stdio.ts`"] : []),
+    ...(features.mcpHttp ? ["`src/mcp-http.ts`"] : []),
+  ].join(", ");
+  const httpInstruction = features.mcpHttp
+    ? "\n- Keep HTTP authentication fail-closed until `src/http-auth.ts` verifies a real credential."
+    : "";
   return `# Project Instructions
 
 ## Language
@@ -95,9 +182,10 @@ public errors, examples, tests, commits, and release notes.
 ## Architecture
 
 - Define domain actions as capabilities with explicit input, output, access, and execution contracts.
-- Keep direct, CLI, and MCP entry points on the single \`engine.invoke\` path.
+- Keep the generated ${entryPoints} entry points on the single \`engine.invoke\` path.
 - Keep models, prompts, providers, data stores, and tools behind replaceable engine-owned dependencies.
-- Do not add framework-wide registries, service locators, or adapter-specific business logic.
+- Keep business logic out of ${adapterPaths}.
+- Do not add framework-wide registries, service locators, or adapter-specific business logic.${httpInstruction}
 
 ## Delivery
 
@@ -107,11 +195,34 @@ public errors, examples, tests, commits, and release notes.
 `;
 }
 
-function renderDevelopmentSkill(packageManager: PackageManager): string {
+function renderDevelopmentSkill(
+  packageManager: PackageManager,
+  profile: EngineStarterProfile,
+): string {
   const commands = packageManagerCommands[packageManager];
+  const features = profileFeatures(profile);
+  const channelNames = [
+    "direct invocation",
+    ...(features.cli ? ["CLI"] : []),
+    ...(features.mcpStdio ? ["MCP stdio"] : []),
+    ...(features.mcpHttp ? ["MCP HTTP"] : []),
+  ];
+  const channels =
+    channelNames.length === 2
+      ? channelNames.join(" and ")
+      : `${channelNames.slice(0, -1).join(", ")}, and ${channelNames.at(-1)}`;
+  const adapterPaths = [
+    "`src/direct.ts`",
+    ...(features.cli ? ["`src/cli.ts`"] : []),
+    ...(features.mcpStdio ? ["`src/mcp-stdio.ts`"] : []),
+    ...(features.mcpHttp ? ["`src/mcp-http.ts`"] : []),
+  ].join(", ");
+  const httpInstruction = features.mcpHttp
+    ? "\n- Preserve fail-closed authentication in `src/http-auth.ts`; never add a development bypass."
+    : "";
   return `---
 name: develop-invokta-project
-description: Develop this generated Invokta Action Engine when adding or changing capabilities, dependencies, tests, direct calls, CLI behavior, or MCP behavior. Use for implementation, refactoring, debugging, and contract review in this project.
+description: Develop this generated Invokta Action Engine when changing capabilities, dependencies, tests, or its ${channels} channels. Use for implementation, refactoring, debugging, and contract review in this project.
 ---
 
 # Develop This Action Engine
@@ -128,15 +239,15 @@ description: Develop this generated Invokta Action Engine when adding or changin
 - Inject models, providers, repositories, tools, and policy checks through engine-owned factories or closures.
 - Register capabilities under literal domain-oriented IDs in \`src/engine.ts\`.
 - Keep every execution channel on \`engine.invoke\`; never call a capability's \`run\` directly.
-- Keep business logic out of \`src/direct.ts\`, \`src/cli.ts\`, and \`src/mcp-stdio.ts\`.
-- Do not add a service locator, runtime registry, plugin discovery, workflow engine, or adapter-specific capability implementation.
+- Keep business logic out of ${adapterPaths}.
+- Do not add a service locator, runtime registry, plugin discovery, workflow engine, or adapter-specific capability implementation.${httpInstruction}
 
 ## Deliver the change
 
 1. Add or update an engine-level test that invokes the capability and fails for the missing behavior.
 2. Implement the smallest capability, dependency, composition-root, or adapter wiring change that makes the test pass.
 3. Cover invalid input, denied access, output validation, cancellation, or dependency failure when relevant to the contract.
-4. Keep direct, CLI, and MCP behavior consistent by testing the shared engine boundary rather than duplicating handlers.
+4. Keep ${channels} behavior consistent by testing the shared engine boundary rather than duplicating handlers.
 5. Update project documentation when commands, configuration, capability IDs, or public behavior change.
 6. Run \`${commands.check}\` and resolve every type, test, formatting, and build failure before completion.
 `;
@@ -151,39 +262,58 @@ const developmentSkillMetadata = `interface:
 function renderPackageManifest(
   projectName: string,
   invoktaVersion: string,
+  profile: EngineStarterProfile,
 ): string {
+  const features = profileFeatures(profile);
+  const scripts = {
+    build: "tsc -p tsconfig.json --pretty false",
+    typecheck:
+      "tsc -p tsconfig.json --pretty false --noEmit && tsc -p tsconfig.test.json --pretty false --noEmit",
+    test: "vitest run",
+    check:
+      "tsc -p tsconfig.json --pretty false --noEmit && tsc -p tsconfig.test.json --pretty false --noEmit && vitest run && tsc -p tsconfig.json --pretty false",
+    direct: "node dist/direct.js",
+    ...(features.cli ? { cli: "node dist/cli.js" } : {}),
+    ...(features.mcpStdio
+      ? {
+          "mcp:stdio": "node dist/mcp-stdio.js",
+          "mcp:install":
+            "tsc -p tsconfig.json --pretty false && invokta-installer install --engine .",
+          "mcp:uninstall": "invokta-installer remove --engine .",
+        }
+      : {}),
+    ...(features.mcpHttp
+      ? {
+          "mcp:http": "node dist/mcp-http.js",
+          "deploy:package": "invokta-deploy package",
+          "deploy:probe": "invokta-deploy probe",
+        }
+      : {}),
+  };
+  const dependencies = {
+    ...(features.cli ? { "@invokta/cli": invoktaVersion } : {}),
+    "@invokta/core": invoktaVersion,
+    ...(features.mcpStdio || features.mcpHttp
+      ? { "@invokta/mcp": invoktaVersion }
+      : {}),
+    zod: "4.4.3",
+  };
+  const devDependencies = {
+    ...(features.mcpHttp ? { "@invokta/deploy": invoktaVersion } : {}),
+    ...(features.mcpStdio ? { "@invokta/installer": invoktaVersion } : {}),
+    "@types/node": "26.1.2",
+    typescript: "7.0.2",
+    vitest: "4.1.10",
+  };
   const manifest = {
     name: projectName,
     version: "0.1.0",
     private: true,
     type: "module",
     engines: { node: ">=22.20.0" },
-    scripts: {
-      build: "tsc -p tsconfig.json --pretty false",
-      typecheck:
-        "tsc -p tsconfig.json --pretty false --noEmit && tsc -p tsconfig.test.json --pretty false --noEmit",
-      test: "vitest run",
-      check:
-        "tsc -p tsconfig.json --pretty false --noEmit && tsc -p tsconfig.test.json --pretty false --noEmit && vitest run && tsc -p tsconfig.json --pretty false",
-      direct: "node dist/direct.js",
-      cli: "node dist/cli.js",
-      "mcp:stdio": "node dist/mcp-stdio.js",
-      "mcp:install":
-        "tsc -p tsconfig.json --pretty false && invokta-installer install --engine .",
-      "mcp:uninstall": "invokta-installer remove --engine .",
-    },
-    dependencies: {
-      "@invokta/cli": invoktaVersion,
-      "@invokta/core": invoktaVersion,
-      "@invokta/mcp": invoktaVersion,
-      zod: "4.4.3",
-    },
-    devDependencies: {
-      "@invokta/installer": invoktaVersion,
-      "@types/node": "26.1.2",
-      typescript: "7.0.2",
-      vitest: "4.1.10",
-    },
+    scripts,
+    dependencies,
+    devDependencies,
   };
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
@@ -332,73 +462,88 @@ const tsconfigTest = `{
 }
 `;
 
-/** Returns the complete starter as deterministic project-relative entries. */
+function starterFile(path: string, contents: string): StarterEntry {
+  return Object.freeze({ kind: "file", path, contents });
+}
+
+function starterSymlink(path: string, target: string): StarterEntry {
+  return Object.freeze({ kind: "symlink", path, target });
+}
+
+function compareStarterEntries(
+  left: StarterEntry,
+  right: StarterEntry,
+): number {
+  if (left.path < right.path) return -1;
+  if (left.path > right.path) return 1;
+  return 0;
+}
+
+/** Returns one deterministic profile as immutable project-relative entries. */
 export function createStarterFiles(
   options: CreateStarterFilesOptions,
 ): readonly StarterEntry[] {
-  return Object.freeze([
-    {
-      kind: "file",
-      path: ".agents/skills/develop-invokta-project/SKILL.md",
-      contents: renderDevelopmentSkill(options.packageManager),
-    },
-    {
-      kind: "file",
-      path: ".agents/skills/develop-invokta-project/agents/openai.yaml",
-      contents: developmentSkillMetadata,
-    },
-    {
-      kind: "file",
-      path: ".gitignore",
-      contents: "node_modules/\ndist/\n*.tsbuildinfo\n",
-    },
-    {
-      kind: "file",
-      path: "AGENTS.md",
-      contents: renderAgentInstructions(options.packageManager),
-    },
-    { kind: "symlink", path: "CLAUDE.md", target: "AGENTS.md" },
-    {
-      kind: "file",
-      path: "README.md",
-      contents: renderReadme(options.projectName, options.packageManager),
-    },
-    {
-      kind: "file",
-      path: "invokta.mcp.json",
-      contents: renderMcpInstallManifest(options.projectName),
-    },
-    {
-      kind: "file",
-      path: "package.json",
-      contents: renderPackageManifest(
+  const features = profileFeatures(options.profile);
+  const entries: StarterEntry[] = [
+    starterFile(
+      ".agents/skills/develop-invokta-project/SKILL.md",
+      renderDevelopmentSkill(options.packageManager, options.profile),
+    ),
+    starterFile(
+      ".agents/skills/develop-invokta-project/agents/openai.yaml",
+      developmentSkillMetadata,
+    ),
+    starterFile(
+      ".gitignore",
+      features.mcpHttp
+        ? "node_modules/\ndist/\n*.tsbuildinfo\n.env\n.env.*\n!.env.example\n"
+        : "node_modules/\ndist/\n*.tsbuildinfo\n",
+    ),
+    starterFile(
+      "AGENTS.md",
+      renderAgentInstructions(options.packageManager, options.profile),
+    ),
+    starterSymlink("CLAUDE.md", "AGENTS.md"),
+    starterFile(
+      "README.md",
+      renderReadme(
+        options.projectName,
+        options.packageManager,
+        options.profile,
+      ),
+    ),
+    starterFile(
+      "package.json",
+      renderPackageManifest(
         options.projectName,
         options.invoktaVersion,
+        options.profile,
       ),
-    },
-    {
-      kind: "file",
-      path: "src/capabilities/create-welcome-message.ts",
-      contents: capabilityModule,
-    },
-    { kind: "file", path: "src/cli.ts", contents: cliModule },
-    { kind: "file", path: "src/direct.ts", contents: directModule },
-    {
-      kind: "file",
-      path: "src/engine.ts",
-      contents: renderEngineModule(options.projectName),
-    },
-    { kind: "file", path: "src/mcp-stdio.ts", contents: mcpStdioModule },
-    {
-      kind: "file",
-      path: "test/engine.test.ts",
-      contents: engineTestModule,
-    },
-    { kind: "file", path: "tsconfig.json", contents: tsconfig },
-    {
-      kind: "file",
-      path: "tsconfig.test.json",
-      contents: tsconfigTest,
-    },
-  ]);
+    ),
+    starterFile("src/capabilities/create-welcome-message.ts", capabilityModule),
+    starterFile("src/direct.ts", directModule),
+    starterFile("src/engine.ts", renderEngineModule(options.projectName)),
+    starterFile("test/engine.test.ts", engineTestModule),
+    starterFile("tsconfig.json", tsconfig),
+    starterFile("tsconfig.test.json", tsconfigTest),
+  ];
+
+  if (features.cli) entries.push(starterFile("src/cli.ts", cliModule));
+  if (features.mcpStdio) {
+    entries.push(
+      starterFile(
+        "invokta.mcp.json",
+        renderMcpInstallManifest(options.projectName),
+      ),
+      starterFile("src/mcp-stdio.ts", mcpStdioModule),
+    );
+  }
+  if (features.mcpHttp) {
+    for (const file of createMcpHttpScaffoldFiles(starterDeployManifest)) {
+      entries.push(starterFile(file.path, file.contents));
+    }
+  }
+
+  entries.sort(compareStarterEntries);
+  return Object.freeze(entries);
 }

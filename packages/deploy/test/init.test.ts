@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runInit } from "../src/init.js";
 import { parseDeployManifest } from "../src/manifest.js";
 import {
-  createScaffoldFiles,
+  createMcpHttpScaffoldFiles,
   environmentModuleTemplate,
   httpAuthModuleTemplate,
   renderEnvironmentExample,
@@ -247,9 +247,9 @@ describe("runInit", () => {
   });
 });
 
-describe("createScaffoldFiles", () => {
+describe("createMcpHttpScaffoldFiles", () => {
   it("lists the five targets in lexicographic path order", () => {
-    const files = createScaffoldFiles(starterDeployManifest);
+    const files = createMcpHttpScaffoldFiles(starterDeployManifest);
 
     expect(files.map((file) => file.path)).toEqual([...scaffoldPaths]);
   });

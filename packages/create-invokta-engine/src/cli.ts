@@ -5,11 +5,23 @@ import {
   type PackageManager,
   packageManagerCommands,
 } from "./package-manager.js";
-import { createStarterProject } from "./scaffold.js";
+import { createBoundedPromptInput, promptInputLimits } from "./prompt.js";
+import {
+  planStarterProject,
+  validateStarterTargetSyntax,
+  writeStarterProject,
+} from "./scaffold.js";
+import {
+  type EngineStarterProfile,
+  isEngineStarterProfile,
+} from "./starter.js";
 
 const helpText = `Usage:
-  create-invokta-engine <project-directory>
-    [--package-manager npm|pnpm|yarn] [--no-install]
+  create-invokta-engine [project-directory]
+    [--profile complete|mcp-stdio|mcp-http|cli]
+    [--package-manager npm|pnpm|yarn]
+    [--no-install]
+    [--yes]
   create-invokta-engine --help
   create-invokta-engine --version
 `;
@@ -17,10 +29,40 @@ const helpText = `Usage:
 const invalidUsageText =
   'Invalid arguments. Run "create-invokta-engine --help".\n';
 const unexpectedFailureText = "The project could not be created.\n";
+const cancellationText = "Creation cancelled. No files were created.\n";
+const profilePrompt =
+  "Scaffold profile:\n" +
+  "  1. Complete (CLI + MCP local + MCP HTTP)\n" +
+  "  2. MCP local (stdio)\n" +
+  "  3. MCP HTTP\n" +
+  "  4. CLI\n" +
+  "Choose a profile (1): ";
+const promptDecoder = new TextDecoder("utf-8", { fatal: true });
+
+const profileAnswers = Object.freeze({
+  "1": "complete",
+  "2": "mcp-stdio",
+  "3": "mcp-http",
+  "4": "cli",
+} as const satisfies Readonly<Record<string, EngineStarterProfile>>);
+
+const profileLabels = Object.freeze({
+  complete: "complete",
+  "mcp-stdio": "MCP local",
+  "mcp-http": "MCP HTTP",
+  cli: "CLI",
+} as const satisfies Readonly<Record<EngineStarterProfile, string>>);
 
 export interface CreateEngineIo {
   readonly writeStdout: (text: string) => void | Promise<void>;
   readonly writeStderr: (text: string) => void | Promise<void>;
+}
+
+export interface CreateEngineTerminal {
+  readonly stdinIsTty: boolean;
+  readonly stderrIsTty: boolean;
+  /** Returns one answer including its LF line terminator. */
+  readonly readLine: () => Promise<Uint8Array | undefined>;
 }
 
 const processIo: CreateEngineIo = {
@@ -34,6 +76,15 @@ const processIo: CreateEngineIo = {
 
 const defaultIo: CreateEngineIo = Object.freeze(processIo);
 
+function createProcessTerminal(): CreateEngineTerminal {
+  const input = createBoundedPromptInput(process.stdin);
+  return Object.freeze({
+    stdinIsTty: process.stdin.isTTY === true,
+    stderrIsTty: process.stderr.isTTY === true,
+    readLine: input.readLine,
+  });
+}
+
 export interface InstallProjectOptions {
   readonly directory: string;
   readonly packageManager: PackageManager;
@@ -46,29 +97,51 @@ export interface RunCreateEngineCliOptions {
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly io?: CreateEngineIo;
+  readonly terminal?: CreateEngineTerminal;
   readonly install?: InstallProject;
   readonly loadPackageVersion?: () => Promise<string>;
 }
 
 interface CreateArguments {
-  readonly target: string;
+  readonly target?: string;
+  readonly profile?: EngineStarterProfile;
   readonly packageManager?: PackageManager;
   readonly noInstall: boolean;
+  readonly yes: boolean;
 }
 
 function parseCreateArguments(
   args: readonly string[],
 ): CreateArguments | undefined {
   let target: string | undefined;
+  let profile: EngineStarterProfile | undefined;
+  let profileSeen = false;
   let packageManager: PackageManager | undefined;
   let packageManagerSeen = false;
   let noInstall = false;
+  let yes = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === "--no-install") {
       if (noInstall) return undefined;
       noInstall = true;
+      continue;
+    }
+    if (argument === "--yes") {
+      if (yes) return undefined;
+      yes = true;
+      continue;
+    }
+    if (argument === "--profile") {
+      if (profileSeen) return undefined;
+      profileSeen = true;
+      const value = args[index + 1];
+      if (value === undefined || !isEngineStarterProfile(value)) {
+        return undefined;
+      }
+      profile = value;
+      index += 1;
       continue;
     }
     if (argument === "--package-manager") {
@@ -90,11 +163,13 @@ function parseCreateArguments(
     target = argument;
   }
 
-  if (target === undefined) return undefined;
+  if (yes && target === undefined) return undefined;
   return {
-    target,
+    ...(target === undefined ? {} : { target }),
+    ...(profile === undefined ? {} : { profile }),
     ...(packageManager === undefined ? {} : { packageManager }),
     noInstall,
+    yes,
   };
 }
 
@@ -130,19 +205,117 @@ async function writeDiagnostic(
 
 function renderSuccess(
   projectName: string,
+  profile: EngineStarterProfile,
   packageManager: PackageManager,
   noInstall: boolean,
 ): string {
   const commands = packageManagerCommands[packageManager];
+  const firstLine = `Created ${projectName} with the ${profileLabels[profile]} scaffold.`;
   if (noInstall) {
     return (
-      `Created ${projectName} without installing dependencies.\n\n` +
+      `${firstLine}\n\n` +
       "Next steps:\n" +
       `  ${commands.installDisplay}\n` +
       `  ${commands.check}\n`
     );
   }
-  return `Created ${projectName}.\n\nNext step:\n  ${commands.check}\n`;
+  return `${firstLine}\n\nNext step:\n  ${commands.check}\n`;
+}
+
+function decodePromptAnswer(answer: Uint8Array | undefined): string {
+  if (answer === undefined || answer.at(-1) !== 0x0a) {
+    throw new CreatorError("PROMPT_ABORTED");
+  }
+  if (answer.byteLength > promptInputLimits.maxAnswerBytes) {
+    throw new CreatorError("PROMPT_INVALID");
+  }
+  let end = answer.byteLength - 1;
+  if (end > 0 && answer[end - 1] === 0x0d) end -= 1;
+  try {
+    return promptDecoder.decode(answer.subarray(0, end)).trim();
+  } catch {
+    throw new CreatorError("PROMPT_INVALID");
+  }
+}
+
+async function readPromptAnswer(
+  io: CreateEngineIo,
+  terminal: CreateEngineTerminal,
+  prompt: string,
+): Promise<string> {
+  let answer: Uint8Array | undefined;
+  try {
+    await io.writeStderr(prompt);
+    answer = await terminal.readLine();
+  } catch {
+    throw new CreatorError("PROMPT_ABORTED");
+  }
+  return decodePromptAnswer(answer);
+}
+
+async function promptForTarget(
+  cwd: string,
+  io: CreateEngineIo,
+  terminal: CreateEngineTerminal,
+): Promise<string> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const answer = await readPromptAnswer(
+      io,
+      terminal,
+      "Project directory (my-invokta-engine): ",
+    );
+    const target = answer === "" ? "my-invokta-engine" : answer;
+    try {
+      validateStarterTargetSyntax(cwd, target);
+      return target;
+    } catch (error) {
+      if (!(error instanceof CreatorError) || error.code !== "TARGET_INVALID") {
+        throw error;
+      }
+      if (attempt === 3) throw new CreatorError("PROMPT_INVALID");
+    }
+  }
+  throw new CreatorError("PROMPT_INVALID");
+}
+
+async function promptForProfile(
+  io: CreateEngineIo,
+  terminal: CreateEngineTerminal,
+): Promise<EngineStarterProfile> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const answer = await readPromptAnswer(io, terminal, profilePrompt);
+    if (answer === "") return "complete";
+    const profile = profileAnswers[answer as keyof typeof profileAnswers];
+    if (profile !== undefined) return profile;
+    if (attempt === 3) throw new CreatorError("PROMPT_INVALID");
+  }
+  throw new CreatorError("PROMPT_INVALID");
+}
+
+function renderConfirmation(
+  profile: EngineStarterProfile,
+  normalizedTarget: string,
+  packageManager: PackageManager,
+  noInstall: boolean,
+): string {
+  const installation = noInstall
+    ? "without installing dependencies"
+    : `and install dependencies with ${packageManager}`;
+  return `Create the ${profileLabels[profile]} scaffold in ${JSON.stringify(normalizedTarget)} ${installation}? (y/N) `;
+}
+
+async function promptForConfirmation(
+  io: CreateEngineIo,
+  terminal: CreateEngineTerminal,
+  prompt: string,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const answer = (await readPromptAnswer(io, terminal, prompt)).toLowerCase();
+    if (answer === "" || answer === "n" || answer === "no") return false;
+    if (answer === "y" || answer === "yes") return true;
+    if (attempt === 3) throw new CreatorError("PROMPT_INVALID");
+  }
+  throw new CreatorError("PROMPT_INVALID");
 }
 
 /** Runs the binary command and returns its exit status without exiting. */
@@ -177,21 +350,55 @@ export async function runCreateEngineCli(
     return 2;
   }
 
-  const environment = options.env ?? process.env;
-  const packageManager = selectPackageManager(
-    parsed.packageManager,
-    environment.npm_config_user_agent,
-  );
+  const terminal = options.terminal ?? createProcessTerminal();
+  const interactive =
+    !parsed.yes && terminal.stdinIsTty && terminal.stderrIsTty;
+  if (!interactive && parsed.target === undefined) {
+    const error = new CreatorError("INTERACTIVE_REQUIRED");
+    await writeDiagnostic(io, renderCreatorDiagnostic(error));
+    return error.exitCode;
+  }
+
+  const cwd = options.cwd ?? process.cwd();
   try {
+    const target = parsed.target ?? (await promptForTarget(cwd, io, terminal));
+    const profile =
+      parsed.profile ??
+      (interactive ? await promptForProfile(io, terminal) : "complete");
+    const environment = options.env ?? process.env;
+    const packageManager = selectPackageManager(
+      parsed.packageManager,
+      environment.npm_config_user_agent,
+    );
     const invoktaVersion = await (
       options.loadPackageVersion ?? loadDefaultPackageVersion
     )();
-    const project = await createStarterProject({
-      cwd: options.cwd ?? process.cwd(),
-      target: parsed.target,
+    const plan = await planStarterProject({
+      cwd,
+      target,
       invoktaVersion,
       packageManager,
+      profile,
     });
+
+    if (interactive) {
+      const confirmed = await promptForConfirmation(
+        io,
+        terminal,
+        renderConfirmation(
+          profile,
+          plan.normalizedTarget,
+          packageManager,
+          parsed.noInstall,
+        ),
+      );
+      if (!confirmed) {
+        await io.writeStdout(cancellationText);
+        return 0;
+      }
+    }
+
+    const project = await writeStarterProject(plan);
     if (!parsed.noInstall) {
       await (options.install ?? installProjectDependencies)({
         directory: project.directory,
@@ -199,7 +406,12 @@ export async function runCreateEngineCli(
       });
     }
     await io.writeStdout(
-      renderSuccess(project.projectName, packageManager, parsed.noInstall),
+      renderSuccess(
+        project.projectName,
+        profile,
+        packageManager,
+        parsed.noInstall,
+      ),
     );
     return 0;
   } catch (error) {

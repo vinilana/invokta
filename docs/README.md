@@ -25,6 +25,11 @@ decision is accepted and the implementation evidence is complete.
 
 - [Engine-scoped MCP uninstall](./specs/engine-scoped-mcp-uninstall.md)
 
+## Delivered specifications
+
+- [Interactive engine creator profiles](./specs/interactive-engine-creator-profiles.md),
+  accepted by [ADR 0018](./adr/0018-interactive-engine-creator-profiles.md)
+
 ## Guides and examples
 
 These guides apply the normative contracts above. When a guide or example

@@ -2,10 +2,10 @@
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
-  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -54,7 +54,12 @@ const publicPackages = [
     directory: "deploy",
     name: "@invokta/deploy",
     // The toolkit ships both an import API and the `invokta-deploy` executable.
-    requiredFiles: [...distEntryFiles, "dist/bin.js"],
+    requiredFiles: [
+      ...distEntryFiles,
+      "dist/bin.js",
+      "dist/scaffold-public.js",
+      "dist/scaffold-public.d.ts",
+    ],
   },
   {
     directory: "create-invokta-engine",
@@ -335,7 +340,7 @@ function verifyChangelog(changelog, releaseVersion) {
   }
 }
 
-function writeGeneratedMcpSmoke(projectDirectory) {
+function writeGeneratedMcpSmoke(projectDirectory, projectName) {
   const program = `
     import assert from "node:assert/strict";
     import { spawn } from "node:child_process";
@@ -397,7 +402,7 @@ function writeGeneratedMcpSmoke(projectDirectory) {
       });
       const initialized = await nextMessage();
       assert.equal(initialized.id, 1);
-      assert.equal(initialized.result.serverInfo.name, "release-engine");
+      assert.equal(initialized.result.serverInfo.name, ${JSON.stringify(projectName)});
       send({ jsonrpc: "2.0", method: "notifications/initialized" });
       send({
         jsonrpc: "2.0",
@@ -424,6 +429,151 @@ function writeGeneratedMcpSmoke(projectDirectory) {
     }
   `;
   writeFileSync(join(projectDirectory, "mcp-smoke.mjs"), program);
+}
+
+function listGeneratedEntries(projectDirectory, relativeDirectory = "") {
+  const directory = join(projectDirectory, relativeDirectory);
+  const entries = [];
+  for (const item of readdirSync(directory, { withFileTypes: true })) {
+    if (relativeDirectory === "" && item.name === "node_modules") continue;
+    const relativePath =
+      relativeDirectory === ""
+        ? item.name
+        : `${relativeDirectory}/${item.name}`;
+    if (item.isDirectory()) {
+      entries.push(...listGeneratedEntries(projectDirectory, relativePath));
+    } else {
+      entries.push(relativePath);
+    }
+  }
+  return entries.sort();
+}
+
+function writeGeneratedHttpPlanSmoke(projectDirectory) {
+  const program = `
+    import assert from "node:assert/strict";
+    import { readFileSync } from "node:fs";
+
+    import {
+      createMcpHttpScaffoldFiles,
+      starterDeployManifest,
+    } from "@invokta/deploy/scaffold";
+
+    const files = createMcpHttpScaffoldFiles(starterDeployManifest);
+    assert.equal(Object.isFrozen(files), true);
+    for (const file of files) {
+      assert.equal(Object.isFrozen(file), true);
+      assert.equal(readFileSync(file.path, "utf8"), file.contents);
+    }
+  `;
+  writeFileSync(join(projectDirectory, "http-plan-smoke.mjs"), program);
+}
+
+function writeGeneratedHttpAuthFixture(projectDirectory) {
+  const source = `import { timingSafeEqual } from "node:crypto";
+
+import type { McpHttpAuthOptions } from "@invokta/mcp";
+
+const expectedCredential = process.env.RELEASE_HTTP_TOKEN;
+if (expectedCredential === undefined || expectedCredential === "") {
+  throw new Error("The release HTTP fixture token is missing.");
+}
+
+export const httpAuth = {
+  mode: "required",
+  authenticate(request) {
+    const authorization = request.headers.get("authorization");
+    if (authorization === null) return null;
+    const expected = Buffer.from(\`Bearer \${expectedCredential}\`, "utf8");
+    const received = Buffer.from(authorization, "utf8");
+    if (received.length !== expected.length) return null;
+    if (!timingSafeEqual(received, expected)) return null;
+    return { id: "release:http-client" };
+  },
+} satisfies McpHttpAuthOptions;
+`;
+  writeFileSync(join(projectDirectory, "src", "http-auth.ts"), source);
+}
+
+function writeGeneratedHttpSmoke(projectDirectory, projectName) {
+  const program = `
+    import assert from "node:assert/strict";
+    import { spawn } from "node:child_process";
+
+    import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+    import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+    const token = "release-http-fixture-token";
+    const child = spawn(process.execPath, ["dist/mcp-http.js"], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        INVOKTA_HTTP_PORT: "0",
+        RELEASE_HTTP_TOKEN: token,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    const childExit = new Promise((resolve) =>
+      child.once("exit", (code, signal) => resolve({ code, signal })),
+    );
+
+    function withTimeout(promise, label) {
+      let timer;
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(label)), 5_000);
+      });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    }
+
+    try {
+      const port = await withTimeout(new Promise((resolve, reject) => {
+        child.stderr.on("data", () => {
+          const match = stderr.match(/127\\.0\\.0\\.1:(\\d+)\\/mcp/u);
+          if (match?.[1] !== undefined) resolve(Number(match[1]));
+        });
+        child.once("error", reject);
+        child.once("exit", (code) =>
+          reject(new Error(\`HTTP server exited before startup: \${String(code)}\`)),
+        );
+      }), "HTTP server startup timed out");
+      const transport = new StreamableHTTPClientTransport(
+        new URL(\`http://127.0.0.1:\${port}/mcp\`),
+        { requestInit: { headers: { authorization: \`Bearer \${token}\` } } },
+      );
+      const client = new Client(
+        { name: "creator-http-release-smoke", version: "0.0.0-test" },
+        { capabilities: {} },
+      );
+      try {
+        await client.connect(transport);
+        const result = await client.callTool({
+          name: "onboarding.create-welcome-message",
+          arguments: { name: "Ada" },
+        });
+        assert.deepEqual(result.structuredContent, {
+          message: "Welcome, Ada!",
+        });
+      } finally {
+        await client.close();
+      }
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGTERM");
+      }
+      const result = await withTimeout(childExit, "HTTP server exit timed out");
+      assert.equal(result.code, 0);
+      assert.equal(result.signal, null);
+    }
+    assert.equal(stdout, "");
+    assert.equal(stderr.includes(token), false);
+    assert.match(stderr, /MCP endpoint:/u);
+    assert.equal(${JSON.stringify(projectName)}.length > 0, true);
+  `;
+  writeFileSync(join(projectDirectory, "http-smoke.mjs"), program);
 }
 
 function writeGeneratedInstallerFixture(projectDirectory) {
@@ -593,11 +743,13 @@ try {
     const mcp = await import("@invokta/mcp");
     const tooling = await import("@invokta/tooling");
     const deploy = await import("@invokta/deploy");
+    const deployScaffold = await import("@invokta/deploy/scaffold");
     if (typeof core.createEngine !== "function") throw new Error("core import failed");
     if (typeof cli.runCli !== "function") throw new Error("cli import failed");
     if (typeof mcp.serveMcpStdio !== "function") throw new Error("mcp import failed");
     if (typeof tooling.checkCapabilities !== "function") throw new Error("tooling import failed");
     if (typeof deploy.runDeployCli !== "function") throw new Error("deploy import failed");
+    if (typeof deployScaffold.createMcpHttpScaffoldFiles !== "function") throw new Error("deploy scaffold import failed");
   `;
   run("node", ["--input-type=module", "--eval", smokeProgram], {
     cwd: consumerDirectory,
@@ -646,108 +798,320 @@ try {
   if (creatorVersion !== `${releaseVersion}\n`) {
     throw new Error("creator binary version smoke failed");
   }
-  const creatorOutput = run(
-    creatorCommand,
-    ["release-engine", "--package-manager", "npm", "--no-install"],
+  const commonCreatorEntries = [
+    ".agents/skills/develop-invokta-project/SKILL.md",
+    ".agents/skills/develop-invokta-project/agents/openai.yaml",
+    ".gitignore",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "package.json",
+    "src/capabilities/create-welcome-message.ts",
+    "src/direct.ts",
+    "src/engine.ts",
+    "test/engine.test.ts",
+    "tsconfig.json",
+    "tsconfig.test.json",
+  ];
+  const httpCreatorEntries = [
+    ".env.example",
+    "invokta.deploy.json",
+    "src/env.ts",
+    "src/http-auth.ts",
+    "src/mcp-http.ts",
+  ];
+  const creatorProfileCases = [
     {
-      cwd: generatedDirectory,
-      capture: true,
-      env: { NODE_OPTIONS: `--no-warnings --import=${networkSentinel}` },
+      profile: "complete",
+      label: "complete",
+      target: "release-engine",
+      entries: [
+        ...commonCreatorEntries,
+        ...httpCreatorEntries,
+        "invokta.mcp.json",
+        "src/cli.ts",
+        "src/mcp-stdio.ts",
+      ],
+      dependencies: ["@invokta/cli", "@invokta/core", "@invokta/mcp"],
+      devDependencies: ["@invokta/deploy", "@invokta/installer"],
+      scripts: [
+        "build",
+        "check",
+        "cli",
+        "deploy:package",
+        "deploy:probe",
+        "direct",
+        "mcp:http",
+        "mcp:install",
+        "mcp:stdio",
+        "mcp:uninstall",
+        "test",
+        "typecheck",
+      ],
+      cli: true,
+      mcpStdio: true,
+      mcpHttp: true,
+      omittedDocumentation: [],
+      legacyNonTerminal: true,
     },
-  );
-  if (!creatorOutput.startsWith("Created release-engine without installing")) {
-    throw new Error("creator scaffold smoke failed");
-  }
+    {
+      profile: "mcp-stdio",
+      label: "MCP local",
+      target: "release-engine-stdio",
+      entries: [
+        ...commonCreatorEntries,
+        "invokta.mcp.json",
+        "src/mcp-stdio.ts",
+      ],
+      dependencies: ["@invokta/core", "@invokta/mcp"],
+      devDependencies: ["@invokta/installer"],
+      scripts: [
+        "build",
+        "check",
+        "direct",
+        "mcp:install",
+        "mcp:stdio",
+        "mcp:uninstall",
+        "test",
+        "typecheck",
+      ],
+      cli: false,
+      mcpStdio: true,
+      mcpHttp: false,
+      omittedDocumentation: ["CLI", "MCP HTTP"],
+      legacyNonTerminal: false,
+    },
+    {
+      profile: "mcp-http",
+      label: "MCP HTTP",
+      target: "release-engine-http",
+      entries: [...commonCreatorEntries, ...httpCreatorEntries],
+      dependencies: ["@invokta/core", "@invokta/mcp"],
+      devDependencies: ["@invokta/deploy"],
+      scripts: [
+        "build",
+        "check",
+        "deploy:package",
+        "deploy:probe",
+        "direct",
+        "mcp:http",
+        "test",
+        "typecheck",
+      ],
+      cli: false,
+      mcpStdio: false,
+      mcpHttp: true,
+      omittedDocumentation: ["CLI", "MCP local", "MCP stdio"],
+      legacyNonTerminal: false,
+    },
+    {
+      profile: "cli",
+      label: "CLI",
+      target: "release-engine-cli",
+      entries: [...commonCreatorEntries, "src/cli.ts"],
+      dependencies: ["@invokta/cli", "@invokta/core"],
+      devDependencies: [],
+      scripts: ["build", "check", "cli", "direct", "test", "typecheck"],
+      cli: true,
+      mcpStdio: false,
+      mcpHttp: false,
+      omittedDocumentation: ["MCP"],
+      legacyNonTerminal: false,
+      pseudoTty: true,
+    },
+  ];
+  const generatedProfileDirectories = new Map();
 
-  const generatedProjectDirectory = join(generatedDirectory, "release-engine");
-  verifyGeneratedDevelopmentSkill(
-    generatedProjectDirectory,
-    "create-invokta-engine",
-    "# Develop This Action Engine",
-  );
-  verifyGeneratedAgentInstructions(
-    generatedProjectDirectory,
-    "create-invokta-engine",
-  );
-  const generatedManifest = JSON.parse(
-    readFileSync(join(generatedProjectDirectory, "package.json"), "utf8"),
-  );
-  for (const packageName of ["@invokta/core", "@invokta/cli", "@invokta/mcp"]) {
-    if (generatedManifest.dependencies?.[packageName] !== releaseVersion) {
+  for (const profileCase of creatorProfileCases) {
+    const creatorArguments = [
+      profileCase.target,
+      ...(profileCase.legacyNonTerminal
+        ? []
+        : ["--profile", profileCase.profile]),
+      "--package-manager",
+      "npm",
+      "--no-install",
+      ...(profileCase.pseudoTty ? ["--yes"] : []),
+    ];
+    const creatorEnvironment = {
+      NODE_OPTIONS: `--no-warnings --import=${networkSentinel}`,
+    };
+    const creatorOutput = profileCase.pseudoTty
+      ? run(
+          scriptExecutable,
+          [
+            "--quiet",
+            "--return",
+            "--command",
+            [creatorCommand, ...creatorArguments].map(shellQuote).join(" "),
+            "/dev/null",
+          ],
+          {
+            cwd: generatedDirectory,
+            capture: true,
+            env: creatorEnvironment,
+          },
+        )
+      : run(creatorCommand, creatorArguments, {
+          cwd: generatedDirectory,
+          capture: true,
+          input: "",
+          env: creatorEnvironment,
+        });
+    if (
+      !creatorOutput.includes(
+        `Created ${profileCase.target} with the ${profileCase.label} scaffold.`,
+      )
+    ) {
+      throw new Error(`${profileCase.profile} creator scaffold smoke failed`);
+    }
+
+    const projectDirectory = join(generatedDirectory, profileCase.target);
+    generatedProfileDirectories.set(profileCase.profile, projectDirectory);
+    verifyGeneratedDevelopmentSkill(
+      projectDirectory,
+      "create-invokta-engine",
+      "# Develop This Action Engine",
+    );
+    verifyGeneratedAgentInstructions(projectDirectory, "create-invokta-engine");
+    requireEqual(
+      listGeneratedEntries(projectDirectory),
+      [...profileCase.entries].sort(),
+      `${profileCase.profile} packed creator entries`,
+    );
+
+    const generatedManifest = JSON.parse(
+      readFileSync(join(projectDirectory, "package.json"), "utf8"),
+    );
+    requireEqual(
+      Object.keys(generatedManifest.dependencies ?? {})
+        .filter((name) => name.startsWith("@invokta/"))
+        .sort(),
+      profileCase.dependencies,
+      `${profileCase.profile} generated dependencies`,
+    );
+    requireEqual(
+      Object.keys(generatedManifest.devDependencies ?? {})
+        .filter((name) => name.startsWith("@invokta/"))
+        .sort(),
+      profileCase.devDependencies,
+      `${profileCase.profile} generated development dependencies`,
+    );
+    requireEqual(
+      Object.keys(generatedManifest.scripts ?? {}).sort(),
+      profileCase.scripts,
+      `${profileCase.profile} generated scripts`,
+    );
+    for (const packageName of [
+      ...profileCase.dependencies,
+      ...profileCase.devDependencies,
+    ]) {
+      const version =
+        generatedManifest.dependencies?.[packageName] ??
+        generatedManifest.devDependencies?.[packageName];
+      if (version !== releaseVersion) {
+        throw new Error(
+          `${profileCase.profile} generated ${packageName} version is not release-aligned`,
+        );
+      }
+    }
+    const generatedDocumentation = [
+      "README.md",
+      "AGENTS.md",
+      ".agents/skills/develop-invokta-project/SKILL.md",
+    ]
+      .map((path) => readFileSync(join(projectDirectory, path), "utf8"))
+      .join("\n");
+    for (const token of profileCase.omittedDocumentation) {
+      if (generatedDocumentation.includes(token)) {
+        throw new Error(
+          `${profileCase.profile} documentation advertises omitted ${token}`,
+        );
+      }
+    }
+
+    const generatedDependencyTarballs = [
+      ...profileCase.dependencies,
+      ...profileCase.devDependencies,
+    ].map((name) => tarballsByName.get(name));
+    if (generatedDependencyTarballs.some((tarball) => tarball === undefined)) {
       throw new Error(
-        `generated ${packageName} version is not release-aligned`,
+        `${profileCase.profile} generated consumer tarballs are incomplete`,
       );
     }
-  }
-  if (
-    generatedManifest.devDependencies?.["@invokta/installer"] !== releaseVersion
-  ) {
-    throw new Error(
-      "generated @invokta/installer version is not release-aligned",
+    run(
+      "npm",
+      [
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        ...generatedDependencyTarballs,
+      ],
+      { cwd: projectDirectory },
     );
-  }
-  if (
-    generatedManifest.scripts?.["mcp:install"] !==
-      "tsc -p tsconfig.json --pretty false && invokta-installer install --engine ." ||
-    generatedManifest.scripts?.["mcp:uninstall"] !==
-      "invokta-installer remove --engine ."
-  ) {
-    throw new Error("generated MCP lifecycle scripts are invalid");
-  }
-  if (existsSync(join(generatedProjectDirectory, "src", "mcp-http.ts"))) {
-    throw new Error("creator unexpectedly generated an HTTP entry point");
+    run("npm", ["run", "--silent", "check"], { cwd: projectDirectory });
+
+    const directResult = run(
+      "npm",
+      ["run", "--silent", "direct", "--", "Ada"],
+      { cwd: projectDirectory, capture: true },
+    );
+    if (directResult !== '{"message":"Welcome, Ada!"}\n') {
+      throw new Error(`${profileCase.profile} direct entry point smoke failed`);
+    }
+    if (profileCase.cli) {
+      const cliResult = run(
+        "npm",
+        [
+          "run",
+          "--silent",
+          "cli",
+          "--",
+          "run",
+          "onboarding.create-welcome-message",
+          "--input",
+          '{"name":"Ada"}',
+        ],
+        { cwd: projectDirectory, capture: true },
+      );
+      if (cliResult !== '{"message":"Welcome, Ada!"}\n') {
+        throw new Error(`${profileCase.profile} CLI entry point smoke failed`);
+      }
+    }
+    if (profileCase.mcpStdio) {
+      writeGeneratedMcpSmoke(projectDirectory, profileCase.target);
+      run("node", ["mcp-smoke.mjs"], { cwd: projectDirectory });
+    }
+    if (profileCase.mcpHttp) {
+      writeGeneratedHttpPlanSmoke(projectDirectory);
+      run("node", ["http-plan-smoke.mjs"], { cwd: projectDirectory });
+      const refused = spawnSync(process.execPath, ["dist/mcp-http.js"], {
+        cwd: projectDirectory,
+        encoding: "utf8",
+        env: { ...process.env, INVOKTA_HTTP_PORT: "0" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      if (
+        refused.status === 0 ||
+        refused.stdout !== "" ||
+        !refused.stderr.includes("Implement authentication before deploying")
+      ) {
+        throw new Error(
+          `${profileCase.profile} untouched HTTP auth stub did not fail closed`,
+        );
+      }
+      writeGeneratedHttpAuthFixture(projectDirectory);
+      run("npm", ["run", "--silent", "check"], { cwd: projectDirectory });
+      writeGeneratedHttpSmoke(projectDirectory, profileCase.target);
+      run("node", ["http-smoke.mjs"], { cwd: projectDirectory });
+    }
   }
 
-  const generatedDependencyTarballs = [
-    tarballsByName.get("@invokta/core"),
-    tarballsByName.get("@invokta/cli"),
-    tarballsByName.get("@invokta/mcp"),
-    tarballsByName.get("@invokta/installer"),
-  ];
-  if (generatedDependencyTarballs.some((tarball) => tarball === undefined)) {
-    throw new Error("generated consumer tarballs are incomplete");
+  const generatedProjectDirectory = generatedProfileDirectories.get("complete");
+  if (generatedProjectDirectory === undefined) {
+    throw new Error("complete generated profile is missing");
   }
-  run(
-    "npm",
-    [
-      "install",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      ...generatedDependencyTarballs,
-    ],
-    { cwd: generatedProjectDirectory },
-  );
-  run("npm", ["run", "--silent", "check"], {
-    cwd: generatedProjectDirectory,
-  });
-
-  const directResult = run("npm", ["run", "--silent", "direct", "--", "Ada"], {
-    cwd: generatedProjectDirectory,
-    capture: true,
-  });
-  if (directResult !== '{"message":"Welcome, Ada!"}\n') {
-    throw new Error("generated direct entry point smoke failed");
-  }
-  const cliResult = run(
-    "npm",
-    [
-      "run",
-      "--silent",
-      "cli",
-      "--",
-      "run",
-      "onboarding.create-welcome-message",
-      "--input",
-      '{"name":"Ada"}',
-    ],
-    { cwd: generatedProjectDirectory, capture: true },
-  );
-  if (cliResult !== '{"message":"Welcome, Ada!"}\n') {
-    throw new Error("generated CLI entry point smoke failed");
-  }
-  writeGeneratedMcpSmoke(generatedProjectDirectory);
-  run("node", ["mcp-smoke.mjs"], { cwd: generatedProjectDirectory });
 
   const installerFixtureHome = join(temporaryRoot, "installer-home");
   const installerFixtureBin = join(installerFixtureHome, "bin");

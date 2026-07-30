@@ -1,4 +1,4 @@
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
 
@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { HttpDeployManifest } from "../src/manifest.js";
 import { probeProtocolVersion } from "../src/probe-contract.js";
 import {
-  createScaffoldFiles,
+  createMcpHttpScaffoldFiles,
   environmentModuleTemplate,
   httpAuthModuleTemplate,
   renderHttpRootModule,
@@ -68,7 +68,7 @@ export const httpAuth: McpHttpAuthOptions = {
 
 function sources(): Record<string, string> {
   const files: Record<string, string> = { "src/engine.ts": engineModule };
-  for (const file of createScaffoldFiles(manifest)) {
+  for (const file of createMcpHttpScaffoldFiles(manifest)) {
     if (file.path.startsWith("src/")) files[file.path] = file.contents;
   }
   return files;
@@ -549,6 +549,33 @@ describe("the scaffold templates", () => {
       expect(contents.endsWith("\n")).toBe(true);
       expect(contents.endsWith("\n\n")).toBe(false);
     }
+  });
+
+  it("exposes an immutable, side-effect-free HTTP scaffold plan", () => {
+    const files = createMcpHttpScaffoldFiles(starterDeployManifest);
+
+    expect(files.map((file) => file.path)).toEqual([
+      ".env.example",
+      "invokta.deploy.json",
+      "src/env.ts",
+      "src/http-auth.ts",
+      "src/mcp-http.ts",
+    ]);
+    expect(Object.isFrozen(files)).toBe(true);
+    expect(files.every((file) => Object.isFrozen(file))).toBe(true);
+  });
+
+  it("publishes the planner through the deploy scaffold subpath", () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as {
+      readonly exports: Readonly<Record<string, unknown>>;
+    };
+
+    expect(manifest.exports["./scaffold"]).toEqual({
+      types: "./dist/scaffold-public.d.ts",
+      import: "./dist/scaffold-public.js",
+    });
   });
 
   it("never mention the development authentication opt-out", () => {

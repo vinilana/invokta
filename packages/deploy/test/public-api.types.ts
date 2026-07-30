@@ -11,6 +11,11 @@ import {
   parseDeployManifest,
   runDeployCli,
 } from "../src/index.js";
+import {
+  createMcpHttpScaffoldFiles,
+  type McpHttpScaffoldFile,
+  starterDeployManifest,
+} from "../src/scaffold-public.js";
 
 declare const context: DeployContext;
 
@@ -60,3 +65,7 @@ parseDeployManifest("{}").ok = false;
 
 // @ts-expect-error Only the specified error codes exist.
 new DeployError("UNKNOWN_CODE");
+
+expectTypeOf(createMcpHttpScaffoldFiles(starterDeployManifest)).toEqualTypeOf<
+  readonly McpHttpScaffoldFile[]
+>();

@@ -57,8 +57,11 @@ retrieval, or fallback.
 vector store, and tool MAY change without changing the public contract in a way
 that breaks compatibility.
 
-**AE-INV-04 — Reuse.** The same capability MUST be invocable directly, through
-the CLI, and through MCP without duplicating the handler.
+**AE-INV-04 — Reuse.** The same capability MUST be invocable directly and
+through every adapter an engine publishes without duplicating the handler. The
+`complete` reference and release conformance profile MUST demonstrate direct,
+CLI, MCP stdio, and MCP HTTP reuse together. A focused generated starter MAY
+omit adapters, but MUST NOT claim that an omitted channel is supported.
 
 ## Conceptual contracts
 

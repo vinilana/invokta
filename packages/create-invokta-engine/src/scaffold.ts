@@ -12,7 +12,11 @@ import { basename, dirname, isAbsolute, join, resolve, win32 } from "node:path";
 
 import { CreatorError } from "./errors.js";
 import type { PackageManager } from "./package-manager.js";
-import { createStarterFiles, type StarterEntry } from "./starter.js";
+import {
+  createStarterFiles,
+  type EngineStarterProfile,
+  type StarterEntry,
+} from "./starter.js";
 
 export const creatorTargetLimits = Object.freeze({
   maxPathScalars: 1_024,
@@ -67,6 +71,7 @@ export interface CreateStarterProjectOptions {
   readonly target: string;
   readonly invoktaVersion: string;
   readonly packageManager: PackageManager;
+  readonly profile: EngineStarterProfile;
   readonly fileSystem?: ScaffoldFileSystem;
 }
 
@@ -76,11 +81,31 @@ export interface StarterProject {
   readonly files: readonly string[];
 }
 
+export interface StarterProjectPlan {
+  readonly directory: string;
+  readonly projectName: string;
+  readonly normalizedTarget: string;
+  readonly profile: EngineStarterProfile;
+  readonly entries: readonly StarterEntry[];
+}
+
 interface ResolvedTarget {
   readonly directory: string;
   readonly projectName: string;
+  readonly normalizedTarget: string;
   readonly segments: readonly string[];
 }
+
+interface StarterProjectPlanState {
+  readonly cwd: string;
+  readonly target: ResolvedTarget;
+  readonly fileSystem: ScaffoldFileSystem;
+}
+
+const starterProjectPlanStates = new WeakMap<
+  StarterProjectPlan,
+  StarterProjectPlanState
+>();
 
 function countScalars(value: string): number {
   let count = 0;
@@ -131,7 +156,29 @@ function resolveTarget(cwd: string, target: string): ResolvedTarget {
   ) {
     return invalidTarget();
   }
-  return { directory, projectName, segments };
+  return Object.freeze({
+    directory,
+    projectName,
+    normalizedTarget: segments.length === 0 ? "." : segments.join("/"),
+    segments: Object.freeze(segments),
+  });
+}
+
+/** Validates target syntax and returns only normalized, non-secret metadata. */
+export function validateStarterTargetSyntax(
+  cwd: string,
+  target: string,
+): Readonly<{
+  directory: string;
+  projectName: string;
+  normalizedTarget: string;
+}> {
+  const resolved = resolveTarget(cwd, target);
+  return Object.freeze({
+    directory: resolved.directory,
+    projectName: resolved.projectName,
+    normalizedTarget: resolved.normalizedTarget,
+  });
 }
 
 async function readStatus(
@@ -263,10 +310,10 @@ async function rollback(
   return !failed;
 }
 
-/** Creates the fixed starter without installing dependencies or replacing files. */
-export async function createStarterProject(
+/** Builds a complete immutable scaffold plan without mutating the filesystem. */
+export async function planStarterProject(
   options: CreateStarterProjectOptions,
-): Promise<StarterProject> {
+): Promise<StarterProjectPlan> {
   const fileSystem = options.fileSystem ?? defaultScaffoldFileSystem;
   const target = resolveTarget(options.cwd, options.target);
   await inspectTarget(options.cwd, target, fileSystem);
@@ -274,20 +321,46 @@ export async function createStarterProject(
     projectName: target.projectName,
     invoktaVersion: options.invoktaVersion,
     packageManager: options.packageManager,
+    profile: options.profile,
   });
+  const plan: StarterProjectPlan = Object.freeze({
+    directory: target.directory,
+    projectName: target.projectName,
+    normalizedTarget: target.normalizedTarget,
+    profile: options.profile,
+    entries,
+  });
+  starterProjectPlanStates.set(plan, {
+    cwd: options.cwd,
+    target,
+    fileSystem,
+  });
+  return plan;
+}
+
+/** Commits a planned starter after revalidating every target boundary. */
+export async function writeStarterProject(
+  plan: StarterProjectPlan,
+): Promise<StarterProject> {
+  const state = starterProjectPlanStates.get(plan);
+  if (state === undefined) {
+    throw new TypeError("The starter project plan is invalid.");
+  }
+  const { cwd, fileSystem, target } = state;
+  await inspectTarget(cwd, target, fileSystem);
   const createdEntries: string[] = [];
   const createdDirectories: string[] = [];
   let activeEntry: StarterEntry | undefined;
 
   try {
     await prepareDirectories(
-      options.cwd,
+      cwd,
       target,
-      entries,
+      plan.entries,
       fileSystem,
       createdDirectories,
     );
-    for (const entry of entries) {
+    for (const entry of plan.entries) {
       activeEntry = entry;
       const path = join(target.directory, ...entry.path.split("/"));
       if (entry.kind === "file") {
@@ -323,6 +396,14 @@ export async function createStarterProject(
   return Object.freeze({
     directory: target.directory,
     projectName: target.projectName,
-    files: Object.freeze(entries.map((entry) => entry.path)),
+    files: Object.freeze(plan.entries.map((entry) => entry.path)),
   });
+}
+
+/** Creates one starter profile without installing dependencies or replacing files. */
+export async function createStarterProject(
+  options: CreateStarterProjectOptions,
+): Promise<StarterProject> {
+  const plan = await planStarterProject(options);
+  return writeStarterProject(plan);
 }

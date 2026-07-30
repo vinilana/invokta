@@ -1,14 +1,18 @@
 # create-invokta-engine
 
-Create a standalone TypeScript Action Engine with Invokta. The fixed starter
-defines one public capability and exposes it through direct invocation, the
-Invokta CLI adapter, and MCP stdio without duplicating the handler.
+Create a standalone TypeScript Action Engine with one deterministic capability
+and a selected execution profile. Every generated entry point imports the same
+engine and reaches capability execution through `engine.invoke` or an official
+Invokta adapter.
 
 ## Commands
 
 ```text
-create-invokta-engine <project-directory>
-  [--package-manager npm|pnpm|yarn] [--no-install]
+create-invokta-engine [project-directory]
+  [--profile complete|mcp-stdio|mcp-http|cli]
+  [--package-manager npm|pnpm|yarn]
+  [--no-install]
+  [--yes]
 create-invokta-engine --help
 create-invokta-engine --version
 ```
@@ -19,15 +23,39 @@ The npm initializer shorthand resolves to this package:
 npm create invokta-engine@latest my-engine
 ```
 
-Creation is non-interactive. The target must be a relative absent or empty real
-directory. Existing files and symbolic-link path components are refused and
-never overwritten.
+When standard input and standard error are TTYs, the command asks for a missing
+project directory and profile, displays the normalized plan, and requires a
+final confirmation before writing. An explicit target or profile skips only its
+question. `--yes` requires an explicit target and skips every prompt.
+
+Non-terminal execution never prompts or reads standard input. It requires an
+explicit target and uses `complete` when `--profile` is omitted, preserving
+automation such as:
+
+```sh
+create-invokta-engine my-engine --no-install
+```
+
+Terminal automation should make its choices explicit:
+
+```sh
+create-invokta-engine my-engine --profile complete --no-install --yes
+```
 
 The invoking package manager is inferred from `npm_config_user_agent`, with npm
-as the fallback. Use `--package-manager` to choose explicitly or `--no-install`
-to generate files without starting a package manager or performing network I/O.
+as the fallback. Use `--package-manager` to choose explicitly. `--no-install`
+generates the selected files without starting a process or network operation.
 
-## Generated project
+## Profiles
+
+| Profile | Execution channels | Entries |
+| --- | --- | ---: |
+| `complete` | Direct, CLI, MCP local over stdio, MCP HTTP | 21 |
+| `mcp-stdio` | Direct, MCP local over stdio | 15 |
+| `mcp-http` | Direct, MCP HTTP | 18 |
+| `cli` | Direct, CLI | 14 |
+
+Every profile contains these common entries:
 
 ```text
 .agents/skills/develop-invokta-project/SKILL.md
@@ -36,58 +64,62 @@ to generate files without starting a package manager or performing network I/O.
 AGENTS.md
 CLAUDE.md -> AGENTS.md
 README.md
-invokta.mcp.json
 package.json
 src/capabilities/create-welcome-message.ts
-src/cli.ts
 src/direct.ts
 src/engine.ts
-src/mcp-stdio.ts
 test/engine.test.ts
 tsconfig.json
 tsconfig.test.json
 ```
 
-The generated `develop-invokta-project` skill teaches an agent to evolve the
-Action Engine through explicit capability contracts, engine-owned dependencies,
-RED/GREEN/REFACTOR, and the single `engine.invoke` path. Its metadata includes a
-ready-to-use `$develop-invokta-project` prompt.
+CLI adds `src/cli.ts` and `@invokta/cli`. MCP local adds
+`invokta.mcp.json`, `src/mcp-stdio.ts`, `@invokta/mcp`,
+`@invokta/installer`, and its stdio/install/uninstall scripts. MCP HTTP adds
+`.env.example`, `invokta.deploy.json`, `src/env.ts`, `src/http-auth.ts`,
+`src/mcp-http.ts`, `@invokta/mcp`, `@invokta/deploy`, and its HTTP/package/probe
+scripts. Dependencies are set unions and appear once.
 
-`AGENTS.md` documents the starter's architecture and test-first delivery
-constraints. `CLAUDE.md` is a real relative symbolic link to that file, keeping
-agent instructions in one source of truth. If the filesystem cannot create the
-link, creation fails and rolls back instead of copying the instructions.
+HTTP scaffold bytes come from the pure public `@invokta/deploy/scaffold`
+planner. The creator merges the complete plan before writing and never runs the
+deploy CLI. The generated authentication hook fails closed until implemented,
+and HTTP profiles ignore `.env` and `.env.*` while retaining `.env.example`.
 
-Generated Invokta dependencies use the exact creator version. The entries
-become project-owned immediately and are never updated in place by the creator.
+Generated `README.md`, `AGENTS.md`, and `develop-invokta-project` skill guidance
+describe only the selected channels. `CLAUDE.md` is a real relative symbolic
+link to `AGENTS.md`; unsupported link creation fails and rolls back rather than
+copying the instructions. Generated Invokta dependencies exactly match the
+creator version. All generated entries become project-owned and are never
+updated in place.
 
-The starter also includes `@invokta/installer`, a build-first installation
-command, and its build-free inverse:
+## Prompt and target safety
 
-```sh
-npm run mcp:install
-npm run mcp:uninstall
-```
+Each answer is strict UTF-8 and limited to 4,096 encoded bytes including the
+line terminator. The directory and profile questions allow three invalid
+answers. Confirmation accepts case-insensitive `y`, `yes`, `n`, or `no`; an
+empty confirmation means no. A negative confirmation writes
+`Creation cancelled. No files were created.` and performs no filesystem,
+process, or network operation.
 
-The install command validates `invokta.mcp.json`, detects eligible MCP clients,
-preselects all of them, and requires one confirmation before changing user
-configuration. The uninstall command uses the manifest ID to remove that engine
-from every installer-managed client after one confirmation. It does not build,
-import, or execute the engine and remains usable when its compiled entry point
-is absent.
+The target must be relative, absent or an empty real directory. Absolute paths,
+parent segments, symbolic-link components, non-directories, and non-empty
+targets are refused. The creator preflights before confirmation and revalidates
+afterward. Files and the instruction symlink use exclusive creation; a write
+failure rolls back only entries created by that invocation.
 
-HTTP scaffolding remains a separate, explicit step owned by `@invokta/deploy`.
-The starter contains no HTTP server, authentication implementation, model
-provider, telemetry, template selection, or Git initialization.
+Unless `--no-install` is present, exactly one shell-free foreground package
+manager install starts after every selected scaffold entry exists. An install
+failure preserves the complete generated profile for retry.
 
-## Exit codes
+## Exit codes and diagnostics
 
-| Code | Meaning |
-| --- | --- |
-| `0` | Help, version, or project creation succeeded |
-| `1` | Target safety, filesystem creation, or dependency installation failed |
-| `2` | Arguments, project path, or project name were invalid |
+| Exit | Meaning |
+| ---: | --- |
+| `0` | Help, version, creation, or normal cancellation succeeded |
+| `1` | Prompt interruption, target safety, filesystem, or installation failed |
+| `2` | Usage, required interaction, prompt input, path, or name was invalid |
 
-Creator diagnostics use `TARGET_INVALID`, `TARGET_UNSAFE`, `TARGET_NOT_EMPTY`,
-`SCAFFOLD_CONFLICT`, `WRITE_FAILED`, or `INSTALL_FAILED`. Rejected arguments,
-environment values, child errors, stacks, and causes are not included.
+Creator diagnostics are `INTERACTIVE_REQUIRED`, `PROMPT_INVALID`,
+`PROMPT_ABORTED`, `TARGET_INVALID`, `TARGET_UNSAFE`, `TARGET_NOT_EMPTY`,
+`SCAFFOLD_CONFLICT`, `WRITE_FAILED`, and `INSTALL_FAILED`. They never include a
+rejected answer or argument, environment value, child error, stack, or cause.
