@@ -207,6 +207,8 @@ process execution, or network operation.
 
 Prompt validation diagnostics never echo a rejected answer. The accepted,
 normalized relative target may appear in the confirmation and success summary.
+The confirmation escapes Unicode control, format, line-separator, and
+paragraph-separator characters instead of emitting terminal-active text.
 
 ## Profile model
 

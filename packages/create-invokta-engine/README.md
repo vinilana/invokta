@@ -106,6 +106,9 @@ parent segments, symbolic-link components, non-directories, and non-empty
 targets are refused. The creator preflights before confirmation and revalidates
 afterward. Files and the instruction symlink use exclusive creation; a write
 failure rolls back only entries created by that invocation.
+Unicode control, format, line-separator, and paragraph-separator characters in
+an accepted parent path are escaped in the confirmation instead of being
+emitted as terminal-active text.
 
 Unless `--no-install` is present, exactly one shell-free foreground package
 manager install starts after every selected scaffold entry exists. An install

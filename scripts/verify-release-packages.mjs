@@ -1095,7 +1095,8 @@ try {
       if (
         refused.status === 0 ||
         refused.stdout !== "" ||
-        !refused.stderr.includes("Implement authentication before deploying")
+        refused.stderr !==
+          "Implement authentication before deploying: edit src/http-auth.ts.\n"
       ) {
         throw new Error(
           `${profileCase.profile} untouched HTTP auth stub did not fail closed`,

@@ -38,6 +38,7 @@ const profilePrompt =
   "  4. CLI\n" +
   "Choose a profile (1): ";
 const promptDecoder = new TextDecoder("utf-8", { fatal: true });
+const unsafeTerminalCharacterPattern = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 
 const profileAnswers = Object.freeze({
   "1": "complete",
@@ -223,11 +224,14 @@ function renderSuccess(
 }
 
 function decodePromptAnswer(answer: Uint8Array | undefined): string {
+  if (
+    answer !== undefined &&
+    answer.byteLength > promptInputLimits.maxAnswerBytes
+  ) {
+    throw new CreatorError("PROMPT_INVALID");
+  }
   if (answer === undefined || answer.at(-1) !== 0x0a) {
     throw new CreatorError("PROMPT_ABORTED");
-  }
-  if (answer.byteLength > promptInputLimits.maxAnswerBytes) {
-    throw new CreatorError("PROMPT_INVALID");
   }
   let end = answer.byteLength - 1;
   if (end > 0 && answer[end - 1] === 0x0d) end -= 1;
@@ -292,6 +296,22 @@ async function promptForProfile(
   throw new CreatorError("PROMPT_INVALID");
 }
 
+function escapeTerminalCharacter(character: string): string {
+  const codePoint = character.codePointAt(0);
+  if (codePoint === undefined) return "";
+  if (codePoint <= 0xffff) {
+    return `\\u${codePoint.toString(16).padStart(4, "0")}`;
+  }
+  return `\\u{${codePoint.toString(16)}}`;
+}
+
+function quoteTerminalValue(value: string): string {
+  return JSON.stringify(value).replace(
+    unsafeTerminalCharacterPattern,
+    escapeTerminalCharacter,
+  );
+}
+
 function renderConfirmation(
   profile: EngineStarterProfile,
   normalizedTarget: string,
@@ -301,7 +321,7 @@ function renderConfirmation(
   const installation = noInstall
     ? "without installing dependencies"
     : `and install dependencies with ${packageManager}`;
-  return `Create the ${profileLabels[profile]} scaffold in ${JSON.stringify(normalizedTarget)} ${installation}? (y/N) `;
+  return `Create the ${profileLabels[profile]} scaffold in ${quoteTerminalValue(normalizedTarget)} ${installation}? (y/N) `;
 }
 
 async function promptForConfirmation(

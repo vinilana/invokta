@@ -51,6 +51,9 @@ secret-free example file:
 | `src/env.ts`            | The environment-file loader and required-name check.                |
 | `.env.example`          | One empty line per declared manifest name; safe to commit.          |
 
+Until the authentication hook is implemented, the HTTP entry point exits `1`
+with one sanitized instruction on standard error and no stack trace.
+
 `init` never overwrites. An existing target is reported as `skipped` and the
 command still exits `0`, so scaffolded source is yours from the first write and
 the toolkit performs no drift tracking over `src/`. When the project already has

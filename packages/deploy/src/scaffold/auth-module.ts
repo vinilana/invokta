@@ -16,6 +16,8 @@ export const httpAuthModuleTemplate = `/**
  */
 import type { McpHttpAuthOptions } from "@invokta/mcp";
 
+import { EngineStartupError } from "./env.js";
+
 export const httpAuth = {
   mode: "required",
   authenticate(request) {
@@ -31,7 +33,7 @@ export const httpAuth = {
 
 // Delete this line once authenticate() verifies a real credential. Until then
 // the module fails at load, so the engine cannot serve an unverified request.
-throw new Error(
+throw new EngineStartupError(
   "Implement authentication before deploying: edit src/http-auth.ts.",
 );
 `;

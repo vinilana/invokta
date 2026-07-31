@@ -28,14 +28,15 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 1,845 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 1,847 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  86.16% statements, 80.29% branches, 88.59% functions, and 87.89% lines.
+  86.15% statements, 80.28% branches, 88.60% functions, and 87.89% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
 - `yarn validate` in `apps/docs` passes route and link tests, Astro diagnostics,
   and the production site build.
+- `yarn audit` reports zero vulnerabilities across 253 audited packages.
 
 ## Boundaries exercised
 
@@ -57,9 +58,10 @@ consumer can use the protocol surface without coupling to engine code.
   type-checks, tests, builds, and invokes the shared capability directly and
   through each selected adapter. Profiles containing HTTP prove byte identity
   with the immutable `@invokta/deploy/scaffold` plan, refusal by the untouched
-  authentication stub, and an authenticated official MCP client exchange after
-  replacing only that stub. The complete profile also verifies its exact
-  build-first `mcp:install` and build-free `mcp:uninstall` paths. Tests verify
+  authentication stub through one sanitized, stack-free diagnostic, and an
+  authenticated official MCP client exchange after replacing only that stub.
+  The complete profile also verifies its exact build-first `mcp:install` and
+  build-free `mcp:uninstall` paths. Tests verify
   that generated engine and capability-library
   projects contain a regular `AGENTS.md`, a symbolic-link `CLAUDE.md`, and the
   exact relative target `AGENTS.md`. All three generated project types contain

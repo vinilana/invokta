@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +18,7 @@ import {
   type InstallProject,
   runCreateEngineCli,
 } from "../src/cli.js";
+import { createBoundedPromptInput } from "../src/prompt.js";
 import { createStarterFiles } from "../src/starter.js";
 
 const temporaryDirectories: string[] = [];
@@ -401,6 +403,53 @@ describe("runCreateEngineCli", () => {
 
     expect(exitCode).toBe(0);
     expect(terminal.readLine).toHaveBeenCalledTimes(3);
+  });
+
+  it("classifies a line that crosses the real reader limit as invalid", async () => {
+    const cwd = createWorkingDirectory();
+    const io = createHarness();
+    const input = createBoundedPromptInput(
+      Readable.from([encoder.encode(`${"x".repeat(4_097)}\n`)]),
+    );
+
+    const exitCode = await runCreateEngineCli({
+      argv: ["my-engine", "--profile", "cli", "--no-install"],
+      cwd,
+      io,
+      terminal: {
+        stdinIsTty: true,
+        stderrIsTty: true,
+        readLine: input.readLine,
+      },
+      loadPackageVersion: async () => "1.2.3",
+    });
+
+    expect(exitCode).toBe(2);
+    expect(io.stdout).toEqual([]);
+    expect(io.stderr.at(-1)).toBe(
+      "PROMPT_INVALID: Interactive input is invalid.\n",
+    );
+    expect(existsSync(join(cwd, "my-engine"))).toBe(false);
+  });
+
+  it("escapes terminal control and format characters in confirmation paths", async () => {
+    const cwd = createWorkingDirectory();
+    const io = createHarness();
+    const target = "\u009b31m/\u202e/my-engine";
+
+    const exitCode = await runCreateEngineCli({
+      argv: [target, "--profile", "cli", "--no-install"],
+      cwd,
+      io,
+      terminal: createTerminal([promptLine("no")]),
+      loadPackageVersion: async () => "1.2.3",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(io.stderr.join("")).toContain("\\u009b31m/\\u202e/my-engine");
+    expect(io.stderr.join("")).not.toContain("\u009b");
+    expect(io.stderr.join("")).not.toContain("\u202e");
+    expect(readdirSync(cwd)).toEqual([]);
   });
 
   it("normalizes a broken prompt writer as an aborted prompt", async () => {

@@ -337,10 +337,11 @@ it is interactive only when standard input and standard error are both TTYs.
 It prompts for missing location and profile decisions, builds and preflights the
 complete immutable plan, and requires one final confirmation before mutation.
 The confirmation names only the normalized relative target, profile,
-package-manager choice, and installation behavior. Non-terminal execution never
-prompts: an explicit target uses the explicit profile or `complete`, while a
-missing target is `INTERACTIVE_REQUIRED`. `--yes` requires a target and skips
-all prompts.
+package-manager choice, and installation behavior. Terminal-active Unicode
+control, format, line-separator, and paragraph-separator characters are escaped
+in that target display. Non-terminal execution never prompts: an explicit
+target uses the explicit profile or `complete`, while a missing target is
+`INTERACTIVE_REQUIRED`. `--yes` requires a target and skips all prompts.
 
 **AE-CREATE-PROFILE-04..07 — Profile and execution boundaries.** Every profile
 contains the engine, capability, direct entry point, test, instructions, and

@@ -44,7 +44,9 @@ standard error are both TTYs. It asks, in order, for any missing project
 directory and profile, preflights and plans the full scaffold, then requests one
 final confirmation naming the normalized relative target, profile, package
 manager, and installation choice. Nothing is written and no child starts before
-an affirmative answer.
+an affirmative answer. Unicode control, format, line-separator, and
+paragraph-separator characters in an accepted parent path are escaped in the
+confirmation instead of being emitted as terminal-active text.
 
 The profile choices are:
 

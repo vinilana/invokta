@@ -85,10 +85,12 @@ existing project.
 
 The final confirmation displays only the normalized relative target, profile
 label, selected package manager, and installation choice. Planning performs no
-mutation. After confirmation, the creator revalidates the target through the
-existing no-follow and exclusive-create boundary before committing the
-scaffold. At most one shell-free package-manager install starts, and only after
-all selected entries exist.
+mutation. Unicode control, format, line-separator, and paragraph-separator
+characters are escaped in the target display instead of being emitted as
+terminal-active text. After confirmation, the creator revalidates the target
+through the existing no-follow and exclusive-create boundary before committing
+the scaffold. At most one shell-free package-manager install starts, and only
+after all selected entries exist.
 
 The new sanitized diagnostics are:
 

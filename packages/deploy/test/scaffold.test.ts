@@ -24,8 +24,8 @@ import {
   runCompiledModule,
   runCompiledModuleWithReplacedEnv,
   type ScaffoldProject,
-  startCompiledModule,
   type StartedModule,
+  startCompiledModule,
 } from "./support/init-scaffold-project.js";
 
 const requiredName = "SCAFFOLD_TEST_TOKEN";
@@ -196,14 +196,15 @@ describe("the scaffolded sources", () => {
   });
 
   it("refuse to start until the authentication hook is implemented", () => {
-    const result = runCompiledModule(scaffolded, "dist/mcp-http.js");
+    const result = runCompiledModule(scaffolded, "dist/mcp-http.js", {
+      [requiredName]: token,
+    });
 
     expect(result.status).not.toBe(0);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain(
-      "Implement authentication before deploying",
+    expect(result.stderr).toBe(
+      "Implement authentication before deploying: edit src/http-auth.ts.\n",
     );
-    expect(result.stderr).not.toContain("dangerously-disabled-for-development");
   });
 });
 
@@ -635,6 +636,6 @@ describe("the scaffold templates", () => {
     expect(httpAuthModuleTemplate).toContain(
       "Implement authentication before deploying",
     );
-    expect(httpAuthModuleTemplate).toContain("throw new Error(");
+    expect(httpAuthModuleTemplate).toContain("throw new EngineStartupError(");
   });
 });

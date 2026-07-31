@@ -36,13 +36,15 @@ The examples use Zod 4 because it implements both schema contracts.
   </TabItem>
 </Tabs>
 
-The creator installs dependencies and generates a deterministic public capability
-with direct, CLI, and MCP stdio entry points. Use `--no-install` for an offline
-scaffold. See the [`create-invokta-engine` reference](/reference/create-invokta-engine/)
-for target, package-manager, and failure behavior.
+The creator asks for one of four profiles. `complete` generates direct, CLI, MCP
+stdio, and MCP HTTP entry points; `cli`, `mcp-stdio`, and `mcp-http` generate
+only direct invocation plus the selected adapter. Use `--no-install` for an
+offline scaffold. See the
+[`create-invokta-engine` reference](/reference/create-invokta-engine/) for
+automation flags, target safety, package-manager behavior, and profile contents.
 
-After validating the generated project, install its MCP server in detected
-clients with one command:
+After validating a `complete` or `mcp-stdio` project, install its local MCP
+server in detected clients with one command:
 
 ```sh
 cd my-engine
