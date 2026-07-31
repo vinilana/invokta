@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-31
+
 ### Added
 
 - Added `create-invokta-capability` and
@@ -109,6 +111,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/vinilana/invokta/releases/tag/v0.3.0
 [0.2.0]: https://github.com/vinilana/invokta/releases/tag/v0.2.0
 [0.1.0]: https://github.com/vinilana/invokta/releases/tag/v0.1.0
