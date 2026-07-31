@@ -1,12 +1,12 @@
 ---
 title: 'create-invokta-engine'
-description: Complete command, generated-project, filesystem, package-manager, and diagnostic contract for the Invokta engine creator.
+description: Interactive profiles, automation, generated-project, filesystem, package-manager, and diagnostic contracts for the Invokta engine creator.
 ---
 
 `create-invokta-engine` creates one standalone TypeScript Action Engine with a
-public capability shared by direct invocation, the Invokta CLI adapter, and MCP
-stdio. It is a binary-only development package, not a runtime adapter or template
-framework.
+public capability shared by direct invocation and the adapters selected by a
+closed scaffold profile. It is a binary-only development package, not a runtime
+adapter or template framework.
 
 ## Install
 
@@ -23,17 +23,115 @@ executable.
 ## Commands
 
 ```text
-create-invokta-engine <project-directory>
-  [--package-manager npm|pnpm|yarn] [--no-install]
+create-invokta-engine [project-directory]
+  [--profile complete|mcp-stdio|mcp-http|cli]
+  [--package-manager npm|pnpm|yarn]
+  [--no-install]
+  [--yes]
 create-invokta-engine --help
 create-invokta-engine --version
 ```
 
-Creation is non-interactive. Options may appear before or after the one project
-directory. `--package-manager` accepts a separate `npm`, `pnpm`, or `yarn` value;
-duplicates, unknown options, `--option=value`, or another positional are invalid.
+Options may appear before or after the one project directory; each option value
+must immediately follow its option. Duplicates, missing values, unknown options
+or profiles, `--option=value`, extra positionals, or combining help or version
+with another argument are invalid. `--yes` requires an explicit target.
 
-## Target contract
+## Interaction modes
+
+Without `--yes`, the creator is interactive only when standard input and
+standard error are both TTYs. It asks, in order, for any missing project
+directory and profile, preflights and plans the full scaffold, then requests one
+final confirmation naming the normalized relative target, profile, package
+manager, and installation choice. Nothing is written and no child starts before
+an affirmative answer. Unicode control, format, line-separator, and
+paragraph-separator characters in an accepted parent path are escaped in the
+confirmation instead of being emitted as terminal-active text.
+
+The profile choices are:
+
+```text
+1. Complete (CLI + MCP local + MCP HTTP)
+2. MCP local (stdio)
+3. MCP HTTP
+4. CLI
+```
+
+Directory defaults to `my-invokta-engine`, profile defaults to `complete`, and
+confirmation defaults to no. Confirmation accepts case-insensitive `y`, `yes`,
+`n`, or `no` after trimming. A negative answer is successful cancellation and
+writes exactly `Creation cancelled. No files were created.`
+
+Each answer is strict UTF-8 and at most 4,096 encoded bytes including its line
+terminator. A byte or decoding violation, or three invalid answers to one
+question, is `PROMPT_INVALID`. EOF, interruption, or prompt I/O failure is
+`PROMPT_ABORTED`. Diagnostics never echo a rejected answer.
+
+When either stream is not a TTY, the creator never prompts or reads standard
+input. An explicit target proceeds with the explicit profile or `complete`; a
+missing target is `INTERACTIVE_REQUIRED` before template loading, filesystem
+mutation, or process execution. This legacy automation remains valid:
+
+```sh
+create-invokta-engine my-engine --no-install
+```
+
+Pseudo-TTY automation must bypass prompts explicitly:
+
+```sh
+create-invokta-engine my-engine --profile complete --no-install --yes
+```
+
+## Profiles
+
+| Profile | Generated channels | Entries |
+| --- | --- | ---: |
+| `complete` | Direct, CLI, MCP stdio, MCP HTTP | 21 |
+| `mcp-stdio` | Direct, MCP stdio | 15 |
+| `mcp-http` | Direct, MCP HTTP | 18 |
+| `cli` | Direct, CLI | 14 |
+
+All profiles contain:
+
+```text
+.agents/skills/develop-invokta-project/SKILL.md
+.agents/skills/develop-invokta-project/agents/openai.yaml
+.gitignore
+AGENTS.md
+CLAUDE.md -> AGENTS.md
+README.md
+package.json
+src/capabilities/create-welcome-message.ts
+src/direct.ts
+src/engine.ts
+test/engine.test.ts
+tsconfig.json
+tsconfig.test.json
+```
+
+| Feature | Added entries | Added packages and scripts |
+| --- | --- | --- |
+| CLI | `src/cli.ts` | `@invokta/cli`; `cli` |
+| MCP local | `invokta.mcp.json`, `src/mcp-stdio.ts` | `@invokta/mcp`, dev `@invokta/installer`; `mcp:stdio`, `mcp:install`, `mcp:uninstall` |
+| MCP HTTP | `.env.example`, `invokta.deploy.json`, `src/env.ts`, `src/http-auth.ts`, `src/mcp-http.ts` | `@invokta/mcp`, dev `@invokta/deploy`; `mcp:http`, `deploy:package`, `deploy:probe` |
+
+Dependencies and scripts are exact set unions. Generated Invokta versions match
+the creator version. Documentation and generated agent guidance name only the
+selected channels. Every entry point imports the same engine; direct calls
+`engine.invoke`, while CLI and MCP use official adapters that converge on it.
+
+MCP HTTP entries are byte-identical to the immutable public planner from
+`@invokta/deploy/scaffold`. The creator merges the complete plan before writing,
+never invokes `invokta-deploy init`, and contains no copied HTTP template.
+Generated authentication fails closed until implemented. HTTP profiles ignore
+`.env` and `.env.*` while retaining `.env.example`.
+
+`AGENTS.md` records profile-specific architecture and test-first constraints.
+`CLAUDE.md` is an actual relative symbolic link to it. The generated
+`develop-invokta-project` skill adds project-specific RED/GREEN/REFACTOR and
+single-`engine.invoke` guidance without runtime discovery or behavior.
+
+## Target and transaction contract
 
 The project directory is relative to the current working directory. Absolute
 paths and `..` segments are rejected. `.` is accepted when the current directory
@@ -45,76 +143,17 @@ has a valid lowercase kebab-case name and is empty.
 | Non-dot path segments | At most 32 |
 | Project and engine name | Lowercase kebab-case, at most 214 characters |
 
-The target may be absent or an empty real directory. A symbolic-link target,
-symbolic-link path component, non-directory target, or any existing entry fails
-before scaffold writes. Every scaffold entry is created exclusively; an entry
-that appears during creation is preserved and reported as
-`SCAFFOLD_CONFLICT`.
+The target may be absent or an empty real directory. A symbolic-link target or
+component, non-directory, or existing entry fails safely. Planning performs no
+mutation. After interactive confirmation, the creator revalidates the target,
+then creates every entry exclusively in lexicographic order. A racing entry is
+preserved as `SCAFFOLD_CONFLICT`. A pre-install failure rolls back only paths
+created by that invocation; rollback failure is `WRITE_FAILED`. Generated files
+are deterministic UTF-8 with LF endings and one trailing newline.
 
-A pre-install write failure removes only paths created by that invocation. The
-creator never overwrites a file. Concurrent creation in one target is unsupported.
-
-## Generated project
-
-Text files are deterministic UTF-8 with LF endings and one trailing newline.
-The fixed entries are:
-
-```text
-.agents/skills/develop-invokta-project/SKILL.md
-.agents/skills/develop-invokta-project/agents/openai.yaml
-.gitignore
-AGENTS.md
-CLAUDE.md -> AGENTS.md
-README.md
-invokta.mcp.json
-package.json
-src/capabilities/create-welcome-message.ts
-src/cli.ts
-src/direct.ts
-src/engine.ts
-src/mcp-stdio.ts
-test/engine.test.ts
-tsconfig.json
-tsconfig.test.json
-```
-
-The generated `develop-invokta-project` skill teaches an agent to evolve the
-Action Engine through explicit capability contracts, engine-owned dependency
-injection, RED/GREEN/REFACTOR, and the single `engine.invoke` path. The skill is
-static project guidance; it adds no runtime discovery, registry, plugin, or
-execution path. Its `agents/openai.yaml` metadata includes a ready-to-use
-`$develop-invokta-project` prompt.
-
-`AGENTS.md` records the starter's architecture and test-first delivery
-constraints. `CLAUDE.md` is an actual symbolic link whose stored target is the
-relative path `AGENTS.md`, so both agent discovery names use one instruction
-source and the project remains relocatable. If link creation is unsupported or
-fails, the creator reports `WRITE_FAILED` and rolls back its entries; it does
-not fall back to a copied file.
-
-The public `onboarding.create-welcome-message` capability is deterministic and
-requires no credential or provider account. Direct, CLI, and MCP stdio entry
-points import the same engine. Generated Invokta dependencies use the exact
-creator version; generated files are project-owned and are never upgraded in
+Concurrent creation in one target is unsupported. Repeating successful creation
+fails because the target is no longer empty; profiles are never converted in
 place.
-
-The project includes `@invokta/installer`, a strict local install manifest, and
-an `mcp:install` script. It builds the engine before client detection so a build
-failure cannot lead to a partial MCP configuration update:
-
-```sh
-npm run mcp:install
-```
-
-The installer preselects eligible clients and requests one confirmation. It
-validates the built entry point without importing or executing the engine. See
-the [installer reference](/reference/installer/) for the manifest contract and
-management commands.
-
-The starter contains no HTTP endpoint, authentication implementation, model
-provider, telemetry, Git initialization, or template selector. Add stateless
-HTTP later with `@invokta/deploy`, whose fail-closed authentication scaffold
-remains the only official HTTP generator.
 
 ## Package-manager behavior
 
@@ -127,34 +166,34 @@ pnpm, or Yarn from `npm_config_user_agent` and falls back to npm.
 | pnpm | `pnpm install` |
 | Yarn | `yarn install` |
 
-Exactly one foreground install is started directly without a shell, retry, or
-creator-owned timeout. An unavailable manager, non-zero exit, or signal is
-`INSTALL_FAILED`; the complete scaffold remains so installation can be retried.
-
-`--no-install` starts no child process and performs no network operation. The
-creator itself never makes a network request.
+Exactly one foreground install starts directly without a shell, retry, or
+creator-owned timeout, and only after every selected entry exists. An
+unavailable manager, non-zero exit, or signal is `INSTALL_FAILED`; the generated
+profile remains for retry. `--no-install`, prompt failure, and cancellation
+start no process or network operation. The creator itself never makes a network
+request.
 
 ## Output and errors
 
-Help, version, and the final success summary use standard output. Creator
-diagnostics use standard error. During installation, the selected package manager
-inherits the terminal streams.
+Help, version, cancellation, and the final profile-aware summary use standard
+output. Prompts and diagnostics use standard error. The install child inherits
+terminal streams. No creator output includes rejected input, environment values,
+credentials, child errors, stacks, or causes.
 
 | Exit | Meaning |
-| --- | --- |
-| `0` | Help, version, or project creation succeeded |
-| `1` | Target safety, filesystem creation, or dependency installation failed |
-| `2` | Usage, project path, or project name was invalid |
+| ---: | --- |
+| `0` | Help, version, creation, or normal cancellation succeeded |
+| `1` | Prompt interruption, target safety, filesystem, or installation failed |
+| `2` | Usage, required interaction, prompt input, path, or name was invalid |
 
 | Code | Meaning |
 | --- | --- |
-| `TARGET_INVALID` | The path shape or derived project name is invalid |
-| `TARGET_UNSAFE` | A path component is a symlink, not a directory, or cannot be inspected safely |
-| `TARGET_NOT_EMPTY` | The target contains at least one entry |
-| `SCAFFOLD_CONFLICT` | A fixed scaffold path appeared after preflight |
-| `WRITE_FAILED` | A scaffold file or symbolic-link write, or rollback, failed |
+| `INTERACTIVE_REQUIRED` | A non-terminal invocation omitted its target |
+| `PROMPT_INVALID` | Prompt bytes, UTF-8, answer, or attempt count was invalid |
+| `PROMPT_ABORTED` | EOF, interruption, or prompt I/O failure ended interaction |
+| `TARGET_INVALID` | Path shape or derived project name was invalid |
+| `TARGET_UNSAFE` | A component was unsafe or could not be inspected |
+| `TARGET_NOT_EMPTY` | The target contained an entry |
+| `SCAFFOLD_CONFLICT` | A planned entry appeared during creation |
+| `WRITE_FAILED` | A scaffold write or rollback failed |
 | `INSTALL_FAILED` | The selected package manager was unavailable or unsuccessful |
-
-Diagnostics may identify a generated project-relative path or package-manager
-name. They never include a rejected argument, environment value, child error,
-stack, or cause.

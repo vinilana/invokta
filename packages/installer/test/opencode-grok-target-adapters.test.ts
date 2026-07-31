@@ -943,6 +943,7 @@ describe("OpenCode v2 JSONC and Grok Build TOML target adapters", () => {
       ]);
       expect(exactBomCounters).toEqual(singleFullPassCounters);
     },
+    30_000,
   );
 
   it.each(["opencode-v2", "grok-build"] as const)(

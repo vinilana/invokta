@@ -19,8 +19,9 @@ requests; `probe` makes one bounded HTTP request.
 yarn add --dev @invokta/deploy
 ```
 
-The package is native ESM, requires Node.js 22.20.0 or later, exports one package
-root, and provides the `invokta-deploy` binary.
+The package is native ESM, requires Node.js 22.20.0 or later, exports its command
+API from the package root and its pure HTTP planner from `./scaffold`, and
+provides the `invokta-deploy` binary.
 
 ## Commands
 
@@ -54,6 +55,9 @@ only help and version write to standard output.
 | `src/env.ts` | Bounded environment-file loader and required-name check |
 | `.env.example` | Empty, secret-free declarations from the manifest |
 
+Until the authentication hook is implemented, the HTTP entry point exits `1`
+with one sanitized instruction on standard error and no stack trace.
+
 Existing targets are reported as skipped and are never overwritten. A valid
 existing manifest parameterizes the other generated files; an invalid manifest
 fails before writes. The five exclusive writes are sequential rather than one
@@ -61,6 +65,22 @@ cross-file transaction.
 
 The generated root expects a named `engine` export from `src/engine.ts`. It
 validates environment configuration before dynamically importing the engine.
+
+The five scaffold entries also have one pure programmatic authority:
+
+```ts
+import {
+  createMcpHttpScaffoldFiles,
+  starterDeployManifest,
+} from "@invokta/deploy/scaffold";
+
+const files = createMcpHttpScaffoldFiles(starterDeployManifest);
+```
+
+The returned project-relative UTF-8 text entries and their ordered array are
+immutable. Planning performs no filesystem, process, network, engine, or
+capability operation. The engine creator consumes this public subpath and merges
+the complete plan before writing; it does not copy templates or invoke `init`.
 
 ### `package`
 
@@ -243,6 +263,10 @@ The package root exports:
 - manifest constants: `deployManifestFileName`, `deployManifestDefaults`,
   `deployManifestLimits`, `deployManifestIssueMessages`, and
   `environmentNamePattern`.
+
+The `@invokta/deploy/scaffold` subpath exports
+`createMcpHttpScaffoldFiles`, `starterDeployManifest`, and the immutable
+`McpHttpScaffoldFile` entry type.
 
 ```ts
 const exitCode = await runDeployCli({

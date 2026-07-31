@@ -51,7 +51,6 @@ import {
   reportStartupFailure,
   requireEnvironment,
 } from "./env.js";
-import { httpAuth } from "./http-auth.js";
 
 ${renderRequiredNames(manifest.env.required)}
 
@@ -130,6 +129,7 @@ async function main(): Promise<void> {
   // Imported here so nothing is constructed before the configuration is known
   // to be complete. Adjust the path when the engine is not exported from
   // src/engine.ts.
+  const { httpAuth } = await import("./http-auth.js");
   const { engine } = await import("./engine.js");
 
   const server = await serveMcpHttp(engine, {

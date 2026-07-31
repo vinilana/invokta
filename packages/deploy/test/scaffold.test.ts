@@ -1,4 +1,4 @@
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
 
@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { HttpDeployManifest } from "../src/manifest.js";
 import { probeProtocolVersion } from "../src/probe-contract.js";
 import {
-  createScaffoldFiles,
+  createMcpHttpScaffoldFiles,
   environmentModuleTemplate,
   httpAuthModuleTemplate,
   renderHttpRootModule,
@@ -24,8 +24,8 @@ import {
   runCompiledModule,
   runCompiledModuleWithReplacedEnv,
   type ScaffoldProject,
-  startCompiledModule,
   type StartedModule,
+  startCompiledModule,
 } from "./support/init-scaffold-project.js";
 
 const requiredName = "SCAFFOLD_TEST_TOKEN";
@@ -68,7 +68,7 @@ export const httpAuth: McpHttpAuthOptions = {
 
 function sources(): Record<string, string> {
   const files: Record<string, string> = { "src/engine.ts": engineModule };
-  for (const file of createScaffoldFiles(manifest)) {
+  for (const file of createMcpHttpScaffoldFiles(manifest)) {
     if (file.path.startsWith("src/")) files[file.path] = file.contents;
   }
   return files;
@@ -196,14 +196,15 @@ describe("the scaffolded sources", () => {
   });
 
   it("refuse to start until the authentication hook is implemented", () => {
-    const result = runCompiledModule(scaffolded, "dist/mcp-http.js");
+    const result = runCompiledModule(scaffolded, "dist/mcp-http.js", {
+      [requiredName]: token,
+    });
 
     expect(result.status).not.toBe(0);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain(
-      "Implement authentication before deploying",
+    expect(result.stderr).toBe(
+      "Implement authentication before deploying: edit src/http-auth.ts.\n",
     );
-    expect(result.stderr).not.toContain("dangerously-disabled-for-development");
   });
 });
 
@@ -551,6 +552,33 @@ describe("the scaffold templates", () => {
     }
   });
 
+  it("exposes an immutable, side-effect-free HTTP scaffold plan", () => {
+    const files = createMcpHttpScaffoldFiles(starterDeployManifest);
+
+    expect(files.map((file) => file.path)).toEqual([
+      ".env.example",
+      "invokta.deploy.json",
+      "src/env.ts",
+      "src/http-auth.ts",
+      "src/mcp-http.ts",
+    ]);
+    expect(Object.isFrozen(files)).toBe(true);
+    expect(files.every((file) => Object.isFrozen(file))).toBe(true);
+  });
+
+  it("publishes the planner through the deploy scaffold subpath", () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as {
+      readonly exports: Readonly<Record<string, unknown>>;
+    };
+
+    expect(manifest.exports["./scaffold"]).toEqual({
+      types: "./dist/scaffold-public.d.ts",
+      import: "./dist/scaffold-public.js",
+    });
+  });
+
   it("never mention the development authentication opt-out", () => {
     for (const contents of Object.values(templates)) {
       expect(contents).not.toContain("dangerously");
@@ -608,6 +636,6 @@ describe("the scaffold templates", () => {
     expect(httpAuthModuleTemplate).toContain(
       "Implement authentication before deploying",
     );
-    expect(httpAuthModuleTemplate).toContain("throw new Error(");
+    expect(httpAuthModuleTemplate).toContain("throw new EngineStartupError(");
   });
 });

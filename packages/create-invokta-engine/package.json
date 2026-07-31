@@ -31,5 +31,8 @@
   "scripts": {
     "build": "tsc -b --pretty false",
     "prepack": "npm run --silent build"
+  },
+  "dependencies": {
+    "@invokta/deploy": "0.2.0"
   }
 }

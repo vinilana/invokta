@@ -51,6 +51,9 @@ secret-free example file:
 | `src/env.ts`            | The environment-file loader and required-name check.                |
 | `.env.example`          | One empty line per declared manifest name; safe to commit.          |
 
+Until the authentication hook is implemented, the HTTP entry point exits `1`
+with one sanitized instruction on standard error and no stack trace.
+
 `init` never overwrites. An existing target is reported as `skipped` and the
 command still exits `0`, so scaffolded source is yours from the first write and
 the toolkit performs no drift tracking over `src/`. When the project already has
@@ -64,6 +67,24 @@ that import when your layout differs.
 a scaffolded engine can never serve an unverified request. The adapter's
 `dangerously-disabled-for-development` mode is deliberately absent from every
 template; it remains a manual, local-only choice.
+
+The same five bytes are available to other development-time generators through
+the pure public scaffold subpath:
+
+```ts
+import {
+  createMcpHttpScaffoldFiles,
+  starterDeployManifest,
+} from "@invokta/deploy/scaffold";
+
+const files = createMcpHttpScaffoldFiles(starterDeployManifest);
+```
+
+The planner returns immutable project-relative UTF-8 text entries in
+lexicographic order. It performs no filesystem, process, network, engine, or
+capability operation. `@invokta/deploy` remains the single template authority;
+the engine creator consumes this subpath instead of copying templates or
+invoking `init`.
 
 ## invokta-deploy package
 

@@ -1,4 +1,8 @@
 export const creatorErrorMessages = Object.freeze({
+  INTERACTIVE_REQUIRED:
+    "Interactive input is required when no project directory is provided.",
+  PROMPT_INVALID: "Interactive input is invalid.",
+  PROMPT_ABORTED: "Interactive project creation was interrupted.",
   TARGET_INVALID: "The project path or name is invalid.",
   TARGET_UNSAFE: "The project target is unsafe to use.",
   TARGET_NOT_EMPTY: "The project target is not empty.",
@@ -11,6 +15,9 @@ export type CreatorErrorCode = keyof typeof creatorErrorMessages;
 export type CreatorExitCode = 0 | 1 | 2;
 
 const creatorErrorExitCodes = Object.freeze({
+  INTERACTIVE_REQUIRED: 2,
+  PROMPT_INVALID: 2,
+  PROMPT_ABORTED: 1,
   TARGET_INVALID: 2,
   TARGET_UNSAFE: 1,
   TARGET_NOT_EMPTY: 1,

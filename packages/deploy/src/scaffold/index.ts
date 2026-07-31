@@ -17,7 +17,7 @@ export {
   starterDeployManifest,
 } from "./manifest-document.js";
 
-export interface ScaffoldFile {
+export interface McpHttpScaffoldFile {
   /** Project-relative POSIX path. */
   readonly path: string;
   readonly contents: string;
@@ -28,20 +28,26 @@ export interface ScaffoldFile {
  * parameterizes the example file and the required-name check, so the manifest,
  * `.env.example`, and the startup check cannot disagree.
  */
-export function createScaffoldFiles(
+export function createMcpHttpScaffoldFiles(
   manifest: HttpDeployManifest,
-): readonly ScaffoldFile[] {
+): readonly McpHttpScaffoldFile[] {
   return Object.freeze([
-    {
+    Object.freeze({
       path: ".env.example",
       contents: renderEnvironmentExample(manifest.env),
-    },
-    {
+    }),
+    Object.freeze({
       path: deployManifestFileName,
       contents: renderDeployManifestDocument(manifest),
-    },
-    { path: "src/env.ts", contents: environmentModuleTemplate },
-    { path: "src/http-auth.ts", contents: httpAuthModuleTemplate },
-    { path: "src/mcp-http.ts", contents: renderHttpRootModule(manifest) },
+    }),
+    Object.freeze({ path: "src/env.ts", contents: environmentModuleTemplate }),
+    Object.freeze({
+      path: "src/http-auth.ts",
+      contents: httpAuthModuleTemplate,
+    }),
+    Object.freeze({
+      path: "src/mcp-http.ts",
+      contents: renderHttpRootModule(manifest),
+    }),
   ]);
 }

@@ -19,8 +19,11 @@ import { CreatorError } from "../src/errors.js";
 import {
   createStarterProject,
   defaultScaffoldFileSystem,
+  planStarterProject,
   type ScaffoldFileSystem,
+  writeStarterProject,
 } from "../src/scaffold.js";
+import type { EngineStarterProfile } from "../src/starter.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -30,12 +33,17 @@ function createWorkingDirectory(): string {
   return directory;
 }
 
-function createProject(cwd: string, target = "my-engine") {
+function createProject(
+  cwd: string,
+  target = "my-engine",
+  profile: EngineStarterProfile = "complete",
+) {
   return createStarterProject({
     cwd,
     target,
     invoktaVersion: "1.2.3",
     packageManager: "npm",
+    profile,
   });
 }
 
@@ -53,7 +61,7 @@ describe("createStarterProject", () => {
 
     expect(result.projectName).toBe("my-engine");
     expect(result.directory).toBe(join(cwd, "engines/my-engine"));
-    expect(result.files).toHaveLength(16);
+    expect(result.files).toHaveLength(21);
     expect(
       JSON.parse(readFileSync(join(result.directory, "package.json"), "utf8")),
     ).toMatchObject({ name: "my-engine", private: true });
@@ -73,6 +81,47 @@ describe("createStarterProject", () => {
     ).toContain("# Develop This Action Engine");
   });
 
+  it.each([
+    ["complete", 21],
+    ["mcp-stdio", 15],
+    ["mcp-http", 18],
+    ["cli", 14],
+  ] as const)(
+    "creates the exact %s profile transaction",
+    async (profile, count) => {
+      const cwd = createWorkingDirectory();
+
+      const result = await createProject(cwd, `my-${profile}-engine`, profile);
+
+      expect(result.files).toHaveLength(count);
+      expect(result.files).toEqual([...result.files].sort());
+    },
+  );
+
+  it("builds the full HTTP plan without writing, then revalidates before commit", async () => {
+    const cwd = createWorkingDirectory();
+    const target = join(cwd, "my-engine");
+    const plan = await planStarterProject({
+      cwd,
+      target: "my-engine",
+      invoktaVersion: "1.2.3",
+      packageManager: "npm",
+      profile: "mcp-http",
+    });
+
+    expect(existsSync(target)).toBe(false);
+    expect(plan.entries).toHaveLength(18);
+
+    mkdirSync(target);
+    writeFileSync(join(target, ".keep"), "mine\n", "utf8");
+
+    await expect(writeStarterProject(plan)).rejects.toMatchObject({
+      code: "TARGET_NOT_EMPTY",
+    });
+    expect(readFileSync(join(target, ".keep"), "utf8")).toBe("mine\n");
+    expect(readdirSync(target)).toEqual([".keep"]);
+  });
+
   it("creates the starter in an existing empty directory", async () => {
     const cwd = createWorkingDirectory();
     mkdirSync(join(cwd, "my-engine"));
@@ -81,10 +130,12 @@ describe("createStarterProject", () => {
 
     expect(readdirSync(join(cwd, "my-engine")).sort()).toEqual([
       ".agents",
+      ".env.example",
       ".gitignore",
       "AGENTS.md",
       "CLAUDE.md",
       "README.md",
+      "invokta.deploy.json",
       "invokta.mcp.json",
       "package.json",
       "src",
@@ -220,6 +271,7 @@ describe("createStarterProject", () => {
         target: "my-engine",
         invoktaVersion: "1.2.3",
         packageManager: "npm",
+        profile: "complete",
         fileSystem,
       }),
     ).rejects.toMatchObject({ code: "SCAFFOLD_CONFLICT", exitCode: 1 });
@@ -249,6 +301,7 @@ describe("createStarterProject", () => {
         target: "my-engine",
         invoktaVersion: "1.2.3",
         packageManager: "npm",
+        profile: "complete",
         fileSystem,
       }),
     ).rejects.toMatchObject({
@@ -281,6 +334,7 @@ describe("createStarterProject", () => {
         target: "my-engine",
         invoktaVersion: "1.2.3",
         packageManager: "npm",
+        profile: "complete",
         fileSystem,
       }),
     ).rejects.toMatchObject({
@@ -305,7 +359,7 @@ describe("createStarterProject", () => {
       },
       async writeFile(path, contents, options) {
         writes += 1;
-        if (writes === 5) {
+        if (writes === 6) {
           const error = new Error(
             "fixture write failure",
           ) as NodeJS.ErrnoException;
@@ -322,6 +376,7 @@ describe("createStarterProject", () => {
         target: "my-engine",
         invoktaVersion: "1.2.3",
         packageManager: "npm",
+        profile: "complete",
         fileSystem,
       }),
     ).rejects.toBeInstanceOf(CreatorError);
@@ -349,6 +404,7 @@ describe("createStarterProject", () => {
         target: "nested/my-engine",
         invoktaVersion: "1.2.3",
         packageManager: "npm",
+        profile: "complete",
         fileSystem,
       }),
     ).rejects.toMatchObject({ code: "WRITE_FAILED", exitCode: 1 });

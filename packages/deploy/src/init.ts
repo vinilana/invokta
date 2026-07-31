@@ -10,8 +10,8 @@ import {
   toDeployError,
 } from "./manifest.js";
 import {
-  createScaffoldFiles,
-  type ScaffoldFile,
+  createMcpHttpScaffoldFiles,
+  type McpHttpScaffoldFile,
   starterDeployManifest,
 } from "./scaffold/index.js";
 
@@ -41,7 +41,7 @@ async function resolveManifest(cwd: string): Promise<HttpDeployManifest> {
 
 async function writeScaffoldFile(
   cwd: string,
-  file: ScaffoldFile,
+  file: McpHttpScaffoldFile,
 ): Promise<ScaffoldStatus> {
   const target = join(cwd, file.path);
   try {
@@ -73,7 +73,7 @@ export async function runInit(
 
   try {
     const manifest = await resolveManifest(context.cwd);
-    for (const file of createScaffoldFiles(manifest)) {
+    for (const file of createMcpHttpScaffoldFiles(manifest)) {
       const status = await writeScaffoldFile(context.cwd, file);
       await writeDiagnostic(context, `${status} ${file.path}\n`);
     }

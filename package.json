@@ -27,14 +27,16 @@
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "lint": "biome lint .",
     "format:check": "biome format .",
     "release:verify": "node scripts/verify-release-packages.mjs",
-    "check": "yarn typecheck && yarn lint && yarn format:check && yarn test:run && yarn build"
+    "check": "yarn typecheck && yarn lint && yarn format:check && yarn test:coverage && yarn build"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.6",
     "@types/node": "26.1.2",
+    "@vitest/coverage-v8": "4.1.10",
     "typescript": "7.0.2",
     "vitest": "4.1.10",
     "zod": "4.4.3"
