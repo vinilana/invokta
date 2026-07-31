@@ -31,11 +31,7 @@ architecture decisions, Figma designs, and internal engineering rules.
 Without an owned action, every harness needs the same integrations and a copy of
 the instructions:
 
-```text
-Cursor      -> Linear MCP + GitHub MCP + Figma MCP + planning skill
-Claude Code -> Linear MCP + GitHub MCP + Figma MCP + copied skill
-Codex       -> the same setup + another version of the instructions
-```
+![Before Invokta, each AI harness duplicates the same MCP integrations and planning instructions](./apps/docs/public/images/readme-before-invokta-duplicated-agent-setup.png)
 
 The first setup ships quickly. The copies then drift: tools are called
 differently, permissions and validation change, and each agent may produce a
@@ -56,6 +52,8 @@ Application ──┘                  |
                                   ├── engineering rules
                                   └── implementation-ready brief
 ```
+
+![With Invokta, Cursor, Claude Code, Codex, CLI, and an Application invoke engineering.prepare-implementation and receive one implementation-ready brief](./apps/docs/public/images/readme-unified-action-flow.png)
 
 The Action Engine owns how that brief is produced. Its model, prompts, tools,
 data sources, and providers can change without teaching every consumer the
