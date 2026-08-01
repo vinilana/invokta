@@ -76,9 +76,9 @@ test("the docs expose concrete use cases by company area", async () => {
 
   assert.match(home, /engineering\.prepare-implementation/u);
   assert.match(home, /Video Production Engine/u);
-  assert.match(home, /Commercial Proposal Engine/u);
+  assert.match(home, /customer-specific commercial proposal/u);
   assert.match(home, /Google Calendar/u);
-  assert.match(home, /recruiting\.screen-candidate/u);
+  assert.match(home, /persist screening evidence/u);
   assert.match(home, /\]\(\/use-cases\//u);
   assert.match(home, /\/images\/how-an-action-engine-works\.svg/u);
 
@@ -102,7 +102,7 @@ test("the docs expose concrete use cases by company area", async () => {
     assert.match(actionEngineDiagram, new RegExp(label, "u"), label);
   }
   assert.match(actionEngineDiagram, /Action Engine/u);
-  assert.match(actionEngineDiagram, /Validated result/u);
+  assert.match(actionEngineDiagram, /returns a validated result/iu);
 
   assert.doesNotMatch(home, /engineering\.create-bug-fix-spec/u);
   assert.doesNotMatch(rootReadme, /engineering\.create-bug-fix-spec/u);

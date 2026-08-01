@@ -112,7 +112,7 @@ describe("createStarterFiles", () => {
     expect(source).toContain('from "@invokta/deploy/scaffold"');
     expect(source).not.toContain("packages/deploy/src");
     expect(source).not.toContain("../deploy/");
-    expect(manifest.dependencies).toEqual({ "@invokta/deploy": "0.2.0" });
+    expect(manifest.dependencies).toEqual({ "@invokta/deploy": "0.3.0" });
   });
 
   it.each([
