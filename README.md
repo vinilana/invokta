@@ -169,8 +169,9 @@ Invokta supplies the shared runtime mechanics and delivery adapters:
   remote Action Engines across selected clients, and manages those entries;
 - `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes
   deployed endpoints;
-- `create-invokta-engine` creates a standalone starter with direct, CLI, and MCP
-  stdio entry points;
+- `create-invokta-engine` creates a `complete`, `cli`, `mcp-stdio`, or
+  `mcp-http` standalone starter; the `complete` profile includes direct, CLI,
+  MCP stdio, and MCP HTTP entry points;
 - `create-invokta-capability` creates a standalone atomic capability package;
   and
 - `create-invokta-capability-library` creates a standalone capability-library

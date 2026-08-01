@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-07-30
+- Last reviewed: 2026-08-01
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
