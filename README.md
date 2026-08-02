@@ -165,8 +165,14 @@ Invokta supplies the shared runtime mechanics and delivery adapters:
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure
   stateless HTTP while keeping the official MCP SDK behind the adapter boundary;
 - `@invokta/tooling` validates composed capabilities during development;
-- `@invokta/installer` detects supported local MCP clients, installs local or
-  remote Action Engines across selected clients, and manages those entries;
+- `@invokta/installer-core` owns harness detection, the client configuration
+  adapters, ownership, installer state, and the transaction coordinator;
+- `@invokta/installer` is the interactive terminal front end over that core:
+  it detects supported local MCP clients, installs local or remote Action
+  Engines across selected clients, and manages those entries;
+- `@invokta/manager` publishes `invokta-manager`, a local web console over the
+  same core that shows every engine, where it is registered, and where it could
+  be, and applies changes without a terminal interaction;
 - `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes
   deployed endpoints;
 - `create-invokta-engine` creates a `complete`, `cli`, `mcp-stdio`, or
@@ -195,6 +201,18 @@ npm run mcp:install
 # Later, remove the engine from every managed MCP client:
 npm run mcp:uninstall
 ```
+
+To manage everything on the machine at once, including engines created by
+other projects:
+
+```sh
+npx invokta-manager
+```
+
+The console prints a loopback URL carrying a session key for that process,
+shows one row per engine and one column per MCP client, and confirms each
+change in the page before writing. See the
+[console reference](./packages/manager/README.md).
 
 `mcp:install` builds the generated engine, detects eligible MCP clients,
 preselects them, and asks for one confirmation before updating their user

@@ -1,6 +1,6 @@
 # Action Engine management console specification
 
-- Status: Accepted, implementation in progress
+- Status: Accepted, delivered on Linux and macOS; Windows unverified on a host
 - Date: 2026-08-01
 - Affected packages: `@invokta/installer-core` (new), `@invokta/installer`,
   `@invokta/manager` (new)
@@ -220,22 +220,23 @@ requires failing tests first.
 
 ## Traceability
 
-No implementation evidence exists yet. The listed locations are required
-acceptance targets, not claims of completed coverage.
+Every row below is delivered coverage, except where noted. Real Windows
+execution on a Windows host is the one outstanding item; the Windows contract is
+covered by platform-injected tests only.
 
 | Requirement | Required acceptance evidence |
 | --- | --- |
 | `AE-CORE-01` | `packages/installer-core/test/package-boundary.test.ts`, migrated sentinel suites |
 | `AE-CORE-02` | `packages/installer/test/package-boundary.test.ts`, `cli-usage.test.ts`, `cli-child-process.test.ts` |
-| `AE-CORE-03` | New inventory and scoped-operation tests in `packages/installer-core/test` |
-| `AE-PLATFORM-01` | New path-contract tests plus the existing `path-identity` and `node-file-system` suites |
-| `AE-WINDOWS-01` | New Windows target-resolution tests in `packages/installer-core/test` |
+| `AE-CORE-03` | `packages/installer-core/test/engine-inventory.test.ts`, `packages/installer-core/test/engine-discovery.test.ts` |
+| `AE-PLATFORM-01` | `packages/installer-core/test/path-contract.test.ts` plus the existing `path-identity` and `node-file-system` suites |
+| `AE-WINDOWS-01` | `packages/installer-core/test/target-config-evidence.test.ts` |
 | `AE-CONSOLE-01` | `packages/manager/test/cli-usage.test.ts` |
-| `AE-CONSOLE-02` | `packages/manager/test/transport-security.test.ts` |
-| `AE-CONSOLE-03` | `packages/manager/test/inventory.test.ts` |
-| `AE-CONSOLE-04` | `packages/manager/test/action-lifecycle.test.ts` |
-| `AE-CONSOLE-05` | `packages/manager/test/concurrency.test.ts` |
-| `AE-CONSOLE-06` | `packages/manager/test/sentinels.test.ts`, page escaping tests |
+| `AE-CONSOLE-02` | `packages/manager/test/console-http.test.ts` |
+| `AE-CONSOLE-03` | `packages/manager/test/console-http.test.ts` |
+| `AE-CONSOLE-04` | `packages/manager/test/console-http.test.ts` |
+| `AE-CONSOLE-05` | `packages/manager/test/console-http.test.ts` |
+| `AE-CONSOLE-06` | `packages/manager/test/console-isolation.test.ts`, `packages/manager/test/console-page.test.ts` |
 
 ## Compatibility impact
 

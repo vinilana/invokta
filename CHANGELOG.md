@@ -7,6 +7,35 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added `@invokta/installer-core`, which now owns harness detection, the
+  finite configuration target catalog, the format-preserving client adapters,
+  the registry and engine-manifest contracts, path identity, ownership
+  planning, installer state, locking, and the transaction coordinator, and
+  publishes them as a typed import API plus a dependency-free `./errors`
+  subpath.
+- Added `@invokta/manager`, publishing `invokta-manager`: a loopback web
+  console that shows every Action Engine, the MCP clients each one is
+  registered in, and the clients each one could be registered in, and that
+  installs, enables, disables, and removes without a terminal interaction.
+  Authorization is a per-process session key printed with the console URL, and
+  every change is confirmed in the page before it is written.
+- Added a machine-readable engine inventory and bounded `invokta.mcp.json`
+  project discovery to the installer core, so both front ends derive engine
+  placement from one implementation.
+- Added named `posix` and `windows` path-safety contracts. Windows gains
+  inspection and mutation, including the roaming-profile locations for Claude
+  Desktop and Visual Studio Code, under an explicitly weaker contract that
+  rejects reparse points and confines paths to the user profile but proves no
+  file ownership.
+
+### Changed
+
+- `@invokta/installer` is now a terminal adapter over `@invokta/installer-core`.
+  Its command grammar, prompts, stable diagnostics, and exit statuses are
+  unchanged, and it still publishes only its executable.
+
 ## [0.3.0] - 2026-08-01
 
 ### Added
