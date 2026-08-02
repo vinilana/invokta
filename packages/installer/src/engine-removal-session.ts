@@ -1,19 +1,17 @@
-import type { EngineRemovalSource } from "./engine-manifest.js";
-import type { HarnessDetectionSnapshot } from "./harness-detection.js";
+import type {
+  EngineRemovalSource,
+  HarnessDetectionSnapshot,
+} from "@invokta/installer-core";
 import {
   InstallerError,
   type InstallerErrorCode,
-  installerErrorMessages,
-} from "./installer-error.js";
-import type { InteractivePrompter } from "./interactive-prompter.js";
-import {
   inspectEngineManagedInstallations,
+  installerErrorMessages,
   type ManagedInstallationView,
-} from "./managed-installations.js";
-import {
   type MutationCoordinatorDependencies,
   removeEngineDescriptorFromTarget,
-} from "./mutation-coordinator.js";
+} from "@invokta/installer-core";
+import type { InteractivePrompter } from "./interactive-prompter.js";
 import type { InstallerExitCode } from "./run-installer-cli.js";
 
 export interface RunEngineRemovalSessionOptions {

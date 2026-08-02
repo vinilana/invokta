@@ -9,6 +9,7 @@ const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const commandPath = "packages/installer/dist/cli.js";
 const commandFile = join(repositoryRoot, commandPath);
 const distDirectory = join(repositoryRoot, "packages/installer/dist");
+const coreDistDirectory = join(repositoryRoot, "packages/installer-core/dist");
 const sentinelLoader = fileURLToPath(
   new URL("./fixtures/forbid-eager-installer-loads.mjs", import.meta.url),
 );
@@ -36,6 +37,7 @@ function runCommand(...args: readonly string[]) {
       env: {
         ...process.env,
         INVOKTA_INSTALLER_DIST_ROOT: distDirectory,
+        INVOKTA_INSTALLER_CORE_DIST_ROOT: coreDistDirectory,
         NODE_NO_WARNINGS: "1",
       },
     },
@@ -126,6 +128,7 @@ describe("invokta-installer executable", () => {
         env: {
           ...process.env,
           INVOKTA_INSTALLER_DIST_ROOT: distDirectory,
+          INVOKTA_INSTALLER_CORE_DIST_ROOT: coreDistDirectory,
           NODE_NO_WARNINGS: "1",
         },
       },

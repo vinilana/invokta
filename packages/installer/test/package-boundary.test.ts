@@ -19,58 +19,70 @@ describe("@invokta/installer package boundary", () => {
       version: "0.3.0",
       type: "module",
       engines: { node: ">=22.20.0" },
-      files: ["dist", "registry"],
+      files: ["dist"],
       exports: {},
       bin: { "invokta-installer": "./dist/cli.js" },
       dependencies: {
         "@clack/prompts": "1.7.0",
-        "@humanwhocodes/momoa": "3.3.10",
-        "toml-eslint-parser": "1.0.3",
-        yaml: "2.9.0",
+        "@invokta/installer-core": "0.3.0",
       },
     });
     expect(manifest).not.toHaveProperty("main");
     expect(manifest).not.toHaveProperty("types");
   });
 
-  it("has no dependency on an Invokta framework or tooling package", () => {
+  it("depends on the installer core and on no framework or tooling package", () => {
     const manifest = readJson(`${packageDirectory}/package.json`);
     const dependencies = manifest.dependencies as Record<string, string>;
 
     expect(
       Object.keys(dependencies).filter((name) => name.startsWith("@invokta/")),
-    ).toEqual([]);
+    ).toEqual(["@invokta/installer-core"]);
   });
 
-  it("declares the explicitly empty development registry as packed content", () => {
-    const manifest = readJson(`${packageDirectory}/package.json`);
-    const registry = readJson(`${packageDirectory}/registry/capabilities.json`);
+  it("no longer carries the configuration engine or its registry", () => {
+    const sources = readdirSync(`${packageDirectory}/src`);
 
-    expect(manifest.files).toEqual(["dist", "registry"]);
-    expect(registry).toEqual({ schemaVersion: 1, entries: [] });
+    expect(sources.sort()).toEqual([
+      "clack-interactive-prompter.ts",
+      "cli.ts",
+      "engine-removal-session.ts",
+      "install-session.ts",
+      "interactive-prompter.ts",
+      "interactive-session.ts",
+      "management-session.ts",
+      "read-only-inventory.ts",
+      "run-installer-cli.ts",
+    ]);
+    expect(readdirSync(packageDirectory)).not.toContain("registry");
   });
 
-  it("participates in the root TypeScript project without becoming a framework dependency", () => {
+  it("participates in the root TypeScript project after the core", () => {
     const rootConfig = readJson(`${repositoryRoot}/tsconfig.json`);
     const references = rootConfig.references as { readonly path: string }[];
+    const config = readJson(`${packageDirectory}/tsconfig.json`);
 
     expect(references).toContainEqual({ path: "./packages/installer" });
+    expect(
+      references.findIndex(({ path }) => path === "./packages/installer-core"),
+    ).toBeLessThan(
+      references.findIndex(({ path }) => path === "./packages/installer"),
+    );
+    expect(config.references).toEqual([{ path: "../installer-core" }]);
   });
 
   it("keeps framework, process execution, and network imports outside the package", () => {
     const sourceDirectory = `${packageDirectory}/src`;
-    const sourceFiles = readdirSync(sourceDirectory, {
-      recursive: true,
-      withFileTypes: true,
-    }).filter((entry) => entry.isFile() && entry.name.endsWith(".ts"));
-    const sources = sourceFiles.map((entry) => ({
-      name: entry.name,
-      text: readFileSync(`${entry.parentPath}/${entry.name}`, "utf8"),
-    }));
+    const sources = readdirSync(sourceDirectory)
+      .filter((name) => name.endsWith(".ts"))
+      .map((name) => ({
+        name,
+        text: readFileSync(`${sourceDirectory}/${name}`, "utf8"),
+      }));
 
     for (const source of sources) {
       expect(source.text, source.name).not.toMatch(
-        /["']@invokta\/(?:core|cli|mcp|tooling)["']/u,
+        /["']@invokta\/(?:core|cli|mcp|tooling|deploy)["']/u,
       );
       expect(source.text, source.name).not.toMatch(
         /["']node:(?:child_process|dns|http|https|net|tls)["']/u,
@@ -85,52 +97,17 @@ describe("@invokta/installer package boundary", () => {
     expect(
       sources.find(({ name }) => name === "interactive-prompter.ts")?.text,
     ).not.toContain("@clack");
+  });
 
-    const adapterSources = sources.filter(({ name }) =>
-      [
-        "json5-target-adapter.ts",
-        "json-target-adapter.ts",
-        "target-adapter.ts",
-        "target-adapters.ts",
-        "toml-target-adapter.ts",
-        "yaml-target-adapter.ts",
-      ].includes(name),
-    );
-    expect(adapterSources).toHaveLength(6);
-    for (const source of adapterSources) {
-      expect(source.text, source.name).not.toMatch(
-        /node:(?:child_process|fs|process)|process\.env|globalThis\.(?:fetch|WebSocket)/u,
-      );
+  it("reaches the core through its dependency-free subpath on the cold-start path", () => {
+    const coldStart = ["cli.ts", "run-installer-cli.ts"];
+
+    for (const name of coldStart) {
+      const text = readFileSync(`${packageDirectory}/src/${name}`, "utf8");
+      expect(text, name).not.toMatch(/from "@invokta\/installer-core"/u);
     }
-    const json5Adapter = adapterSources.find(
-      ({ name }) => name === "json5-target-adapter.ts",
-    );
-    expect(json5Adapter?.text).not.toContain('from "json5"');
-    expect(json5Adapter?.text).not.toContain("JSON5.parse");
-    const jsonAdapter = adapterSources.find(
-      ({ name }) => name === "json-target-adapter.ts",
-    );
-    expect(jsonAdapter?.text).not.toContain("JSON.parse");
-    expect(jsonAdapter?.text).not.toContain("evaluate(");
-    expect(jsonAdapter?.text).not.toContain("tokenize(");
-    const tomlAdapter = adapterSources.find(
-      ({ name }) => name === "toml-target-adapter.ts",
-    );
-    expect(tomlAdapter?.text).not.toContain("getStaticTOMLValue");
-    expect(tomlAdapter?.text).not.toContain("finishDraft");
-    const yamlAdapter = adapterSources.find(
-      ({ name }) => name === "yaml-target-adapter.ts",
-    );
-    expect(yamlAdapter?.text).not.toContain(".toJS(");
-    for (const source of [
-      json5Adapter,
-      jsonAdapter,
-      tomlAdapter,
-      yamlAdapter,
-    ]) {
-      expect(source?.text, source?.name).not.toContain(
-        "normalizedMcpDefinition",
-      );
-    }
+    expect(
+      readFileSync(`${packageDirectory}/src/run-installer-cli.ts`, "utf8"),
+    ).toContain('from "@invokta/installer-core/errors"');
   });
 });

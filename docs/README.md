@@ -24,6 +24,8 @@ Proposed specifications are non-normative until their required architecture
 decision is accepted and the implementation evidence is complete.
 
 - [Engine-scoped MCP uninstall](./specs/engine-scoped-mcp-uninstall.md)
+- [Action Engine management console](./specs/action-engine-management-console.md),
+  decided by [ADR 0019](./adr/0019-management-console-and-installer-core.md)
 
 ## Delivered specifications
 

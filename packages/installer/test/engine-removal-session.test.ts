@@ -1,21 +1,21 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-import type { EngineRemovalSource } from "../src/engine-manifest.js";
-import { runEngineRemovalSession } from "../src/engine-removal-session.js";
-import type { HarnessDetectionSnapshot } from "../src/harness-detection.js";
-import type { InteractivePrompter } from "../src/interactive-prompter.js";
+import type {
+  CapabilityInstallDescriptor,
+  EngineRemovalSource,
+  HarnessDetectionSnapshot,
+} from "@invokta/installer-core";
 import {
+  configurationTargetAdapters,
+  createNodeFileSystem,
   installDescriptorAcrossTargets,
   type MutationCoordinatorDependencies,
   mutateDescriptorAcrossTargets,
-} from "../src/mutation-coordinator.js";
-import { createNodeFileSystem } from "../src/node-file-system.js";
-import type { CapabilityInstallDescriptor } from "../src/registry.js";
-import { configurationTargetAdapters } from "../src/target-adapters.js";
+} from "@invokta/installer-core";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { runEngineRemovalSession } from "../src/engine-removal-session.js";
+import type { InteractivePrompter } from "../src/interactive-prompter.js";
 
 const temporaryDirectories: string[] = [];
 

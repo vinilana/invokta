@@ -1,0 +1,48 @@
+{
+  "name": "@invokta/installer-core",
+  "version": "0.3.0",
+  "description": "Harness detection, ownership, and transactional MCP client configuration for Invokta Action Engines.",
+  "author": "Vini Lana <vini@aicoders.academy>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vinilana/invokta.git",
+    "directory": "packages/installer-core"
+  },
+  "homepage": "https://docs.invokta.dev/reference/installer-core/",
+  "bugs": {
+    "url": "https://github.com/vinilana/invokta/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "files": [
+    "dist",
+    "registry"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "prepack": "npm run --silent build"
+  },
+  "dependencies": {
+    "@humanwhocodes/momoa": "3.3.10",
+    "toml-eslint-parser": "1.0.3",
+    "yaml": "2.9.0"
+  }
+}

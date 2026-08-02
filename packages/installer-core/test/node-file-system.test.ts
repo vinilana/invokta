@@ -32,7 +32,7 @@ describe("Node installer filesystem adapter", () => {
       readonly name: string;
     };
 
-    expect(manifest.name).toBe("@invokta/installer");
+    expect(manifest.name).toBe("@invokta/installer-core");
   });
 
   it("classifies paths without following symbolic links", async () => {

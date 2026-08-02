@@ -1,19 +1,18 @@
 import type {
-  ExecutableResolver,
-  HarnessDetectionSnapshot,
-} from "./harness-detection.js";
-import { InstallerError, installerErrorMessages } from "./installer-error.js";
-import type { InteractivePrompter } from "./interactive-prompter.js";
-import {
-  installDescriptorAcrossTargets,
-  type MutationCoordinatorDependencies,
-} from "./mutation-coordinator.js";
-import type {
   CapabilityInstallDescriptor,
   ConfigurationTargetId,
-} from "./registry.js";
+  ExecutableResolver,
+  HarnessDetectionSnapshot,
+} from "@invokta/installer-core";
+import {
+  InstallerError,
+  installDescriptorAcrossTargets,
+  installerErrorMessages,
+  type MutationCoordinatorDependencies,
+  resolveRuntimeRequirements,
+} from "@invokta/installer-core";
+import type { InteractivePrompter } from "./interactive-prompter.js";
 import type { InstallerExitCode } from "./run-installer-cli.js";
-import { resolveRuntimeRequirements } from "./runtime-requirements.js";
 
 export interface RunInstallSessionOptions {
   readonly dependencies: MutationCoordinatorDependencies;

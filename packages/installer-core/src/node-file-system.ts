@@ -1,7 +1,7 @@
-import { constants, type BigIntStats, type Stats } from "node:fs";
+import { type BigIntStats, constants, type Stats } from "node:fs";
 import {
-  type FileHandle,
   chmod,
+  type FileHandle,
   lstat,
   mkdir,
   open,
@@ -13,8 +13,8 @@ import {
 } from "node:fs/promises";
 
 import {
-  InstallerFileSystemError,
   type InstallerFileStat,
+  InstallerFileSystemError,
   type InstallerReadHandle,
   type InstallerTransactionFileSystem,
   type InstallerWriteHandle,

@@ -1,10 +1,13 @@
 import type {
+  ConfigurationTargetId,
   ConfigurationTargetSnapshot,
   HarnessDetectionSnapshot,
-} from "./harness-detection.js";
-import { installerErrorMessages, InstallerError } from "./installer-error.js";
+} from "@invokta/installer-core";
+import {
+  InstallerError,
+  installerErrorMessages,
+} from "@invokta/installer-core";
 import type { InteractivePrompter } from "./interactive-prompter.js";
-import type { ConfigurationTargetId } from "./registry.js";
 import type { InstallerExitCode } from "./run-installer-cli.js";
 
 type InventorySelection = ConfigurationTargetId | "dismiss";

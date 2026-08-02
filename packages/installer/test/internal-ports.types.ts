@@ -1,25 +1,20 @@
-import { expectTypeOf } from "vitest";
-
 import type {
+  CapabilityInstallDescriptor,
+  ExecutableResolver,
   InstallerFileSystem,
   InstallerPathInspection,
   InstallerTransactionFileSystem,
-} from "../src/file-system.js";
-import type {
-  ExecutableResolver,
   OperatingSystemHomeResolver,
+  SuspendedDescriptor,
+  TargetAdapter,
+  TargetAdapterCounters,
   TargetConfigEvidenceProbes,
-} from "../src/harness-detection.js";
+} from "@invokta/installer-core";
+import { expectTypeOf } from "vitest";
 import type {
   InteractivePrompter,
   PromptOutcome,
 } from "../src/interactive-prompter.js";
-import type { CapabilityInstallDescriptor } from "../src/registry.js";
-import type { SuspendedDescriptor } from "../src/installer-state.js";
-import type {
-  TargetAdapter,
-  TargetAdapterCounters,
-} from "../src/target-adapter.js";
 
 declare const fileSystem: InstallerFileSystem;
 declare const transactionFileSystem: InstallerTransactionFileSystem;

@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExecutableEvidence } from "../src/harness-detection.js";
 import type { SuspendedDescriptor } from "../src/installer-state.js";
 import {
-  resolveRuntimeRequirements,
   type RuntimeRequirementsResult,
+  resolveRuntimeRequirements,
 } from "../src/runtime-requirements.js";
 
 function executable(path: string, realPath = path): ExecutableEvidence {

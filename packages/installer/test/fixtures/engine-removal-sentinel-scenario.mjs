@@ -1,11 +1,12 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
+import {
+  configurationTargetAdapters,
+  createNodeFileSystem,
+  installDescriptorAcrossTargets,
+} from "@invokta/installer-core";
 import { runEngineRemovalSession } from "../../dist/engine-removal-session.js";
-import { installDescriptorAcrossTargets } from "../../dist/mutation-coordinator.js";
-import { createNodeFileSystem } from "../../dist/node-file-system.js";
-import { configurationTargetAdapters } from "../../dist/target-adapters.js";
 
 const homeDirectory = mkdtempSync(join(tmpdir(), "invokta-remove-sentinel-"));
 let wallTime = Date.parse("2026-07-30T12:00:00.000Z");

@@ -8,22 +8,22 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-import type { HarnessDetectionSnapshot } from "../src/harness-detection.js";
-import type { InteractivePrompter } from "../src/interactive-prompter.js";
-import { inspectManagedInstallations } from "../src/managed-installations.js";
-import { runManagementSession } from "../src/management-session.js";
+import type {
+  CapabilityInstallDescriptor,
+  HarnessDetectionSnapshot,
+} from "@invokta/installer-core";
 import {
+  configurationTargetAdapters,
+  createNodeFileSystem,
+  inspectManagedInstallations,
   installDescriptorAcrossTargets,
   type MutationCoordinatorDependencies,
   mutateDescriptorAcrossTargets,
   removeEngineDescriptorFromTarget,
-} from "../src/mutation-coordinator.js";
-import { createNodeFileSystem } from "../src/node-file-system.js";
-import type { CapabilityInstallDescriptor } from "../src/registry.js";
-import { configurationTargetAdapters } from "../src/target-adapters.js";
+} from "@invokta/installer-core";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { InteractivePrompter } from "../src/interactive-prompter.js";
+import { runManagementSession } from "../src/management-session.js";
 
 const temporaryDirectories: string[] = [];
 

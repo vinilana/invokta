@@ -1,6 +1,6 @@
 import { detectHarnesses } from "../../dist/harness-detection.js";
-import { createNodeExecutableResolver } from "../../dist/node-harness-environment.js";
 import { createNodeFileSystem } from "../../dist/node-file-system.js";
+import { createNodeExecutableResolver } from "../../dist/node-harness-environment.js";
 import {
   createNodeTargetConfigEvidenceProbes,
   createProcessInstallerEnvironment,

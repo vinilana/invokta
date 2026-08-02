@@ -1,15 +1,17 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-
+import type {
+  RegistryCompatibilityAdapters,
+  TargetConfigEvidenceProbes,
+} from "@invokta/installer-core";
+import {
+  configurationTargetIds,
+  createNodeFileSystem,
+} from "@invokta/installer-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-import type { TargetConfigEvidenceProbes } from "../src/harness-detection.js";
 import type { InteractivePrompter } from "../src/interactive-prompter.js";
 import { runInteractiveSession } from "../src/interactive-session.js";
-import { createNodeFileSystem } from "../src/node-file-system.js";
-import type { RegistryCompatibilityAdapters } from "../src/registry.js";
-import { configurationTargetIds } from "../src/registry.js";
 
 const temporaryDirectories: string[] = [];
 

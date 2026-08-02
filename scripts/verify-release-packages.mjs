@@ -41,14 +41,22 @@ const publicPackages = [
     requiredFiles: [...distEntryFiles, "dist/cli.js"],
   },
   {
-    directory: "installer",
-    name: "@invokta/installer",
-    // The installer is binary-first and intentionally has no import API.
+    directory: "installer-core",
+    name: "@invokta/installer-core",
+    // The core ships the import API, the diagnostic subpath, and the registry.
     requiredFiles: [
-      "dist/cli.js",
+      ...distEntryFiles,
+      "dist/errors.js",
+      "dist/errors.d.ts",
       "registry/capabilities.json",
       "registry/README.md",
     ],
+  },
+  {
+    directory: "installer",
+    name: "@invokta/installer",
+    // The installer is binary-first and intentionally has no import API.
+    requiredFiles: ["dist/cli.js"],
   },
   {
     directory: "deploy",
@@ -581,10 +589,12 @@ function writeGeneratedInstallerFixture(projectDirectory) {
     import assert from "node:assert/strict";
     import { join } from "node:path";
 
-    import { loadEngineInstallManifest } from "./node_modules/@invokta/installer/dist/engine-manifest.js";
-    import { installDescriptorAcrossTargets } from "./node_modules/@invokta/installer/dist/mutation-coordinator.js";
-    import { createNodeFileSystem } from "./node_modules/@invokta/installer/dist/node-file-system.js";
-    import { configurationTargetAdapters } from "./node_modules/@invokta/installer/dist/target-adapters.js";
+    import {
+      configurationTargetAdapters,
+      createNodeFileSystem,
+      installDescriptorAcrossTargets,
+      loadEngineInstallManifest,
+    } from "@invokta/installer-core";
 
     const homeDirectory = process.env.HOME;
     assert.ok(homeDirectory);
@@ -766,6 +776,12 @@ try {
     "node_modules",
     "@invokta",
     "installer",
+  );
+  const installerCorePackageDirectory = join(
+    consumerDirectory,
+    "node_modules",
+    "@invokta",
+    "installer-core",
   );
   const installerPackageReport = JSON.parse(
     readFileSync(join(installerPackageDirectory, "package.json"), "utf8"),
@@ -1272,6 +1288,10 @@ try {
     capture: true,
     env: {
       INVOKTA_INSTALLER_DIST_ROOT: join(installerPackageDirectory, "dist"),
+      INVOKTA_INSTALLER_CORE_DIST_ROOT: join(
+        installerCorePackageDirectory,
+        "dist",
+      ),
       NODE_OPTIONS: `--no-warnings --experimental-loader=${eagerLoadSentinel} --import=${networkSentinel}`,
     },
   });

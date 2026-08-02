@@ -22,8 +22,7 @@
     "node": ">=22.20.0"
   },
   "files": [
-    "dist",
-    "registry"
+    "dist"
   ],
   "exports": {},
   "bin": {
@@ -35,8 +34,6 @@
   },
   "dependencies": {
     "@clack/prompts": "1.7.0",
-    "@humanwhocodes/momoa": "3.3.10",
-    "toml-eslint-parser": "1.0.3",
-    "yaml": "2.9.0"
+    "@invokta/installer-core": "0.3.0"
   }
 }

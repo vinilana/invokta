@@ -6,10 +6,5 @@
     "outDir": "dist",
     "tsBuildInfoFile": "tsconfig.tsbuildinfo"
   },
-  "include": ["src/**/*.ts"],
-  "references": [
-    {
-      "path": "../installer-core"
-    }
-  ]
+  "include": ["src/**/*.ts"]
 }

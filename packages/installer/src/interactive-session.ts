@@ -1,50 +1,39 @@
 import { randomBytes } from "node:crypto";
-
-import { createClackInteractivePrompter } from "./clack-interactive-prompter.js";
-import {
-  loadEngineInstallManifest,
-  loadEngineRemovalManifest,
-} from "./engine-manifest.js";
-import { runEngineRemovalSession } from "./engine-removal-session.js";
 import type {
   InstallerFileSystem,
   InstallerTransactionFileSystem,
-} from "./file-system.js";
+  MutationCoordinatorDependencies,
+} from "@invokta/installer-core";
 import {
+  configurationTargetAdapters,
+  createNodeExecutableResolver,
+  createNodeFileSystem,
+  createNodeTargetConfigEvidenceProbes,
+  createProcessInstallerEnvironment,
+  createRemoteInstallDescriptor,
   detectHarnesses,
   type ExecutableResolver,
+  type InstallerEnvironment,
+  InstallerError,
+  loadBundledRegistry,
+  loadEngineInstallManifest,
+  loadEngineRemovalManifest,
   type OperatingSystemHomeResolver,
+  type RegistryCompatibilityAdapters,
+  registryCompatibilityAdapters,
+  resolveNodeOperatingSystemHome,
   type TargetConfigEvidenceProbes,
-} from "./harness-detection.js";
+} from "@invokta/installer-core";
+import { createClackInteractivePrompter } from "./clack-interactive-prompter.js";
+import { runEngineRemovalSession } from "./engine-removal-session.js";
 import { runInstallSession } from "./install-session.js";
-import { InstallerError } from "./installer-error.js";
 import type { InteractivePrompter } from "./interactive-prompter.js";
 import { runManagementSession } from "./management-session.js";
-import type { MutationCoordinatorDependencies } from "./mutation-coordinator.js";
-import { createNodeFileSystem } from "./node-file-system.js";
-import {
-  createNodeExecutableResolver,
-  resolveNodeOperatingSystemHome,
-} from "./node-harness-environment.js";
 import { runReadOnlyInventory } from "./read-only-inventory.js";
-import {
-  loadBundledRegistry,
-  type RegistryCompatibilityAdapters,
-} from "./registry.js";
-import { createRemoteInstallDescriptor } from "./remote-install-source.js";
 import type {
   InstallerCommand,
   InstallerExitCode,
 } from "./run-installer-cli.js";
-import {
-  configurationTargetAdapters,
-  registryCompatibilityAdapters,
-} from "./target-adapters.js";
-import {
-  createNodeTargetConfigEvidenceProbes,
-  createProcessInstallerEnvironment,
-  type InstallerEnvironment,
-} from "./target-config-evidence.js";
 
 export interface RunInteractiveSessionOptions {
   readonly command?: InstallerCommand;

@@ -1,23 +1,22 @@
 import type {
   ExecutableResolver,
   HarnessDetectionSnapshot,
-} from "./harness-detection.js";
-import { InstallerError, installerErrorMessages } from "./installer-error.js";
-import type { InteractivePrompter } from "./interactive-prompter.js";
+  ValidatedRegistry,
+} from "@invokta/installer-core";
 import {
+  InstallerError,
   inspectManagedInstallations,
+  installerErrorMessages,
   type ManagedInstallationView,
-} from "./managed-installations.js";
-import {
   type MutationCoordinatorDependencies,
   mutateDescriptorAcrossTargets,
-} from "./mutation-coordinator.js";
-import type { ValidatedRegistry } from "./registry.js";
+  resolveRuntimeRequirements,
+} from "@invokta/installer-core";
+import type { InteractivePrompter } from "./interactive-prompter.js";
 import type {
   InstallerCommand,
   InstallerExitCode,
 } from "./run-installer-cli.js";
-import { resolveRuntimeRequirements } from "./runtime-requirements.js";
 
 type ManagementAction = Extract<
   InstallerCommand["kind"],

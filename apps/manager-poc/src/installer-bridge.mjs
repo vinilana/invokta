@@ -17,7 +17,7 @@ import { randomBytes } from "node:crypto";
 import { access } from "node:fs/promises";
 
 const installerDistUrl = new URL(
-  "../../../packages/installer/dist/",
+  "../../../packages/installer-core/dist/",
   import.meta.url,
 );
 
@@ -35,7 +35,7 @@ async function loadInstallerModule(name) {
 
 async function assertInstallerIsBuilt() {
   try {
-    await access(new URL("cli.js", installerDistUrl));
+    await access(new URL("index.js", installerDistUrl));
   } catch (cause) {
     throw new Error(buildHint, { cause });
   }

@@ -1,7 +1,7 @@
 import {
   configurationTargetCatalog,
-  harnessSurfaceCatalog,
   type HarnessSurfaceId,
+  harnessSurfaceCatalog,
 } from "./harness-catalog.js";
 import type { InstallerErrorCode } from "./installer-error.js";
 import type { ConfigurationTargetId } from "./registry.js";

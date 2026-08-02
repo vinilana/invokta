@@ -1,11 +1,14 @@
+import type {
+  CapabilityInstallDescriptor,
+  HarnessDetectionSnapshot,
+} from "@invokta/installer-core";
+import {
+  configurationTargetAdapters,
+  createNodeFileSystem,
+} from "@invokta/installer-core";
 import { describe, expect, it, vi } from "vitest";
-
-import type { HarnessDetectionSnapshot } from "../src/harness-detection.js";
 import { runInstallSession } from "../src/install-session.js";
 import type { InteractivePrompter } from "../src/interactive-prompter.js";
-import { createNodeFileSystem } from "../src/node-file-system.js";
-import type { CapabilityInstallDescriptor } from "../src/registry.js";
-import { configurationTargetAdapters } from "../src/target-adapters.js";
 
 function descriptor(): CapabilityInstallDescriptor {
   return {
