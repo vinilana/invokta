@@ -5,6 +5,7 @@ import {
   lstat,
   mkdir,
   open,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -13,6 +14,7 @@ import {
 } from "node:fs/promises";
 
 import {
+  type InstallerDirectoryReader,
   type InstallerFileStat,
   InstallerFileSystemError,
   type InstallerReadHandle,
@@ -265,9 +267,29 @@ function writeHandle(handle: FileHandle): InstallerWriteHandle {
   });
 }
 
-export function createNodeFileSystem(): InstallerTransactionFileSystem {
+export function createNodeFileSystem(): InstallerTransactionFileSystem &
+  InstallerDirectoryReader {
   return {
     readFile: async (path) => readFile(path),
+    readDirectory: async (path) => {
+      const entries = await normalized(() =>
+        readdir(path, { withFileTypes: true }),
+      );
+      return Object.freeze(
+        entries.map((entry) =>
+          Object.freeze({
+            name: entry.name,
+            kind: entry.isDirectory()
+              ? ("directory" as const)
+              : entry.isFile()
+                ? ("regular-file" as const)
+                : entry.isSymbolicLink()
+                  ? ("symbolic-link" as const)
+                  : ("other" as const),
+          }),
+        ),
+      );
+    },
     inspectPath: async (path) => {
       try {
         const status = await lstat(path);

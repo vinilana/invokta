@@ -94,6 +94,21 @@ export interface InstallerFileSystem {
   readonly inspectPath: (path: string) => Promise<InstallerPathInspection>;
 }
 
+export interface InstallerDirectoryEntry {
+  readonly name: string;
+  readonly kind: InstallerFileKind;
+}
+
+/**
+ * Read-only directory listing, kept separate from the transaction boundary
+ * because engine discovery is the only caller and it must never write.
+ */
+export interface InstallerDirectoryReader {
+  readonly readDirectory: (
+    path: string,
+  ) => Promise<readonly InstallerDirectoryEntry[]>;
+}
+
 /** Internal POSIX transaction boundary. Read-only fakes need not implement it. */
 export interface InstallerTransactionFileSystem extends InstallerFileSystem {
   readonly inspectPathNoFollow: (

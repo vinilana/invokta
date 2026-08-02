@@ -9,17 +9,46 @@
  */
 
 export type {
+  DiscoverEngineProjectsOptions,
+  EngineProjectDiscovery,
+  RejectedEngineProject,
+} from "./engine-discovery.js";
+export {
+  defaultDiscoveryDepth,
+  defaultDiscoveryDirectoryLimit,
+  discoverEngineProjects,
+  engineManifestFileName,
+} from "./engine-discovery.js";
+export type {
+  BuildEngineInventoryOptions,
+  EngineDescriptorSource,
+  EngineInventory,
+  EngineInventoryBlockedReason,
+  EngineInventoryCell,
+  EngineInventoryRow,
+} from "./engine-inventory.js";
+export {
+  buildEngineInventory,
+  managedDescriptorFor,
+  persistedInstallDescriptorFor,
+} from "./engine-inventory.js";
+export type {
   EngineInstallSource,
+  EngineProjectMetadata,
   EngineRemovalSource,
   LoadEngineInstallManifestOptions,
   LoadEngineRemovalManifestOptions,
+  ValidatedEngineManifest,
 } from "./engine-manifest.js";
 export {
   loadEngineInstallManifest,
+  loadEngineProjectMetadata,
   loadEngineRemovalManifest,
   validateEngineInstallManifestBytes,
 } from "./engine-manifest.js";
 export type {
+  InstallerDirectoryEntry,
+  InstallerDirectoryReader,
   InstallerFileKind,
   InstallerFileStat,
   InstallerFileSystem,

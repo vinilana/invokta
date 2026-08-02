@@ -36,7 +36,7 @@ const serverKeys = new Set(["name", "entrypoint", "forwardEnv"]);
 
 type JsonRecord = Record<string, unknown>;
 
-interface ValidatedEngineManifest {
+export interface ValidatedEngineManifest {
   readonly schemaVersion: 1;
   readonly id: string;
   readonly version: string;
@@ -74,6 +74,14 @@ export interface EngineRemovalSource {
   readonly id: string;
   readonly title: string;
   readonly serverName: string;
+}
+
+export interface EngineProjectMetadata {
+  readonly manifestPath: string;
+  readonly projectDirectory: string;
+  readonly manifest: ValidatedEngineManifest;
+  readonly entrypointPath: string;
+  readonly entrypointBuilt: boolean;
 }
 
 interface LoadedEngineManifest {
@@ -352,6 +360,42 @@ async function loadOwnedEngineManifest(
     manifestPath: manifestIdentity.targetPath,
     projectDirectory,
     root,
+  });
+}
+
+/**
+ * Metadata for an engine project that may not be built yet.
+ *
+ * Inventory needs the complete manifest plus whether the compiled entry point
+ * exists, so it can offer to install a built project and explain a project that
+ * still needs a build. Unlike an install, it never requires the entry point.
+ */
+export async function loadEngineProjectMetadata(
+  options: LoadEngineRemovalManifestOptions,
+): Promise<EngineProjectMetadata> {
+  const loaded = await loadOwnedEngineManifest(options);
+  const entrypointPath = join(
+    loaded.projectDirectory,
+    ...loaded.manifest.server.entrypoint.split("/"),
+  );
+  let entrypointBuilt = false;
+  try {
+    const identity = await capturePathIdentity(options.fileSystem, {
+      root: loaded.root,
+      targetPath: entrypointPath,
+      targetKind: "regular-file",
+    });
+    entrypointBuilt = identity.missingPaths.length === 0;
+  } catch {
+    // An unsafe or unreadable entry point is reported as "not built"; the
+    // install path re-validates it and fails closed with an exact code.
+  }
+  return Object.freeze({
+    manifestPath: loaded.manifestPath,
+    projectDirectory: loaded.projectDirectory,
+    manifest: loaded.manifest,
+    entrypointPath,
+    entrypointBuilt,
   });
 }
 
