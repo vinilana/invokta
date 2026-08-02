@@ -99,6 +99,20 @@ describe("@invokta/installer package boundary", () => {
     ).not.toContain("@clack");
   });
 
+  it("builds the filesystem and the contract from one platform value", () => {
+    const session = readFileSync(
+      `${packageDirectory}/src/interactive-session.ts`,
+      "utf8",
+    );
+
+    // A Windows contract over a POSIX filesystem keeps O_NOFOLLOW while the
+    // ownership check is off — a combination neither platform ever has.
+    expect(session).toMatch(/createNodeFileSystem\([^;]*options\.platform/u);
+    expect(session).toMatch(
+      /resolvePathSafetyContract\(\{[^;]*options\.platform/u,
+    );
+  });
+
   it("hands the platform contract to every engine manifest loader", () => {
     const session = readFileSync(
       `${packageDirectory}/src/interactive-session.ts`,

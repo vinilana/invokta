@@ -82,7 +82,12 @@ export async function runInteractiveSession(
   const prompter = options.prompter ?? createClackInteractivePrompter();
   prompter.intro("Invokta capability installer");
   const command = options.command ?? { kind: "inventory" as const };
-  const nodeFileSystem = createNodeFileSystem();
+  // The filesystem and the contract must come from one platform value:
+  // splitting them would give a Windows contract a POSIX filesystem, keeping
+  // O_NOFOLLOW while the ownership check is switched off.
+  const nodeFileSystem = createNodeFileSystem(
+    options.platform === undefined ? {} : { platform: options.platform },
+  );
   const fileSystem = options.fileSystem ?? nodeFileSystem;
   const transactionFileSystem = options.transactionFileSystem ?? nodeFileSystem;
   const currentUserId = process.getuid?.() ?? -1;

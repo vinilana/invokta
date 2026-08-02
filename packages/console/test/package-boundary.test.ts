@@ -86,6 +86,23 @@ describe("@invokta/console package boundary", () => {
     expect(launchers).toEqual(["browser.ts"]);
   });
 
+  it("lets the service build its own platform-matched filesystem", () => {
+    const service = readFileSync(
+      `${packageDirectory}/src/console-service.ts`,
+      "utf8",
+    );
+    const start = readFileSync(
+      `${packageDirectory}/src/start-console.ts`,
+      "utf8",
+    );
+
+    expect(service).toContain("createNodeFileSystem({ platform })");
+    expect(service).toContain("resolvePathSafetyContract({ platform })");
+    // Handing the service a filesystem built elsewhere would let a contract and
+    // a filesystem disagree about the platform.
+    expect(start).not.toMatch(/createConsoleService\(\{[^}]*fileSystem/u);
+  });
+
   it("binds loopback and nothing else", () => {
     const startConsole = readFileSync(
       `${packageDirectory}/src/start-console.ts`,

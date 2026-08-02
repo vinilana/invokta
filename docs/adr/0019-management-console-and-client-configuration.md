@@ -89,10 +89,10 @@ symbolic links, prove that every path component is owned by the current user,
 enforce permission bits, and replace atomically in the same directory.
 
 The **Windows contract** is explicitly weaker, because Node exposes neither
-`FILE_FLAG_OPEN_REPARSE_POINT` nor access control lists. It rejects reparse
-points found by inspecting each path component, confines every configuration and
-state path to the current user profile, and replaces atomically on the same
-volume. It proves no file ownership and it is therefore vulnerable to a
+`FILE_FLAG_OPEN_REPARSE_POINT` nor access control lists. It inspects each path
+component and rejects what Node reports as a link — symbolic links and mount-point
+junctions, not every reparse tag — confines every configuration and state path to
+the current user profile, and replaces atomically on the same volume. It proves no file ownership and it is therefore vulnerable to a
 same-machine attacker who can already write inside the user profile. That
 attacker can already edit the client configuration directly, so the contract
 does not widen the practical exposure; it does mean Windows never claims the
@@ -122,6 +122,12 @@ tell which contract produced a given piece of evidence.
   level. Presenting Windows evidence as equivalent to POSIX evidence is a defect,
   and until the contract is carried in results the code cannot prevent it — the
   obligation sits with whoever reads the evidence.
+- The Windows contract has not been executed on a Windows host. Two behaviors
+  are therefore unverified and would fail only there: case-sensitive path
+  comparison, where `homedir` and `realpath` casing can disagree and make every
+  component walk unsafe; and atomic replacement over a configuration file a
+  running editor holds open, which would surface as a write failure rather than
+  data loss.
 - Windows containment has no exception, so a roaming profile redirected outside
   the user profile — Folder Redirection to a share — is reported unsafe rather
   than written to. Those deployments are unsupported by design.

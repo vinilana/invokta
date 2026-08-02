@@ -27,7 +27,9 @@ export async function startConsole(
           workingDirectory: process.cwd(),
         });
 
-  const service = await createConsoleService({ fileSystem, scanRoots });
+  // The service builds its own platform-matched filesystem; the local one
+  // above only inspects candidate scan roots.
+  const service = await createConsoleService({ scanRoots });
   const session = createConsoleSession();
   const server = createConsoleServer({ service, session });
 
