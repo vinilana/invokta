@@ -650,7 +650,9 @@ function writeGeneratedInstallerFixture(projectDirectory) {
       },
       targetIds: ["codex"],
     });
-    assert.deepEqual(results, [{ targetId: "codex", outcome: "installed" }]);
+    assert.deepEqual(results, [
+      { targetId: "codex", pathContract: "posix", outcome: "installed" },
+    ]);
   `;
   writeFileSync(join(projectDirectory, "installer-fixture.mjs"), program);
 }
