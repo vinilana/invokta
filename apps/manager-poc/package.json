@@ -1,0 +1,16 @@
+{
+  "name": "@invokta/manager-poc",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Proof of concept: local web console for the Action Engines installed on this machine.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "bin": {
+    "invokta-manager": "./bin/invokta-manager.mjs"
+  },
+  "scripts": {
+    "start": "node ./bin/invokta-manager.mjs"
+  }
+}

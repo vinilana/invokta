@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Invokta manager</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fbfbfc;
+        --panel: #ffffff;
+        --line: #e3e4e8;
+        --text: #16171a;
+        --muted: #6b6e76;
+        --accent: #4338ca;
+        --ok: #0f7b4f;
+        --warn: #9a6400;
+        --bad: #b42318;
+        --info: #1d5fbf;
+        --ghost: #f2f2f4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d0e11;
+          --panel: #16181d;
+          --line: #272a31;
+          --text: #e8e9ec;
+          --muted: #9096a1;
+          --accent: #a5a1ff;
+          --ok: #4ade80;
+          --warn: #fbbf24;
+          --bad: #fb7185;
+          --info: #7dd3fc;
+          --ghost: #1d2027;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.5 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      code,
+      .mono {
+        font:
+          12px/1.5 ui-monospace,
+          SFMono-Regular,
+          "SF Mono",
+          Menlo,
+          monospace;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: baseline;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+      header h1 {
+        margin: 0;
+        font-size: 16px;
+        letter-spacing: -0.01em;
+      }
+      header .tag {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 2px 8px;
+      }
+      header .stats {
+        margin-left: auto;
+        display: flex;
+        gap: 18px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      header .stats b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 5px 11px;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      @media (prefers-color-scheme: dark) {
+        button.primary {
+          color: #0d0e11;
+        }
+      }
+      button.danger {
+        border-color: var(--bad);
+        color: var(--bad);
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        gap: 0;
+        min-height: calc(100vh - 66px);
+      }
+      @media (max-width: 1000px) {
+        main {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .matrix-wrap {
+        overflow: auto;
+        padding: 20px 24px 60px;
+      }
+      table {
+        border-collapse: separate;
+        border-spacing: 0;
+        min-width: 100%;
+      }
+      th,
+      td {
+        padding: 0;
+        text-align: left;
+        white-space: nowrap;
+      }
+      thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--bg);
+        border-bottom: 1px solid var(--line);
+        padding: 0 8px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        vertical-align: bottom;
+      }
+      thead th .ev {
+        display: block;
+        font-weight: 400;
+        font-size: 10px;
+        opacity: 0.75;
+      }
+      th.engine-col,
+      td.engine-col {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background: var(--bg);
+        padding-right: 18px;
+        border-right: 1px solid var(--line);
+      }
+      thead th.engine-col {
+        z-index: 3;
+      }
+      tbody tr:hover td {
+        background: var(--ghost);
+      }
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 6px 4px;
+      }
+      .engine-name {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        padding: 6px 0;
+      }
+      .engine-title {
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--text);
+      }
+      .engine-id {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .cell {
+        width: 100%;
+        justify-content: flex-start;
+        text-align: left;
+        min-width: 96px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        padding: 5px 8px;
+        background: none;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .cell:hover {
+        background: var(--panel);
+        border-color: var(--line);
+      }
+      .cell.selected {
+        border-color: var(--accent);
+        background: var(--panel);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .s-enabled .dot {
+        background: var(--ok);
+      }
+      .s-disabled .dot {
+        background: var(--warn);
+      }
+      .s-outdated .dot {
+        background: var(--info);
+      }
+      .s-drifted .dot,
+      .s-conflict .dot,
+      .s-unavailable .dot {
+        background: var(--bad);
+      }
+      .s-enabled {
+        color: var(--ok);
+      }
+      .s-disabled {
+        color: var(--warn);
+      }
+      .s-outdated {
+        color: var(--info);
+      }
+      .s-drifted,
+      .s-conflict,
+      .s-unavailable {
+        color: var(--bad);
+      }
+      .cell.empty {
+        color: var(--muted);
+        border-style: dashed;
+        border-color: transparent;
+      }
+      .cell.installable {
+        color: var(--accent);
+      }
+      .cell.installable:hover {
+        border-style: dashed;
+        border-color: var(--accent);
+      }
+      .cell.blocked {
+        cursor: default;
+        opacity: 0.4;
+      }
+      .cell.blocked:hover {
+        background: none;
+        border-color: transparent;
+      }
+      aside {
+        border-left: 1px solid var(--line);
+        background: var(--panel);
+        padding: 20px;
+        overflow: auto;
+        max-height: calc(100vh - 66px);
+        position: sticky;
+        top: 0;
+      }
+      aside h2 {
+        margin: 0 0 2px;
+        font-size: 14px;
+      }
+      aside .sub {
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 16px;
+      }
+      dl {
+        margin: 0 0 16px;
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 4px 12px;
+        font-size: 12px;
+      }
+      dt {
+        color: var(--muted);
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      .banner {
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        border-radius: 6px;
+        padding: 10px 12px;
+        font-size: 12px;
+        margin-bottom: 16px;
+        background: var(--ghost);
+      }
+      .banner.bad {
+        border-left-color: var(--bad);
+      }
+      .banner.ok {
+        border-left-color: var(--ok);
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        padding: 0 24px 20px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .legend span {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .empty-state {
+        padding: 40px 24px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Invokta manager</h1>
+      <span class="tag">proof of concept</span>
+      <div class="stats" id="stats"></div>
+      <button id="refresh" type="button">Rescan</button>
+    </header>
+    <main>
+      <div>
+        <div class="matrix-wrap" id="matrix">
+          <div class="empty-state">Loading inventory…</div>
+        </div>
+        <div class="legend">
+          <span><i class="dot" style="background: var(--ok)"></i> enabled</span>
+          <span><i class="dot" style="background: var(--warn)"></i> disabled</span>
+          <span><i class="dot" style="background: var(--info)"></i> outdated</span>
+          <span><i class="dot" style="background: var(--bad)"></i> drifted / blocked</span>
+          <span>+ installable</span>
+          <span>· client unavailable</span>
+        </div>
+      </div>
+      <aside id="detail">
+        <h2>Nothing selected</h2>
+        <div class="sub">
+          Pick a cell to inspect one registration, or an engine name to act on all
+          clients at once.
+        </div>
+      </aside>
+    </main>
+
+    <script>
+      const token = new URLSearchParams(location.search).get("token");
+      const state = { inventory: null, selection: null, busy: false, notice: null };
+
+      /** The fragment keeps the selection reloadable and linkable. */
+      function readSelectionFromHash() {
+        const [engineId, targetId] = decodeURIComponent(
+          location.hash.replace(/^#/u, ""),
+        ).split("/");
+        return engineId ? { engineId, targetId: targetId || null } : null;
+      }
+
+      function select(selection) {
+        state.selection = selection;
+        state.notice = null;
+        location.hash = selection
+          ? encodeURIComponent(selection.engineId) +
+            (selection.targetId ? `/${selection.targetId}` : "")
+          : "";
+        render();
+      }
+
+      async function api(path, init) {
+        const response = await fetch(path, {
+          ...init,
+          headers: {
+            authorization: `Bearer ${token}`,
+            ...(init?.body ? { "content-type": "application/json" } : {}),
+          },
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "request failed");
+        return body;
+      }
+
+      async function load(refresh) {
+        state.inventory = await api(`/api/inventory${refresh ? "?refresh=1" : ""}`);
+        if (state.selection === null) state.selection = readSelectionFromHash();
+        render();
+      }
+
+      function engineById(id) {
+        return state.inventory.engines.find((engine) => engine.id === id);
+      }
+
+      function targetById(id) {
+        return state.inventory.targets.find((target) => target.id === id);
+      }
+
+      function cellLabel(cell) {
+        if (cell.state === "managed") {
+          return cell.status === "unavailable" && cell.unavailableCode
+            ? cell.unavailableCode.toLowerCase().replace(/_/g, " ")
+            : cell.status;
+        }
+        if (cell.state === "installable") return "+ install";
+        if (cell.state === "needs-build") return "+ build first";
+        return "·";
+      }
+
+      function cellClass(cell) {
+        if (cell.state === "managed") return `cell s-${cell.status}`;
+        if (cell.state === "installable") return "cell empty installable";
+        if (cell.state === "needs-build") return "cell empty installable";
+        return "cell empty blocked";
+      }
+
+      function render() {
+        renderStats();
+        renderMatrix();
+        renderDetail();
+      }
+
+      function renderStats() {
+        const inventory = state.inventory;
+        const installed = inventory.engines.reduce(
+          (total, engine) => total + engine.installedCount,
+          0,
+        );
+        const clients = inventory.targets.filter(
+          (target) => target.evidence === "installed",
+        ).length;
+        document.getElementById("stats").innerHTML = `
+          <span><b>${inventory.engines.length}</b> engines</span>
+          <span><b>${installed}</b> registrations</span>
+          <span><b>${clients}</b> clients detected</span>
+          <span>scanned ${inventory.discovery.roots.length} root(s)</span>`;
+      }
+
+      function renderMatrix() {
+        const inventory = state.inventory;
+        const host = document.getElementById("matrix");
+        if (inventory.engines.length === 0) {
+          host.innerHTML = `<div class="empty-state">
+            No Action Engine found. Nothing is registered by the installer and no
+            <code>invokta.mcp.json</code> manifest was found under:
+            <br /><code>${inventory.discovery.roots.join("<br />")}</code>
+            <br /><br />Restart with <code>--scan &lt;directory&gt;</code> to look elsewhere.
+          </div>`;
+          return;
+        }
+        const head = inventory.targets
+          .map(
+            (target) => `<th title="${target.configuration.kind === "blocked" ? target.configuration.code : target.configuration.path}">
+              ${target.displayName}<span class="ev">${target.evidence}</span></th>`,
+          )
+          .join("");
+        const rows = inventory.engines
+          .map((engine) => {
+            const cells = inventory.targets
+              .map((target) => {
+                const cell = engine.cells[target.id];
+                const selected =
+                  state.selection &&
+                  state.selection.engineId === engine.id &&
+                  state.selection.targetId === target.id;
+                return `<td><button class="${cellClass(cell)}${selected ? " selected" : ""}"
+                  data-engine="${engine.id}" data-target="${target.id}"
+                  title="${(cell.reason || "").replace(/"/g, "&quot;")}">
+                  ${cell.state === "managed" ? '<i class="dot"></i>' : ""}${cellLabel(cell)}
+                </button></td>`;
+              })
+              .join("");
+            const selected =
+              state.selection &&
+              state.selection.engineId === engine.id &&
+              !state.selection.targetId;
+            return `<tr>
+              <td class="engine-col"><button type="button" class="cell${selected ? " selected" : ""}"
+                data-engine="${engine.id}">
+                <span class="engine-name"><span class="engine-title">${engine.title || engine.id}</span>
+                <span class="engine-id">${engine.id}${engine.project ? "" : " · state only"}</span></span>
+              </button></td>${cells}</tr>`;
+          })
+          .join("");
+        host.innerHTML = `<table><thead><tr>
+          <th class="engine-col">Action Engine</th>${head}</tr></thead>
+          <tbody>${rows}</tbody></table>`;
+
+        for (const button of host.querySelectorAll("button[data-engine]")) {
+          button.addEventListener("click", () => {
+            if (button.classList.contains("blocked")) return;
+            select({
+              engineId: button.dataset.engine,
+              targetId: button.dataset.target || null,
+            });
+          });
+        }
+      }
+
+      function definitionList(pairs) {
+        return `<dl>${pairs
+          .filter(([, value]) => value !== undefined && value !== null && value !== "")
+          .map(([label, value]) => `<dt>${label}</dt><dd class="mono">${value}</dd>`)
+          .join("")}</dl>`;
+      }
+
+      function renderDetail() {
+        const host = document.getElementById("detail");
+        const notice = state.notice
+          ? `<div class="banner ${state.notice.tone}">${state.notice.text}</div>`
+          : "";
+        if (!state.selection) {
+          host.innerHTML = `<h2>Nothing selected</h2><div class="sub">Pick a cell to
+            inspect one registration, or an engine name to act on all clients at once.</div>${notice}`;
+          return;
+        }
+        const engine = engineById(state.selection.engineId);
+        if (!engine) {
+          state.selection = null;
+          renderDetail();
+          return;
+        }
+        host.innerHTML = state.selection.targetId
+          ? cellDetail(engine, targetById(state.selection.targetId), notice)
+          : engineDetail(engine, notice);
+        bindActions();
+      }
+
+      function engineDetail(engine, notice) {
+        const installable = state.inventory.targets
+          .filter((target) => engine.cells[target.id].state === "installable")
+          .map((target) => target.id);
+        const actions = [];
+        if (installable.length > 0) {
+          actions.push(`<button type="button" class="primary" data-action="install"
+            data-engine="${engine.id}" data-targets="${installable.join(",")}">
+            Install in ${installable.length} client${installable.length === 1 ? "" : "s"}</button>`);
+        }
+        return `<h2>${engine.title || engine.id}</h2>
+          <div class="sub">${engine.description || "No description in the manifest."}</div>
+          ${notice}
+          <div class="actions">${actions.join("")}</div>
+          ${definitionList([
+            ["id", engine.id],
+            ["server", engine.serverName],
+            ["version", engine.version],
+            ["installed in", `${engine.installedCount} client(s)`],
+            ["capabilities", engine.capabilityIds.join(", ")],
+            ["project", engine.project ? engine.project.directory : "not found on disk"],
+            ["manifest", engine.project ? engine.project.manifestPath : ""],
+            ["entry point", engine.project ? engine.project.entrypoint : ""],
+            [
+              "built",
+              engine.project ? (engine.project.entrypointBuilt ? "yes" : "no") : "",
+            ],
+            ["forwarded env", engine.project ? engine.project.forwardEnv.join(", ") : ""],
+          ])}
+          ${
+            engine.project && !engine.project.entrypointBuilt
+              ? `<div class="banner">The compiled entry point is missing. Build the
+                 project before installing it:<br /><code>cd ${engine.project.directory} && yarn build</code></div>`
+              : ""
+          }`;
+      }
+
+      const statusNotes = {
+        drifted:
+          "This server definition changed outside the installer, so every owned action is blocked. Reinstall the engine from its project directory to take ownership again.",
+        conflict:
+          "Another MCP server already uses this name in this client. The installer never overwrites a definition it does not own.",
+        external:
+          "This definition matches an engine the installer knows, but it was not written by the installer.",
+        unavailable:
+          "This registration cannot be acted on right now. The installer reports:",
+      };
+
+      function cellDetail(engine, target, notice) {
+        const cell = engine.cells[target.id];
+        const actions = [];
+        if (cell.state === "managed") {
+          for (const action of cell.actions) {
+            actions.push(`<button type="button" data-action="${action}" data-engine="${engine.id}"
+              data-targets="${target.id}">${action[0].toUpperCase()}${action.slice(1)}</button>`);
+          }
+          if (["enabled", "disabled", "outdated"].includes(cell.status)) {
+            actions.push(`<button type="button" class="danger" data-action="remove"
+              data-engine="${engine.id}" data-targets="${target.id}">Remove</button>`);
+          }
+        } else if (cell.state === "installable") {
+          actions.push(`<button type="button" class="primary" data-action="install"
+            data-engine="${engine.id}" data-targets="${target.id}">Install here</button>`);
+        }
+        const transport = cell.transport;
+        return `<h2>${engine.serverName} · ${target.displayName}</h2>
+          <div class="sub">${cell.state === "managed" ? cell.status : cell.state}</div>
+          ${notice}
+          <div class="actions">${actions.join("")}</div>
+          ${cell.reason ? `<div class="banner bad">${cell.reason}</div>` : ""}
+          ${
+            cell.state === "managed" && actions.length === 0
+              ? `<div class="banner bad">${statusNotes[cell.status] || "No action is available."}
+                 ${cell.unavailableCode ? `<br /><code>${cell.unavailableCode}</code>` : ""}</div>`
+              : ""
+          }
+          ${definitionList([
+            ["client", target.displayName],
+            ["detection", target.evidence],
+            [
+              "configuration",
+              target.configuration.kind === "blocked"
+                ? target.configuration.code
+                : target.configuration.path,
+            ],
+            ["surfaces", target.surfaces.join(", ")],
+            ["installed at", cell.installedAt],
+            ["updated at", cell.updatedAt],
+            ["adopted", cell.adopted === undefined ? "" : String(cell.adopted)],
+            ["transport", transport ? transport.type : ""],
+            [
+              "command",
+              transport && transport.type === "stdio"
+                ? `${transport.command} ${transport.args.join(" ")}`
+                : "",
+            ],
+            ["url", transport && transport.type !== "stdio" ? transport.url : ""],
+          ])}
+          <div class="banner">${target.reloadHint}</div>`;
+      }
+
+      function bindActions() {
+        for (const button of document.querySelectorAll("button[data-action]")) {
+          button.addEventListener("click", () => {
+            void act(
+              button.dataset.action,
+              button.dataset.engine,
+              button.dataset.targets.split(","),
+            );
+          });
+        }
+      }
+
+      async function act(action, engineId, targetIds) {
+        if (state.busy) return;
+        state.busy = true;
+        state.notice = {
+          tone: "",
+          text: "Waiting for your confirmation in the terminal running <code>invokta-manager</code>…",
+        };
+        renderDetail();
+        try {
+          const result = await api("/api/action", {
+            method: "POST",
+            body: JSON.stringify({ action, engineId, targetIds }),
+          });
+          if (!result.approved) {
+            state.notice = { tone: "bad", text: "Declined in the terminal. Nothing changed." };
+          } else {
+            const failed = result.results.filter((entry) => entry.outcome === "failed");
+            state.notice = {
+              tone: failed.length > 0 ? "bad" : "ok",
+              text: result.results
+                .map((entry) =>
+                  entry.outcome === "failed"
+                    ? `<b>${entry.displayName}</b>: ${entry.code} — ${entry.message}`
+                    : `<b>${entry.displayName}</b>: ${entry.outcome}. ${entry.reloadHint || ""}`,
+                )
+                .join("<br />"),
+            };
+          }
+          await load(true);
+        } catch (error) {
+          state.notice = { tone: "bad", text: String(error.message || error) };
+          renderDetail();
+        } finally {
+          state.busy = false;
+          renderDetail();
+        }
+      }
+
+      document.getElementById("refresh").addEventListener("click", () => {
+        void load(true);
+      });
+      void load(false).catch((error) => {
+        document.getElementById("matrix").innerHTML =
+          `<div class="empty-state">${String(error.message || error)}</div>`;
+      });
+    </script>
+  </body>
+</html>
