@@ -14,7 +14,33 @@ This is a proof of concept on a throwaway branch. It is **not** a package, it is
 not published, it is not in the workspace list, and it is not referenced by the
 root TypeScript project. `yarn check` is unaffected.
 
-![The console showing nine engines across eleven configuration targets](./docs/console.png)
+![The console showing nine engines across the usable configuration targets, with one drifted registration selected](./docs/console.png)
+
+## The interface
+
+The matrix is the whole product, so everything else stays out of its way.
+
+- **Rows** are engines, **columns** are clients, **cells** are registrations. A
+  cell carries its ownership status; an empty eligible cell is the install
+  gesture; an unreachable client is a dash at 30% opacity.
+- **Clients that nobody can install into are hidden by default** — blocked
+  targets and clients with neither an executable nor a configuration file. The
+  `n hidden` chip brings them back. On this machine that turns eleven columns
+  into seven that fit without scrolling.
+- **The counters filter.** `need attention` jumps straight to the engines whose
+  registrations drifted or conflict; those rows also carry a red edge marker.
+- **The side panel appears only when something is selected**, so the matrix owns
+  the full width while you scan. A row selection acts on every client at once; a
+  cell selection acts on one registration.
+- **Selection lives in the URL fragment**, so a specific registration is
+  linkable and survives a reload.
+- `/` focuses the filter, `Escape` clears the selection, and paths are
+  click-to-copy.
+
+Every mutation raises a blocking overlay that points at the terminal and echoes
+the exact change being confirmed there:
+
+![The console waiting for a terminal confirmation](./docs/confirmation.png)
 
 ## Running it
 

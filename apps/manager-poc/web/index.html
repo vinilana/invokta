@@ -7,139 +7,310 @@
     <style>
       :root {
         color-scheme: light dark;
-        --bg: #fbfbfc;
-        --panel: #ffffff;
-        --line: #e3e4e8;
-        --text: #16171a;
-        --muted: #6b6e76;
-        --accent: #4338ca;
-        --ok: #0f7b4f;
-        --warn: #9a6400;
-        --bad: #b42318;
-        --info: #1d5fbf;
-        --ghost: #f2f2f4;
+        --bg: #fafafa;
+        --surface: #ffffff;
+        --surface-2: #f4f4f5;
+        --surface-3: #ebebed;
+        --border: #e4e4e7;
+        --border-strong: #d4d4d8;
+        --text: #18181b;
+        --text-2: #52525b;
+        --text-3: #a1a1aa;
+        --accent: #4f46e5;
+        --accent-soft: #eef2ff;
+        --accent-contrast: #ffffff;
+        --ok: #15803d;
+        --ok-soft: #dcfce7;
+        --warn: #a16207;
+        --warn-soft: #fef9c3;
+        --bad: #b91c1c;
+        --bad-soft: #fee2e2;
+        --info: #1d4ed8;
+        --info-soft: #dbeafe;
+        --shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 6%);
+        --sans:
+          ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+          sans-serif;
+        --mono:
+          ui-monospace, SFMono-Regular, "SF Mono", Menlo, "Liberation Mono",
+          monospace;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #0d0e11;
-          --panel: #16181d;
-          --line: #272a31;
-          --text: #e8e9ec;
-          --muted: #9096a1;
-          --accent: #a5a1ff;
+          --bg: #09090b;
+          --surface: #131316;
+          --surface-2: #1c1c21;
+          --surface-3: #26262c;
+          --border: #27272a;
+          --border-strong: #3f3f46;
+          --text: #fafafa;
+          --text-2: #a1a1aa;
+          --text-3: #71717a;
+          --accent: #818cf8;
+          --accent-soft: #1e1b4b;
+          --accent-contrast: #0b0b12;
           --ok: #4ade80;
+          --ok-soft: #052e16;
           --warn: #fbbf24;
-          --bad: #fb7185;
-          --info: #7dd3fc;
-          --ghost: #1d2027;
+          --warn-soft: #3f2a04;
+          --bad: #f87171;
+          --bad-soft: #450a0a;
+          --info: #60a5fa;
+          --info-soft: #172554;
+          --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 28px rgb(0 0 0 / 45%);
         }
       }
+
       * {
         box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
       }
       body {
         margin: 0;
         background: var(--bg);
         color: var(--text);
-        font:
-          14px/1.5 ui-sans-serif,
-          system-ui,
-          -apple-system,
-          "Segoe UI",
-          sans-serif;
+        font: 14px/1.5 var(--sans);
+        -webkit-font-smoothing: antialiased;
       }
-      code,
       .mono {
-        font:
-          12px/1.5 ui-monospace,
-          SFMono-Regular,
-          "SF Mono",
-          Menlo,
-          monospace;
-      }
-      header {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-        align-items: baseline;
-        padding: 20px 24px;
-        border-bottom: 1px solid var(--line);
-        background: var(--panel);
-      }
-      header h1 {
-        margin: 0;
-        font-size: 16px;
-        letter-spacing: -0.01em;
-      }
-      header .tag {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--muted);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 2px 8px;
-      }
-      header .stats {
-        margin-left: auto;
-        display: flex;
-        gap: 18px;
-        color: var(--muted);
+        font-family: var(--mono);
         font-size: 12px;
       }
-      header .stats b {
-        color: var(--text);
-        font-weight: 600;
+
+      /* ---------- chrome ---------- */
+
+      .app {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
       }
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 0 20px;
+        height: 56px;
+        flex: none;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-weight: 620;
+        letter-spacing: -0.015em;
+        white-space: nowrap;
+      }
+      .brand .mark {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        background: linear-gradient(140deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #ec4899));
+        box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%);
+      }
+      .badge-poc {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--text-3);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 2px 7px;
+      }
+      .search {
+        position: relative;
+        margin-left: 8px;
+        flex: 1 1 220px;
+        max-width: 320px;
+      }
+      .search input {
+        width: 100%;
+        font: inherit;
+        color: inherit;
+        background: var(--surface-2);
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 6px 10px 6px 30px;
+        outline: none;
+      }
+      .search input:focus {
+        border-color: var(--accent);
+        background: var(--surface);
+      }
+      .search .glyph {
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-3);
+        font-size: 12px;
+        pointer-events: none;
+      }
+      .search kbd {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        font: 500 10px/1 var(--mono);
+        color: var(--text-3);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 3px 5px;
+      }
+      .spacer {
+        margin-left: auto;
+      }
+
       button {
         font: inherit;
         color: inherit;
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        padding: 5px 11px;
+        background: none;
+        border: none;
         cursor: pointer;
       }
-      button:hover:not(:disabled) {
-        border-color: var(--accent);
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--surface);
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 13px;
+        font-weight: 500;
+        transition: border-color 0.12s ease, background 0.12s ease;
       }
-      button:disabled {
+      .btn:hover {
+        border-color: var(--text-3);
+        background: var(--surface-2);
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-contrast);
+      }
+      .btn.primary:hover {
+        filter: brightness(1.08);
+        background: var(--accent);
+      }
+      .btn.danger {
+        color: var(--bad);
+        border-color: color-mix(in srgb, var(--bad) 40%, transparent);
+      }
+      .btn.danger:hover {
+        background: var(--bad-soft);
+        border-color: var(--bad);
+      }
+      .btn:disabled {
         opacity: 0.45;
         cursor: not-allowed;
       }
-      button.primary {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: #fff;
+
+      /* ---------- summary ---------- */
+
+      .summary {
+        display: flex;
+        align-items: stretch;
+        gap: 0;
+        flex: none;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 0 12px;
+        overflow-x: auto;
       }
-      @media (prefers-color-scheme: dark) {
-        button.primary {
-          color: #0d0e11;
-        }
+      .stat {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        padding: 11px 16px;
+        border-radius: 8px;
+        white-space: nowrap;
+        text-align: left;
       }
-      button.danger {
-        border-color: var(--bad);
+      .stat .value {
+        font-size: 17px;
+        font-weight: 640;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+      .stat .label {
+        font-size: 11px;
+        color: var(--text-3);
+      }
+      button.stat:hover {
+        background: var(--surface-2);
+      }
+      .stat.attention .value {
         color: var(--bad);
       }
-      main {
+      .stat.active {
+        background: var(--accent-soft);
+      }
+      .toggles {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 4px;
+      }
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 5px 11px;
+        white-space: nowrap;
+      }
+      .toggle:hover {
+        background: var(--surface-2);
+      }
+      .toggle.on {
+        color: var(--accent);
+        border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+        background: var(--accent-soft);
+      }
+      .toggle .box {
+        width: 6px;
+        height: 6px;
+        border-radius: 2px;
+        background: var(--text-3);
+      }
+      .toggle.on .box {
+        background: var(--accent);
+      }
+
+      /* ---------- layout ---------- */
+
+      .body {
+        flex: 1 1 auto;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 340px;
-        gap: 0;
-        min-height: calc(100vh - 66px);
+        grid-template-columns: minmax(0, 1fr);
+        min-height: 0;
       }
-      @media (max-width: 1000px) {
-        main {
-          grid-template-columns: minmax(0, 1fr);
-        }
+      .body.has-panel {
+        grid-template-columns: minmax(0, 1fr) 360px;
       }
-      .matrix-wrap {
+      .board {
         overflow: auto;
-        padding: 20px 24px 60px;
+        padding: 18px 20px 48px;
       }
+
+      /* ---------- matrix ---------- */
+
       table {
         border-collapse: separate;
         border-spacing: 0;
-        min-width: 100%;
+      }
+      col.hot {
+        background: var(--surface-2);
       }
       th,
       td {
@@ -149,256 +320,688 @@
       }
       thead th {
         position: sticky;
-        top: 0;
+        top: -18px;
         z-index: 2;
         background: var(--bg);
-        border-bottom: 1px solid var(--line);
-        padding: 0 8px 10px;
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--muted);
+        padding: 6px 6px 10px;
         vertical-align: bottom;
+        border-bottom: 1px solid var(--border);
       }
-      thead th .ev {
-        display: block;
-        font-weight: 400;
+      .client-head {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding: 0 4px;
+      }
+      .client-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-2);
+      }
+      .client-evidence {
+        display: flex;
+        align-items: center;
+        gap: 5px;
         font-size: 10px;
-        opacity: 0.75;
+        color: var(--text-3);
       }
-      th.engine-col,
-      td.engine-col {
+      .pip {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--text-3);
+        flex: none;
+      }
+      .pip.live {
+        background: var(--ok);
+      }
+      .pip.off {
+        background: var(--border-strong);
+      }
+      th.rowhead,
+      td.rowhead {
         position: sticky;
         left: 0;
         z-index: 1;
         background: var(--bg);
-        padding-right: 18px;
-        border-right: 1px solid var(--line);
+        border-right: 1px solid var(--border);
+        padding-right: 14px;
       }
-      thead th.engine-col {
+      thead th.rowhead {
         z-index: 3;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-3);
+        padding-left: 12px;
+      }
+      tbody td {
+        border-bottom: 1px solid var(--border);
+        padding: 3px 2px;
       }
       tbody tr:hover td {
-        background: var(--ghost);
+        background: var(--surface-2);
       }
-      td {
-        border-bottom: 1px solid var(--line);
-        padding: 6px 4px;
+      tbody tr.selected td {
+        background: color-mix(in srgb, var(--accent) 9%, var(--bg));
       }
-      .engine-name {
+
+      .rowhead-btn {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        min-width: 186px;
+        padding: 9px 10px 9px 12px;
+        border-radius: 9px;
+        border: 1px solid transparent;
+        text-align: left;
+      }
+      .rowhead-btn:hover {
+        background: var(--surface);
+        border-color: var(--border);
+      }
+      .rowhead-btn.selected {
+        background: var(--surface);
+        border-color: var(--accent);
+      }
+      .row-accent {
+        width: 3px;
+        align-self: stretch;
+        border-radius: 2px;
+        background: transparent;
+        flex: none;
+      }
+      tr.attention .row-accent {
+        background: var(--bad);
+      }
+      .row-text {
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
         gap: 1px;
-        padding: 6px 0;
+        min-width: 0;
       }
-      .engine-title {
-        font-weight: 600;
+      .row-title {
         font-size: 13px;
-        color: var(--text);
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
-      .engine-id {
+      .row-meta {
         font-size: 11px;
-        color: var(--muted);
-      }
-      .cell {
-        width: 100%;
-        justify-content: flex-start;
-        text-align: left;
-        min-width: 96px;
+        color: var(--text-3);
         display: flex;
         align-items: center;
         gap: 6px;
+      }
+      .row-flag {
+        font-size: 10px;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: var(--surface-3);
+        color: var(--text-2);
+      }
+      .row-count {
+        margin-left: auto;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        color: var(--text-3);
+        flex: none;
+      }
+
+      .cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        min-width: 92px;
+        height: 34px;
+        padding: 0 10px;
+        border-radius: 8px;
         border: 1px solid transparent;
-        border-radius: 7px;
-        padding: 5px 8px;
-        background: none;
         font-size: 12px;
-        cursor: pointer;
+        font-weight: 500;
+        transition: background 0.1s ease, border-color 0.1s ease;
       }
-      .cell:hover {
-        background: var(--panel);
-        border-color: var(--line);
-      }
-      .cell.selected {
-        border-color: var(--accent);
-        background: var(--panel);
-      }
-      .dot {
-        width: 8px;
-        height: 8px;
+      .cell .dot {
+        width: 7px;
+        height: 7px;
         border-radius: 50%;
         flex: none;
       }
-      .s-enabled .dot {
+      .cell.enabled {
+        color: var(--ok);
+        background: var(--ok-soft);
+      }
+      .cell.enabled .dot {
         background: var(--ok);
       }
-      .s-disabled .dot {
+      .cell.disabled {
+        color: var(--warn);
+        background: var(--warn-soft);
+      }
+      .cell.disabled .dot {
         background: var(--warn);
       }
-      .s-outdated .dot {
+      .cell.outdated {
+        color: var(--info);
+        background: var(--info-soft);
+      }
+      .cell.outdated .dot {
         background: var(--info);
       }
-      .s-drifted .dot,
-      .s-conflict .dot,
-      .s-unavailable .dot {
+      .cell.broken {
+        color: var(--bad);
+        background: var(--bad-soft);
+      }
+      .cell.broken .dot {
         background: var(--bad);
       }
-      .s-enabled {
-        color: var(--ok);
-      }
-      .s-disabled {
-        color: var(--warn);
-      }
-      .s-outdated {
-        color: var(--info);
-      }
-      .s-drifted,
-      .s-conflict,
-      .s-unavailable {
-        color: var(--bad);
-      }
-      .cell.empty {
-        color: var(--muted);
+      .cell.installable {
+        color: var(--text-3);
         border-style: dashed;
         border-color: transparent;
       }
-      .cell.installable {
-        color: var(--accent);
+      .cell.installable .plus {
+        opacity: 0.5;
       }
       .cell.installable:hover {
-        border-style: dashed;
-        border-color: var(--accent);
+        color: var(--accent);
+        border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+        background: var(--accent-soft);
       }
-      .cell.blocked {
+      .cell.installable .cell-label {
+        opacity: 0;
+        transition: opacity 0.1s ease;
+      }
+      .cell.installable:hover .plus,
+      .cell.installable:hover .cell-label {
+        opacity: 1;
+      }
+      .cell.build {
+        color: var(--warn);
+        border: 1px dashed color-mix(in srgb, var(--warn) 45%, transparent);
+      }
+      .cell.void {
+        color: var(--text-3);
+        opacity: 0.3;
         cursor: default;
-        opacity: 0.4;
       }
-      .cell.blocked:hover {
-        background: none;
-        border-color: transparent;
+      .cell.selected {
+        outline: 2px solid var(--accent);
+        outline-offset: -1px;
       }
-      aside {
-        border-left: 1px solid var(--line);
-        background: var(--panel);
-        padding: 20px;
-        overflow: auto;
-        max-height: calc(100vh - 66px);
-        position: sticky;
-        top: 0;
-      }
-      aside h2 {
-        margin: 0 0 2px;
-        font-size: 14px;
-      }
-      aside .sub {
-        color: var(--muted);
-        font-size: 12px;
-        margin-bottom: 16px;
-      }
-      dl {
-        margin: 0 0 16px;
-        display: grid;
-        grid-template-columns: max-content minmax(0, 1fr);
-        gap: 4px 12px;
-        font-size: 12px;
-      }
-      dt {
-        color: var(--muted);
-      }
-      dd {
-        margin: 0;
-        overflow-wrap: anywhere;
-      }
-      .actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 16px;
-      }
-      .banner {
-        border: 1px solid var(--line);
-        border-left: 3px solid var(--accent);
-        border-radius: 6px;
-        padding: 10px 12px;
-        font-size: 12px;
-        margin-bottom: 16px;
-        background: var(--ghost);
-      }
-      .banner.bad {
-        border-left-color: var(--bad);
-      }
-      .banner.ok {
-        border-left-color: var(--ok);
-      }
+
       .legend {
         display: flex;
         flex-wrap: wrap;
-        gap: 14px;
-        padding: 0 24px 20px;
+        gap: 16px;
+        margin-top: 18px;
+        padding-left: 12px;
         font-size: 11px;
-        color: var(--muted);
+        color: var(--text-3);
       }
       .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .legend i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+      }
+      .roots {
+        margin-top: 22px;
+        padding-left: 12px;
+        font-size: 11px;
+        color: var(--text-3);
+      }
+      .roots code {
+        font-family: var(--mono);
+        color: var(--text-2);
+      }
+
+      .placeholder {
+        max-width: 460px;
+        margin: 64px auto;
+        text-align: center;
+        color: var(--text-2);
+      }
+      .placeholder h2 {
+        margin: 0 0 8px;
+        font-size: 16px;
+        color: var(--text);
+      }
+      .placeholder p {
+        margin: 0 0 8px;
+        font-size: 13px;
+      }
+      .placeholder code {
+        font-family: var(--mono);
+        font-size: 12px;
+        background: var(--surface-2);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+
+      /* ---------- detail panel ---------- */
+
+      .panel {
+        display: none;
+        border-left: 1px solid var(--border);
+        background: var(--surface);
+        overflow: auto;
+        min-height: 0;
+      }
+      .body.has-panel .panel {
+        display: block;
+      }
+      @media (max-width: 1080px) {
+        .body.has-panel {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .body.has-panel .panel {
+          position: fixed;
+          inset: 56px 0 0 auto;
+          width: min(400px, 100%);
+          z-index: 40;
+          box-shadow: var(--shadow);
+        }
+      }
+      .panel-inner {
+        padding: 18px 18px 40px;
+      }
+      .panel-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 4px;
+      }
+      .panel-close {
+        margin-left: auto;
+        flex: none;
+        font-size: 17px;
+        line-height: 1;
+        color: var(--text-3);
+        border-radius: 6px;
+        padding: 2px 7px;
+      }
+      .panel-close:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .panel-head h2 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 640;
+        letter-spacing: -0.015em;
+        overflow-wrap: anywhere;
+      }
+      .panel-sub {
+        font-size: 12px;
+        color: var(--text-2);
+        margin-bottom: 14px;
+        overflow-wrap: anywhere;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 999px;
+        padding: 3px 9px;
+        background: var(--surface-3);
+        color: var(--text-2);
+      }
+      .pill i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentcolor;
+      }
+      .pill.enabled {
+        color: var(--ok);
+        background: var(--ok-soft);
+      }
+      .pill.disabled {
+        color: var(--warn);
+        background: var(--warn-soft);
+      }
+      .pill.outdated {
+        color: var(--info);
+        background: var(--info-soft);
+      }
+      .pill.broken {
+        color: var(--bad);
+        background: var(--bad-soft);
+      }
+      .pill.installable {
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .panel-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 14px 0 18px;
+      }
+      .section {
+        margin-bottom: 20px;
+      }
+      .section h3 {
+        margin: 0 0 8px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--text-3);
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr);
+        gap: 6px 10px;
+        font-size: 12px;
+        align-items: start;
+      }
+      .kv dt {
+        color: var(--text-3);
+      }
+      .kv dd {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        line-height: 1.45;
+        color: var(--text);
+        overflow-wrap: anywhere;
+      }
+      .copy {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 6px;
+        text-align: left;
+        border-radius: 5px;
+        padding: 1px 4px;
+        margin: -1px -4px;
+        font: inherit;
+        color: inherit;
+      }
+      .copy:hover {
+        background: var(--surface-2);
+      }
+      .copy .hint {
+        font: 500 9px/1 var(--sans);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-3);
+        opacity: 0;
+      }
+      .copy:hover .hint {
+        opacity: 1;
+      }
+
+      .note {
+        border-radius: 9px;
+        padding: 10px 12px;
+        font-size: 12px;
+        line-height: 1.5;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        color: var(--text-2);
+        margin-bottom: 14px;
+        overflow-wrap: anywhere;
+      }
+      .note.bad {
+        background: var(--bad-soft);
+        border-color: color-mix(in srgb, var(--bad) 32%, transparent);
+        color: var(--bad);
+      }
+      .note.warn {
+        background: var(--warn-soft);
+        border-color: color-mix(in srgb, var(--warn) 32%, transparent);
+        color: var(--warn);
+      }
+      .note code {
+        font-family: var(--mono);
+        font-size: 11px;
+        display: inline-block;
+        margin-top: 4px;
+      }
+
+      .client-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .client-row {
         display: flex;
         align-items: center;
-        gap: 5px;
+        gap: 8px;
+        padding: 7px 8px;
+        border-radius: 7px;
+        font-size: 12px;
+        width: 100%;
+        text-align: left;
       }
-      .empty-state {
-        padding: 40px 24px;
-        color: var(--muted);
+      .client-row:hover {
+        background: var(--surface-2);
+      }
+      .client-row .name {
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .client-row .state {
+        font-size: 11px;
+        color: var(--text-3);
+      }
+
+      /* ---------- overlay + toasts ---------- */
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        display: grid;
+        place-items: center;
+        background: color-mix(in srgb, var(--bg) 72%, transparent);
+        backdrop-filter: blur(3px);
+      }
+      .overlay-card {
+        width: min(420px, calc(100% - 40px));
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 22px 22px 20px;
+        text-align: center;
+      }
+      .overlay-card .term {
+        font-family: var(--mono);
+        font-size: 22px;
+        color: var(--accent);
+        animation: blink 1.05s steps(2, start) infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.2;
+        }
+      }
+      .overlay-card h3 {
+        margin: 8px 0 6px;
+        font-size: 15px;
+        font-weight: 620;
+        letter-spacing: -0.01em;
+      }
+      .overlay-card p {
+        margin: 0;
+        font-size: 12.5px;
+        color: var(--text-2);
+        line-height: 1.55;
+      }
+      .overlay-card .cmd {
+        margin-top: 14px;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        text-align: left;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 10px 12px;
+        color: var(--text-2);
+        overflow-wrap: anywhere;
+      }
+
+      .toasts {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 70;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-width: min(420px, calc(100% - 36px));
+      }
+      .toast {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--text-3);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        padding: 11px 13px;
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: var(--text-2);
+        animation: rise 0.16s ease-out;
+        overflow-wrap: anywhere;
+      }
+      .toast strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .toast.ok {
+        border-left-color: var(--ok);
+      }
+      .toast.bad {
+        border-left-color: var(--bad);
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .overlay-card .term,
+        .toast {
+          animation: none;
+        }
+        .btn,
+        .cell,
+        .cell.installable .cell-label,
+        .copy .hint {
+          transition: none;
+        }
       }
     </style>
   </head>
   <body>
-    <header>
-      <h1>Invokta manager</h1>
-      <span class="tag">proof of concept</span>
-      <div class="stats" id="stats"></div>
-      <button id="refresh" type="button">Rescan</button>
-    </header>
-    <main>
-      <div>
-        <div class="matrix-wrap" id="matrix">
-          <div class="empty-state">Loading inventory…</div>
+    <div class="app">
+      <div class="topbar">
+        <div class="brand"><span class="mark"></span>Invokta manager</div>
+        <span class="badge-poc">poc</span>
+        <div class="search">
+          <span class="glyph">⌕</span>
+          <input
+            id="search"
+            type="search"
+            placeholder="Filter engines"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <kbd>/</kbd>
         </div>
-        <div class="legend">
-          <span><i class="dot" style="background: var(--ok)"></i> enabled</span>
-          <span><i class="dot" style="background: var(--warn)"></i> disabled</span>
-          <span><i class="dot" style="background: var(--info)"></i> outdated</span>
-          <span><i class="dot" style="background: var(--bad)"></i> drifted / blocked</span>
-          <span>+ installable</span>
-          <span>· client unavailable</span>
-        </div>
+        <div class="spacer"></div>
+        <button class="btn" id="rescan" type="button">Rescan</button>
       </div>
-      <aside id="detail">
-        <h2>Nothing selected</h2>
-        <div class="sub">
-          Pick a cell to inspect one registration, or an engine name to act on all
-          clients at once.
+      <div class="summary" id="summary"></div>
+      <div class="body">
+        <div class="board" id="board">
+          <div class="placeholder"><p>Loading inventory…</p></div>
         </div>
-      </aside>
-    </main>
+        <aside class="panel" id="panel"></aside>
+      </div>
+    </div>
+    <div class="toasts" id="toasts"></div>
+    <div id="overlay"></div>
 
     <script>
       const token = new URLSearchParams(location.search).get("token");
-      const state = { inventory: null, selection: null, busy: false, notice: null };
+      const state = {
+        inventory: null,
+        selection: null,
+        pending: null,
+        query: "",
+        onlyInstalled: false,
+        onlyAttention: false,
+        showAllClients: false,
+      };
 
-      /** The fragment keeps the selection reloadable and linkable. */
-      function readSelectionFromHash() {
-        const [engineId, targetId] = decodeURIComponent(
-          location.hash.replace(/^#/u, ""),
-        ).split("/");
-        return engineId ? { engineId, targetId: targetId || null } : null;
+      const brokenStatuses = new Set(["drifted", "conflict", "unavailable"]);
+      const statusNotes = {
+        drifted:
+          "This definition changed outside the installer, so every owned action is blocked. Reinstall the engine from its project directory to take ownership again.",
+        conflict:
+          "Another MCP server already uses this name in this client. The installer never overwrites a definition it does not own.",
+        external:
+          "This definition matches an engine the installer knows, but the installer did not write it.",
+        unavailable:
+          "This registration cannot be acted on right now. The installer reports:",
+      };
+
+      /* ---------- helpers ---------- */
+
+      function esc(value) {
+        return String(value ?? "").replace(
+          /[&<>"']/gu,
+          (character) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[character],
+        );
       }
 
-      function select(selection) {
-        state.selection = selection;
-        state.notice = null;
-        location.hash = selection
-          ? encodeURIComponent(selection.engineId) +
-            (selection.targetId ? `/${selection.targetId}` : "")
-          : "";
-        render();
+      function tone(cell) {
+        if (cell.state !== "managed") {
+          return cell.state === "installable"
+            ? "installable"
+            : cell.state === "needs-build"
+              ? "build"
+              : "void";
+        }
+        return brokenStatuses.has(cell.status) ? "broken" : cell.status;
+      }
+
+      function cellText(cell) {
+        if (cell.state === "managed") {
+          return cell.status === "unavailable" && cell.unavailableCode
+            ? cell.unavailableCode.toLowerCase().replaceAll("_", " ")
+            : cell.status;
+        }
+        if (cell.state === "installable") return "install";
+        if (cell.state === "needs-build") return "build first";
+        return "—";
       }
 
       async function api(path, init) {
@@ -414,9 +1017,38 @@
         return body;
       }
 
+      function toast(text, kind) {
+        const host = document.getElementById("toasts");
+        const node = document.createElement("div");
+        node.className = `toast ${kind ?? ""}`;
+        node.innerHTML = text;
+        host.append(node);
+        setTimeout(() => node.remove(), 9000);
+      }
+
+      /* ---------- data ---------- */
+
       async function load(refresh) {
-        state.inventory = await api(`/api/inventory${refresh ? "?refresh=1" : ""}`);
-        if (state.selection === null) state.selection = readSelectionFromHash();
+        state.inventory = await api(
+          `/api/inventory${refresh ? "?refresh=1" : ""}`,
+        );
+        if (state.selection === null) state.selection = readHash();
+        render();
+      }
+
+      function readHash() {
+        const [engineId, targetId] = decodeURIComponent(
+          location.hash.replace(/^#/u, ""),
+        ).split("/");
+        return engineId ? { engineId, targetId: targetId || null } : null;
+      }
+
+      function select(selection) {
+        state.selection = selection;
+        location.hash = selection
+          ? encodeURIComponent(selection.engineId) +
+            (selection.targetId ? `/${selection.targetId}` : "")
+          : "";
         render();
       }
 
@@ -428,293 +1060,528 @@
         return state.inventory.targets.find((target) => target.id === id);
       }
 
-      function cellLabel(cell) {
-        if (cell.state === "managed") {
-          return cell.status === "unavailable" && cell.unavailableCode
-            ? cell.unavailableCode.toLowerCase().replace(/_/g, " ")
-            : cell.status;
-        }
-        if (cell.state === "installable") return "+ install";
-        if (cell.state === "needs-build") return "+ build first";
-        return "·";
+      function needsAttention(engine) {
+        return Object.values(engine.cells).some(
+          (cell) => cell.state === "managed" && brokenStatuses.has(cell.status),
+        );
       }
 
-      function cellClass(cell) {
-        if (cell.state === "managed") return `cell s-${cell.status}`;
-        if (cell.state === "installable") return "cell empty installable";
-        if (cell.state === "needs-build") return "cell empty installable";
-        return "cell empty blocked";
+      /** A client nobody can install into is noise until it is asked for. */
+      function usableTarget(target) {
+        return target.configuration.kind !== "blocked" && target.eligible;
       }
+
+      function visibleTargets() {
+        return state.showAllClients
+          ? state.inventory.targets
+          : state.inventory.targets.filter(usableTarget);
+      }
+
+      function visibleEngines() {
+        const query = state.query.trim().toLowerCase();
+        return state.inventory.engines.filter((engine) => {
+          if (state.onlyInstalled && engine.installedCount === 0) return false;
+          if (state.onlyAttention && !needsAttention(engine)) return false;
+          if (query === "") return true;
+          return `${engine.id} ${engine.title} ${engine.serverName}`
+            .toLowerCase()
+            .includes(query);
+        });
+      }
+
+      /* ---------- render ---------- */
 
       function render() {
-        renderStats();
-        renderMatrix();
-        renderDetail();
+        renderSummary();
+        renderBoard();
+        renderPanel();
+        renderOverlay();
       }
 
-      function renderStats() {
+      function renderSummary() {
         const inventory = state.inventory;
-        const installed = inventory.engines.reduce(
+        const registrations = inventory.engines.reduce(
           (total, engine) => total + engine.installedCount,
           0,
         );
+        const attention = inventory.engines.filter(needsAttention).length;
         const clients = inventory.targets.filter(
           (target) => target.evidence === "installed",
         ).length;
-        document.getElementById("stats").innerHTML = `
-          <span><b>${inventory.engines.length}</b> engines</span>
-          <span><b>${installed}</b> registrations</span>
-          <span><b>${clients}</b> clients detected</span>
-          <span>scanned ${inventory.discovery.roots.length} root(s)</span>`;
+        const hidden =
+          inventory.targets.length - inventory.targets.filter(usableTarget).length;
+
+        document.getElementById("summary").innerHTML = `
+          <button class="stat${state.onlyInstalled || state.onlyAttention ? "" : " active"}"
+            type="button" data-filter="all">
+            <span class="value">${inventory.engines.length}</span>
+            <span class="label">engines</span></button>
+          <button class="stat${state.onlyInstalled ? " active" : ""}" type="button"
+            data-filter="installed">
+            <span class="value">${registrations}</span>
+            <span class="label">registrations</span></button>
+          <button class="stat attention${state.onlyAttention ? " active" : ""}"
+            type="button" data-filter="attention"${attention === 0 ? " disabled" : ""}>
+            <span class="value">${attention}</span>
+            <span class="label">need attention</span></button>
+          <div class="stat">
+            <span class="value">${clients}</span>
+            <span class="label">clients detected</span></div>
+          <div class="toggles">
+            <button class="toggle${state.showAllClients ? " on" : ""}" type="button"
+              id="toggle-clients"><span class="box"></span>
+              ${state.showAllClients ? "All clients" : `${hidden} hidden`}</button>
+          </div>`;
+
+        for (const button of document.querySelectorAll("[data-filter]")) {
+          button.addEventListener("click", () => {
+            const filter = button.dataset.filter;
+            state.onlyInstalled = filter === "installed";
+            state.onlyAttention = filter === "attention";
+            render();
+          });
+        }
+        document
+          .getElementById("toggle-clients")
+          .addEventListener("click", () => {
+            state.showAllClients = !state.showAllClients;
+            render();
+          });
       }
 
-      function renderMatrix() {
-        const inventory = state.inventory;
-        const host = document.getElementById("matrix");
-        if (inventory.engines.length === 0) {
-          host.innerHTML = `<div class="empty-state">
-            No Action Engine found. Nothing is registered by the installer and no
-            <code>invokta.mcp.json</code> manifest was found under:
-            <br /><code>${inventory.discovery.roots.join("<br />")}</code>
-            <br /><br />Restart with <code>--scan &lt;directory&gt;</code> to look elsewhere.
-          </div>`;
+      function renderBoard() {
+        const board = document.getElementById("board");
+        const engines = visibleEngines();
+        const targets = visibleTargets();
+
+        if (state.inventory.engines.length === 0) {
+          board.innerHTML = emptyInventory();
           return;
         }
-        const head = inventory.targets
+        if (engines.length === 0) {
+          board.innerHTML = `<div class="placeholder"><h2>No match</h2>
+            <p>No engine matches the current filter.</p></div>`;
+          return;
+        }
+
+        const cols = `<colgroup><col />${targets
+          .map((target) => `<col data-col="${esc(target.id)}" />`)
+          .join("")}</colgroup>`;
+        const head = targets
           .map(
-            (target) => `<th title="${target.configuration.kind === "blocked" ? target.configuration.code : target.configuration.path}">
-              ${target.displayName}<span class="ev">${target.evidence}</span></th>`,
+            (target) => `<th><div class="client-head">
+              <span class="client-name">${esc(target.displayName)}</span>
+              <span class="client-evidence"><i class="pip ${
+                target.evidence === "installed" ? "live" : "off"
+              }"></i>${esc(target.evidence)}</span></div></th>`,
           )
           .join("");
-        const rows = inventory.engines
-          .map((engine) => {
-            const cells = inventory.targets
-              .map((target) => {
-                const cell = engine.cells[target.id];
-                const selected =
-                  state.selection &&
-                  state.selection.engineId === engine.id &&
-                  state.selection.targetId === target.id;
-                return `<td><button class="${cellClass(cell)}${selected ? " selected" : ""}"
-                  data-engine="${engine.id}" data-target="${target.id}"
-                  title="${(cell.reason || "").replace(/"/g, "&quot;")}">
-                  ${cell.state === "managed" ? '<i class="dot"></i>' : ""}${cellLabel(cell)}
-                </button></td>`;
-              })
-              .join("");
-            const selected =
-              state.selection &&
-              state.selection.engineId === engine.id &&
-              !state.selection.targetId;
-            return `<tr>
-              <td class="engine-col"><button type="button" class="cell${selected ? " selected" : ""}"
-                data-engine="${engine.id}">
-                <span class="engine-name"><span class="engine-title">${engine.title || engine.id}</span>
-                <span class="engine-id">${engine.id}${engine.project ? "" : " · state only"}</span></span>
-              </button></td>${cells}</tr>`;
+
+        board.innerHTML = `<table>${cols}
+          <thead><tr><th class="rowhead">Action Engine</th>${head}</tr></thead>
+          <tbody>${engines.map((engine) => row(engine, targets)).join("")}</tbody>
+        </table>${legend()}${roots()}`;
+
+        bindBoard(board);
+      }
+
+      /** Clients where this engine is installed or could be installed. */
+      function reachableClients(engine) {
+        return Object.values(engine.cells).filter(
+          (cell) => cell.state !== "unavailable",
+        ).length;
+      }
+
+      function rowMeta(engine) {
+        const title = engine.title || engine.id;
+        if (engine.serverName !== title) return engine.serverName;
+        return engine.version ? `v${engine.version}` : engine.id;
+      }
+
+      function row(engine, targets) {
+        const selected =
+          state.selection?.engineId === engine.id && !state.selection.targetId;
+        const rowSelected = state.selection?.engineId === engine.id;
+        const cells = targets
+          .map((target) => {
+            const cell = engine.cells[target.id];
+            const kind = tone(cell);
+            const isSelected =
+              state.selection?.engineId === engine.id &&
+              state.selection.targetId === target.id;
+            const label =
+              cell.state === "installable"
+                ? `<span class="plus">+</span><span class="cell-label">install</span>`
+                : `${cell.state === "managed" ? '<i class="dot"></i>' : ""}<span>${esc(cellText(cell))}</span>`;
+            return `<td><button type="button" class="cell ${kind}${isSelected ? " selected" : ""}"
+              data-engine="${esc(engine.id)}" data-target="${esc(target.id)}"
+              title="${esc(cell.reason ?? cellText(cell))}">${label}</button></td>`;
           })
           .join("");
-        host.innerHTML = `<table><thead><tr>
-          <th class="engine-col">Action Engine</th>${head}</tr></thead>
-          <tbody>${rows}</tbody></table>`;
+        return `<tr class="${needsAttention(engine) ? "attention" : ""}${rowSelected ? " selected" : ""}">
+          <td class="rowhead"><button type="button"
+            class="rowhead-btn${selected ? " selected" : ""}" data-engine="${esc(engine.id)}">
+            <span class="row-accent"></span>
+            <span class="row-text">
+              <span class="row-title">${esc(engine.title || engine.id)}</span>
+              <span class="row-meta">${esc(rowMeta(engine))}${
+                engine.project
+                  ? ""
+                  : '<span class="row-flag">no project</span>'
+              }</span>
+            </span>
+            <span class="row-count">${engine.installedCount}/${reachableClients(engine)}</span>
+          </button></td>${cells}</tr>`;
+      }
 
-        for (const button of host.querySelectorAll("button[data-engine]")) {
-          button.addEventListener("click", () => {
-            if (button.classList.contains("blocked")) return;
+      function legend() {
+        const items = [
+          ["enabled", "var(--ok)"],
+          ["disabled", "var(--warn)"],
+          ["outdated", "var(--info)"],
+          ["needs attention", "var(--bad)"],
+        ];
+        return `<div class="legend">${items
+          .map(
+            ([label, color]) =>
+              `<span><i style="background:${color}"></i>${label}</span>`,
+          )
+          .join("")}<span>+ installable</span><span>— client unavailable</span></div>`;
+      }
+
+      function roots() {
+        const discovery = state.inventory.discovery;
+        const invalid =
+          discovery.invalid.length === 0
+            ? ""
+            : `<br />${discovery.invalid.length} manifest(s) could not be read.`;
+        return `<div class="roots">Scanned ${discovery.inspected} directories in
+          <code>${discovery.roots.map(esc).join("</code>, <code>")}</code>.${invalid}</div>`;
+      }
+
+      function emptyInventory() {
+        const discovery = state.inventory.discovery;
+        return `<div class="placeholder"><h2>No Action Engine found</h2>
+          <p>Nothing is registered by the installer, and no
+          <code>invokta.mcp.json</code> manifest was found under
+          <code>${discovery.roots.map(esc).join("</code>, <code>")}</code>.</p>
+          <p>Restart with <code>--scan &lt;directory&gt;</code> to look elsewhere.</p></div>`;
+      }
+
+      function bindBoard(board) {
+        for (const button of board.querySelectorAll("button[data-engine]")) {
+          if (button.classList.contains("void")) continue;
+          button.addEventListener("click", () =>
             select({
               engineId: button.dataset.engine,
               targetId: button.dataset.target || null,
-            });
-          });
+            }),
+          );
+        }
+        const columns = new Map(
+          [...board.querySelectorAll("col[data-col]")].map((col) => [
+            col.dataset.col,
+            col,
+          ]),
+        );
+        for (const cell of board.querySelectorAll(".cell[data-target]")) {
+          cell.addEventListener("mouseenter", () =>
+            columns.get(cell.dataset.target)?.classList.add("hot"),
+          );
+          cell.addEventListener("mouseleave", () =>
+            columns.get(cell.dataset.target)?.classList.remove("hot"),
+          );
         }
       }
 
-      function definitionList(pairs) {
-        return `<dl>${pairs
-          .filter(([, value]) => value !== undefined && value !== null && value !== "")
-          .map(([label, value]) => `<dt>${label}</dt><dd class="mono">${value}</dd>`)
-          .join("")}</dl>`;
-      }
+      /* ---------- panel ---------- */
 
-      function renderDetail() {
-        const host = document.getElementById("detail");
-        const notice = state.notice
-          ? `<div class="banner ${state.notice.tone}">${state.notice.text}</div>`
-          : "";
+      function renderPanel() {
+        const panel = document.getElementById("panel");
+        document
+          .querySelector(".body")
+          .classList.toggle("has-panel", state.selection !== null);
         if (!state.selection) {
-          host.innerHTML = `<h2>Nothing selected</h2><div class="sub">Pick a cell to
-            inspect one registration, or an engine name to act on all clients at once.</div>${notice}`;
+          panel.innerHTML = "";
           return;
         }
         const engine = engineById(state.selection.engineId);
         if (!engine) {
           state.selection = null;
-          renderDetail();
+          renderPanel();
           return;
         }
-        host.innerHTML = state.selection.targetId
-          ? cellDetail(engine, targetById(state.selection.targetId), notice)
-          : engineDetail(engine, notice);
-        bindActions();
+        panel.innerHTML = `<div class="panel-inner">${
+          state.selection.targetId
+            ? cellPanel(engine, targetById(state.selection.targetId))
+            : enginePanel(engine)
+        }</div>`;
+        bindPanel(panel);
       }
 
-      function engineDetail(engine, notice) {
-        const installable = state.inventory.targets
+      function kv(pairs) {
+        const rows = pairs
+          .filter(([, value]) => value !== undefined && value !== null && value !== "")
+          .map(
+            ([label, value, copyable]) =>
+              `<dt>${esc(label)}</dt><dd>${
+                copyable
+                  ? `<button type="button" class="copy" data-copy="${esc(value)}">
+                     <span>${esc(value)}</span><span class="hint">copy</span></button>`
+                  : esc(value)
+              }</dd>`,
+          )
+          .join("");
+        return rows === "" ? "" : `<dl class="kv">${rows}</dl>`;
+      }
+
+      function enginePanel(engine) {
+        const targets = state.inventory.targets;
+        const installable = targets
           .filter((target) => engine.cells[target.id].state === "installable")
           .map((target) => target.id);
-        const actions = [];
-        if (installable.length > 0) {
-          actions.push(`<button type="button" class="primary" data-action="install"
-            data-engine="${engine.id}" data-targets="${installable.join(",")}">
-            Install in ${installable.length} client${installable.length === 1 ? "" : "s"}</button>`);
-        }
-        return `<h2>${engine.title || engine.id}</h2>
-          <div class="sub">${engine.description || "No description in the manifest."}</div>
-          ${notice}
-          <div class="actions">${actions.join("")}</div>
-          ${definitionList([
+        const actions =
+          installable.length > 0
+            ? `<button type="button" class="btn primary" data-action="install"
+                 data-engine="${esc(engine.id)}" data-targets="${installable.join(",")}">
+                 Install in ${installable.length} client${installable.length === 1 ? "" : "s"}</button>`
+            : "";
+        const rows = targets
+          .filter((target) => engine.cells[target.id].state !== "unavailable")
+          .map((target) => {
+            const cell = engine.cells[target.id];
+            return `<button type="button" class="client-row" data-engine="${esc(engine.id)}"
+              data-target="${esc(target.id)}">
+              <span class="pill ${tone(cell)}"><i></i>${esc(cellText(cell))}</span>
+              <span class="name">${esc(target.displayName)}</span>
+              <span class="state">→</span></button>`;
+          })
+          .join("");
+
+        return `<div class="panel-head"><h2>${esc(engine.title || engine.id)}</h2>
+            <button type="button" class="panel-close" data-close aria-label="Close">×</button></div>
+          <div class="panel-sub">${esc(engine.description || "No description in the manifest.")}</div>
+          ${actions === "" ? "" : `<div class="panel-actions">${actions}</div>`}
+          ${
+            engine.project && !engine.project.entrypointBuilt
+              ? `<div class="note warn">The compiled entry point is missing, so this
+                 engine cannot be installed yet.<br /><code>cd ${esc(engine.project.directory)} &amp;&amp; yarn build</code></div>`
+              : ""
+          }
+          ${
+            engine.project
+              ? ""
+              : `<div class="note">This engine is registered in the installer state, but no
+                 <code>invokta.mcp.json</code> was found on disk. It can still be
+                 disabled or removed from its persisted launch descriptor.</div>`
+          }
+          <div class="section"><h3>Identity</h3>${kv([
             ["id", engine.id],
             ["server", engine.serverName],
             ["version", engine.version],
-            ["installed in", `${engine.installedCount} client(s)`],
             ["capabilities", engine.capabilityIds.join(", ")],
-            ["project", engine.project ? engine.project.directory : "not found on disk"],
-            ["manifest", engine.project ? engine.project.manifestPath : ""],
-            ["entry point", engine.project ? engine.project.entrypoint : ""],
-            [
-              "built",
-              engine.project ? (engine.project.entrypointBuilt ? "yes" : "no") : "",
-            ],
-            ["forwarded env", engine.project ? engine.project.forwardEnv.join(", ") : ""],
-          ])}
+          ])}</div>
           ${
-            engine.project && !engine.project.entrypointBuilt
-              ? `<div class="banner">The compiled entry point is missing. Build the
-                 project before installing it:<br /><code>cd ${engine.project.directory} && yarn build</code></div>`
+            engine.project
+              ? `<div class="section"><h3>Project</h3>${kv([
+                  ["directory", engine.project.directory, true],
+                  ["manifest", engine.project.manifestPath, true],
+                  ["entry point", engine.project.entrypoint],
+                  ["built", engine.project.entrypointBuilt ? "yes" : "no"],
+                  ["forwarded env", engine.project.forwardEnv.join(", ")],
+                ])}</div>`
               : ""
-          }`;
+          }
+          <div class="section"><h3>Clients</h3><div class="client-list">${rows}</div></div>`;
       }
 
-      const statusNotes = {
-        drifted:
-          "This server definition changed outside the installer, so every owned action is blocked. Reinstall the engine from its project directory to take ownership again.",
-        conflict:
-          "Another MCP server already uses this name in this client. The installer never overwrites a definition it does not own.",
-        external:
-          "This definition matches an engine the installer knows, but it was not written by the installer.",
-        unavailable:
-          "This registration cannot be acted on right now. The installer reports:",
-      };
-
-      function cellDetail(engine, target, notice) {
+      function cellPanel(engine, target) {
         const cell = engine.cells[target.id];
+        const kind = tone(cell);
         const actions = [];
         if (cell.state === "managed") {
           for (const action of cell.actions) {
-            actions.push(`<button type="button" data-action="${action}" data-engine="${engine.id}"
-              data-targets="${target.id}">${action[0].toUpperCase()}${action.slice(1)}</button>`);
+            actions.push(
+              `<button type="button" class="btn" data-action="${esc(action)}"
+                 data-engine="${esc(engine.id)}" data-targets="${esc(target.id)}">
+                 ${esc(action[0].toUpperCase() + action.slice(1))}</button>`,
+            );
           }
           if (["enabled", "disabled", "outdated"].includes(cell.status)) {
-            actions.push(`<button type="button" class="danger" data-action="remove"
-              data-engine="${engine.id}" data-targets="${target.id}">Remove</button>`);
+            actions.push(
+              `<button type="button" class="btn danger" data-action="remove"
+                 data-engine="${esc(engine.id)}" data-targets="${esc(target.id)}">Remove</button>`,
+            );
           }
         } else if (cell.state === "installable") {
-          actions.push(`<button type="button" class="primary" data-action="install"
-            data-engine="${engine.id}" data-targets="${target.id}">Install here</button>`);
+          actions.push(
+            `<button type="button" class="btn primary" data-action="install"
+               data-engine="${esc(engine.id)}" data-targets="${esc(target.id)}">Install here</button>`,
+          );
         }
         const transport = cell.transport;
-        return `<h2>${engine.serverName} · ${target.displayName}</h2>
-          <div class="sub">${cell.state === "managed" ? cell.status : cell.state}</div>
-          ${notice}
-          <div class="actions">${actions.join("")}</div>
-          ${cell.reason ? `<div class="banner bad">${cell.reason}</div>` : ""}
-          ${
-            cell.state === "managed" && actions.length === 0
-              ? `<div class="banner bad">${statusNotes[cell.status] || "No action is available."}
-                 ${cell.unavailableCode ? `<br /><code>${cell.unavailableCode}</code>` : ""}</div>`
-              : ""
-          }
-          ${definitionList([
-            ["client", target.displayName],
+        const blocked =
+          cell.state === "managed" && cell.actions.length === 0
+            ? `<div class="note bad">${esc(statusNotes[cell.status] ?? "No action is available.")}
+               ${cell.unavailableCode ? `<code>${esc(cell.unavailableCode)}</code>` : ""}</div>`
+            : "";
+
+        return `<div class="panel-head">
+            <h2>${esc(engine.serverName)}</h2>
+            <span class="pill ${kind}"><i></i>${esc(cellText(cell))}</span>
+            <button type="button" class="panel-close" data-close aria-label="Close">×</button>
+          </div>
+          <div class="panel-sub">in ${esc(target.displayName)}</div>
+          ${actions.length === 0 ? "" : `<div class="panel-actions">${actions.join("")}</div>`}
+          ${cell.reason ? `<div class="note bad">${esc(cell.reason)}</div>` : ""}
+          ${blocked}
+          <div class="section"><h3>Client</h3>${kv([
             ["detection", target.evidence],
             [
               "configuration",
               target.configuration.kind === "blocked"
                 ? target.configuration.code
                 : target.configuration.path,
+              target.configuration.kind !== "blocked",
             ],
             ["surfaces", target.surfaces.join(", ")],
-            ["installed at", cell.installedAt],
-            ["updated at", cell.updatedAt],
-            ["adopted", cell.adopted === undefined ? "" : String(cell.adopted)],
-            ["transport", transport ? transport.type : ""],
-            [
-              "command",
-              transport && transport.type === "stdio"
-                ? `${transport.command} ${transport.args.join(" ")}`
-                : "",
-            ],
-            ["url", transport && transport.type !== "stdio" ? transport.url : ""],
-          ])}
-          <div class="banner">${target.reloadHint}</div>`;
+          ])}</div>
+          ${
+            cell.state === "managed"
+              ? `<div class="section"><h3>Registration</h3>${kv([
+                  ["transport", transport?.type],
+                  [
+                    "command",
+                    transport?.type === "stdio"
+                      ? `${transport.command} ${transport.args.join(" ")}`
+                      : undefined,
+                    true,
+                  ],
+                  ["url", transport?.type === "streamable-http" ? transport.url : undefined, true],
+                  ["installed", cell.installedAt],
+                  ["updated", cell.updatedAt],
+                  ["adopted", cell.adopted ? "yes" : "no"],
+                ])}</div>`
+              : ""
+          }
+          <div class="note">${esc(target.reloadHint)}</div>`;
       }
 
-      function bindActions() {
-        for (const button of document.querySelectorAll("button[data-action]")) {
-          button.addEventListener("click", () => {
-            void act(
+      function bindPanel(panel) {
+        for (const button of panel.querySelectorAll("button[data-action]")) {
+          button.addEventListener("click", () =>
+            act(
               button.dataset.action,
               button.dataset.engine,
               button.dataset.targets.split(","),
-            );
+            ),
+          );
+        }
+        for (const button of panel.querySelectorAll("button[data-close]")) {
+          button.addEventListener("click", () => select(null));
+        }
+        for (const button of panel.querySelectorAll(".client-row")) {
+          button.addEventListener("click", () =>
+            select({
+              engineId: button.dataset.engine,
+              targetId: button.dataset.target,
+            }),
+          );
+        }
+        for (const button of panel.querySelectorAll("button[data-copy]")) {
+          button.addEventListener("click", async () => {
+            try {
+              await navigator.clipboard.writeText(button.dataset.copy);
+              toast("Copied to the clipboard.", "ok");
+            } catch {
+              toast("The browser refused clipboard access.", "bad");
+            }
           });
         }
       }
 
+      /* ---------- actions ---------- */
+
+      function renderOverlay() {
+        const host = document.getElementById("overlay");
+        if (!state.pending) {
+          host.innerHTML = "";
+          return;
+        }
+        host.innerHTML = `<div class="overlay"><div class="overlay-card">
+          <div class="term">▌</div>
+          <h3>Confirm in your terminal</h3>
+          <p>The console never applies a change on its own. The terminal running
+          <strong>invokta-manager</strong> is waiting for your answer.</p>
+          <div class="cmd">${esc(state.pending)}<br />Apply this change? (y/N)</div>
+        </div></div>`;
+      }
+
       async function act(action, engineId, targetIds) {
-        if (state.busy) return;
-        state.busy = true;
-        state.notice = {
-          tone: "",
-          text: "Waiting for your confirmation in the terminal running <code>invokta-manager</code>…",
-        };
-        renderDetail();
+        if (state.pending) return;
+        const engine = engineById(engineId);
+        const names = targetIds
+          .map((id) => targetById(id)?.displayName ?? id)
+          .join(", ");
+        state.pending = `${action.toUpperCase()}  ${engine?.serverName ?? engineId} → ${names}`;
+        renderOverlay();
         try {
           const result = await api("/api/action", {
             method: "POST",
             body: JSON.stringify({ action, engineId, targetIds }),
           });
           if (!result.approved) {
-            state.notice = { tone: "bad", text: "Declined in the terminal. Nothing changed." };
+            toast("Declined in the terminal. Nothing changed.", "bad");
           } else {
-            const failed = result.results.filter((entry) => entry.outcome === "failed");
-            state.notice = {
-              tone: failed.length > 0 ? "bad" : "ok",
-              text: result.results
-                .map((entry) =>
-                  entry.outcome === "failed"
-                    ? `<b>${entry.displayName}</b>: ${entry.code} — ${entry.message}`
-                    : `<b>${entry.displayName}</b>: ${entry.outcome}. ${entry.reloadHint || ""}`,
-                )
-                .join("<br />"),
-            };
+            for (const entry of result.results) {
+              toast(
+                entry.outcome === "failed"
+                  ? `<strong>${esc(entry.displayName)}</strong> — ${esc(entry.code)}: ${esc(entry.message)}`
+                  : `<strong>${esc(entry.displayName)}</strong> — ${esc(entry.outcome)}. ${esc(entry.reloadHint ?? "")}`,
+                entry.outcome === "failed" ? "bad" : "ok",
+              );
+            }
           }
+          state.pending = null;
           await load(true);
         } catch (error) {
-          state.notice = { tone: "bad", text: String(error.message || error) };
-          renderDetail();
-        } finally {
-          state.busy = false;
-          renderDetail();
+          state.pending = null;
+          toast(esc(error.message ?? error), "bad");
+          render();
         }
       }
 
-      document.getElementById("refresh").addEventListener("click", () => {
-        void load(true);
+      /* ---------- wiring ---------- */
+
+      document.getElementById("rescan").addEventListener("click", () => {
+        void load(true).catch((error) => toast(esc(error.message), "bad"));
       });
+      document.getElementById("search").addEventListener("input", (event) => {
+        state.query = event.target.value;
+        renderBoard();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "/" && event.target.tagName !== "INPUT") {
+          event.preventDefault();
+          document.getElementById("search").focus();
+        }
+        if (event.key === "Escape" && !state.pending) select(null);
+      });
+      window.addEventListener("hashchange", () => {
+        const next = readHash();
+        if (
+          next?.engineId !== state.selection?.engineId ||
+          next?.targetId !== state.selection?.targetId
+        ) {
+          state.selection = next;
+          render();
+        }
+      });
+
       void load(false).catch((error) => {
-        document.getElementById("matrix").innerHTML =
-          `<div class="empty-state">${String(error.message || error)}</div>`;
+        document.getElementById("board").innerHTML =
+          `<div class="placeholder"><h2>Could not load the inventory</h2>
+           <p>${esc(error.message ?? error)}</p></div>`;
       });
     </script>
   </body>
