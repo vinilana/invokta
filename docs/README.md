@@ -30,7 +30,7 @@ decision is accepted and the implementation evidence is complete.
 - [Interactive engine creator profiles](./specs/interactive-engine-creator-profiles.md),
   accepted by [ADR 0018](./adr/0018-interactive-engine-creator-profiles.md)
 - [Action Engine management console](./specs/action-engine-management-console.md),
-  accepted by [ADR 0019](./adr/0019-management-console-and-installer-core.md).
+  accepted by [ADR 0019](./adr/0019-management-console-and-client-configuration.md).
   Delivered on Linux and macOS; the Windows contract is implemented and covered
   by platform-injected tests but has not been executed on a Windows host.
 
@@ -45,7 +45,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [Integrating a PDP through a capability access rule](./capability-authorization.md)
 - [Authoring and composing community capabilities](./capability-composition.md)
 - [Installing Action Engines in MCP clients](../apps/docs/src/content/docs/reference/installer.mdx)
-- [Managing installed Action Engines from a local console](../packages/manager/README.md)
+- [Managing installed Action Engines from a local console](../packages/console/README.md)
 - [Scope and maturity matrix](./scope-matrix.md)
 - [`hello-engine`: minimal onboarding example](../examples/hello-engine/)
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)

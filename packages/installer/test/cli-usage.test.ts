@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { InstallerError } from "@invokta/installer-core";
+import { InstallerError } from "@invokta/client-config";
 import { describe, expect, it, vi } from "vitest";
 import { runInstallerCli } from "../src/run-installer-cli.js";
 

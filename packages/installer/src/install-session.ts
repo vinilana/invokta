@@ -3,14 +3,14 @@ import type {
   ConfigurationTargetId,
   ExecutableResolver,
   HarnessDetectionSnapshot,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import {
   InstallerError,
   installDescriptorAcrossTargets,
   installerErrorMessages,
   type MutationCoordinatorDependencies,
   resolveRuntimeRequirements,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import type { InteractivePrompter } from "./interactive-prompter.js";
 import type { InstallerExitCode } from "./run-installer-cli.js";
 

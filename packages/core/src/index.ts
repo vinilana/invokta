@@ -1,13 +1,5 @@
 export { defineCapability } from "./capability.js";
 export type {
-  CapabilityCompositionIssue,
-  CapabilityDeclarationProvenance,
-} from "./composition-error.js";
-export {
-  CapabilityCompositionError,
-  isCapabilityCompositionError,
-} from "./composition-error.js";
-export type {
   AnyCapabilityImport,
   CapabilityImport,
   CapabilityLibrary,
@@ -23,6 +15,14 @@ export {
   importCapability,
   isComposedCapabilities,
 } from "./composition.js";
+export type {
+  CapabilityCompositionIssue,
+  CapabilityDeclarationProvenance,
+} from "./composition-error.js";
+export {
+  CapabilityCompositionError,
+  isCapabilityCompositionError,
+} from "./composition-error.js";
 export type { Engine, EngineDefinition } from "./engine.js";
 export { createEngine } from "./engine.js";
 export type { EngineErrorCode } from "./error.js";

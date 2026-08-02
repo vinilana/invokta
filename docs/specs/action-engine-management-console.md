@@ -2,15 +2,15 @@
 
 - Status: Accepted, delivered on Linux and macOS; Windows unverified on a host
 - Date: 2026-08-01
-- Affected packages: `@invokta/installer-core` (new), `@invokta/installer`,
-  `@invokta/manager` (new)
+- Affected packages: `@invokta/client-config` (new), `@invokta/installer`,
+  `@invokta/console` (new)
 - Affected requirements: `AE-INSTALL-01..05`
-- Architecture decision: [ADR 0019](../adr/0019-management-console-and-installer-core.md)
+- Architecture decision: [ADR 0019](../adr/0019-management-console-and-client-configuration.md)
 
 ## Summary
 
 This specification extracts the installer's configuration engine into
-`@invokta/installer-core`, adds `@invokta/manager` as a loopback web console
+`@invokta/client-config`, adds `@invokta/console` as a loopback web console
 over that core, and defines a Windows path-safety contract so all three
 supported platforms can inspect and mutate client configuration.
 
@@ -44,7 +44,7 @@ and TTY confirmation without change.
 
 ### AE-CORE-01 — Core package surface
 
-`@invokta/installer-core` MUST export the detection snapshot, the finite target
+`@invokta/client-config` MUST export the detection snapshot, the finite target
 catalog, the configuration target adapters, the registry and engine-manifest
 loaders, path identity, ownership planning, installer state, the installer lock,
 the transaction coordinator, and the stable `InstallerError` code set.
@@ -64,7 +64,7 @@ writable.
 
 `@invokta/installer` MUST keep `"exports": {}`, the `invokta-installer`
 executable, and its documented command grammar, prompts, stable diagnostics, and
-exit statuses. It MUST depend on `@invokta/installer-core` and contain no
+exit statuses. It MUST depend on `@invokta/client-config` and contain no
 duplicate detection, adapter, ownership, state, or transaction logic.
 
 Its package boundary test MUST continue to prove that the executable is the only
@@ -112,13 +112,13 @@ guessing a location.
 
 ### AE-CONSOLE-01 — Executable surface
 
-`@invokta/manager` MUST publish exactly one executable, `invokta-manager`, whose
+`@invokta/console` MUST publish exactly one executable, `invokta-console`, whose
 grammar is:
 
 ```text
-invokta-manager [--port <number>] [--scan <directory>]... [--no-open]
-invokta-manager --help
-invokta-manager --version
+invokta-console [--port <number>] [--scan <directory>]... [--no-open]
+invokta-console --help
+invokta-console --version
 ```
 
 Invalid usage returns exit status `2`. The console does not require a TTY.
@@ -205,7 +205,7 @@ requires failing tests first.
 | ID | Binary acceptance outcome |
 | --- | --- |
 | `AC-01` | The full pre-extraction installer suite passes against the extracted core with no behavioral change, and installer CLI tests still prove the documented grammar, diagnostics, and exit statuses. |
-| `AC-02` | Package boundary tests prove `@invokta/installer` publishes only its executable, `@invokta/installer-core` publishes only its import API, and neither imports a framework package or a network, process, or DNS module. |
+| `AC-02` | Package boundary tests prove `@invokta/installer` publishes only its executable, `@invokta/client-config` publishes only its import API, and neither imports a framework package or a network, process, or DNS module. |
 | `AC-03` | A state file produced by `0.3.0` is read, mutated, and rewritten by the extracted core without migration. |
 | `AC-04` | Inventory and target-scoped operations are covered directly, including the installable, needs-build, and unavailable classifications and their stable reasons. |
 | `AC-05` | Contract selection is covered on both platforms: POSIX keeps every existing ownership rejection, and Windows rejects reparse points, rejects paths outside the user profile, and loads state with no `getuid`. |
@@ -226,17 +226,17 @@ covered by platform-injected tests only.
 
 | Requirement | Required acceptance evidence |
 | --- | --- |
-| `AE-CORE-01` | `packages/installer-core/test/package-boundary.test.ts`, migrated sentinel suites |
+| `AE-CORE-01` | `packages/client-config/test/package-boundary.test.ts`, migrated sentinel suites |
 | `AE-CORE-02` | `packages/installer/test/package-boundary.test.ts`, `cli-usage.test.ts`, `cli-child-process.test.ts` |
-| `AE-CORE-03` | `packages/installer-core/test/engine-inventory.test.ts`, `packages/installer-core/test/engine-discovery.test.ts` |
-| `AE-PLATFORM-01` | `packages/installer-core/test/path-contract.test.ts` plus the existing `path-identity` and `node-file-system` suites |
-| `AE-WINDOWS-01` | `packages/installer-core/test/target-config-evidence.test.ts` |
-| `AE-CONSOLE-01` | `packages/manager/test/cli-usage.test.ts` |
-| `AE-CONSOLE-02` | `packages/manager/test/console-http.test.ts` |
-| `AE-CONSOLE-03` | `packages/manager/test/console-http.test.ts` |
-| `AE-CONSOLE-04` | `packages/manager/test/console-http.test.ts` |
-| `AE-CONSOLE-05` | `packages/manager/test/console-http.test.ts` |
-| `AE-CONSOLE-06` | `packages/manager/test/console-isolation.test.ts`, `packages/manager/test/console-page.test.ts` |
+| `AE-CORE-03` | `packages/client-config/test/engine-inventory.test.ts`, `packages/client-config/test/engine-discovery.test.ts` |
+| `AE-PLATFORM-01` | `packages/client-config/test/path-contract.test.ts` plus the existing `path-identity` and `node-file-system` suites |
+| `AE-WINDOWS-01` | `packages/client-config/test/target-config-evidence.test.ts` |
+| `AE-CONSOLE-01` | `packages/console/test/cli-usage.test.ts` |
+| `AE-CONSOLE-02` | `packages/console/test/console-http.test.ts` |
+| `AE-CONSOLE-03` | `packages/console/test/console-http.test.ts` |
+| `AE-CONSOLE-04` | `packages/console/test/console-http.test.ts` |
+| `AE-CONSOLE-05` | `packages/console/test/console-http.test.ts` |
+| `AE-CONSOLE-06` | `packages/console/test/console-isolation.test.ts`, `packages/console/test/console-page.test.ts` |
 
 ## Compatibility impact
 
@@ -246,7 +246,7 @@ covered by platform-injected tests only.
 | `@invokta/installer` package contract | None; still executable-only |
 | Installer state schema | Additive: records carry the contract that wrote them; version `1` stays readable both ways |
 | Target configuration formats | None |
-| New packages | `@invokta/installer-core`, `@invokta/manager` |
+| New packages | `@invokta/client-config`, `@invokta/console` |
 | Platform support | Additive: Windows gains inspection and mutation under a named, weaker contract |
 | Architecture requirements | Intentional revision: ADR 0010's no-programmatic-API rule now scopes to the installer application; ADR 0013's TTY requirement scopes to the installer executable |
 | Runtime packages and `EngineError` | None |

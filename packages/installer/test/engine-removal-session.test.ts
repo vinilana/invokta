@@ -5,14 +5,14 @@ import type {
   CapabilityInstallDescriptor,
   EngineRemovalSource,
   HarnessDetectionSnapshot,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import {
   configurationTargetAdapters,
   createNodeFileSystem,
   installDescriptorAcrossTargets,
   type MutationCoordinatorDependencies,
   mutateDescriptorAcrossTargets,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runEngineRemovalSession } from "../src/engine-removal-session.js";
 import type { InteractivePrompter } from "../src/interactive-prompter.js";

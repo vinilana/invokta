@@ -4,7 +4,7 @@
  * This package owns harness detection, the finite configuration target
  * catalog, the format-preserving client adapters, engine manifests, path
  * identity, ownership planning, installer state, locking, and the
- * transaction coordinator. `@invokta/installer` and `@invokta/manager` are
+ * transaction coordinator. `@invokta/installer` and `@invokta/console` are
  * adapters over this surface; the boundary is defined by ADR 0019.
  */
 

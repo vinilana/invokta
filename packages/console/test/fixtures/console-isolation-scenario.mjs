@@ -8,7 +8,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createNodeFileSystem } from "@invokta/installer-core";
+import { createNodeFileSystem } from "@invokta/client-config";
 
 import { createConsoleService } from "../../dist/console-service.js";
 

@@ -9,7 +9,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-import type { InstallerFileSystem } from "@invokta/installer-core";
+import type { InstallerFileSystem } from "@invokta/client-config";
 
 const conventionalNames = Object.freeze([
   "workspace",

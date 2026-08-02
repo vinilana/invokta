@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   helpText,
   invalidUsageText,
-  parseManagerArguments,
-  runManagerCli,
-} from "../src/run-manager-cli.js";
+  parseConsoleArguments,
+  runConsoleCli,
+} from "../src/run-console-cli.js";
 
 function run(argv: readonly string[], overrides = {}) {
   const stdout: string[] = [];
@@ -13,7 +13,7 @@ function run(argv: readonly string[], overrides = {}) {
   return {
     stdout,
     stderr,
-    status: runManagerCli({
+    status: runConsoleCli({
       argv,
       io: {
         writeStdout: (text) => {
@@ -30,23 +30,23 @@ function run(argv: readonly string[], overrides = {}) {
   };
 }
 
-describe("invokta-manager argument grammar", () => {
+describe("invokta-console argument grammar", () => {
   it("accepts the documented vectors", () => {
-    expect(parseManagerArguments([])).toEqual({
+    expect(parseConsoleArguments([])).toEqual({
       kind: "start",
       options: { port: 0, scanRoots: [], open: true },
     });
-    expect(parseManagerArguments(["--no-open"])).toMatchObject({
+    expect(parseConsoleArguments(["--no-open"])).toMatchObject({
       options: { open: false },
     });
-    expect(parseManagerArguments(["--port", "8080"])).toMatchObject({
+    expect(parseConsoleArguments(["--port", "8080"])).toMatchObject({
       options: { port: 8080 },
     });
     expect(
-      parseManagerArguments(["--scan", "/a", "--scan", "/b", "--no-open"]),
+      parseConsoleArguments(["--scan", "/a", "--scan", "/b", "--no-open"]),
     ).toMatchObject({ options: { scanRoots: ["/a", "/b"], open: false } });
-    expect(parseManagerArguments(["--help"])).toEqual({ kind: "help" });
-    expect(parseManagerArguments(["--version"])).toEqual({ kind: "version" });
+    expect(parseConsoleArguments(["--help"])).toEqual({ kind: "help" });
+    expect(parseConsoleArguments(["--version"])).toEqual({ kind: "version" });
   });
 
   it.each([
@@ -63,11 +63,11 @@ describe("invokta-manager argument grammar", () => {
     ["version mixed with another option", ["--version", "--port", "8080"]],
     ["a bare argument", ["start"]],
   ])("rejects %s", (_name, argv) => {
-    expect(parseManagerArguments(argv)).toBeUndefined();
+    expect(parseConsoleArguments(argv)).toBeUndefined();
   });
 });
 
-describe("invokta-manager command line", () => {
+describe("invokta-console command line", () => {
   it("prints help and exits successfully", async () => {
     const invocation = run(["--help"]);
 

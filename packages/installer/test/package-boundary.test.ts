@@ -24,7 +24,7 @@ describe("@invokta/installer package boundary", () => {
       bin: { "invokta-installer": "./dist/cli.js" },
       dependencies: {
         "@clack/prompts": "1.7.0",
-        "@invokta/installer-core": "0.3.0",
+        "@invokta/client-config": "0.3.0",
       },
     });
     expect(manifest).not.toHaveProperty("main");
@@ -37,7 +37,7 @@ describe("@invokta/installer package boundary", () => {
 
     expect(
       Object.keys(dependencies).filter((name) => name.startsWith("@invokta/")),
-    ).toEqual(["@invokta/installer-core"]);
+    ).toEqual(["@invokta/client-config"]);
   });
 
   it("no longer carries the configuration engine or its registry", () => {
@@ -64,11 +64,11 @@ describe("@invokta/installer package boundary", () => {
 
     expect(references).toContainEqual({ path: "./packages/installer" });
     expect(
-      references.findIndex(({ path }) => path === "./packages/installer-core"),
+      references.findIndex(({ path }) => path === "./packages/client-config"),
     ).toBeLessThan(
       references.findIndex(({ path }) => path === "./packages/installer"),
     );
-    expect(config.references).toEqual([{ path: "../installer-core" }]);
+    expect(config.references).toEqual([{ path: "../client-config" }]);
   });
 
   it("keeps framework, process execution, and network imports outside the package", () => {
@@ -104,10 +104,10 @@ describe("@invokta/installer package boundary", () => {
 
     for (const name of coldStart) {
       const text = readFileSync(`${packageDirectory}/src/${name}`, "utf8");
-      expect(text, name).not.toMatch(/from "@invokta\/installer-core"/u);
+      expect(text, name).not.toMatch(/from "@invokta\/client-config"/u);
     }
     expect(
       readFileSync(`${packageDirectory}/src/run-installer-cli.ts`, "utf8"),
-    ).toContain('from "@invokta/installer-core/errors"');
+    ).toContain('from "@invokta/client-config/errors"');
   });
 });

@@ -41,7 +41,7 @@ import {
   resolvePathSafetyContract,
   type TargetMutationResult,
   type ValidatedRegistry,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 
 export type ConsoleAction = "install" | "enable" | "disable" | "remove";
 

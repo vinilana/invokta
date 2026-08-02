@@ -20,12 +20,12 @@ function sourceFiles() {
     }));
 }
 
-describe("@invokta/installer-core package boundary", () => {
+describe("@invokta/client-config package boundary", () => {
   it("publishes an import API and no executable", () => {
     const manifest = readJson(`${packageDirectory}/package.json`);
 
     expect(manifest).toMatchObject({
-      name: "@invokta/installer-core",
+      name: "@invokta/client-config",
       version: "0.3.0",
       type: "module",
       sideEffects: false,
@@ -69,7 +69,7 @@ describe("@invokta/installer-core package boundary", () => {
     const rootConfig = readJson(`${repositoryRoot}/tsconfig.json`);
     const references = rootConfig.references as { readonly path: string }[];
 
-    expect(references).toContainEqual({ path: "./packages/installer-core" });
+    expect(references).toContainEqual({ path: "./packages/client-config" });
     expect(readJson(`${packageDirectory}/tsconfig.json`)).not.toHaveProperty(
       "references",
     );

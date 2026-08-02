@@ -6,18 +6,18 @@
  */
 
 import { resolve } from "node:path";
-import { createNodeFileSystem } from "@invokta/installer-core";
+import { createNodeFileSystem } from "@invokta/client-config";
 
 import { openBrowser } from "./browser.js";
 import { createConsoleServer } from "./console-server.js";
 import { createConsoleService } from "./console-service.js";
-import type { ManagerExitCode, ManagerOptions } from "./run-manager-cli.js";
+import type { ConsoleExitCode, ConsoleOptions } from "./run-console-cli.js";
 import { defaultScanRoots } from "./scan-roots.js";
 import { createConsoleSession } from "./session.js";
 
 export async function startConsole(
-  options: ManagerOptions,
-): Promise<ManagerExitCode> {
+  options: ConsoleOptions,
+): Promise<ConsoleExitCode> {
   const fileSystem = createNodeFileSystem();
   const scanRoots =
     options.scanRoots.length > 0
@@ -44,7 +44,7 @@ export async function startConsole(
   process.stdout.write(
     [
       "",
-      "Invokta manager",
+      "Invokta console",
       `  ${String(inventory.inventory.engines.length)} Action Engine${inventory.inventory.engines.length === 1 ? "" : "s"} across ${String(inventory.inventory.targets.length)} configuration target${inventory.inventory.targets.length === 1 ? "" : "s"}`,
       `  scanned ${String(inventory.discovery.inspectedDirectories)} directories in ${String(scanRoots.length)} root${scanRoots.length === 1 ? "" : "s"}`,
       "",

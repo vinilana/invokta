@@ -20,19 +20,19 @@ function sources() {
     }));
 }
 
-describe("@invokta/manager package boundary", () => {
+describe("@invokta/console package boundary", () => {
   it("publishes the console executable and its page", () => {
     const manifest = readJson(`${packageDirectory}/package.json`);
 
     expect(manifest).toMatchObject({
-      name: "@invokta/manager",
+      name: "@invokta/console",
       version: "0.3.0",
       type: "module",
       engines: { node: ">=22.20.0" },
       files: ["dist", "web"],
       exports: {},
-      bin: { "invokta-manager": "./dist/cli.js" },
-      dependencies: { "@invokta/installer-core": "0.3.0" },
+      bin: { "invokta-console": "./dist/cli.js" },
+      dependencies: { "@invokta/client-config": "0.3.0" },
     });
     expect(manifest).not.toHaveProperty("main");
     expect(manifest).not.toHaveProperty("types");
@@ -42,21 +42,21 @@ describe("@invokta/manager package boundary", () => {
     const dependencies = readJson(`${packageDirectory}/package.json`)
       .dependencies as Record<string, string>;
 
-    expect(Object.keys(dependencies)).toEqual(["@invokta/installer-core"]);
+    expect(Object.keys(dependencies)).toEqual(["@invokta/client-config"]);
   });
 
   it("participates in the root TypeScript project after the core", () => {
     const references = readJson(`${repositoryRoot}/tsconfig.json`)
       .references as { readonly path: string }[];
 
-    expect(references).toContainEqual({ path: "./packages/manager" });
+    expect(references).toContainEqual({ path: "./packages/console" });
     expect(
-      references.findIndex(({ path }) => path === "./packages/installer-core"),
+      references.findIndex(({ path }) => path === "./packages/client-config"),
     ).toBeLessThan(
-      references.findIndex(({ path }) => path === "./packages/manager"),
+      references.findIndex(({ path }) => path === "./packages/console"),
     );
     expect(readJson(`${packageDirectory}/tsconfig.json`).references).toEqual([
-      { path: "../installer-core" },
+      { path: "../client-config" },
     ]);
   });
 
@@ -99,12 +99,12 @@ describe("@invokta/manager package boundary", () => {
   it("reaches the core diagnostics through the dependency-free subpath on the usage path", () => {
     const cli = readFileSync(`${packageDirectory}/src/cli.ts`, "utf8");
     const runner = readFileSync(
-      `${packageDirectory}/src/run-manager-cli.ts`,
+      `${packageDirectory}/src/run-console-cli.ts`,
       "utf8",
     );
 
-    expect(cli).not.toMatch(/@invokta\/installer-core"/u);
-    expect(runner).toContain('from "@invokta/installer-core/errors"');
-    expect(runner).not.toMatch(/from "@invokta\/installer-core"/u);
+    expect(cli).not.toMatch(/@invokta\/client-config"/u);
+    expect(runner).toContain('from "@invokta/client-config/errors"');
+    expect(runner).not.toMatch(/from "@invokta\/client-config"/u);
   });
 });

@@ -1,7 +1,7 @@
 import type {
   EngineRemovalSource,
   HarnessDetectionSnapshot,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import {
   InstallerError,
   type InstallerErrorCode,
@@ -10,7 +10,7 @@ import {
   type ManagedInstallationView,
   type MutationCoordinatorDependencies,
   removeEngineDescriptorFromTarget,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import type { InteractivePrompter } from "./interactive-prompter.js";
 import type { InstallerExitCode } from "./run-installer-cli.js";
 

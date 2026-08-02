@@ -2,7 +2,7 @@ import type {
   ExecutableResolver,
   HarnessDetectionSnapshot,
   ValidatedRegistry,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import {
   InstallerError,
   inspectManagedInstallations,
@@ -11,7 +11,7 @@ import {
   type MutationCoordinatorDependencies,
   mutateDescriptorAcrossTargets,
   resolveRuntimeRequirements,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import type { InteractivePrompter } from "./interactive-prompter.js";
 import type {
   InstallerCommand,

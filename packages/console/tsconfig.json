@@ -7,5 +7,5 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../installer-core" }]
+  "references": [{ "path": "../client-config" }]
 }

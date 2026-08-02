@@ -9,7 +9,7 @@ import type {
   TargetAdapter,
   TargetAdapterCounters,
   TargetConfigEvidenceProbes,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import { expectTypeOf } from "vitest";
 import type {
   InteractivePrompter,

@@ -3,7 +3,7 @@ import type {
   InstallerFileSystem,
   InstallerTransactionFileSystem,
   MutationCoordinatorDependencies,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import {
   configurationTargetAdapters,
   createNodeExecutableResolver,
@@ -25,7 +25,7 @@ import {
   resolveNodeOperatingSystemHome,
   resolvePathSafetyContract,
   type TargetConfigEvidenceProbes,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import { createClackInteractivePrompter } from "./clack-interactive-prompter.js";
 import { runEngineRemovalSession } from "./engine-removal-session.js";
 import { runInstallSession } from "./install-session.js";

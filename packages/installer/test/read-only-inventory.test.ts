@@ -1,4 +1,4 @@
-import type { HarnessDetectionSnapshot } from "@invokta/installer-core";
+import type { HarnessDetectionSnapshot } from "@invokta/client-config";
 import { describe, expect, it, vi } from "vitest";
 import type { InteractivePrompter } from "../src/interactive-prompter.js";
 import { runReadOnlyInventory } from "../src/read-only-inventory.js";

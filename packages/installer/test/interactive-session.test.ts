@@ -4,11 +4,11 @@ import { dirname, join } from "node:path";
 import type {
   RegistryCompatibilityAdapters,
   TargetConfigEvidenceProbes,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import {
   configurationTargetIds,
   createNodeFileSystem,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InteractivePrompter } from "../src/interactive-prompter.js";
 import { runInteractiveSession } from "../src/interactive-session.js";

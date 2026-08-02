@@ -9,13 +9,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- Added `@invokta/installer-core`, which now owns harness detection, the
+- Added `@invokta/client-config`, which now owns harness detection, the
   finite configuration target catalog, the format-preserving client adapters,
   the registry and engine-manifest contracts, path identity, ownership
   planning, installer state, locking, and the transaction coordinator, and
   publishes them as a typed import API plus a dependency-free `./errors`
   subpath.
-- Added `@invokta/manager`, publishing `invokta-manager`: a loopback web
+- Added `@invokta/console`, publishing `invokta-console`: a loopback web
   console that shows every Action Engine, the MCP clients each one is
   registered in, and the clients each one could be registered in, and that
   installs, enables, disables, and removes without a terminal interaction.
@@ -32,7 +32,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- `@invokta/installer` is now a terminal adapter over `@invokta/installer-core`.
+- `@invokta/installer` is now a terminal adapter over `@invokta/client-config`.
   Its command grammar, prompts, stable diagnostics, and exit statuses are
   unchanged, and it still publishes only its executable.
 

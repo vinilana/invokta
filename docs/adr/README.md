@@ -25,4 +25,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0016](0016-generated-invokta-development-skills.md) | Generated Invokta development skills | Accepted | 2026-07-30 |
 | [0017](0017-engine-scoped-mcp-uninstall.md) | Engine-scoped MCP uninstall | Accepted | 2026-07-30 |
 | [0018](0018-interactive-engine-creator-profiles.md) | Interactive engine creator profiles | Accepted | 2026-07-30 |
-| [0019](0019-management-console-and-installer-core.md) | Local management console and installer core extraction | Accepted | 2026-08-01 |
+| [0019](0019-management-console-and-client-configuration.md) | Local management console and client configuration extraction | Accepted | 2026-08-01 |

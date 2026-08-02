@@ -1,4 +1,4 @@
-# @invokta/manager
+# @invokta/console
 
 A local web console for the Action Engines installed on this machine. It answers
 three questions in one place:
@@ -11,7 +11,7 @@ three questions in one place:
    install into a click instead of a command.
 
 ```bash
-npx invokta-manager
+npx invokta-console
 ```
 
 ![The console showing engines across the usable configuration targets](./docs/console.png)
@@ -41,7 +41,7 @@ every client it touches, and the exact definition being written:
 
 ![The console asking for confirmation before writing](./docs/confirmation.png)
 
-The change then runs through `@invokta/installer-core`, so the console and
+The change then runs through `@invokta/client-config`, so the console and
 `invokta-installer` share one writer: shared state lock, per-target lock,
 revalidation, atomic configuration commit, atomic state commit, rollback on
 failure. Each client is one independent transaction, and repeating an operation
@@ -59,7 +59,7 @@ is safe.
 
 ## Related
 
-- [ADR 0019](../../docs/adr/0019-management-console-and-installer-core.md) —
+- [ADR 0019](../../docs/adr/0019-management-console-and-client-configuration.md) —
   the console boundary and the installer core extraction.
 - [Management console specification](../../docs/specs/action-engine-management-console.md).
 - [`@invokta/installer`](../installer) — the interactive terminal equivalent.

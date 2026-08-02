@@ -11,7 +11,7 @@ import { join } from "node:path";
 import type {
   CapabilityInstallDescriptor,
   HarnessDetectionSnapshot,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import {
   configurationTargetAdapters,
   createNodeFileSystem,
@@ -20,7 +20,7 @@ import {
   type MutationCoordinatorDependencies,
   mutateDescriptorAcrossTargets,
   removeEngineDescriptorFromTarget,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InteractivePrompter } from "../src/interactive-prompter.js";
 import { runManagementSession } from "../src/management-session.js";

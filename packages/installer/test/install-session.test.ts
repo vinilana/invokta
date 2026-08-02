@@ -1,11 +1,11 @@
 import type {
   CapabilityInstallDescriptor,
   HarnessDetectionSnapshot,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import {
   configurationTargetAdapters,
   createNodeFileSystem,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import { describe, expect, it, vi } from "vitest";
 import { runInstallSession } from "../src/install-session.js";
 import type { InteractivePrompter } from "../src/interactive-prompter.js";

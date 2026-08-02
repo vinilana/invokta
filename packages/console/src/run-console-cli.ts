@@ -1,25 +1,25 @@
 import {
   InstallerError,
   renderInstallerDiagnostic,
-} from "@invokta/installer-core/errors";
+} from "@invokta/client-config/errors";
 
-export type ManagerExitCode = 0 | 1 | 2;
+export type ConsoleExitCode = 0 | 1 | 2;
 
-export interface ManagerOptions {
+export interface ConsoleOptions {
   readonly port: number;
   readonly scanRoots: readonly string[];
   readonly open: boolean;
 }
 
-export type ManagerCommand =
-  | { readonly kind: "start"; readonly options: ManagerOptions }
+export type ConsoleCommand =
+  | { readonly kind: "start"; readonly options: ConsoleOptions }
   | { readonly kind: "help" }
   | { readonly kind: "version" };
 
 export const helpText = `Usage:
-  invokta-manager [--port <number>] [--scan <directory>]... [--no-open]
-  invokta-manager --help
-  invokta-manager --version
+  invokta-console [--port <number>] [--scan <directory>]... [--no-open]
+  invokta-console --help
+  invokta-console --version
 
 Options:
   --port <number>     Listen on a fixed loopback port instead of an ephemeral one.
@@ -28,17 +28,17 @@ Options:
 `;
 
 export const invalidUsageText =
-  'Invalid arguments. Run "invokta-manager --help".\n';
+  'Invalid arguments. Run "invokta-console --help".\n';
 
-export interface ManagerCliIo {
+export interface ConsoleCliIo {
   readonly writeStdout: (text: string) => void | Promise<void>;
   readonly writeStderr: (text: string) => void | Promise<void>;
 }
 
-export interface RunManagerCliOptions {
+export interface RunConsoleCliOptions {
   readonly argv?: readonly string[];
-  readonly io?: Partial<ManagerCliIo>;
-  readonly loadConsole?: (options: ManagerOptions) => Promise<ManagerExitCode>;
+  readonly io?: Partial<ConsoleCliIo>;
+  readonly loadConsole?: (options: ConsoleOptions) => Promise<ConsoleExitCode>;
   readonly loadPackageVersion?: () => Promise<string>;
 }
 
@@ -46,9 +46,9 @@ export interface RunManagerCliOptions {
  * Pure argument parsing, kept separate so the accepted grammar can be proven
  * without starting a server or touching the filesystem.
  */
-export function parseManagerArguments(
+export function parseConsoleArguments(
   argv: readonly string[],
-): ManagerCommand | undefined {
+): ConsoleCommand | undefined {
   if (argv.length === 1 && argv[0] === "--help") return { kind: "help" };
   if (argv.length === 1 && argv[0] === "--version") return { kind: "version" };
 
@@ -91,7 +91,7 @@ export function parseManagerArguments(
   };
 }
 
-const defaultIo: ManagerCliIo = {
+const defaultIo: ConsoleCliIo = {
   writeStdout: (text) => {
     process.stdout.write(text);
   },
@@ -120,20 +120,20 @@ async function loadDefaultPackageVersion(): Promise<string> {
 }
 
 async function loadDefaultConsole(
-  options: ManagerOptions,
-): Promise<ManagerExitCode> {
+  options: ConsoleOptions,
+): Promise<ConsoleExitCode> {
   const { startConsole } = await import("./start-console.js");
   return startConsole(options);
 }
 
-export async function runManagerCli(
-  options: RunManagerCliOptions = {},
-): Promise<ManagerExitCode> {
+export async function runConsoleCli(
+  options: RunConsoleCliOptions = {},
+): Promise<ConsoleExitCode> {
   const io = {
     writeStdout: options.io?.writeStdout ?? defaultIo.writeStdout,
     writeStderr: options.io?.writeStderr ?? defaultIo.writeStderr,
   };
-  const command = parseManagerArguments(options.argv ?? process.argv.slice(2));
+  const command = parseConsoleArguments(options.argv ?? process.argv.slice(2));
   if (command === undefined) {
     await io.writeStderr(invalidUsageText);
     return 2;

@@ -3,8 +3,8 @@ import { expectTypeOf } from "vitest";
 import {
   type DeployCommandRun,
   type DeployContext,
-  type DeployErrorCode,
   DeployError,
+  type DeployErrorCode,
   type DeployExitCode,
   type DeployManifestIssue,
   type HttpDeployManifest,

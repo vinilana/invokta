@@ -1,11 +1,9 @@
 import { readFileSync } from "node:fs";
-
-import { describe, expect, it } from "vitest";
-
 import {
   createMcpHttpScaffoldFiles,
   starterDeployManifest,
 } from "@invokta/deploy/scaffold";
+import { describe, expect, it } from "vitest";
 
 import {
   createStarterFiles,

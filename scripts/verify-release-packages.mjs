@@ -41,8 +41,8 @@ const publicPackages = [
     requiredFiles: [...distEntryFiles, "dist/cli.js"],
   },
   {
-    directory: "installer-core",
-    name: "@invokta/installer-core",
+    directory: "client-config",
+    name: "@invokta/client-config",
     // The core ships the import API, the diagnostic subpath, and the registry.
     requiredFiles: [
       ...distEntryFiles,
@@ -59,8 +59,8 @@ const publicPackages = [
     requiredFiles: ["dist/cli.js"],
   },
   {
-    directory: "manager",
-    name: "@invokta/manager",
+    directory: "console",
+    name: "@invokta/console",
     // The console ships its executable and the page it serves.
     requiredFiles: ["dist/cli.js", "web/index.html"],
   },
@@ -600,7 +600,7 @@ function writeGeneratedInstallerFixture(projectDirectory) {
       createNodeFileSystem,
       installDescriptorAcrossTargets,
       loadEngineInstallManifest,
-    } from "@invokta/installer-core";
+    } from "@invokta/client-config";
 
     const homeDirectory = process.env.HOME;
     assert.ok(homeDirectory);
@@ -783,7 +783,7 @@ try {
     "@invokta",
     "installer",
   );
-  const installerCorePackageDirectory = join(
+  const clientConfigPackageDirectory = join(
     consumerDirectory,
     "node_modules",
     "@invokta",
@@ -1056,10 +1056,10 @@ try {
       ...profileCase.dependencies,
       ...profileCase.devDependencies,
     ];
-    // The installer resolves its engine through @invokta/installer-core, so the
+    // The installer resolves its engine through @invokta/client-config, so the
     // isolated consumer needs that tarball too; nothing reaches a registry.
     if (generatedDependencyNames.includes("@invokta/installer")) {
-      generatedDependencyNames.push("@invokta/installer-core");
+      generatedDependencyNames.push("@invokta/client-config");
     }
     const generatedDependencyTarballs = generatedDependencyNames.map((name) =>
       tarballsByName.get(name),
@@ -1302,8 +1302,8 @@ try {
     capture: true,
     env: {
       INVOKTA_INSTALLER_DIST_ROOT: join(installerPackageDirectory, "dist"),
-      INVOKTA_INSTALLER_CORE_DIST_ROOT: join(
-        installerCorePackageDirectory,
+      INVOKTA_CLIENT_CONFIG_DIST_ROOT: join(
+        clientConfigPackageDirectory,
         "dist",
       ),
       NODE_OPTIONS: `--no-warnings --experimental-loader=${eagerLoadSentinel} --import=${networkSentinel}`,

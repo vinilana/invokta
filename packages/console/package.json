@@ -1,5 +1,5 @@
 {
-  "name": "@invokta/manager",
+  "name": "@invokta/console",
   "version": "0.3.0",
   "description": "Local web console for managing installed Invokta Action Engines.",
   "author": "Vini Lana <vini@aicoders.academy>",
@@ -7,9 +7,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vinilana/invokta.git",
-    "directory": "packages/manager"
+    "directory": "packages/console"
   },
-  "homepage": "https://docs.invokta.dev/reference/manager/",
+  "homepage": "https://docs.invokta.dev/reference/console/",
   "bugs": {
     "url": "https://github.com/vinilana/invokta/issues"
   },
@@ -27,13 +27,13 @@
   ],
   "exports": {},
   "bin": {
-    "invokta-manager": "./dist/cli.js"
+    "invokta-console": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc -b --pretty false",
     "prepack": "npm run --silent build"
   },
   "dependencies": {
-    "@invokta/installer-core": "0.3.0"
+    "@invokta/client-config": "0.3.0"
   }
 }

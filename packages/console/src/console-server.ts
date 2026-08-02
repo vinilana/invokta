@@ -120,7 +120,7 @@ export function createConsoleServer(
           "cache-control": "no-store",
         });
         response.end(
-          "Invalid session token. Reopen the URL that invokta-manager printed.\n",
+          "Invalid session token. Reopen the URL that invokta-console printed.\n",
         );
         return;
       }

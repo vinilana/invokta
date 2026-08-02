@@ -5,7 +5,7 @@ import {
   configurationTargetAdapters,
   createNodeFileSystem,
   installDescriptorAcrossTargets,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
 import { runEngineRemovalSession } from "../../dist/engine-removal-session.js";
 
 const homeDirectory = mkdtempSync(join(tmpdir(), "invokta-remove-sentinel-"));

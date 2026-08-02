@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createNodeFileSystem } from "@invokta/installer-core";
+import { createNodeFileSystem } from "@invokta/client-config";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { createConsoleServer } from "../src/console-server.js";

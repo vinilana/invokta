@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type {
-  MessageExtraInfo,
-  RequestId,
-  JSONRPCMessage,
-} from "@modelcontextprotocol/sdk/types.js";
-import type {
   Transport,
   TransportSendOptions,
 } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type {
+  JSONRPCMessage,
+  MessageExtraInfo,
+  RequestId,
+} from "@modelcontextprotocol/sdk/types.js";
 
 function rewriteRequestIds(
   message: JSONRPCMessage,

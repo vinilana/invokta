@@ -2,11 +2,8 @@ import type {
   ConfigurationTargetId,
   ConfigurationTargetSnapshot,
   HarnessDetectionSnapshot,
-} from "@invokta/installer-core";
-import {
-  InstallerError,
-  installerErrorMessages,
-} from "@invokta/installer-core";
+} from "@invokta/client-config";
+import { InstallerError, installerErrorMessages } from "@invokta/client-config";
 import type { InteractivePrompter } from "./interactive-prompter.js";
 import type { InstallerExitCode } from "./run-installer-cli.js";
 

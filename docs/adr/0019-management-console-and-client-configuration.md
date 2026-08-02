@@ -1,4 +1,4 @@
-# ADR 0019: Local management console and installer core extraction
+# ADR 0019: Local management console and client configuration extraction
 
 - Status: Accepted
 - Date: 2026-08-01
@@ -28,7 +28,7 @@ POSIX primitives — `O_NOFOLLOW`, `uid` and `gid` ownership, and permission bit
 
 ### Core extraction
 
-`@invokta/installer-core` becomes the package that owns harness detection, the
+`@invokta/client-config` becomes the package that owns harness detection, the
 finite target catalog, the format-preserving configuration adapters, the
 registry and manifest contracts, path identity, ownership planning, installer
 state, locking, and the transaction coordinator. It publishes a typed import
@@ -48,7 +48,7 @@ reviewed front end rather than to arbitrary callers.
 
 ### Management console
 
-`@invokta/manager` publishes `invokta-manager`, a local web console over the
+`@invokta/console` publishes `invokta-console`, a local web console over the
 core. It is the only package in the repository permitted to open a listening
 socket, and it listens on the loopback interface only. It performs no remote
 discovery, downloads nothing, and never becomes part of a capability call graph.
@@ -106,7 +106,7 @@ platforms.
   prove no network access, no process execution, and no engine import now guard
   the core, and the console is verified separately to open only a loopback
   socket.
-- `@invokta/installer-core` becomes a compatibility surface. Its exported types,
+- `@invokta/client-config` becomes a compatibility surface. Its exported types,
   installer state schema, target contracts, and stable diagnostics are versioned
   with the framework.
 - Windows gains inspection and mutation with a documented, lower assurance

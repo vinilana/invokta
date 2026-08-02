@@ -10,7 +10,7 @@ function requiredRoot(name) {
 }
 
 const distRoot = requiredRoot("INVOKTA_INSTALLER_DIST_ROOT");
-const coreDistRoot = requiredRoot("INVOKTA_INSTALLER_CORE_DIST_ROOT");
+const coreDistRoot = requiredRoot("INVOKTA_CLIENT_CONFIG_DIST_ROOT");
 
 const allowedInstallerModules = new Set(
   ["cli.js", "run-installer-cli.js"].map((name) => `${distRoot}${name}`),

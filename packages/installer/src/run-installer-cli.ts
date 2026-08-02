@@ -1,7 +1,7 @@
 import {
   InstallerError,
   renderInstallerDiagnostic,
-} from "@invokta/installer-core/errors";
+} from "@invokta/client-config/errors";
 
 export type InstallerExitCode = 0 | 1 | 2 | 130;
 

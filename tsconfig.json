@@ -23,7 +23,7 @@
       "path": "./packages/create-invokta-engine"
     },
     {
-      "path": "./packages/installer-core"
+      "path": "./packages/client-config"
     },
     {
       "path": "./packages/installer"
@@ -32,7 +32,7 @@
       "path": "./packages/tooling"
     },
     {
-      "path": "./packages/manager"
+      "path": "./packages/console"
     },
     {
       "path": "./examples/community-capabilities"
