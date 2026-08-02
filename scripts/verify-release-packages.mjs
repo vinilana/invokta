@@ -1052,10 +1052,18 @@ try {
       }
     }
 
-    const generatedDependencyTarballs = [
+    const generatedDependencyNames = [
       ...profileCase.dependencies,
       ...profileCase.devDependencies,
-    ].map((name) => tarballsByName.get(name));
+    ];
+    // The installer resolves its engine through @invokta/installer-core, so the
+    // isolated consumer needs that tarball too; nothing reaches a registry.
+    if (generatedDependencyNames.includes("@invokta/installer")) {
+      generatedDependencyNames.push("@invokta/installer-core");
+    }
+    const generatedDependencyTarballs = generatedDependencyNames.map((name) =>
+      tarballsByName.get(name),
+    );
     if (generatedDependencyTarballs.some((tarball) => tarball === undefined)) {
       throw new Error(
         `${profileCase.profile} generated consumer tarballs are incomplete`,
