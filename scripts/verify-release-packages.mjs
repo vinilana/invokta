@@ -59,6 +59,12 @@ const publicPackages = [
     requiredFiles: ["dist/cli.js"],
   },
   {
+    directory: "manager",
+    name: "@invokta/manager",
+    // The console ships its executable and the page it serves.
+    requiredFiles: ["dist/cli.js", "web/index.html"],
+  },
+  {
     directory: "deploy",
     name: "@invokta/deploy",
     // The toolkit ships both an import API and the `invokta-deploy` executable.

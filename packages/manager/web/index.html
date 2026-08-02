@@ -846,6 +846,26 @@
         color: var(--text-2);
         line-height: 1.55;
       }
+      .overlay-card.confirm {
+        text-align: left;
+      }
+      .overlay-card.confirm h3 {
+        margin-top: 0;
+      }
+      .confirm-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 16px;
+      }
+      .overlay-card .cmd b {
+        font-family: var(--sans);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-3);
+      }
       .overlay-card .cmd {
         margin-top: 14px;
         font-family: var(--mono);
@@ -947,7 +967,8 @@
       const state = {
         inventory: null,
         selection: null,
-        pending: null,
+        confirm: null,
+        applying: false,
         query: "",
         onlyInstalled: false,
         onlyAttention: false,
@@ -982,6 +1003,23 @@
         );
       }
 
+      function reasonText(reason) {
+        if (!reason) return "";
+        if (reason.code === "TARGET_BLOCKED") {
+          return `This client cannot be configured on this platform (${reason.targetCode}).`;
+        }
+        if (reason.code === "TARGET_INELIGIBLE") {
+          return "This client is not installed and has no user configuration to write into.";
+        }
+        if (reason.code === "TARGET_INCOMPATIBLE") {
+          return `This client cannot take this server definition (${reason.reason}).`;
+        }
+        if (reason.code === "DESCRIPTOR_UNAVAILABLE") {
+          return "No launch descriptor is available for this engine. Reinstall it from its project directory.";
+        }
+        return reason.code;
+      }
+
       function tone(cell) {
         if (cell.state !== "managed") {
           return cell.state === "installable"
@@ -1004,6 +1042,14 @@
         return "—";
       }
 
+      function previewText(engine) {
+        const preview = engine.installPreview;
+        if (!preview) return "";
+        return preview.type === "stdio"
+          ? `${preview.command} ${preview.args.join(" ")}`
+          : preview.url;
+      }
+
       async function api(path, init) {
         const response = await fetch(path, {
           ...init,
@@ -1013,7 +1059,11 @@
           },
         });
         const body = await response.json();
-        if (!response.ok) throw new Error(body.error || "request failed");
+        if (!response.ok) {
+          const error = new Error(body.error || "The request failed.");
+          error.status = response.status;
+          throw error;
+        }
         return body;
       }
 
@@ -1109,7 +1159,8 @@
           (target) => target.evidence === "installed",
         ).length;
         const hidden =
-          inventory.targets.length - inventory.targets.filter(usableTarget).length;
+          inventory.targets.length -
+          inventory.targets.filter(usableTarget).length;
 
         document.getElementById("summary").innerHTML = `
           <button class="stat${state.onlyInstalled || state.onlyAttention ? "" : " active"}"
@@ -1185,13 +1236,6 @@
         bindBoard(board);
       }
 
-      /** Clients where this engine is installed or could be installed. */
-      function reachableClients(engine) {
-        return Object.values(engine.cells).filter(
-          (cell) => cell.state !== "unavailable",
-        ).length;
-      }
-
       function rowMeta(engine) {
         const title = engine.title || engine.id;
         if (engine.serverName !== title) return engine.serverName;
@@ -1215,7 +1259,7 @@
                 : `${cell.state === "managed" ? '<i class="dot"></i>' : ""}<span>${esc(cellText(cell))}</span>`;
             return `<td><button type="button" class="cell ${kind}${isSelected ? " selected" : ""}"
               data-engine="${esc(engine.id)}" data-target="${esc(target.id)}"
-              title="${esc(cell.reason ?? cellText(cell))}">${label}</button></td>`;
+              title="${esc(reasonText(cell.reason) || cellText(cell))}">${label}</button></td>`;
           })
           .join("");
         return `<tr class="${needsAttention(engine) ? "attention" : ""}${rowSelected ? " selected" : ""}">
@@ -1225,12 +1269,10 @@
             <span class="row-text">
               <span class="row-title">${esc(engine.title || engine.id)}</span>
               <span class="row-meta">${esc(rowMeta(engine))}${
-                engine.project
-                  ? ""
-                  : '<span class="row-flag">no project</span>'
+                engine.project ? "" : '<span class="row-flag">no project</span>'
               }</span>
             </span>
-            <span class="row-count">${engine.installedCount}/${reachableClients(engine)}</span>
+            <span class="row-count">${engine.installedCount}/${engine.reachableCount}</span>
           </button></td>${cells}</tr>`;
       }
 
@@ -1251,12 +1293,17 @@
 
       function roots() {
         const discovery = state.inventory.discovery;
-        const invalid =
-          discovery.invalid.length === 0
+        const rejected =
+          discovery.rejected.length === 0
             ? ""
-            : `<br />${discovery.invalid.length} manifest(s) could not be read.`;
-        return `<div class="roots">Scanned ${discovery.inspected} directories in
-          <code>${discovery.roots.map(esc).join("</code>, <code>")}</code>.${invalid}</div>`;
+            : `<br />${discovery.rejected.length} manifest(s) were rejected: ${discovery.rejected
+                .map((entry) => `<code>${esc(entry.path)}</code> (${esc(entry.code)})`)
+                .join(", ")}`;
+        const truncated = discovery.truncated
+          ? "<br />The scan stopped at its directory budget; some projects may be missing."
+          : "";
+        return `<div class="roots">Scanned ${discovery.inspectedDirectories} directories in
+          <code>${discovery.roots.map(esc).join("</code>, <code>")}</code>.${rejected}${truncated}</div>`;
       }
 
       function emptyInventory() {
@@ -1321,7 +1368,9 @@
 
       function kv(pairs) {
         const rows = pairs
-          .filter(([, value]) => value !== undefined && value !== null && value !== "")
+          .filter(
+            ([, value]) => value !== undefined && value !== null && value !== "",
+          )
           .map(
             ([label, value, copyable]) =>
               `<dt>${esc(label)}</dt><dd>${
@@ -1433,7 +1482,7 @@
           </div>
           <div class="panel-sub">in ${esc(target.displayName)}</div>
           ${actions.length === 0 ? "" : `<div class="panel-actions">${actions.join("")}</div>`}
-          ${cell.reason ? `<div class="note bad">${esc(cell.reason)}</div>` : ""}
+          ${cell.reason ? `<div class="note bad">${esc(reasonText(cell.reason))}</div>` : ""}
           ${blocked}
           <div class="section"><h3>Client</h3>${kv([
             ["detection", target.evidence],
@@ -1457,7 +1506,13 @@
                       : undefined,
                     true,
                   ],
-                  ["url", transport?.type === "streamable-http" ? transport.url : undefined, true],
+                  [
+                    "url",
+                    transport?.type === "streamable-http"
+                      ? transport.url
+                      : undefined,
+                    true,
+                  ],
                   ["installed", cell.installedAt],
                   ["updated", cell.updatedAt],
                   ["adopted", cell.adopted ? "yes" : "no"],
@@ -1470,7 +1525,7 @@
       function bindPanel(panel) {
         for (const button of panel.querySelectorAll("button[data-action]")) {
           button.addEventListener("click", () =>
-            act(
+            propose(
               button.dataset.action,
               button.dataset.engine,
               button.dataset.targets.split(","),
@@ -1500,54 +1555,129 @@
         }
       }
 
-      /* ---------- actions ---------- */
+      /* ---------- confirmation and actions ---------- */
+
+      const actionVerbs = {
+        install: "Install",
+        enable: "Enable",
+        disable: "Disable",
+        remove: "Remove",
+      };
+
+      /**
+       * Nothing reaches the server before this dialog is accepted. It states
+       * the action, every client it touches, and the exact definition being
+       * written, because that is the only place the operator can still stop.
+       */
+      function propose(action, engineId, targetIds) {
+        if (state.applying || state.confirm) return;
+        const engine = engineById(engineId);
+        state.confirm = {
+          action,
+          engineId,
+          targetIds,
+          clients: targetIds.map(
+            (id) => targetById(id)?.displayName ?? id,
+          ),
+          serverName: engine?.serverName ?? engineId,
+          definition:
+            action === "install"
+              ? previewText(engine)
+              : commandOf(engine, targetIds[0]),
+        };
+        renderOverlay();
+      }
+
+      function commandOf(engine, targetId) {
+        const transport = engine?.cells?.[targetId]?.transport;
+        if (!transport) return "";
+        return transport.type === "stdio"
+          ? `${transport.command} ${transport.args.join(" ")}`
+          : transport.url;
+      }
 
       function renderOverlay() {
         const host = document.getElementById("overlay");
-        if (!state.pending) {
+        if (state.applying) {
+          host.innerHTML = `<div class="overlay"><div class="overlay-card">
+            <div class="term">▌</div>
+            <h3>Applying</h3>
+            <p>Each client is one transaction. Nothing is left half-written.</p>
+          </div></div>`;
+          return;
+        }
+        if (!state.confirm) {
           host.innerHTML = "";
           return;
         }
-        host.innerHTML = `<div class="overlay"><div class="overlay-card">
-          <div class="term">▌</div>
-          <h3>Confirm in your terminal</h3>
-          <p>The console never applies a change on its own. The terminal running
-          <strong>invokta-manager</strong> is waiting for your answer.</p>
-          <div class="cmd">${esc(state.pending)}<br />Apply this change? (y/N)</div>
+        const pending = state.confirm;
+        const verb = actionVerbs[pending.action] ?? pending.action;
+        host.innerHTML = `<div class="overlay"><div class="overlay-card confirm">
+          <h3>${esc(verb)} ${esc(pending.serverName)}?</h3>
+          <p>${esc(
+            pending.action === "remove"
+              ? "This deletes the installer-owned server definition and its state record."
+              : pending.action === "install"
+                ? "This writes the server definition below. Every unrelated entry is preserved."
+                : "This changes only the definition the installer owns.",
+          )}</p>
+          <div class="cmd"><b>Clients</b><br />${esc(pending.clients.join(", "))}
+          ${pending.definition ? `<br /><br /><b>Definition</b><br />${esc(pending.definition)}` : ""}</div>
+          <div class="confirm-actions">
+            <button type="button" class="btn" id="confirm-cancel">Cancel</button>
+            <button type="button" class="btn ${pending.action === "remove" ? "danger" : "primary"}"
+              id="confirm-apply">${esc(verb)}</button>
+          </div>
         </div></div>`;
+        document
+          .getElementById("confirm-cancel")
+          .addEventListener("click", () => {
+            state.confirm = null;
+            renderOverlay();
+          });
+        document.getElementById("confirm-apply").addEventListener("click", () => {
+          void applyPending();
+        });
       }
 
-      async function act(action, engineId, targetIds) {
-        if (state.pending) return;
-        const engine = engineById(engineId);
-        const names = targetIds
-          .map((id) => targetById(id)?.displayName ?? id)
-          .join(", ");
-        state.pending = `${action.toUpperCase()}  ${engine?.serverName ?? engineId} → ${names}`;
+      async function applyPending() {
+        const pending = state.confirm;
+        if (!pending || state.applying) return;
+        state.confirm = null;
+        state.applying = true;
         renderOverlay();
         try {
           const result = await api("/api/action", {
             method: "POST",
-            body: JSON.stringify({ action, engineId, targetIds }),
+            body: JSON.stringify({
+              action: pending.action,
+              engineId: pending.engineId,
+              targetIds: pending.targetIds,
+            }),
           });
-          if (!result.approved) {
-            toast("Declined in the terminal. Nothing changed.", "bad");
-          } else {
-            for (const entry of result.results) {
-              toast(
-                entry.outcome === "failed"
-                  ? `<strong>${esc(entry.displayName)}</strong> — ${esc(entry.code)}: ${esc(entry.message)}`
-                  : `<strong>${esc(entry.displayName)}</strong> — ${esc(entry.outcome)}. ${esc(entry.reloadHint ?? "")}`,
-                entry.outcome === "failed" ? "bad" : "ok",
-              );
-            }
+          for (const entry of result.results) {
+            toast(
+              entry.outcome === "failed"
+                ? `<strong>${esc(entry.displayName)}</strong> — ${esc(entry.code)}: ${esc(entry.message)}`
+                : `<strong>${esc(entry.displayName)}</strong> — ${esc(entry.outcome)}. ${esc(entry.reloadHint ?? "")}`,
+              entry.outcome === "failed" ? "bad" : "ok",
+            );
           }
-          state.pending = null;
-          await load(true);
         } catch (error) {
-          state.pending = null;
-          toast(esc(error.message ?? error), "bad");
-          render();
+          toast(
+            error.status === 409
+              ? "Another change is already being applied. Nothing was written."
+              : esc(error.message ?? String(error)),
+            "bad",
+          );
+        } finally {
+          state.applying = false;
+          try {
+            await load(true);
+          } catch (error) {
+            toast(esc(error.message ?? String(error)), "bad");
+            render();
+          }
         }
       }
 
@@ -1565,7 +1695,14 @@
           event.preventDefault();
           document.getElementById("search").focus();
         }
-        if (event.key === "Escape" && !state.pending) select(null);
+        if (event.key === "Escape") {
+          if (state.confirm) {
+            state.confirm = null;
+            renderOverlay();
+            return;
+          }
+          if (!state.applying) select(null);
+        }
       });
       window.addEventListener("hashchange", () => {
         const next = readHash();
@@ -1581,7 +1718,7 @@
       void load(false).catch((error) => {
         document.getElementById("board").innerHTML =
           `<div class="placeholder"><h2>Could not load the inventory</h2>
-           <p>${esc(error.message ?? error)}</p></div>`;
+           <p>${esc(error.message ?? String(error))}</p></div>`;
       });
     </script>
   </body>

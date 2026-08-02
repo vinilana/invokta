@@ -32,6 +32,9 @@
       "path": "./packages/tooling"
     },
     {
+      "path": "./packages/manager"
+    },
+    {
       "path": "./examples/community-capabilities"
     },
     {

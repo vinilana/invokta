@@ -116,12 +116,11 @@ guessing a location.
 grammar is:
 
 ```text
-invokta-manager [--port <number>] [--scan <directory>]... [--no-open] [--host-check-off]
+invokta-manager [--port <number>] [--scan <directory>]... [--no-open]
 invokta-manager --help
 invokta-manager --version
 ```
 
-`--host-check-off` is reserved for automated testing and MUST print a warning.
 Invalid usage returns exit status `2`. The console does not require a TTY.
 
 ### AE-CONSOLE-02 — Session capability and transport
@@ -135,9 +134,10 @@ Every request other than the document request MUST present the token in an
 `Authorization: Bearer` header, compared in constant time. The document request
 accepts the token as a query parameter and MUST NOT return any inventory data.
 
-The server MUST reject a request whose `Host` header is not its own loopback
-address, whose `Origin` header is present and not its own origin, or whose
-`Sec-Fetch-Site` header is present and not `same-origin`. It MUST set no
+The server MUST reject a request whose `Host` header is not one of its own
+loopback names — `127.0.0.1`, `localhost`, or `[::1]`, each with its port —
+whose `Origin` header is present and not the matching loopback origin, or whose
+`Sec-Fetch-Site` header is present and is neither `same-origin` nor `none`. It MUST set no
 cookies, send no CORS headers, and serve the page with a content security policy
 that forbids every external origin. Responses MUST carry `Cache-Control:
 no-store` and `X-Content-Type-Options: nosniff`.

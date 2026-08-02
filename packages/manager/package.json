@@ -1,0 +1,39 @@
+{
+  "name": "@invokta/manager",
+  "version": "0.3.0",
+  "description": "Local web console for managing installed Invokta Action Engines.",
+  "author": "Vini Lana <vini@aicoders.academy>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vinilana/invokta.git",
+    "directory": "packages/manager"
+  },
+  "homepage": "https://docs.invokta.dev/reference/manager/",
+  "bugs": {
+    "url": "https://github.com/vinilana/invokta/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "files": [
+    "dist",
+    "web"
+  ],
+  "exports": {},
+  "bin": {
+    "invokta-manager": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "prepack": "npm run --silent build"
+  },
+  "dependencies": {
+    "@invokta/installer-core": "0.3.0"
+  }
+}
