@@ -1,9 +1,9 @@
 import { expectTypeOf } from "vitest";
 
 import {
-  checkCapabilities,
   type CheckCapabilitiesIo,
   type CheckCapabilitiesOptions,
+  checkCapabilities,
 } from "../src/index.js";
 
 declare const io: CheckCapabilitiesIo;
