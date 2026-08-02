@@ -11,6 +11,7 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
@@ -57,11 +58,22 @@ function parseArguments(argv) {
   return options;
 }
 
+/** WSL has no working `xdg-open`; the Windows shell opens the default browser. */
+function isWindowsSubsystemForLinux() {
+  try {
+    return readFileSync("/proc/version", "utf8")
+      .toLowerCase()
+      .includes("microsoft");
+  } catch {
+    return false;
+  }
+}
+
 function openBrowser(url) {
   const command =
     process.platform === "darwin"
       ? "open"
-      : process.platform === "win32"
+      : process.platform === "win32" || isWindowsSubsystemForLinux()
         ? "explorer.exe"
         : "xdg-open";
   try {

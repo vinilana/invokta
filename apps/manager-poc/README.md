@@ -38,6 +38,20 @@ four levels deep, skipping hidden and dependency directories.
 The process needs an interactive terminal, because that is where changes are
 confirmed. Press `Ctrl+C` to stop it.
 
+## Testing the write path safely
+
+Browsing the real machine is read-only, but install, enable, disable, and remove
+edit real client configuration. To exercise them against fixtures instead:
+
+```bash
+apps/manager-poc/scripts/sandbox.sh
+```
+
+That builds a throwaway `HOME` with a Cursor, VS Code, and Codex configuration —
+each containing an unrelated server, so byte preservation is observable — plus
+one `demo-engine` project, and runs the console against it. The sandbox path is
+printed on start; delete the directory when you are done.
+
 ## The one architectural decision this validates
 
 **The browser proposes; the terminal authorizes.**
