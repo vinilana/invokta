@@ -1,0 +1,131 @@
+---
+title: '@invokta/console'
+description: Manage every Action Engine installed on a machine from a local web console.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/console` publishes `invokta-console`, a loopback web console over
+[`@invokta/client-config`](/reference/client-config/). It shows every Action
+Engine this machine knows about, which MCP clients each one is registered in,
+and which clients each one could be registered in, and it installs, enables,
+disables, and removes without a terminal interaction.
+
+```sh
+npx invokta-console
+```
+
+The process prints a URL on standard output and opens it.
+
+## Install
+
+Nothing needs to be installed: the console is a machine tool, not a project
+dependency, and `npx` fetches it per run. Install it globally to keep it around:
+
+```sh
+npm install --global @invokta/console
+```
+
+The package is native ESM, requires Node.js 22.20.0 or later, exposes no
+JavaScript import API, and publishes only the `invokta-console` binary and the
+page it serves.
+
+## Commands
+
+```text
+invokta-console [--port <number>] [--scan <directory>]... [--no-open]
+invokta-console --help
+invokta-console --version
+```
+
+| Option | Effect |
+| --- | --- |
+| `--scan <directory>` | Add a directory to the project scan. Repeatable. |
+| `--port <number>` | Use a fixed loopback port instead of an ephemeral one. |
+| `--no-open` | Print the URL instead of opening a browser. |
+
+Without `--scan`, the console scans the working directory plus the conventional
+`workspace`, `workspaces`, `projects`, `Projects`, `code`, `dev`, `src`,
+`repos`, and `source/repos` directories under the home directory. Discovery is
+bounded in depth and in the number of directories it visits, and it reports
+truncation rather than stopping quietly.
+
+Invalid usage returns exit status `2`. The console does not require a terminal.
+
+## What it shows
+
+One row per engine, one column per configuration target, one cell per pair.
+Rows come from installer state **and** from `invokta.mcp.json` manifests found
+on disk, so an engine whose project has been deleted and a project that is not
+installed anywhere are both visible.
+
+A cell is one of:
+
+| Cell | Meaning |
+| --- | --- |
+| `enabled` | The installer owns this definition and the client will start it |
+| `disabled` | Owned and suspended; the original definition is recorded |
+| `outdated` | Owned, but the project has moved on from what was written |
+| `drifted` | Changed outside the installer, so every owned action is blocked |
+| `install` | Eligible and absent — clicking installs here |
+| `build first` | The project's compiled entry point does not exist yet |
+| `—` | This client cannot take this engine, with a stable reason on hover |
+
+Clients that cannot be installed into at all are hidden behind a chip. The
+summary counters double as filters, and the selection lives in the URL fragment
+so a particular registration is linkable.
+
+## How a change is authorized
+
+The console prints a URL carrying a 256-bit session key. **Possession of that
+key is the authorization**, and the session ends when the process ends. There is
+no refresh, no persistence, and no second session.
+
+The server binds the loopback interface only, pins its own `Host` and `Origin`,
+refuses a cross-site fetch, sets no cookie, sends no CORS header, and serves one
+page under a policy that forbids every external origin. The document response
+carries no inventory, so a page opened without the key learns nothing.
+
+<Aside type="caution" title="The key is visible on your screen">
+The key stays in the address bar for the life of the tab, so a screenshot, a
+screen share, or a copied URL hands over the live session. Stripping it would
+leave a reload with no credential. The launch URL is also an argument to the
+browser process and therefore appears in the process table; `--no-open` avoids
+that.
+</Aside>
+
+Before any request, the page raises a dialog stating the action, every client it
+touches, and the exact definition being written. That dialog catches a mistaken
+click; it is not a second authorization, because the server enforces the session
+key and anything holding the key can call the endpoint directly.
+
+## How a change is applied
+
+Every mutation runs through the same transaction coordinator the terminal uses:
+shared state lock, per-target lock, revalidation after locking, atomic
+configuration commit, atomic state commit, and restoration of the exact
+pre-image if the state commit fails. Each client is one independent
+transaction, a failure in one does not roll back another, and repeating an
+operation is safe.
+
+Drift, a server-name conflict, an unsafe configuration path, and unavailable
+state metadata all fail closed exactly as they do in the terminal. The console
+never touches a definition the installer does not own.
+
+A second mutation arriving while one is in flight is refused rather than
+queued.
+
+## What it never does
+
+- Bind any interface other than loopback, or accept a remote connection.
+- Import, execute, or reflect on an Action Engine, or start an MCP transport.
+- Open an outbound connection or download anything.
+- Read an environment value into a response. Only variable *names* are ever
+  persisted or displayed.
+
+## Related
+
+- [`@invokta/installer`](/reference/installer/) — the interactive terminal
+  equivalent, still fully supported.
+- [`@invokta/client-config`](/reference/client-config/) — the detection,
+  ownership, and transaction engine both front ends share.

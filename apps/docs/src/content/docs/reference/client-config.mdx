@@ -1,0 +1,90 @@
+---
+title: '@invokta/client-config'
+description: Detect supported MCP clients and change their configuration under an explicit safety contract.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/client-config` owns everything Invokta knows about the MCP clients
+installed on a machine: detecting them, reading and writing their configuration
+without disturbing the rest of the file, proving which entries it owns, and
+committing a change as a transaction that can be rolled back.
+
+It is a library. [`@invokta/installer`](/reference/installer/) and
+[`@invokta/console`](/reference/console/) are two front ends over it, and they
+share one writer, so a terminal run and a console run cannot corrupt each
+other's work.
+
+## Install
+
+```sh
+npm install @invokta/client-config
+```
+
+Native ESM, Node.js 22.20.0 or later. It imports no Invokta framework package
+and no network, DNS, or process-execution module; sentinels in its own test
+suite prove that.
+
+<Aside title="Why the name is not @invokta/installer">
+`@invokta/installer` is the published terminal executable, and every generated
+engine carries it as a development dependency. Redefining that name to mean an
+import-only library would be the same name with an inverted contract, so the
+library took a name that describes what it owns instead.
+</Aside>
+
+## Public surface
+
+| Area | Responsibility |
+| --- | --- |
+| Detection | A finite catalog of supported clients, their surfaces, and their user-scope configuration paths |
+| Adapters | Format-preserving edits to JSON, JSON5, TOML, and YAML client files |
+| Manifests | The closed `invokta.mcp.json` schema and its path and entry-point rules |
+| Discovery | A bounded scan for engine projects on disk |
+| Inventory | One cell per engine and target: owned, installable, needs a build, or unavailable with a stable reason |
+| Ownership | Which entries the installer wrote, and whether they still match |
+| State | The installer's own record of what it owns, at schema version 1 |
+| Transactions | Locking, atomic commit, rollback, and per-target isolation |
+
+Every operation is explicit. Nothing prompts, nothing downloads, and nothing
+executes an engine.
+
+## Path-safety contracts
+
+Path safety is a named contract, not one set of rules bent to fit every
+platform.
+
+**`posix`** — Linux and macOS. Opens without following symbolic links, proves
+that every path component is owned by the current user, enforces permission
+bits, and replaces atomically within the same directory.
+
+**`windows`** — Windows. Inspects each path component and rejects what Node
+reports as a link, confines every configuration and state path to the current
+user profile, and replaces atomically on the same volume.
+
+<Aside type="caution" title="The Windows contract is weaker, on purpose">
+Node exposes neither `FILE_FLAG_OPEN_REPARSE_POINT` nor access control lists, so
+the Windows contract **proves no file ownership** and its link check is not
+atomic. It is vulnerable to an attacker who can already write inside the user
+profile — who could equally edit the client configuration directly. Every state
+record and every result names the contract that produced it, so Windows evidence
+is never mistaken for POSIX evidence.
+</Aside>
+
+A roaming profile redirected outside the user profile — Folder Redirection to a
+share — is reported unsafe rather than written to, because containment is the
+only guarantee the Windows contract still makes.
+
+## State
+
+Managed installations live in one file at `$XDG_STATE_HOME/invokta/installer.json`,
+or `~/.local/state/invokta/installer.json` when that variable is unset. Schema
+version 1 is stable: a record written by an earlier release still loads, and a
+record carries the contract that wrote it — or no contract at all when it
+predates them, rather than being given one it never earned.
+
+## Related
+
+- [`@invokta/installer`](/reference/installer/) — the terminal front end.
+- [`@invokta/console`](/reference/console/) — the local web console.
+- [ADR 0019](https://github.com/vinilana/invokta/blob/main/docs/adr/0019-management-console-and-client-configuration.md)
+  records the extraction and the platform contracts.

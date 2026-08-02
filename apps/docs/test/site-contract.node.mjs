@@ -23,7 +23,9 @@ const packageReferences = [
   ["cli", "@invokta/cli"],
   ["mcp", "@invokta/mcp"],
   ["tooling", "@invokta/tooling"],
+  ["client-config", "@invokta/client-config"],
   ["installer", "@invokta/installer"],
+  ["console", "@invokta/console"],
   ["deploy", "@invokta/deploy"],
   ["create-invokta-engine", "create-invokta-engine"],
   ["create-invokta-capability", "create-invokta-capability"],
@@ -253,7 +255,7 @@ test("an empty installer registry does not hide direct installation", async () =
       join(
         repositoryRoot,
         "packages",
-        "installer",
+        "client-config",
         "registry",
         "capabilities.json",
       ),
