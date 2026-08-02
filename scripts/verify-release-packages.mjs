@@ -787,7 +787,7 @@ try {
     consumerDirectory,
     "node_modules",
     "@invokta",
-    "installer-core",
+    "client-config",
   );
   const installerPackageReport = JSON.parse(
     readFileSync(join(installerPackageDirectory, "package.json"), "utf8"),
