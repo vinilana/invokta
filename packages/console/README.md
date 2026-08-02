@@ -60,6 +60,5 @@ is safe.
 ## Related
 
 - [ADR 0019](../../docs/adr/0019-management-console-and-client-configuration.md) —
-  the console boundary and the installer core extraction.
-- [Management console specification](../../docs/specs/action-engine-management-console.md).
+  the console boundary and the client configuration extraction.
 - [`@invokta/installer`](../installer) — the interactive terminal equivalent.

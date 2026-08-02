@@ -29,10 +29,6 @@ decision is accepted and the implementation evidence is complete.
 
 - [Interactive engine creator profiles](./specs/interactive-engine-creator-profiles.md),
   accepted by [ADR 0018](./adr/0018-interactive-engine-creator-profiles.md)
-- [Action Engine management console](./specs/action-engine-management-console.md),
-  accepted by [ADR 0019](./adr/0019-management-console-and-client-configuration.md).
-  Delivered on Linux and macOS; the Windows contract is implemented and covered
-  by platform-injected tests but has not been executed on a Windows host.
 
 ## Guides and examples
 
