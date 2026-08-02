@@ -7,7 +7,7 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 
 | ADR | Decision | Status | Date |
 | --- | --- | --- | --- |
-| [0001](0001-hexagonal-kernel-without-container-or-runtime-modules.md) | Hexagonal kernel without a container or runtime modules | Accepted | 2026-07-27 |
+| [0001](0001-hexagonal-kernel-without-container-or-runtime-modules.md) | Hexagonal kernel without a container or runtime modules | Accepted, revised by 0019, revised by 0019 | 2026-07-27 |
 | [0002](0002-standard-schema-and-standard-json-schema-contracts.md) | Standard Schema and Standard JSON Schema as schema contracts | Accepted | 2026-07-27 |
 | [0003](0003-single-pipeline-structured-errors-and-observable-events.md) | Single pipeline, structured errors, and observable events | Accepted | 2026-07-27 |
 | [0004](0004-esm-monorepo-and-package-boundaries.md) | ESM monorepo and package boundaries | Accepted | 2026-07-27 |
@@ -16,10 +16,10 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0007](0007-stateless-http-with-pluggable-authn-and-core-authz.md) | Stateless HTTP, pluggable authentication, and core authorization | Accepted | 2026-07-27 |
 | [0008](0008-tdd-and-commits-scoped-to-each-deliverable.md) | TDD and commits scoped to each deliverable | Accepted | 2026-07-27 |
 | [0009](0009-capability-composition-and-dev-tooling.md) | Capability composition and development tooling | Accepted | 2026-07-28 |
-| [0010](0010-standalone-local-capability-mcp-installer.md) | Standalone local capability MCP installer | Accepted | 2026-07-28 |
+| [0010](0010-standalone-local-capability-mcp-installer.md) | Standalone local capability MCP installer | Accepted, revised by 0019 | 2026-07-28 |
 | [0011](0011-http-engine-deploy-toolkit.md) | HTTP engine deployment toolkit | Accepted | 2026-07-28 |
 | [0012](0012-standalone-invokta-engine-creator.md) | Standalone Invokta engine creator | Accepted | 2026-07-29 |
-| [0013](0013-action-engine-mcp-installation-and-management.md) | Action Engine MCP installation and management | Accepted | 2026-07-29 |
+| [0013](0013-action-engine-mcp-installation-and-management.md) | Action Engine MCP installation and management | Accepted, revised by 0019 | 2026-07-29 |
 | [0014](0014-standalone-capability-project-creators.md) | Standalone capability project creators | Accepted | 2026-07-29 |
 | [0015](0015-generated-agent-instruction-aliases.md) | Generated agent instruction aliases | Accepted | 2026-07-30 |
 | [0016](0016-generated-invokta-development-skills.md) | Generated Invokta development skills | Accepted | 2026-07-30 |

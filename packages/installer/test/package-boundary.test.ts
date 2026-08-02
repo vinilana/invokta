@@ -99,6 +99,25 @@ describe("@invokta/installer package boundary", () => {
     ).not.toContain("@clack");
   });
 
+  it("hands the platform contract to every engine manifest loader", () => {
+    const session = readFileSync(
+      `${packageDirectory}/src/interactive-session.ts`,
+      "utf8",
+    );
+    const calls = [
+      ...session.matchAll(
+        /loadEngine(?:Install|Removal)Manifest\(\{([^}]*)\}/gu,
+      ),
+    ];
+
+    // Windows has no user id, so a loader that falls back to the POSIX default
+    // rejects every project before it reads a byte.
+    expect(calls).toHaveLength(2);
+    for (const [, argumentList] of calls) {
+      expect(argumentList).toContain("contract");
+    }
+  });
+
   it("reaches the core through its dependency-free subpath on the cold-start path", () => {
     const coldStart = ["cli.ts", "run-installer-cli.ts"];
 

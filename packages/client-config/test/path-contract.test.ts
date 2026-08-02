@@ -2,6 +2,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -9,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
-
+import { loadEngineInstallManifest } from "../src/engine-manifest.js";
 import type {
   InstallerNoFollowPathInspection,
   InstallerTransactionFileSystem,
@@ -167,21 +168,72 @@ describe("filesystem under the Windows contract", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
-  it("creates a file and a directory without claiming permission bits", async () => {
+  it("creates a file and a directory, and enforces no permission bits", async () => {
     const root = temporary("invokta-windows-fs-");
     const fileSystem = createNodeFileSystem({ platform: "win32" });
+    const filePath = join(root, "created.json");
+    const directoryPath = join(root, "created");
 
-    const handle = await fileSystem.createExclusiveNoFollow(
-      join(root, "created.json"),
-      0o600,
-    );
+    const handle = await fileSystem.createExclusiveNoFollow(filePath, 0o600);
     await handle.writeAll(new TextEncoder().encode("{}\n"));
     await handle.close();
-    await fileSystem.mkdir(join(root, "created"), 0o700);
+    await fileSystem.mkdir(directoryPath, 0o700);
 
+    expect(statSync(filePath).isFile()).toBe(true);
+    expect(statSync(directoryPath).isDirectory()).toBe(true);
+    // The POSIX branch verifies the mode it asked for and fails when the umask
+    // takes it away. The Windows branch must not, because the bits are fiction
+    // there; asking for 0o600 and receiving anything is still a success.
+    expect(createWindowsPathContract().enforcesMode).toBe(false);
     await expect(
-      fileSystem.createExclusiveNoFollow(join(root, "created.json"), 0o600),
+      fileSystem.createExclusiveNoFollow(filePath, 0o600),
     ).rejects.toMatchObject({ code: "ALREADY_EXISTS" });
+  });
+});
+
+describe("engine manifests under the Windows contract", () => {
+  it("loads a project with no user id, and refuses without the contract", async () => {
+    const project = temporary("invokta-windows-engine-");
+    mkdirSync(join(project, "dist"), { recursive: true });
+    writeFileSync(
+      join(project, "invokta.mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "windows-engine",
+        version: "1.0.0",
+        title: "Windows Engine",
+        description: "Windows contract fixture.",
+        capabilityIds: ["windows.ping"],
+        server: {
+          name: "windows-engine",
+          entrypoint: "dist/mcp-stdio.js",
+          forwardEnv: [],
+        },
+      }),
+    );
+    writeFileSync(join(project, "dist", "mcp-stdio.js"), "process.exit(0);\n");
+    const fileSystem = createNodeFileSystem({ platform: "win32" });
+
+    // Windows has no getuid, so the caller has -1 and only the contract can
+    // rescue it. Omitting the contract is the regression this guards.
+    await expect(
+      loadEngineInstallManifest({
+        currentUserId: -1,
+        fileSystem,
+        nodeExecutable: process.execPath,
+        projectDirectory: project,
+      }),
+    ).rejects.toMatchObject({ code: "ENGINE_PATH_UNSAFE" });
+
+    const source = await loadEngineInstallManifest({
+      contract: createWindowsPathContract(),
+      currentUserId: -1,
+      fileSystem,
+      nodeExecutable: process.execPath,
+      projectDirectory: project,
+    });
+
+    expect(source.descriptor.id).toBe("windows-engine");
   });
 });
 

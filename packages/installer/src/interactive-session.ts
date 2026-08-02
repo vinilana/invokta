@@ -93,6 +93,7 @@ export async function runInteractiveSession(
   const removalSource =
     command.kind === "remove-engine"
       ? await loadEngineRemovalManifest({
+          contract,
           currentUserId,
           fileSystem: transactionFileSystem,
           projectDirectory: command.projectDirectory,
@@ -154,6 +155,7 @@ export async function runInteractiveSession(
         command.kind === "install-engine"
           ? (
               await loadEngineInstallManifest({
+                contract,
                 currentUserId,
                 fileSystem: transactionFileSystem,
                 nodeExecutable: process.execPath,

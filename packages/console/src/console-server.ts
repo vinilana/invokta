@@ -88,6 +88,12 @@ export function createConsoleServer(
 ): Server {
   const server = createServer((request, response) => {
     void handle(request, response).catch(() => {
+      // The page response writes its headers before reading the file, so a
+      // late failure there can only be closed, never answered.
+      if (response.headersSent) {
+        response.destroy();
+        return;
+      }
       send(response, 500, { error: "The console request failed." });
     });
   });

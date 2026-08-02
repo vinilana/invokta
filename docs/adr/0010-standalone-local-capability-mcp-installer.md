@@ -1,6 +1,6 @@
 # ADR 0010: Standalone local capability MCP installer
 
-- Status: Accepted
+- Status: Accepted, revised by [ADR 0019](0019-management-console-and-client-configuration.md)
 - Date: 2026-07-28
 
 ## Context

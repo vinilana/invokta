@@ -1,6 +1,6 @@
 # ADR 0013: Action Engine MCP installation and management
 
-- Status: Accepted
+- Status: Accepted, revised by [ADR 0019](0019-management-console-and-client-configuration.md)
 - Date: 2026-07-29
 
 ## Context

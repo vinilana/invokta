@@ -963,6 +963,11 @@
     <div id="overlay"></div>
 
     <script>
+      // The key stays in the address bar on purpose: stripping it with
+      // history.replaceState would leave a reload with no credential, and this
+      // page is meant to be left open. The exposure is to the operator screen
+      // and history, never to the network — no-referrer and a CSP that forbids
+      // every external origin close those paths.
       const token = new URLSearchParams(location.search).get("token");
       const state = {
         inventory: null,
@@ -1392,7 +1397,7 @@
         const actions =
           installable.length > 0
             ? `<button type="button" class="btn primary" data-action="install"
-                 data-engine="${esc(engine.id)}" data-targets="${installable.join(",")}">
+                 data-engine="${esc(engine.id)}" data-targets="${esc(installable.join(","))}">
                  Install in ${installable.length} client${installable.length === 1 ? "" : "s"}</button>`
             : "";
         const rows = targets

@@ -65,9 +65,14 @@ the initial URL authorizes only the document. The server binds `127.0.0.1`,
 pins the `Host` and `Origin` headers to its own address, rejects cross-site
 `Sec-Fetch-Site` values, sets no cookies, sends no CORS headers, and serves one
 page under a restrictive content security policy. A mutation additionally
-requires an explicit in-page confirmation that states the exact definition being
-written, and the console applies no change that the operator did not confirm in
-that dialog.
+passes through an explicit in-page confirmation that states the exact definition
+being written.
+
+That dialog is a guard against an operator mistake, not a second authorization.
+The server enforces the session key and nothing else, so anything already
+holding the key reaches the mutation endpoint without it. Making the dialog a
+real boundary would require a server-issued confirmation nonce, which this
+decision does not adopt.
 
 This is weaker than a TTY confirmation against an attacker who can already read
 the operator's terminal output or process table, and stronger against an
@@ -93,10 +98,14 @@ attacker can already edit the client configuration directly, so the contract
 does not widen the practical exposure; it does mean Windows never claims the
 ownership guarantee the POSIX contract makes.
 
-Every diagnostic, state record, and public result identifies which contract
-produced it. A state file written under one contract remains readable under the
-other; ownership evidence is contract-scoped and is never compared across
-platforms.
+The active contract is carried on every path root it produces and selects the
+checks applied beneath it. A state file written under one contract remains
+readable under the other; ownership evidence is contract-scoped and is never
+compared across platforms.
+
+Surfacing the contract in diagnostics, state records, and public results is
+adopted as the target and is **not implemented**: a consumer cannot currently
+tell which contract produced a given piece of evidence.
 
 ## Consequences
 
@@ -110,7 +119,12 @@ platforms.
   installer state schema, target contracts, and stable diagnostics are versioned
   with the framework.
 - Windows gains inspection and mutation with a documented, lower assurance
-  level. Presenting Windows evidence as equivalent to POSIX evidence is a defect.
+  level. Presenting Windows evidence as equivalent to POSIX evidence is a defect,
+  and until the contract is carried in results the code cannot prevent it — the
+  obligation sits with whoever reads the evidence.
+- Windows containment has no exception, so a roaming profile redirected outside
+  the user profile — Folder Redirection to a share — is reported unsafe rather
+  than written to. Those deployments are unsupported by design.
 - A machine-readable inventory and target-scoped operations become part of the
   core contract, so the terminal can adopt them without another decision.
 - Publishing a console does not authorize remote access. Binding any interface

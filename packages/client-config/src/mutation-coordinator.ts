@@ -398,12 +398,6 @@ async function mutateTarget(
         ...(dependencies.contract === undefined
           ? {}
           : { contract: dependencies.contract }),
-        ...(dependencies.contract === undefined
-          ? {}
-          : { contract: dependencies.contract }),
-        ...(dependencies.contract === undefined
-          ? {}
-          : { contract: dependencies.contract }),
       }).catch((cause) => {
         throw new InstallerError("STATE_INVALID", cause);
       });
@@ -423,9 +417,6 @@ async function mutateTarget(
   try {
     const loaded = await loadInstallerState({
       currentUserId: dependencies.currentUserId,
-      ...(dependencies.contract === undefined
-        ? {}
-        : { contract: dependencies.contract }),
       ...(dependencies.contract === undefined
         ? {}
         : { contract: dependencies.contract }),

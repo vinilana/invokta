@@ -25,8 +25,8 @@ npx invokta-console
 | `--no-open` | Print the console URL instead of opening a browser. |
 
 Without `--scan`, the console scans the working directory plus the conventional
-`workspace`, `projects`, `code`, `dev`, `src`, `repos`, and `source/repos`
-directories under the home directory.
+`workspace`, `workspaces`, `projects`, `Projects`, `code`, `dev`, `src`,
+`repos`, and `source/repos` directories under the home directory.
 
 ## How a change is authorized
 
@@ -36,10 +36,20 @@ binds the loopback interface only, pins its own `Host` and `Origin`, refuses a
 cross-site fetch, sets no cookie, sends no CORS header, and serves one page
 under a content security policy that forbids every external origin.
 
-Nothing is written until the operator accepts a dialog that states the action,
-every client it touches, and the exact definition being written:
+The page writes nothing until the operator accepts a dialog stating the action,
+every client it touches, and the exact definition. That dialog catches a
+mistaken click; it is not a second authorization, because the server enforces
+the session key and anything holding the key can call the endpoint directly.
 
 ![The console asking for confirmation before writing](./docs/confirmation.png)
+
+The key stays in the address bar for the life of the tab, so a screenshot, a
+screen share, or a copied URL hands over the live session. That is deliberate:
+stripping it would leave a reload with no credential. It is exposure to the
+operator's own screen and history, not to the network — `Referrer-Policy:
+no-referrer` and a policy forbidding every external origin close those. The
+launch URL is also an argument to the browser process, so it appears in the
+process table; `--no-open` avoids that.
 
 The change then runs through `@invokta/client-config`, so the console and
 `invokta-installer` share one writer: shared state lock, per-target lock,

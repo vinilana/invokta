@@ -455,7 +455,10 @@ export function createNodeTargetConfigEvidenceProbes(
     blocked("TARGET_UNSUPPORTED");
   // Windows keeps both of these under the roaming profile. The default stays
   // relative to the home directory so the path is inside the profile even when
-  // %APPDATA% is absent; the override honours a redirected profile.
+  // %APPDATA% is absent. A redirected %APPDATA% is honoured only while it stays
+  // inside the profile: the Windows contract has containment and nothing else,
+  // so a roaming profile redirected to a share is reported unsafe rather than
+  // written to. That is deliberate and it makes Folder Redirection unsupported.
   const claudeDesktop =
     resolvedOptions.platform === "darwin"
       ? singleConfigProbe(

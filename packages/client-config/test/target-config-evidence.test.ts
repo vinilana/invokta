@@ -376,6 +376,26 @@ describe("Node target configuration evidence probes", () => {
     ).resolves.toEqual({ kind: "present", path: vscodePath });
   });
 
+  it("refuses a roaming profile redirected outside the user profile", async () => {
+    const homeDirectory = temporaryHome();
+    const outside = temporaryHome();
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment({ APPDATA: outside }),
+      fileSystem: createNodeFileSystem({ platform: "win32" }),
+      platform: "win32",
+    });
+    createConfig(join(outside, "Code", "User", "mcp.json"));
+
+    // Containment is the only guarantee the Windows contract still makes, so
+    // Folder Redirection to a share is reported unsafe rather than written to.
+    await expect(
+      probes.vscode({ homeDirectory, targetId: "vscode" }),
+    ).resolves.toEqual({ kind: "blocked", code: "HARNESS_CONFIG_UNSAFE" });
+    await expect(
+      probes["claude-desktop"]({ homeDirectory, targetId: "claude-desktop" }),
+    ).resolves.toEqual({ kind: "blocked", code: "HARNESS_CONFIG_UNSAFE" });
+  });
+
   it("resolves every remaining target inside the Windows profile", async () => {
     const homeDirectory = temporaryHome();
     const probes = createNodeTargetConfigEvidenceProbes({

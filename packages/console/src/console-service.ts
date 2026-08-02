@@ -170,6 +170,8 @@ export async function createConsoleService(
   let snapshot: HarnessDetectionSnapshot | undefined;
   let cached: ConsoleInventory | undefined;
   let mutating = false;
+  /** Bumped by every mutation so an in-flight read knows it went stale. */
+  let generation = 0;
 
   async function detect(): Promise<HarnessDetectionSnapshot> {
     return detectHarnesses({
@@ -188,6 +190,7 @@ export async function createConsoleService(
     readOptions: { readonly refresh?: boolean } = {},
   ): Promise<ConsoleInventory> {
     if (cached !== undefined && readOptions.refresh !== true) return cached;
+    const startedAt = generation;
     registry ??= await loadBundledRegistry(
       fileSystem,
       registryCompatibilityAdapters,
@@ -200,7 +203,7 @@ export async function createConsoleService(
       fileSystem,
       roots: options.scanRoots,
     });
-    cached = Object.freeze({
+    const inventory = Object.freeze({
       inventory: await buildEngineInventory({
         dependencies,
         nodeExecutable,
@@ -221,7 +224,11 @@ export async function createConsoleService(
       homeDirectory: snapshot.homeDirectory,
       nodeExecutable,
     });
-    return cached;
+    // A mutation landed while this read was in flight, so its result is
+    // already history: return it to this caller, cache nothing.
+    if (startedAt !== generation) return inventory;
+    cached = inventory;
+    return inventory;
   }
 
   async function descriptorFor(
@@ -274,9 +281,9 @@ export async function createConsoleService(
       if (request.action !== "install" && request.targetIds.length !== 1) {
         throw new InstallerError("INSTALLATION_UNAVAILABLE");
       }
-      const descriptor = await descriptorFor(request, row);
       const active = snapshot;
       if (active === undefined) throw new InstallerError("STATE_INVALID");
+      const descriptor = await descriptorFor(request, row);
 
       const results = await mutateDescriptorAcrossTargets({
         action: request.action,
@@ -285,6 +292,7 @@ export async function createConsoleService(
         snapshot: active,
         targetIds: request.targetIds,
       });
+      generation += 1;
       cached = undefined;
       return Object.freeze({
         kind: "applied",
