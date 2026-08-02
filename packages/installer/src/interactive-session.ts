@@ -19,9 +19,11 @@ import {
   loadEngineInstallManifest,
   loadEngineRemovalManifest,
   type OperatingSystemHomeResolver,
+  type PathSafetyContract,
   type RegistryCompatibilityAdapters,
   registryCompatibilityAdapters,
   resolveNodeOperatingSystemHome,
+  resolvePathSafetyContract,
   type TargetConfigEvidenceProbes,
 } from "@invokta/installer-core";
 import { createClackInteractivePrompter } from "./clack-interactive-prompter.js";
@@ -52,9 +54,11 @@ function mutationDependencies(
   currentUserId: number,
   environment: InstallerEnvironment,
   fileSystem: InstallerTransactionFileSystem,
+  contract: PathSafetyContract,
 ): MutationCoordinatorDependencies {
   return {
     adapters: configurationTargetAdapters,
+    contract,
     currentUserId,
     environment,
     fileSystem,
@@ -82,6 +86,10 @@ export async function runInteractiveSession(
   const fileSystem = options.fileSystem ?? nodeFileSystem;
   const transactionFileSystem = options.transactionFileSystem ?? nodeFileSystem;
   const currentUserId = process.getuid?.() ?? -1;
+  const contract = resolvePathSafetyContract({
+    ...(options.platform === undefined ? {} : { platform: options.platform }),
+    currentUserId,
+  });
   const removalSource =
     command.kind === "remove-engine"
       ? await loadEngineRemovalManifest({
@@ -134,6 +142,7 @@ export async function runInteractiveSession(
           currentUserId,
           environment,
           transactionFileSystem,
+          contract,
         ),
         prompter,
         snapshot,
@@ -157,6 +166,7 @@ export async function runInteractiveSession(
           currentUserId,
           environment,
           transactionFileSystem,
+          contract,
         ),
         descriptor,
         prompter,
@@ -177,6 +187,7 @@ export async function runInteractiveSession(
           currentUserId,
           environment,
           transactionFileSystem,
+          contract,
         ),
         prompter,
         registry,

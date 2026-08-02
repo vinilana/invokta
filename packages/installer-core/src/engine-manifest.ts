@@ -9,6 +9,11 @@ import {
 } from "./file-system.js";
 import { InstallerError } from "./installer-error.js";
 import {
+  contractOwnerValid,
+  createPosixPathContract,
+  type PathSafetyContract,
+} from "./path-contract.js";
+import {
   capturePathIdentity,
   capturePathRoot,
   type InstallerPathIdentity,
@@ -55,12 +60,16 @@ export interface LoadEngineInstallManifestOptions {
   readonly fileSystem: InstallerTransactionFileSystem;
   readonly nodeExecutable: string;
   readonly projectDirectory: string;
+  /** Defaults to the POSIX contract for `currentUserId`. */
+  readonly contract?: PathSafetyContract;
 }
 
 export interface LoadEngineRemovalManifestOptions {
   readonly currentUserId: number;
   readonly fileSystem: InstallerTransactionFileSystem;
   readonly projectDirectory: string;
+  /** Defaults to the POSIX contract for `currentUserId`. */
+  readonly contract?: PathSafetyContract;
 }
 
 export interface EngineInstallSource {
@@ -324,9 +333,10 @@ async function readCapturedManifest(
 async function loadOwnedEngineManifest(
   options: LoadEngineRemovalManifestOptions,
 ): Promise<LoadedEngineManifest> {
+  const contract =
+    options.contract ?? createPosixPathContract(options.currentUserId);
   if (
-    !Number.isSafeInteger(options.currentUserId) ||
-    options.currentUserId < 0 ||
+    !contractOwnerValid(contract) ||
     !isAbsolute(resolve(options.projectDirectory)) ||
     options.projectDirectory.includes("\0")
   ) {
@@ -340,6 +350,7 @@ async function loadOwnedEngineManifest(
       rootKind: "engine",
       rootPath: projectDirectory,
       currentUserId: options.currentUserId,
+      contract,
     });
     manifestIdentity = await capturePathIdentity(options.fileSystem, {
       root,

@@ -267,8 +267,21 @@ function writeHandle(handle: FileHandle): InstallerWriteHandle {
   });
 }
 
-export function createNodeFileSystem(): InstallerTransactionFileSystem &
-  InstallerDirectoryReader {
+export interface CreateNodeFileSystemOptions {
+  readonly platform?: NodeJS.Platform;
+}
+
+/**
+ * Windows has no `O_NOFOLLOW`, no ACL access through Node, and no meaningful
+ * permission bits, so the three no-follow operations take a different shape
+ * there: inspect first, reject a reparse point, then open. That check is not
+ * atomic, which is precisely the assurance difference ADR 0019 records between
+ * the `posix` and `windows` contracts.
+ */
+export function createNodeFileSystem(
+  options: CreateNodeFileSystemOptions = {},
+): InstallerTransactionFileSystem & InstallerDirectoryReader {
+  const windows = (options.platform ?? process.platform) === "win32";
   return {
     readFile: async (path) => readFile(path),
     readDirectory: async (path) => {
@@ -325,16 +338,45 @@ export function createNodeFileSystem(): InstallerTransactionFileSystem &
       }
     },
     openReadNoFollow: async (path) =>
-      normalized(async () =>
-        readHandle(
+      normalized(async () => {
+        if (windows) {
+          const existing = await lstatIdentity(path);
+          if (existing === undefined) {
+            throw new InstallerFileSystemError("NOT_FOUND");
+          }
+          if (existing.kind === "symbolic-link") {
+            throw new InstallerFileSystemError("SYMBOLIC_LINK");
+          }
+          return readHandle(await open(path, constants.O_RDONLY));
+        }
+        return readHandle(
           await open(
             path,
             constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
           ),
-        ),
-      ),
+        );
+      }),
     createExclusiveNoFollow: async (path, mode) => {
       validateMode(mode);
+      if (windows) {
+        return normalized(async () => {
+          const handle = await open(
+            path,
+            constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+            mode,
+          );
+          try {
+            const created = await handleStat(handle);
+            if (created.kind !== "regular-file") {
+              throw new InstallerFileSystemError("IO_FAILED");
+            }
+            return writeHandle(handle);
+          } catch (error) {
+            await closeAfterSetupFailure(handle);
+            throw error;
+          }
+        });
+      }
       return normalized(async () => {
         const handle = await open(
           path,
@@ -373,6 +415,16 @@ export function createNodeFileSystem(): InstallerTransactionFileSystem &
     },
     mkdir: async (path, mode) => {
       validateMode(mode);
+      if (windows) {
+        await normalized(async () => {
+          await mkdir(path, { mode });
+          const created = await lstatIdentity(path);
+          if (created === undefined || created.kind !== "directory") {
+            throw new InstallerFileSystemError("IO_FAILED");
+          }
+        });
+        return;
+      }
       await normalized(async () => {
         await mkdir(path, { mode });
         let created: InstallerFileStat | undefined;

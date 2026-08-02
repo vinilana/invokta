@@ -318,18 +318,89 @@ describe("Node target configuration evidence probes", () => {
     ).resolves.toEqual({ kind: "present", path: vscodePath });
   });
 
-  it("blocks unsupported Windows mutations for VS Code and Claude Desktop", async () => {
+  it("resolves the roaming profile locations on Windows", async () => {
     const homeDirectory = temporaryHome();
     const probes = createNodeTargetConfigEvidenceProbes({
       environment: environment(),
-      fileSystem: createNodeFileSystem(),
+      fileSystem: createNodeFileSystem({ platform: "win32" }),
+      platform: "win32",
+    });
+    const claudeDesktopPath = join(
+      homeDirectory,
+      "AppData",
+      "Roaming",
+      "Claude",
+      "claude_desktop_config.json",
+    );
+    const vscodePath = join(
+      homeDirectory,
+      "AppData",
+      "Roaming",
+      "Code",
+      "User",
+      "mcp.json",
+    );
+
+    await expect(
+      probes["claude-desktop"]({ homeDirectory, targetId: "claude-desktop" }),
+    ).resolves.toEqual({ kind: "absent", path: claudeDesktopPath });
+    await expect(
+      probes.vscode({ homeDirectory, targetId: "vscode" }),
+    ).resolves.toEqual({ kind: "absent", path: vscodePath });
+
+    createConfig(claudeDesktopPath);
+    createConfig(vscodePath);
+
+    await expect(
+      probes["claude-desktop"]({ homeDirectory, targetId: "claude-desktop" }),
+    ).resolves.toEqual({ kind: "present", path: claudeDesktopPath });
+    await expect(
+      probes.vscode({ homeDirectory, targetId: "vscode" }),
+    ).resolves.toEqual({ kind: "present", path: vscodePath });
+  });
+
+  it("honors a redirected roaming profile on Windows", async () => {
+    const homeDirectory = temporaryHome();
+    const roaming = join(homeDirectory, "Profile", "Roaming");
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment({ APPDATA: roaming }),
+      fileSystem: createNodeFileSystem({ platform: "win32" }),
+      platform: "win32",
+    });
+    const vscodePath = join(roaming, "Code", "User", "mcp.json");
+
+    createConfig(vscodePath);
+
+    await expect(
+      probes.vscode({ homeDirectory, targetId: "vscode" }),
+    ).resolves.toEqual({ kind: "present", path: vscodePath });
+  });
+
+  it("resolves every remaining target inside the Windows profile", async () => {
+    const homeDirectory = temporaryHome();
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment(),
+      fileSystem: createNodeFileSystem({ platform: "win32" }),
       platform: "win32",
     });
 
-    for (const targetId of ["claude-desktop", "vscode"] as const) {
-      await expect(
-        probes[targetId]({ homeDirectory, targetId }),
-      ).resolves.toEqual({ kind: "blocked", code: "TARGET_UNSUPPORTED" });
+    for (const targetId of [
+      "antigravity",
+      "claude-code",
+      "codex",
+      "cursor",
+      "grok-build",
+      "hermes",
+      "kimi-code",
+      "openclaw",
+      "opencode-v2",
+    ] as const) {
+      const evidence = await probes[targetId]({ homeDirectory, targetId });
+
+      expect(evidence.kind, targetId).not.toBe("blocked");
+      if (evidence.kind !== "blocked") {
+        expect(evidence.path.startsWith(homeDirectory), targetId).toBe(true);
+      }
     }
   });
 

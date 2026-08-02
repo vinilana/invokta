@@ -11,10 +11,20 @@ export interface InstallerEnvironment {
   readonly get: (name: string) => unknown;
 }
 
+import {
+  contractOwnerValid,
+  createPosixPathContract,
+  createWindowsPathContract,
+  ownerAccepted,
+  type PathSafetyContract,
+} from "./path-contract.js";
+
 export interface CreateNodeTargetConfigEvidenceProbesOptions {
   readonly environment: InstallerEnvironment;
   readonly fileSystem: InstallerFileSystem;
   readonly currentUserId?: number;
+  /** Defaults to the contract for the resolved platform. */
+  readonly contract?: PathSafetyContract;
   readonly platform?: NodeJS.Platform;
 }
 
@@ -24,6 +34,7 @@ interface ResolvedTargetConfigEvidenceProbeOptions
     "currentUserId" | "platform"
   > {
   readonly currentUserId: number | undefined;
+  readonly contract: PathSafetyContract;
   readonly platform: NodeJS.Platform;
 }
 
@@ -155,14 +166,8 @@ async function inspectOwnedPath(
   targetPath: string,
   expectedTargetKind: "regular-file" | "directory",
 ): Promise<OwnedPathInspection> {
-  const currentUserId = options.currentUserId;
-  if (
-    currentUserId === undefined ||
-    !Number.isSafeInteger(currentUserId) ||
-    currentUserId < 0
-  ) {
-    return "unsafe";
-  }
+  const contract = options.contract;
+  if (!contractOwnerValid(contract)) return "unsafe";
   const normalizedHome = resolve(homeDirectory);
   const normalizedTarget = resolve(targetPath);
   if (
@@ -190,7 +195,7 @@ async function inspectOwnedPath(
     for (const [index, componentPath] of componentPaths.entries()) {
       const inspection = await options.fileSystem.inspectPath(componentPath);
       if (inspection.kind === "missing") return "missing";
-      if (inspection.ownerId !== currentUserId) return "unsafe";
+      if (!ownerAccepted(contract, inspection.ownerId)) return "unsafe";
       if (inspection.kind === "symbolic-link" || inspection.kind === "other") {
         return "unsafe";
       }
@@ -438,19 +443,39 @@ export function createNodeTargetConfigEvidenceProbes(
       options.currentUserId ??
       (typeof process.getuid === "function" ? process.getuid() : undefined),
     platform: options.platform ?? process.platform,
+    contract:
+      options.contract ??
+      ((options.platform ?? process.platform) === "win32"
+        ? createWindowsPathContract()
+        : createPosixPathContract(
+            options.currentUserId ?? process.getuid?.() ?? -1,
+          )),
   };
   const unsupportedProbe: TargetConfigEvidenceProbe = async () =>
     blocked("TARGET_UNSUPPORTED");
+  // Windows keeps both of these under the roaming profile. The default stays
+  // relative to the home directory so the path is inside the profile even when
+  // %APPDATA% is absent; the override honours a redirected profile.
   const claudeDesktop =
     resolvedOptions.platform === "darwin"
       ? singleConfigProbe(
           resolvedOptions,
           "Library/Application Support/Claude/claude_desktop_config.json",
         )
-      : unsupportedProbe;
+      : resolvedOptions.platform === "win32"
+        ? singleConfigProbe(
+            resolvedOptions,
+            "AppData/Roaming/Claude/claude_desktop_config.json",
+            { name: "APPDATA", fileName: "Claude/claude_desktop_config.json" },
+          )
+        : unsupportedProbe;
   const vscode =
     resolvedOptions.platform === "win32"
-      ? unsupportedProbe
+      ? singleConfigProbe(
+          resolvedOptions,
+          "AppData/Roaming/Code/User/mcp.json",
+          { name: "APPDATA", fileName: "Code/User/mcp.json" },
+        )
       : singleConfigProbe(
           resolvedOptions,
           resolvedOptions.platform === "darwin"

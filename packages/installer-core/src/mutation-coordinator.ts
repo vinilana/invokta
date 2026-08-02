@@ -30,6 +30,7 @@ import {
   planInstallerAction,
   planOwnership,
 } from "./ownership-planner.js";
+import type { PathSafetyContract } from "./path-contract.js";
 import {
   bootstrapPrivateDirectory,
   capturePathIdentity,
@@ -49,6 +50,8 @@ import {
 import type { InstallerEnvironment } from "./target-config-evidence.js";
 
 export interface MutationCoordinatorDependencies {
+  /** Defaults to the POSIX contract for `currentUserId`. */
+  readonly contract?: PathSafetyContract;
   readonly adapters: Readonly<Record<ConfigurationTargetId, TargetAdapter>>;
   readonly currentUserId: number;
   readonly environment: InstallerEnvironment;
@@ -359,6 +362,9 @@ async function mutateTarget(
 
   const loadedBeforeLock = await loadInstallerState({
     currentUserId: dependencies.currentUserId,
+    ...(dependencies.contract === undefined
+      ? {}
+      : { contract: dependencies.contract }),
     environment: dependencies.environment,
     fileSystem: dependencies.fileSystem,
     homeDirectory: snapshot.homeDirectory,
@@ -371,6 +377,9 @@ async function mutateTarget(
     rootKind: "home",
     rootPath: snapshot.homeDirectory,
     currentUserId: dependencies.currentUserId,
+    ...(dependencies.contract === undefined
+      ? {}
+      : { contract: dependencies.contract }),
   }).catch((cause) => {
     throw new InstallerError("HARNESS_CONFIG_UNSAFE", cause);
   });
@@ -386,6 +395,15 @@ async function mutateTarget(
         rootKind: "state",
         rootPath: resolve(loadedBeforeLock.path, "../.."),
         currentUserId: dependencies.currentUserId,
+        ...(dependencies.contract === undefined
+          ? {}
+          : { contract: dependencies.contract }),
+        ...(dependencies.contract === undefined
+          ? {}
+          : { contract: dependencies.contract }),
+        ...(dependencies.contract === undefined
+          ? {}
+          : { contract: dependencies.contract }),
       }).catch((cause) => {
         throw new InstallerError("STATE_INVALID", cause);
       });
@@ -405,6 +423,12 @@ async function mutateTarget(
   try {
     const loaded = await loadInstallerState({
       currentUserId: dependencies.currentUserId,
+      ...(dependencies.contract === undefined
+        ? {}
+        : { contract: dependencies.contract }),
+      ...(dependencies.contract === undefined
+        ? {}
+        : { contract: dependencies.contract }),
       environment: dependencies.environment,
       fileSystem: dependencies.fileSystem,
       homeDirectory: snapshot.homeDirectory,

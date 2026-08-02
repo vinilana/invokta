@@ -5,6 +5,12 @@ import {
   type InstallerTransactionFileSystem,
   isInstallerFileSystemError,
 } from "./file-system.js";
+import {
+  contractOwnerValid,
+  createPosixPathContract,
+  ownerAccepted,
+  type PathSafetyContract,
+} from "./path-contract.js";
 
 export type InstallerPathIdentityErrorCode =
   | "INVALID_PATH"
@@ -49,6 +55,8 @@ export interface InstallerPathNodeIdentity extends InstallerFileStat {
 export interface InstallerPathRootIdentity extends InstallerPathNodeIdentity {
   readonly kind: "directory";
   readonly rootKind: InstallerPathRootKind;
+  /** Every component captured under this root is judged by this contract. */
+  readonly contract: PathSafetyContract;
 }
 
 export interface InstallerPathIdentity {
@@ -63,6 +71,8 @@ export interface CapturePathRootOptions {
   readonly rootKind: InstallerPathRootKind;
   readonly rootPath: string;
   readonly currentUserId: number;
+  /** Defaults to the POSIX contract for `currentUserId`. */
+  readonly contract?: PathSafetyContract;
 }
 
 export interface CapturePathIdentityOptions {
@@ -100,10 +110,6 @@ function freezeIdentity(
 
 function validAbsolutePath(path: string): boolean {
   return isAbsolute(path) && !path.includes("\0");
-}
-
-function validUserId(uid: number): boolean {
-  return Number.isSafeInteger(uid) && uid >= 0;
 }
 
 function isInsideRoot(rootPath: string, targetPath: string): boolean {
@@ -168,19 +174,19 @@ export async function capturePathRoot(
   fileSystem: InstallerTransactionFileSystem,
   options: CapturePathRootOptions,
 ): Promise<InstallerPathRootIdentity> {
-  if (
-    !validAbsolutePath(options.rootPath) ||
-    !validUserId(options.currentUserId)
-  ) {
+  const contract =
+    options.contract ?? createPosixPathContract(options.currentUserId);
+  if (!validAbsolutePath(options.rootPath) || !contractOwnerValid(contract)) {
     throw new InstallerPathIdentityError("INVALID_PATH");
   }
   const rootPath = resolve(options.rootPath);
   const stat = await inspect(fileSystem, rootPath);
-  if (stat.kind !== "directory" || stat.uid !== options.currentUserId) {
+  if (stat.kind !== "directory" || !ownerAccepted(contract, stat.uid)) {
     throw new InstallerPathIdentityError("ROOT_UNSAFE");
   }
   return Object.freeze({
     rootKind: options.rootKind,
+    contract,
     path: rootPath,
     kind: "directory",
     dev: stat.dev,
@@ -196,7 +202,10 @@ async function assertRootIdentity(
   expected: InstallerPathRootIdentity,
 ): Promise<void> {
   const current = await inspect(fileSystem, expected.path);
-  if (current.kind !== "directory" || current.uid !== expected.uid) {
+  if (
+    current.kind !== "directory" ||
+    !ownerAccepted(expected.contract, current.uid)
+  ) {
     throw new InstallerPathIdentityError("ROOT_UNSAFE");
   }
   if (
@@ -217,7 +226,7 @@ export async function capturePathIdentity(
   if (
     !validAbsolutePath(options.root.path) ||
     !validAbsolutePath(options.targetPath) ||
-    !validUserId(options.root.uid)
+    !contractOwnerValid(options.root.contract)
   ) {
     throw new InstallerPathIdentityError("INVALID_PATH");
   }
@@ -263,7 +272,10 @@ export async function capturePathIdentity(
     }
     const isTarget = index === names.length - 1;
     const expectedKind = isTarget ? options.targetKind : "directory";
-    if (stat.kind !== expectedKind || stat.uid !== options.root.uid) {
+    if (
+      stat.kind !== expectedKind ||
+      !ownerAccepted(options.root.contract, stat.uid)
+    ) {
       throw new InstallerPathIdentityError("COMPONENT_UNSAFE");
     }
     components.push(freezeNode(componentPath, { ...stat, kind: expectedKind }));
@@ -334,8 +346,10 @@ export async function bootstrapPrivateDirectory(
     const stat = await inspect(fileSystem, path);
     if (
       stat.kind !== "directory" ||
-      stat.uid !== current.root.uid ||
-      (created && (stat.mode & 0o7777) !== 0o700)
+      !ownerAccepted(current.root.contract, stat.uid) ||
+      (created &&
+        current.root.contract.enforcesMode &&
+        (stat.mode & 0o7777) !== 0o700)
     ) {
       throw new InstallerPathIdentityError("COMPONENT_UNSAFE");
     }

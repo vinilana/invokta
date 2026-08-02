@@ -19,6 +19,7 @@ import type {
   InstallerTransactionFileSystem,
 } from "./file-system.js";
 import { InstallerError, type InstallerErrorCode } from "./installer-error.js";
+import type { PathSafetyContract } from "./path-contract.js";
 
 export const engineManifestFileName = "invokta.mcp.json";
 export const defaultDiscoveryDepth = 4;
@@ -52,6 +53,8 @@ export interface EngineProjectDiscovery {
 
 export interface DiscoverEngineProjectsOptions {
   readonly currentUserId: number;
+  /** Defaults to the POSIX contract for `currentUserId`. */
+  readonly contract?: PathSafetyContract;
   readonly directoryReader: InstallerDirectoryReader;
   readonly fileSystem: InstallerTransactionFileSystem;
   readonly roots: readonly string[];
@@ -114,6 +117,9 @@ export async function discoverEngineProjects(
         projects.push(
           await loadEngineProjectMetadata({
             currentUserId: options.currentUserId,
+            ...(options.contract === undefined
+              ? {}
+              : { contract: options.contract }),
             fileSystem: options.fileSystem,
             projectDirectory: next.path,
           }),

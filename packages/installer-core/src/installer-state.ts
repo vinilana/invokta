@@ -8,6 +8,12 @@ import type {
 import { InstallerError } from "./installer-error.js";
 import type { ToggleStrategy } from "./jcs-fingerprint.js";
 import {
+  contractOwnerValid,
+  createPosixPathContract,
+  ownerAccepted,
+  type PathSafetyContract,
+} from "./path-contract.js";
+import {
   type ConfigurationTargetId,
   configurationTargetIds,
   type StdioTransport,
@@ -96,6 +102,8 @@ export type InstallerStateValidationResult =
 export interface LoadInstallerStateOptions {
   readonly allowUnavailableTargetContracts?: boolean;
   readonly currentUserId: number | undefined;
+  /** Defaults to the POSIX contract for `currentUserId`. */
+  readonly contract?: PathSafetyContract;
   readonly environment: InstallerEnvironment;
   readonly fileSystem: InstallerFileSystem;
   readonly homeDirectory: string;
@@ -1097,11 +1105,21 @@ export function validateInstallerStateBytes(
   };
 }
 
+function inside(root: string, candidate: string): boolean {
+  const difference = relative(root, candidate);
+  return (
+    difference === "" ||
+    (difference !== ".." &&
+      !difference.startsWith(`..${sep}`) &&
+      !isAbsolute(difference))
+  );
+}
+
 type StatePathInspection = "missing" | "present";
 
 async function inspectStatePath(
   fileSystem: InstallerFileSystem,
-  currentUserId: number,
+  contract: PathSafetyContract,
   basePath: string,
   statePath: string,
   requireExactBaseRealPath: boolean,
@@ -1124,7 +1142,7 @@ async function inspectStatePath(
     }
     if (inspection.kind === "missing") return "missing";
     if (
-      inspection.ownerId !== currentUserId ||
+      !ownerAccepted(contract, inspection.ownerId) ||
       inspection.kind === "symbolic-link" ||
       inspection.kind === "other"
     ) {
@@ -1159,10 +1177,14 @@ async function inspectStatePath(
 export async function loadInstallerState(
   options: LoadInstallerStateOptions,
 ): Promise<LoadedInstallerState> {
+  const contract =
+    options.contract ??
+    (options.currentUserId === undefined
+      ? undefined
+      : createPosixPathContract(options.currentUserId));
   if (
-    options.currentUserId === undefined ||
-    !Number.isSafeInteger(options.currentUserId) ||
-    options.currentUserId < 0 ||
+    contract === undefined ||
+    !contractOwnerValid(contract) ||
     !isAbsolute(options.homeDirectory) ||
     options.homeDirectory.includes("\0")
   ) {
@@ -1190,11 +1212,17 @@ export async function loadInstallerState(
       ? (xdgStateHome as string)
       : join(options.homeDirectory, ".local", "state"),
   );
-  const inspectionBase = usesXdg ? basePath : resolve(options.homeDirectory);
+  const homePath = resolve(options.homeDirectory);
+  // A contract without ownership evidence has only containment left, so the
+  // state file may not leave the profile it is meant to belong to.
+  if (contract.confinesToUserProfile && !inside(homePath, basePath)) {
+    throw new InstallerError("STATE_INVALID");
+  }
+  const inspectionBase = usesXdg ? basePath : homePath;
   const path = join(basePath, "invokta", "installer.json");
   const inspection = await inspectStatePath(
     options.fileSystem,
-    options.currentUserId,
+    contract,
     inspectionBase,
     path,
     usesXdg,

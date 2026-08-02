@@ -34,9 +34,11 @@ import {
   type MutationCoordinatorDependencies,
   managedDescriptorFor,
   mutateDescriptorAcrossTargets,
+  type PathSafetyContract,
   persistedInstallDescriptorFor,
   registryCompatibilityAdapters,
   resolveNodeOperatingSystemHome,
+  resolvePathSafetyContract,
   type TargetMutationResult,
   type ValidatedRegistry,
 } from "@invokta/installer-core";
@@ -117,9 +119,11 @@ export interface ConsoleService {
 function dependenciesFor(
   fileSystem: InstallerTransactionFileSystem,
   environment: InstallerEnvironment,
+  contract: PathSafetyContract,
 ): MutationCoordinatorDependencies {
   return {
     adapters: configurationTargetAdapters,
+    contract,
     currentUserId: process.getuid?.() ?? -1,
     environment,
     fileSystem,
@@ -150,7 +154,9 @@ function rejection(error: unknown): ConsoleActionResult {
 export async function createConsoleService(
   options: ConsoleServiceOptions,
 ): Promise<ConsoleService> {
-  const fileSystem = options.fileSystem ?? createNodeFileSystem();
+  const platform = options.platform ?? process.platform;
+  const contract = resolvePathSafetyContract({ platform });
+  const fileSystem = options.fileSystem ?? createNodeFileSystem({ platform });
   const environment =
     options.environment ?? createProcessInstallerEnvironment();
   const resolveExecutable =
@@ -158,7 +164,7 @@ export async function createConsoleService(
   const resolveHomeDirectory =
     options.resolveHomeDirectory ?? resolveNodeOperatingSystemHome;
   const nodeExecutable = options.nodeExecutable ?? process.execPath;
-  const dependencies = dependenciesFor(fileSystem, environment);
+  const dependencies = dependenciesFor(fileSystem, environment, contract);
 
   let registry: ValidatedRegistry | undefined;
   let snapshot: HarnessDetectionSnapshot | undefined;
@@ -172,9 +178,8 @@ export async function createConsoleService(
       configEvidenceProbes: createNodeTargetConfigEvidenceProbes({
         environment,
         fileSystem,
-        ...(options.platform === undefined
-          ? {}
-          : { platform: options.platform }),
+        platform,
+        contract,
       }),
     });
   }
@@ -190,6 +195,7 @@ export async function createConsoleService(
     snapshot = await detect();
     const discovery = await discoverEngineProjects({
       currentUserId: dependencies.currentUserId,
+      contract,
       directoryReader: fileSystem,
       fileSystem,
       roots: options.scanRoots,
@@ -238,6 +244,7 @@ export async function createConsoleService(
       // gets written, exactly as they do for `invokta-installer install`.
       const source = await loadEngineInstallManifest({
         currentUserId: dependencies.currentUserId,
+        contract,
         fileSystem,
         nodeExecutable,
         projectDirectory: row.project.projectDirectory,

@@ -170,6 +170,7 @@ export {
   mutateDescriptorAcrossTargets,
   removeEngineDescriptorFromTarget,
 } from "./mutation-coordinator.js";
+export type { CreateNodeFileSystemOptions } from "./node-file-system.js";
 export { createNodeFileSystem } from "./node-file-system.js";
 export type { NodeExecutableResolverOptions } from "./node-harness-environment.js";
 export {
@@ -183,6 +184,18 @@ export type {
   OwnershipPlanningInput,
 } from "./ownership-planner.js";
 export { planInstallerAction, planOwnership } from "./ownership-planner.js";
+export type {
+  PathContractName,
+  PathSafetyContract,
+  ResolvePathSafetyContractOptions,
+} from "./path-contract.js";
+export {
+  contractOwnerValid,
+  createPosixPathContract,
+  createWindowsPathContract,
+  ownerAccepted,
+  resolvePathSafetyContract,
+} from "./path-contract.js";
 export type {
   BootstrapPrivateDirectoryOptions,
   CapturePathIdentityOptions,
