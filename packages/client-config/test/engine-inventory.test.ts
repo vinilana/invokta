@@ -315,7 +315,11 @@ describe("engine inventory", () => {
       targetIds: ["cursor"],
     });
 
-    expect(result).toEqual({ targetId: "cursor", outcome: "installed" });
+    expect(result).toEqual({
+      targetId: "cursor",
+      pathContract: "posix",
+      outcome: "installed",
+    });
     expect(row(initial, "delta").cells.cursor).toEqual({
       state: "installable",
     });

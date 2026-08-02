@@ -61,6 +61,8 @@ export interface ConsoleActionRequest {
 export interface ConsoleActionOutcome {
   readonly targetId: ConfigurationTargetId;
   readonly displayName: string;
+  /** Which path-safety contract judged this target. */
+  readonly pathContract: string;
   readonly outcome: TargetMutationResult["outcome"];
   readonly reloadHint?: string;
   readonly code?: string;
@@ -304,6 +306,7 @@ export async function createConsoleService(
             return Object.freeze({
               targetId: result.targetId,
               displayName: target?.displayName ?? result.targetId,
+              pathContract: result.pathContract,
               outcome: result.outcome,
               ...(target === undefined
                 ? {}

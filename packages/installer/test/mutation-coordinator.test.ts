@@ -134,8 +134,8 @@ describe("installer mutation coordinator", () => {
     });
 
     expect(results).toEqual([
-      { targetId: "codex", outcome: "installed" },
-      { targetId: "cursor", outcome: "installed" },
+      { targetId: "codex", pathContract: "posix", outcome: "installed" },
+      { targetId: "cursor", pathContract: "posix", outcome: "installed" },
     ]);
     expect(
       readFileSync(join(homeDirectory, ".codex/config.toml"), "utf8"),
@@ -196,8 +196,16 @@ describe("installer mutation coordinator", () => {
       targetIds: ["codex", "cursor"],
     });
 
-    expect(results[0]).toMatchObject({ targetId: "codex", outcome: "failed" });
-    expect(results[1]).toEqual({ targetId: "cursor", outcome: "installed" });
+    expect(results[0]).toMatchObject({
+      targetId: "codex",
+      pathContract: "posix",
+      outcome: "failed",
+    });
+    expect(results[1]).toEqual({
+      targetId: "cursor",
+      pathContract: "posix",
+      outcome: "installed",
+    });
   });
 
   it("disables and re-enables native and detached installations", async () => {
@@ -221,8 +229,8 @@ describe("installer mutation coordinator", () => {
     });
 
     expect(disabled).toEqual([
-      { targetId: "codex", outcome: "disabled" },
-      { targetId: "cursor", outcome: "disabled" },
+      { targetId: "codex", pathContract: "posix", outcome: "disabled" },
+      { targetId: "cursor", pathContract: "posix", outcome: "disabled" },
     ]);
     expect(
       readFileSync(join(homeDirectory, ".codex/config.toml"), "utf8"),
@@ -257,8 +265,8 @@ describe("installer mutation coordinator", () => {
     });
 
     expect(enabled).toEqual([
-      { targetId: "codex", outcome: "enabled" },
-      { targetId: "cursor", outcome: "enabled" },
+      { targetId: "codex", pathContract: "posix", outcome: "enabled" },
+      { targetId: "cursor", pathContract: "posix", outcome: "enabled" },
     ]);
     expect(
       readFileSync(join(homeDirectory, ".codex/config.toml"), "utf8"),
@@ -276,8 +284,8 @@ describe("installer mutation coordinator", () => {
     });
 
     expect(removed).toEqual([
-      { targetId: "codex", outcome: "removed" },
-      { targetId: "cursor", outcome: "removed" },
+      { targetId: "codex", pathContract: "posix", outcome: "removed" },
+      { targetId: "cursor", pathContract: "posix", outcome: "removed" },
     ]);
     expect(
       readFileSync(join(homeDirectory, ".codex/config.toml"), "utf8"),
@@ -314,8 +322,8 @@ describe("installer mutation coordinator", () => {
     });
 
     expect(results).toEqual([
-      { targetId: "codex", outcome: "installed" },
-      { targetId: "cursor", outcome: "installed" },
+      { targetId: "codex", pathContract: "posix", outcome: "installed" },
+      { targetId: "cursor", pathContract: "posix", outcome: "installed" },
     ]);
     expect(
       readFileSync(join(homeDirectory, ".codex/config.toml"), "utf8"),
@@ -377,8 +385,8 @@ describe("installer mutation coordinator", () => {
     });
 
     expect(results).toEqual([
-      { targetId: "codex", outcome: "installed" },
-      { targetId: "cursor", outcome: "installed" },
+      { targetId: "codex", pathContract: "posix", outcome: "installed" },
+      { targetId: "cursor", pathContract: "posix", outcome: "installed" },
     ]);
     const codex = readFileSync(
       join(homeDirectory, ".codex/config.toml"),
@@ -416,7 +424,9 @@ describe("installer mutation coordinator", () => {
       targetIds: ["codex"],
     });
 
-    expect(result).toEqual([{ targetId: "codex", outcome: "installed" }]);
+    expect(result).toEqual([
+      { targetId: "codex", pathContract: "posix", outcome: "installed" },
+    ]);
     expect(statSync(configPath).mode & 0o7777).toBe(0o640);
   });
 
@@ -484,7 +494,11 @@ describe("installer mutation coordinator", () => {
         snapshot: detected,
         targetId: "codex",
       }),
-    ).resolves.toEqual({ targetId: "codex", outcome: "unchanged" });
+    ).resolves.toEqual({
+      targetId: "codex",
+      pathContract: "posix",
+      outcome: "unchanged",
+    });
 
     await installDescriptorAcrossTargets({
       dependencies: deps,
@@ -504,6 +518,7 @@ describe("installer mutation coordinator", () => {
       }),
     ).resolves.toEqual({
       targetId: "codex",
+      pathContract: "posix",
       outcome: "failed",
       code: "INSTALLATION_UNAVAILABLE",
     });
@@ -537,6 +552,7 @@ describe("installer mutation coordinator", () => {
       }),
     ).resolves.toEqual({
       targetId: "codex",
+      pathContract: "posix",
       outcome: "failed",
       code: "ENGINE_IDENTITY_MISMATCH",
     });

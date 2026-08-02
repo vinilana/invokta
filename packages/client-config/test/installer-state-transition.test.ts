@@ -146,6 +146,7 @@ function transition(
   return applyInstallerStatePlan({
     adapter: configurationTargetAdapters[planning.targetId],
     occurredAt: timestamp,
+    pathContract: "posix",
     plan: planInstallerAction(planning, action),
     planning,
     targetContracts,
@@ -235,6 +236,7 @@ describe("immutable installer state transitions", () => {
     if (disabled === undefined) throw new Error("Expected disable transition.");
     expect(disabled.installation).toEqual({
       ...before,
+      pathContract: "posix" as const,
       updatedAt: occurredAt,
     });
 
@@ -257,6 +259,7 @@ describe("immutable installer state transitions", () => {
     if (enabled === undefined) throw new Error("Expected enable transition.");
     expect(enabled.installation).toEqual({
       ...before,
+      pathContract: "posix" as const,
       updatedAt: "2026-07-28T16:00:00.000Z",
     });
   });
@@ -286,6 +289,7 @@ describe("immutable installer state transitions", () => {
       if (updated === undefined) throw new Error("Expected update transition.");
       expect(updated.installation).toEqual({
         ...firstInstallation(initial),
+        pathContract: "posix" as const,
         registryVersion: currentDescriptor.version,
         definitionSha256: fingerprintNormalizedDefinition(
           currentDefinition,
@@ -323,6 +327,7 @@ describe("immutable installer state transitions", () => {
     if (disabled === undefined) throw new Error("Expected disable transition.");
     expect(disabled.installation).toEqual({
       ...before,
+      pathContract: "posix" as const,
       suspendedDescriptor: oldDescriptor.server,
       updatedAt: occurredAt,
     });
@@ -349,6 +354,7 @@ describe("immutable installer state transitions", () => {
     expect(enabled.restoreDefinition).toEqual(oldInstalledDefinition);
     expect(enabled.installation).toEqual({
       ...before,
+      pathContract: "posix" as const,
       updatedAt: "2026-07-28T16:00:00.000Z",
     });
     expect(enabled.installation.suspendedDescriptor).toBeUndefined();

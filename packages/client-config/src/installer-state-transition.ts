@@ -16,11 +16,14 @@ import {
   type OwnershipPlanningInput,
   planInstallerAction,
 } from "./ownership-planner.js";
+import type { PathContractName } from "./path-contract.js";
 import type { TargetAdapter } from "./target-adapter.js";
 
 export interface ApplyInstallerStatePlanInput {
   readonly adapter: TargetAdapter;
   readonly occurredAt: string;
+  /** Stamped on the record so a later reader knows how it was verified. */
+  readonly pathContract: PathContractName;
   readonly plan: InstallerActionPlan;
   readonly planning: OwnershipPlanningInput;
   readonly targetContracts: StateTargetContracts;
@@ -122,6 +125,7 @@ function createInstallation(
   plan: Extract<InstallerActionPlan, { readonly outcome: "write" }>,
   planning: OwnershipPlanningInput,
   occurredAt: string,
+  pathContract: PathContractName,
 ): ManagedInstallation {
   if (
     plan.stateEffect !== "create" ||
@@ -142,6 +146,7 @@ function createInstallation(
     ),
     targetContractVersion: planning.target.targetContractVersion,
     toggleStrategy: planning.target.toggleStrategy,
+    pathContract,
     launchDescriptor: planning.descriptor.server,
     adopted: plan.action === "adopt",
     installedAt: occurredAt,
@@ -153,6 +158,7 @@ function updatedInstallation(
   installation: ManagedInstallation,
   suspendedDescriptor: ManagedInstallation["suspendedDescriptor"],
   occurredAt: string,
+  pathContract: PathContractName,
 ): ManagedInstallation {
   return {
     entryId: installation.entryId,
@@ -163,6 +169,7 @@ function updatedInstallation(
     definitionSha256: installation.definitionSha256,
     targetContractVersion: installation.targetContractVersion,
     toggleStrategy: installation.toggleStrategy,
+    pathContract,
     ...(installation.launchDescriptor === undefined
       ? {}
       : { launchDescriptor: installation.launchDescriptor }),
@@ -179,6 +186,7 @@ function applyUpdate(
   adapter: TargetAdapter,
   installation: ManagedInstallation,
   occurredAt: string,
+  pathContract: PathContractName,
 ): {
   readonly installation: ManagedInstallation;
   readonly restoreDefinition?: Readonly<Record<string, unknown>>;
@@ -214,6 +222,7 @@ function applyUpdate(
         ),
         targetContractVersion: planning.target.targetContractVersion,
         toggleStrategy: planning.target.toggleStrategy,
+        pathContract,
         launchDescriptor: planning.descriptor.server,
         ...(suspendedDescriptor === undefined ? {} : { suspendedDescriptor }),
         adopted: false,
@@ -225,7 +234,12 @@ function applyUpdate(
   if (planning.target.toggleStrategy !== "detached") {
     if (plan.definitionSource !== "managed") return invalidState();
     return {
-      installation: updatedInstallation(installation, undefined, occurredAt),
+      installation: updatedInstallation(
+        installation,
+        undefined,
+        occurredAt,
+        pathContract,
+      ),
     };
   }
 
@@ -246,6 +260,7 @@ function applyUpdate(
         installation,
         suspendedDescriptor,
         occurredAt,
+        pathContract,
       ),
     };
   }
@@ -266,7 +281,12 @@ function applyUpdate(
     return invalidState();
   }
   return {
-    installation: updatedInstallation(installation, undefined, occurredAt),
+    installation: updatedInstallation(
+      installation,
+      undefined,
+      occurredAt,
+      pathContract,
+    ),
     restoreDefinition,
   };
 }
@@ -310,6 +330,7 @@ export function applyInstallerStatePlan(
       input.plan,
       input.planning,
       input.occurredAt,
+      input.pathContract,
     );
   } else {
     if (currentInstallation === undefined) return invalidState();
@@ -319,6 +340,7 @@ export function applyInstallerStatePlan(
       input.adapter,
       currentInstallation,
       input.occurredAt,
+      input.pathContract,
     );
     nextInstallation = update.installation;
     restoreDefinition = update.restoreDefinition;

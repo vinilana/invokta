@@ -30,7 +30,11 @@ import {
   planInstallerAction,
   planOwnership,
 } from "./ownership-planner.js";
-import type { PathSafetyContract } from "./path-contract.js";
+import {
+  createPosixPathContract,
+  type PathContractName,
+  type PathSafetyContract,
+} from "./path-contract.js";
 import {
   bootstrapPrivateDirectory,
   capturePathIdentity,
@@ -63,6 +67,8 @@ export interface MutationCoordinatorDependencies {
 export type TargetMutationResult =
   | {
       readonly targetId: ConfigurationTargetId;
+      /** Which path-safety contract judged this target. */
+      readonly pathContract: PathContractName;
       readonly outcome:
         | "disabled"
         | "enabled"
@@ -72,6 +78,7 @@ export type TargetMutationResult =
     }
   | {
       readonly targetId: ConfigurationTargetId;
+      readonly pathContract: PathContractName;
       readonly outcome: "failed";
       readonly code: InstallerError["code"];
     };
@@ -108,6 +115,15 @@ function inside(root: string, candidate: string): boolean {
       !difference.startsWith(`..${sep}`) &&
       !isAbsolute(difference))
   );
+}
+
+/** The contract in force for this run, defaulting to POSIX by user id. */
+function contractNameOf(
+  dependencies: MutationCoordinatorDependencies,
+): PathContractName {
+  return (
+    dependencies.contract ?? createPosixPathContract(dependencies.currentUserId)
+  ).name;
 }
 
 export function buildStateTargetContracts(
@@ -526,6 +542,7 @@ async function mutateTarget(
           dependencies.now(),
           managedInstallation?.updatedAt,
         ),
+        pathContract: contractNameOf(dependencies),
         plan,
         planning,
         targetContracts: contracts,
@@ -632,7 +649,11 @@ export async function removeEngineDescriptorFromTarget(
         manifestServerName: input.manifestServerName,
       },
     );
-    return Object.freeze({ targetId: input.targetId, outcome });
+    return Object.freeze({
+      targetId: input.targetId,
+      pathContract: contractNameOf(input.dependencies),
+      outcome,
+    });
   } catch (cause) {
     const error =
       cause instanceof InstallerError
@@ -640,6 +661,7 @@ export async function removeEngineDescriptorFromTarget(
         : new InstallerError("INSTALLER_INITIALIZATION_FAILED", cause);
     return Object.freeze({
       targetId: input.targetId,
+      pathContract: contractNameOf(input.dependencies),
       outcome: "failed",
       code: error.code,
     });
@@ -660,14 +682,25 @@ export async function mutateDescriptorAcrossTargets(
     seen.add(targetId);
     try {
       const outcome = await mutateTarget(input, targetId, contracts);
-      results.push(Object.freeze({ targetId, outcome }));
+      results.push(
+        Object.freeze({
+          targetId,
+          pathContract: contractNameOf(input.dependencies),
+          outcome,
+        }),
+      );
     } catch (cause) {
       const error =
         cause instanceof InstallerError
           ? cause
           : new InstallerError("INSTALLER_INITIALIZATION_FAILED", cause);
       results.push(
-        Object.freeze({ targetId, outcome: "failed", code: error.code }),
+        Object.freeze({
+          targetId,
+          pathContract: contractNameOf(input.dependencies),
+          outcome: "failed",
+          code: error.code,
+        }),
       );
     }
   }

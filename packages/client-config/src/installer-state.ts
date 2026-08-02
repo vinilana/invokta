@@ -11,6 +11,7 @@ import {
   contractOwnerValid,
   createPosixPathContract,
   ownerAccepted,
+  type PathContractName,
   type PathSafetyContract,
 } from "./path-contract.js";
 import {
@@ -45,6 +46,11 @@ export interface ManagedInstallation {
   readonly definitionSha256: string;
   readonly targetContractVersion: 1;
   readonly toggleStrategy: ToggleStrategy;
+  /**
+   * The path-safety contract in force when this record was written. Absent on
+   * records written before contracts were named, which are POSIX by history.
+   */
+  readonly pathContract?: PathContractName;
   readonly launchDescriptor?: SuspendedDescriptor;
   readonly suspendedDescriptor?: SuspendedDescriptor;
   readonly adopted: boolean;
@@ -70,6 +76,7 @@ export type StateIssueCode =
   | "INVALID_HEADER_NAME"
   | "INVALID_ID"
   | "INVALID_JSON"
+  | "INVALID_PATH_CONTRACT"
   | "INVALID_SCHEMA_VERSION"
   | "INVALID_SERVER_NAME"
   | "INVALID_STRING"
@@ -137,6 +144,7 @@ const installationKeys = new Set([
   "definitionSha256",
   "targetContractVersion",
   "toggleStrategy",
+  "pathContract",
   "launchDescriptor",
   "suspendedDescriptor",
   "adopted",
@@ -631,6 +639,9 @@ function normalizeInstallation(value: JsonRecord): ManagedInstallation {
     definitionSha256: value.definitionSha256 as string,
     targetContractVersion: 1,
     toggleStrategy: value.toggleStrategy as ToggleStrategy,
+    ...(value.pathContract === undefined
+      ? {}
+      : { pathContract: value.pathContract as PathContractName }),
     ...(launchDescriptor === undefined ? {} : { launchDescriptor }),
     ...(suspendedDescriptor === undefined ? {} : { suspendedDescriptor }),
     adopted: value.adopted as boolean,
@@ -711,6 +722,19 @@ function validateInstallation(
     issues,
     { nonempty: true },
   );
+  // Absent means a record written before contracts were named, which is POSIX
+  // by history. Present means it must be a contract this build knows.
+  if (
+    value.pathContract !== undefined &&
+    value.pathContract !== "posix" &&
+    value.pathContract !== "windows"
+  ) {
+    addIssue(
+      issues,
+      childPointer(pointer, "pathContract"),
+      "INVALID_PATH_CONTRACT",
+    );
+  }
   const validTargetId =
     typeof value.targetId === "string" &&
     configurationTargetIds.includes(value.targetId as ConfigurationTargetId);

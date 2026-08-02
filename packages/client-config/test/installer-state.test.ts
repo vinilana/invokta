@@ -126,6 +126,40 @@ function stateFileSystem(
 }
 
 describe("installer state validation", () => {
+  it("carries the path contract that wrote a record, and reads one without it", () => {
+    const windows = record({
+      entryId: "windows-written",
+      pathContract: "windows",
+    });
+    const legacy = record({ entryId: "before-contracts-were-named" });
+
+    const result = validateInstallerStateBytes(
+      stateBytes([windows, legacy]),
+      targetContracts,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const records = Object.values(result.state.installations);
+    expect(
+      records.map(({ entryId, pathContract }) => [entryId, pathContract]),
+    ).toEqual(
+      expect.arrayContaining([
+        ["windows-written", "windows"],
+        // Absent, not defaulted: a record written before contracts were named
+        // must not claim evidence it never had.
+        ["before-contracts-were-named", undefined],
+      ]),
+    );
+  });
+
+  it("rejects a path contract this build does not know", () => {
+    expectInvalid(
+      stateBytes([record({ pathContract: "nt" } as never)]),
+      "INVALID_PATH_CONTRACT",
+    );
+  });
+
   it("accepts a closed version-one state and historical registry entry IDs", () => {
     const installation = record({ entryId: "historical-engine-2042" });
     const result = validateInstallerStateBytes(

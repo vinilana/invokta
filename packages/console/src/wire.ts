@@ -34,6 +34,8 @@ export interface WireCell {
   readonly serverName?: string;
   readonly configPath?: string;
   readonly adopted?: boolean;
+  /** Which path-safety contract wrote this registration. */
+  readonly pathContract?: string;
   readonly installedAt?: string;
   readonly updatedAt?: string;
   readonly transport?: Readonly<Record<string, unknown>>;
@@ -154,6 +156,8 @@ export function toWireInventory(source: ConsoleInventory): WireInventory {
           serverName: cell.installation.serverName,
           configPath: cell.installation.configPath,
           adopted: cell.installation.adopted,
+          // Absent on a record written before contracts were named.
+          pathContract: cell.installation.pathContract ?? "posix",
           installedAt: cell.installation.installedAt,
           updatedAt: cell.installation.updatedAt,
           ...(() => {

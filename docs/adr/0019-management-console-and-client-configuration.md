@@ -103,9 +103,10 @@ checks applied beneath it. A state file written under one contract remains
 readable under the other; ownership evidence is contract-scoped and is never
 compared across platforms.
 
-Surfacing the contract in diagnostics, state records, and public results is
-adopted as the target and is **not implemented**: a consumer cannot currently
-tell which contract produced a given piece of evidence.
+A state record and a mutation result both name the contract that produced
+them, and the console carries that name to its page. A record written before
+contracts were named has no such name and is not given one: it must not claim
+evidence it never had.
 
 ## Consequences
 
@@ -119,9 +120,10 @@ tell which contract produced a given piece of evidence.
   installer state schema, target contracts, and stable diagnostics are versioned
   with the framework.
 - Windows gains inspection and mutation with a documented, lower assurance
-  level. Presenting Windows evidence as equivalent to POSIX evidence is a defect,
-  and until the contract is carried in results the code cannot prevent it — the
-  obligation sits with whoever reads the evidence.
+  level. Presenting Windows evidence as equivalent to POSIX evidence is a defect;
+  every record and result names its contract so a consumer can tell them apart.
+  Diagnostics still do not, because `InstallerError` is a stable contract of its
+  own and widening it belongs to a separate decision.
 - The Windows contract has not been executed on a Windows host. Two behaviors
   are therefore unverified and would fail only there: case-sensitive path
   comparison, where `homedir` and `realpath` casing can disagree and make every
