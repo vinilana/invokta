@@ -495,7 +495,11 @@ function insertProperty(
     const insertionStart = adjustedClose - closeIndent.length;
     return `${withComma.slice(0, insertionStart)}${closeIndent}  ${JSON.stringify(key)}: ${value}${newline}${withComma.slice(insertionStart)}`;
   }
-  return `${withComma.slice(0, adjustedClose)} ${JSON.stringify(key)}: ${value}${withComma.slice(adjustedClose)}`;
+  // Keep whatever separated the last member from the closing brace, so a
+  // single-line container survives an install and a removal unchanged.
+  const head = withComma.slice(0, adjustedClose);
+  const trailing = /\s*$/u.exec(head)?.[0] ?? "";
+  return `${head.slice(0, head.length - trailing.length)} ${JSON.stringify(key)}: ${value}${trailing}${withComma.slice(adjustedClose)}`;
 }
 
 function replaceRange(

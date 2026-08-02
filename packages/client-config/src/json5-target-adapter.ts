@@ -386,16 +386,24 @@ function insertProperty(
   const [, lastEnd] = range(last.value);
   let withComma = text;
   let adjustedClose = close;
-  if (!hasTrailingComma(state, object)) {
+  // A file that already ends its members with a comma keeps that style, so the
+  // member added here carries one too and a later removal leaves it intact.
+  const keepsTrailingComma = hasTrailingComma(state, object);
+  const suffix = keepsTrailingComma ? "," : "";
+  if (!keepsTrailingComma) {
     withComma = `${text.slice(0, lastEnd)},${text.slice(lastEnd)}`;
     adjustedClose += 1;
   }
   if (inside.includes("\n")) {
     const closeIndent = lineIndent(withComma, adjustedClose);
     const insertionStart = adjustedClose - closeIndent.length;
-    return `${withComma.slice(0, insertionStart)}${closeIndent}  ${JSON.stringify(key)}: ${value}${newline}${withComma.slice(insertionStart)}`;
+    return `${withComma.slice(0, insertionStart)}${closeIndent}  ${JSON.stringify(key)}: ${value}${suffix}${newline}${withComma.slice(insertionStart)}`;
   }
-  return `${withComma.slice(0, adjustedClose)} ${JSON.stringify(key)}: ${value}${withComma.slice(adjustedClose)}`;
+  // Keep whatever separated the last member from the closing brace, so a
+  // single-line container survives an install and a removal unchanged.
+  const head = withComma.slice(0, adjustedClose);
+  const trailing = /\s*$/u.exec(head)?.[0] ?? "";
+  return `${head.slice(0, head.length - trailing.length)} ${JSON.stringify(key)}: ${value}${suffix}${trailing}${withComma.slice(adjustedClose)}`;
 }
 
 function replaceRange(
