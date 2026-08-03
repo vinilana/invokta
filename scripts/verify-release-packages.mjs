@@ -43,9 +43,11 @@ const publicPackages = [
   {
     directory: "installer",
     name: "@invokta/installer",
-    // The installer is binary-first and intentionally has no import API.
+    // The installer is binary-first; its only import API is the engine subpath.
     requiredFiles: [
       "dist/cli.js",
+      "dist/engine-cli.js",
+      "dist/engine-cli.d.ts",
       "registry/capabilities.json",
       "registry/README.md",
     ],

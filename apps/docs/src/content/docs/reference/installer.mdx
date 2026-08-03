@@ -32,8 +32,10 @@ existing engine when needed:
 npm install --save-dev @invokta/installer
 ```
 
-The package is native ESM, requires Node.js 22.20.0 or later, exposes no
-JavaScript import API, and publishes only the `invokta-installer` binary.
+The package is native ESM, requires Node.js 22.20.0 or later, and publishes
+the `invokta-installer` binary plus one embeddable subpath export,
+[`@invokta/installer/engine`](#embed-install-commands-in-an-engine-binary).
+The package root exports no JavaScript API.
 
 The bundled capability registry may remain empty. Explicit local-engine and
 remote-HTTP commands supply their own reviewed descriptors; new managed state
@@ -113,6 +115,50 @@ manifest but does not require the compiled entry point, recorded Node
 executable, forwarded environment variables, or an installed client executable.
 The manifest `id` selects the same logical engine across every managed target;
 project location and mutable manifest metadata are not provenance.
+
+### Embed install commands in an engine binary
+
+A published engine can ship its own installation command instead of asking the
+consumer to locate the package directory. The `@invokta/installer/engine`
+subpath exports `runEngineInstallerCli`, which accepts exactly `install`,
+`uninstall`, and `--help` and runs the same engine-scoped interactive sessions
+against the embedding package root:
+
+```ts
+#!/usr/bin/env node
+import { fileURLToPath } from "node:url";
+
+import { runEngineInstallerCli } from "@invokta/installer/engine";
+
+process.exitCode = await runEngineInstallerCli({
+  argv: process.argv.slice(2),
+  binaryName: "support-engine",
+  packageRoot: fileURLToPath(new URL("..", import.meta.url)),
+});
+```
+
+With a package `bin` entry pointing at the compiled module, the consumer runs:
+
+```sh
+npm install --global support-engine
+support-engine install
+# Later:
+support-engine uninstall
+```
+
+Generated MCP stdio projects include this composition root, the `bin` entry,
+and `@invokta/installer` as a runtime dependency. The embedded surface keeps
+the manifest contract, TTY requirement, confirmations, diagnostics, and exit
+statuses of the standalone commands, and it never builds, downloads, imports,
+or executes the engine.
+
+<Aside type="caution" title="Install from a stable location">
+  The recorded launch descriptor points at the absolute entry-point path. Run
+  `install` from a durable installation, such as a global package install. An
+  ephemeral extraction directory (for example a package-runner cache)
+  invalidates the descriptor when it is pruned; `status` then reports the
+  missing entry point.
+</Aside>
 
 ### Install a remote HTTP server
 

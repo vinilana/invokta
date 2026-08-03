@@ -60,7 +60,9 @@ const defaultIo: InstallerCliIo = {
   },
 };
 
-function resolveIo(overrides: Partial<InstallerCliIo> | undefined) {
+export function resolveInstallerCliIo(
+  overrides: Partial<InstallerCliIo> | undefined,
+): InstallerCliIo {
   return {
     inputIsTTY: overrides?.inputIsTTY ?? defaultIo.inputIsTTY,
     outputIsTTY: overrides?.outputIsTTY ?? defaultIo.outputIsTTY,
@@ -162,7 +164,7 @@ async function writeStderr(io: InstallerCliIo, text: string): Promise<void> {
   }
 }
 
-async function writeInitializationFailure(
+export async function writeInitializationFailure(
   io: InstallerCliIo,
   error: unknown,
 ): Promise<2> {
@@ -174,37 +176,18 @@ async function writeInitializationFailure(
   return 2;
 }
 
-export async function runInstallerCli(
-  options: RunInstallerCliOptions = {},
+export interface ExecuteInteractiveCliCommandOptions {
+  readonly command: InstallerCommand;
+  readonly io: InstallerCliIo;
+  readonly loadInteractiveSession?: (
+    command: InstallerCommand,
+  ) => Promise<InstallerExitCode>;
+}
+
+export async function executeInteractiveCliCommand(
+  options: ExecuteInteractiveCliCommandOptions,
 ): Promise<InstallerExitCode> {
-  const io = resolveIo(options.io);
-  const argv = options.argv ?? process.argv.slice(2);
-
-  if (argv.length === 1 && argv[0] === "--help") {
-    try {
-      await io.writeStdout(helpText);
-      return 0;
-    } catch (error) {
-      return writeInitializationFailure(io, error);
-    }
-  }
-  if (argv.length === 1 && argv[0] === "--version") {
-    try {
-      const version = await (
-        options.loadPackageVersion ?? loadDefaultPackageVersion
-      )();
-      await io.writeStdout(`${version}\n`);
-      return 0;
-    } catch (error) {
-      return writeInitializationFailure(io, error);
-    }
-  }
-  const command = parseCommand(argv);
-  if (command === undefined) {
-    await writeStderr(io, invalidUsageText);
-    return 2;
-  }
-
+  const { command, io } = options;
   try {
     if (!io.inputIsTTY() || !io.outputIsTTY()) {
       await writeStderr(
@@ -232,4 +215,44 @@ export async function runInstallerCli(
     }
     return writeInitializationFailure(io, error);
   }
+}
+
+export async function runInstallerCli(
+  options: RunInstallerCliOptions = {},
+): Promise<InstallerExitCode> {
+  const io = resolveInstallerCliIo(options.io);
+  const argv = options.argv ?? process.argv.slice(2);
+
+  if (argv.length === 1 && argv[0] === "--help") {
+    try {
+      await io.writeStdout(helpText);
+      return 0;
+    } catch (error) {
+      return writeInitializationFailure(io, error);
+    }
+  }
+  if (argv.length === 1 && argv[0] === "--version") {
+    try {
+      const version = await (
+        options.loadPackageVersion ?? loadDefaultPackageVersion
+      )();
+      await io.writeStdout(`${version}\n`);
+      return 0;
+    } catch (error) {
+      return writeInitializationFailure(io, error);
+    }
+  }
+  const command = parseCommand(argv);
+  if (command === undefined) {
+    await writeStderr(io, invalidUsageText);
+    return 2;
+  }
+
+  return executeInteractiveCliCommand({
+    command,
+    io,
+    ...(options.loadInteractiveSession === undefined
+      ? {}
+      : { loadInteractiveSession: options.loadInteractiveSession }),
+  });
 }
