@@ -34,13 +34,19 @@ const expectedPaths = {
     ".env.example",
     "invokta.deploy.json",
     "invokta.mcp.json",
+    "src/bin.ts",
     "src/cli.ts",
     "src/env.ts",
     "src/http-auth.ts",
     "src/mcp-http.ts",
     "src/mcp-stdio.ts",
   ].sort(),
-  "mcp-stdio": [...commonPaths, "invokta.mcp.json", "src/mcp-stdio.ts"].sort(),
+  "mcp-stdio": [
+    ...commonPaths,
+    "invokta.mcp.json",
+    "src/bin.ts",
+    "src/mcp-stdio.ts",
+  ].sort(),
   "mcp-http": [
     ...commonPaths,
     ".env.example",
@@ -118,14 +124,14 @@ describe("createStarterFiles", () => {
   it.each([
     [
       "complete",
-      ["@invokta/cli", "@invokta/core", "@invokta/mcp", "zod"],
       [
-        "@invokta/deploy",
+        "@invokta/cli",
+        "@invokta/core",
         "@invokta/installer",
-        "@types/node",
-        "typescript",
-        "vitest",
+        "@invokta/mcp",
+        "zod",
       ],
+      ["@invokta/deploy", "@types/node", "typescript", "vitest"],
       [
         "build",
         "check",
@@ -143,8 +149,8 @@ describe("createStarterFiles", () => {
     ],
     [
       "mcp-stdio",
-      ["@invokta/core", "@invokta/mcp", "zod"],
-      ["@invokta/installer", "@types/node", "typescript", "vitest"],
+      ["@invokta/core", "@invokta/installer", "@invokta/mcp", "zod"],
+      ["@types/node", "typescript", "vitest"],
       [
         "build",
         "check",
@@ -231,6 +237,44 @@ describe("createStarterFiles", () => {
       }
     },
   );
+
+  it("ships an embedded installer binary only with MCP stdio profiles", () => {
+    for (const profile of Object.keys(
+      expectedPaths,
+    ) as EngineStarterProfile[]) {
+      const files = createFiles(profile);
+      const contents = new Map(
+        files.flatMap((file) =>
+          "contents" in file ? [[file.path, file.contents] as const] : [],
+        ),
+      );
+      const manifest = JSON.parse(contents.get("package.json") ?? "") as {
+        readonly bin?: Readonly<Record<string, string>>;
+        readonly files?: readonly string[];
+      };
+      const hasStdio = profile === "complete" || profile === "mcp-stdio";
+
+      expect(contents.has("src/bin.ts")).toBe(hasStdio);
+      if (!hasStdio) {
+        expect(manifest.bin).toBeUndefined();
+        expect(manifest.files).toBeUndefined();
+        continue;
+      }
+      expect(manifest.bin).toEqual({
+        "customer-support-engine": "./dist/bin.js",
+      });
+      expect(manifest.files).toEqual(["dist", "invokta.mcp.json"]);
+      const binModule = contents.get("src/bin.ts") ?? "";
+      expect(binModule.startsWith("#!/usr/bin/env node\n")).toBe(true);
+      expect(binModule).toContain(
+        'import { runEngineInstallerCli } from "@invokta/installer/engine";',
+      );
+      expect(binModule).toContain('binaryName: "customer-support-engine"');
+      expect(binModule).toContain(
+        'packageRoot: fileURLToPath(new URL("..", import.meta.url))',
+      );
+    }
+  });
 
   it("uses one shared engine through every entry point included by a profile", () => {
     for (const profile of Object.keys(
@@ -347,11 +391,11 @@ describe("createStarterFiles", () => {
       dependencies: {
         "@invokta/cli": "1.2.3-beta.1",
         "@invokta/core": "1.2.3-beta.1",
+        "@invokta/installer": "1.2.3-beta.1",
         "@invokta/mcp": "1.2.3-beta.1",
         zod: "4.4.3",
       },
       devDependencies: {
-        "@invokta/installer": "1.2.3-beta.1",
         "@types/node": "26.1.2",
         typescript: "7.0.2",
         vitest: "4.1.10",

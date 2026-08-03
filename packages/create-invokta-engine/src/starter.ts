@@ -111,6 +111,18 @@ without rebuilding it:
 \`\`\`sh
 ${runScript("mcp:uninstall")}
 \`\`\`
+
+The package also ships the \`${projectName}\` executable, so a consumer of the
+published package can install or remove the engine without this checkout:
+
+\`\`\`sh
+${projectName} install
+${projectName} uninstall
+\`\`\`
+
+Run \`install\` from a durable location, such as a global package
+installation; the recorded launch descriptor points at this package's absolute
+entry-point path, so an ephemeral package-runner cache invalidates it.
 `
     : "";
   const httpSection = features.mcpHttp
@@ -293,6 +305,7 @@ function renderPackageManifest(
   const dependencies = {
     ...(features.cli ? { "@invokta/cli": invoktaVersion } : {}),
     "@invokta/core": invoktaVersion,
+    ...(features.mcpStdio ? { "@invokta/installer": invoktaVersion } : {}),
     ...(features.mcpStdio || features.mcpHttp
       ? { "@invokta/mcp": invoktaVersion }
       : {}),
@@ -300,7 +313,6 @@ function renderPackageManifest(
   };
   const devDependencies = {
     ...(features.mcpHttp ? { "@invokta/deploy": invoktaVersion } : {}),
-    ...(features.mcpStdio ? { "@invokta/installer": invoktaVersion } : {}),
     "@types/node": "26.1.2",
     typescript: "7.0.2",
     vitest: "4.1.10",
@@ -311,11 +323,31 @@ function renderPackageManifest(
     private: true,
     type: "module",
     engines: { node: ">=22.20.0" },
+    ...(features.mcpStdio
+      ? {
+          bin: { [projectName]: "./dist/bin.js" },
+          files: ["dist", "invokta.mcp.json"],
+        }
+      : {}),
     scripts,
     dependencies,
     devDependencies,
   };
   return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
+function renderBinModule(projectName: string): string {
+  return `#!/usr/bin/env node
+import { fileURLToPath } from "node:url";
+
+import { runEngineInstallerCli } from "@invokta/installer/engine";
+
+process.exitCode = await runEngineInstallerCli({
+  argv: process.argv.slice(2),
+  binaryName: ${JSON.stringify(projectName)},
+  packageRoot: fileURLToPath(new URL("..", import.meta.url)),
+});
+`;
 }
 
 function renderMcpInstallManifest(projectName: string): string {
@@ -535,6 +567,7 @@ export function createStarterFiles(
         "invokta.mcp.json",
         renderMcpInstallManifest(options.projectName),
       ),
+      starterFile("src/bin.ts", renderBinModule(options.projectName)),
       starterFile("src/mcp-stdio.ts", mcpStdioModule),
     );
   }

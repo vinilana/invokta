@@ -112,13 +112,19 @@ tsconfig.test.json
 | Feature | Added entries | Added packages and scripts |
 | --- | --- | --- |
 | CLI | `src/cli.ts` | `@invokta/cli`; `cli` |
-| MCP local | `invokta.mcp.json`, `src/mcp-stdio.ts` | `@invokta/mcp`, dev `@invokta/installer`; `mcp:stdio`, `mcp:install`, `mcp:uninstall` |
+| MCP local | `invokta.mcp.json`, `src/bin.ts`, `src/mcp-stdio.ts` | `@invokta/installer`, `@invokta/mcp`; `mcp:stdio`, `mcp:install`, `mcp:uninstall`; a project-named `bin` entry and packed `files` |
 | MCP HTTP | `.env.example`, `invokta.deploy.json`, `src/env.ts`, `src/http-auth.ts`, `src/mcp-http.ts` | `@invokta/mcp`, dev `@invokta/deploy`; `mcp:http`, `deploy:package`, `deploy:probe` |
 
 Dependencies and scripts are exact set unions. Generated Invokta versions match
 the creator version. Documentation and generated agent guidance name only the
 selected channels. Every entry point imports the same engine; direct calls
 `engine.invoke`, while CLI and MCP use official adapters that converge on it.
+
+MCP stdio profiles also generate `src/bin.ts`, a composition root that
+delegates to
+[`@invokta/installer/engine`](/reference/installer/#embed-install-commands-in-an-engine-binary),
+so the published package ships a project-named executable whose `install` and
+`uninstall` commands register or remove the engine without the checkout.
 
 MCP HTTP entries are byte-identical to the immutable public planner from
 `@invokta/deploy/scaffold`. The creator merges the complete plan before writing,
