@@ -61,7 +61,7 @@ describe("createStarterProject", () => {
 
     expect(result.projectName).toBe("my-engine");
     expect(result.directory).toBe(join(cwd, "engines/my-engine"));
-    expect(result.files).toHaveLength(21);
+    expect(result.files).toHaveLength(22);
     expect(
       JSON.parse(readFileSync(join(result.directory, "package.json"), "utf8")),
     ).toMatchObject({ name: "my-engine", private: true });
@@ -82,8 +82,8 @@ describe("createStarterProject", () => {
   });
 
   it.each([
-    ["complete", 21],
-    ["mcp-stdio", 15],
+    ["complete", 22],
+    ["mcp-stdio", 16],
     ["mcp-http", 18],
     ["cli", 14],
   ] as const)(

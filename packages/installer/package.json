@@ -25,7 +25,12 @@
     "dist",
     "registry"
   ],
-  "exports": {},
+  "exports": {
+    "./engine": {
+      "types": "./dist/engine-cli.d.ts",
+      "import": "./dist/engine-cli.js"
+    }
+  },
   "bin": {
     "invokta-installer": "./dist/cli.js"
   },

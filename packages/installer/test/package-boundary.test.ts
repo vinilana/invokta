@@ -11,7 +11,7 @@ function readJson(path: string): Record<string, unknown> {
 }
 
 describe("@invokta/installer package boundary", () => {
-  it("publishes only the standalone executable on the repository runtime floor", () => {
+  it("publishes the standalone executable and only the engine subpath export", () => {
     const manifest = readJson(`${packageDirectory}/package.json`);
 
     expect(manifest).toMatchObject({
@@ -20,7 +20,12 @@ describe("@invokta/installer package boundary", () => {
       type: "module",
       engines: { node: ">=22.20.0" },
       files: ["dist", "registry"],
-      exports: {},
+      exports: {
+        "./engine": {
+          types: "./dist/engine-cli.d.ts",
+          import: "./dist/engine-cli.js",
+        },
+      },
       bin: { "invokta-installer": "./dist/cli.js" },
       dependencies: {
         "@clack/prompts": "1.7.0",
@@ -29,6 +34,9 @@ describe("@invokta/installer package boundary", () => {
         yaml: "2.9.0",
       },
     });
+    expect(Object.keys(manifest.exports as Record<string, unknown>)).toEqual([
+      "./engine",
+    ]);
     expect(manifest).not.toHaveProperty("main");
     expect(manifest).not.toHaveProperty("types");
   });

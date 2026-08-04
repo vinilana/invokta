@@ -7,6 +7,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `@invokta/installer` now exposes the `@invokta/installer/engine` subpath with
+  `runEngineInstallerCli`, so a distributed engine binary can run the existing
+  engine-scoped install and removal sessions against its own package root
+  (ADR 0019). The standalone `invokta-installer` command surface is unchanged.
+- Generated MCP stdio engines now ship a project-named executable whose
+  `install` and `uninstall` commands register or remove the engine in local
+  MCP clients without the project checkout. The starter adds `src/bin.ts`, a
+  package `bin` entry, a packed `files` list, and `@invokta/installer` as a
+  runtime dependency.
+
 ## [0.3.0] - 2026-08-01
 
 ### Added
