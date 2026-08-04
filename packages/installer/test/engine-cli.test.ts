@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runEngineInstallerCli } from "../src/engine-cli.js";
+import { runEngineInstallerCliWithDependencies } from "../src/engine-cli-internal.js";
 import { InstallerError } from "../src/installer-error.js";
 
 const helpText = `Usage:
@@ -43,7 +43,7 @@ describe("runEngineInstallerCli", () => {
     const output = createIo();
     const loadInteractiveSession = vi.fn(async () => 0 as const);
 
-    const result = await runEngineInstallerCli({
+    const result = await runEngineInstallerCliWithDependencies({
       argv: ["--help"],
       binaryName: "support-engine",
       io: output.io,
@@ -73,7 +73,7 @@ describe("runEngineInstallerCli", () => {
     const output = createIo();
     const loadInteractiveSession = vi.fn(async () => 0 as const);
 
-    const result = await runEngineInstallerCli({
+    const result = await runEngineInstallerCliWithDependencies({
       argv,
       binaryName: "support-engine",
       io: output.io,
@@ -95,7 +95,7 @@ describe("runEngineInstallerCli", () => {
     const output = createIo();
     const loadInteractiveSession = vi.fn(async () => 0 as const);
 
-    const result = await runEngineInstallerCli({
+    const result = await runEngineInstallerCliWithDependencies({
       argv: ["install"],
       binaryName: "support-engine",
       io: output.io,
@@ -116,7 +116,7 @@ describe("runEngineInstallerCli", () => {
     const output = createIo();
     const loadInteractiveSession = vi.fn(async () => 0 as const);
 
-    const result = await runEngineInstallerCli({
+    const result = await runEngineInstallerCliWithDependencies({
       argv: ["uninstall"],
       binaryName: "support-engine",
       io: output.io,
@@ -143,7 +143,7 @@ describe("runEngineInstallerCli", () => {
       const output = createIo(tty);
       const loadInteractiveSession = vi.fn(async () => 0 as const);
 
-      const result = await runEngineInstallerCli({
+      const result = await runEngineInstallerCliWithDependencies({
         argv: ["install"],
         binaryName: "support-engine",
         io: output.io,
@@ -166,7 +166,7 @@ describe("runEngineInstallerCli", () => {
       const output = createIo();
       const loadInteractiveSession = vi.fn(async () => exitCode);
 
-      const result = await runEngineInstallerCli({
+      const result = await runEngineInstallerCliWithDependencies({
         argv: ["install"],
         binaryName: "support-engine",
         io: output.io,
@@ -187,7 +187,7 @@ describe("runEngineInstallerCli", () => {
       throw new InstallerError("CANCELLED");
     });
 
-    const result = await runEngineInstallerCli({
+    const result = await runEngineInstallerCliWithDependencies({
       argv: ["uninstall"],
       binaryName: "support-engine",
       io: output.io,
@@ -205,7 +205,7 @@ describe("runEngineInstallerCli", () => {
       throw new InstallerError("ENGINE_ENTRYPOINT_MISSING");
     });
 
-    const result = await runEngineInstallerCli({
+    const result = await runEngineInstallerCliWithDependencies({
       argv: ["install"],
       binaryName: "support-engine",
       io: output.io,
@@ -230,7 +230,7 @@ describe("runEngineInstallerCli", () => {
         throw error;
       });
 
-      const result = await runEngineInstallerCli({
+      const result = await runEngineInstallerCliWithDependencies({
         argv: ["install"],
         binaryName: "support-engine",
         io: output.io,

@@ -123,8 +123,11 @@ selected channels. Every entry point imports the same engine; direct calls
 MCP stdio profiles also generate `src/bin.ts`, a composition root that
 delegates to
 [`@invokta/installer/engine`](/reference/installer/#embed-install-commands-in-an-engine-binary),
-so the published package ships a project-named executable whose `install` and
-`uninstall` commands register or remove the engine without the checkout.
+so an author-prepared package can ship a project-named executable whose
+`install` and `uninstall` commands register or remove the engine without the
+checkout. Generated projects remain private by default; registry publication
+requires the author to choose package access and license metadata and remove
+`"private": true` explicitly.
 
 MCP HTTP entries are byte-identical to the immutable public planner from
 `@invokta/deploy/scaffold`. The creator merges the complete plan before writing,

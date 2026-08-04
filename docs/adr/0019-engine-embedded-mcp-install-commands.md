@@ -54,8 +54,12 @@ import or execution.
 module URL and delegates to `runEngineInstallerCli`, a package `bin` entry
 named after the project, and a `files` list that packs `dist` and
 `invokta.mcp.json`. `@invokta/installer` becomes a runtime dependency of those
-generated projects. The build-first `mcp:install` and build-free
-`mcp:uninstall` scripts remain the in-checkout author workflow.
+generated projects. The starter remains a private package under ADR 0012;
+registry publication requires the author to choose package access and license
+metadata and remove `"private": true` explicitly. This decision provides the
+distribution entry point but does not publish the generated project. The
+build-first `mcp:install` and build-free `mcp:uninstall` scripts remain the
+in-checkout author workflow.
 
 The persisted launch descriptor still records the absolute Node executable and
 absolute entry point (ADR 0013), so registration is only durable from a stable

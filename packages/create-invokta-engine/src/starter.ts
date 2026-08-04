@@ -112,8 +112,13 @@ without rebuilding it:
 ${runScript("mcp:uninstall")}
 \`\`\`
 
-The package also ships the \`${projectName}\` executable, so a consumer of the
-published package can install or remove the engine without this checkout:
+The package also defines the \`${projectName}\` executable for a durable
+packaged distribution. This starter remains private by default; before registry
+publication, choose the package's license and access metadata deliberately and
+remove \`"private": true\`.
+
+After distribution, a consumer can install or remove the engine without this
+checkout:
 
 \`\`\`sh
 ${projectName} install

@@ -118,11 +118,13 @@ project location and mutable manifest metadata are not provenance.
 
 ### Embed install commands in an engine binary
 
-A published engine can ship its own installation command instead of asking the
-consumer to locate the package directory. The `@invokta/installer/engine`
-subpath exports `runEngineInstallerCli`, which accepts exactly `install`,
-`uninstall`, and `--help` and runs the same engine-scoped interactive sessions
-against the embedding package root:
+A packaged engine can ship its own installation command instead of asking the
+consumer to locate the package directory. Generated Invokta starters remain
+private by default, so registry publication requires an explicit author choice
+of package access and license metadata plus removal of `"private": true`. The
+`@invokta/installer/engine` subpath exports `runEngineInstallerCli`, which
+accepts exactly `install`, `uninstall`, and `--help` and runs the same
+engine-scoped interactive sessions against the embedding package root:
 
 ```ts
 #!/usr/bin/env node

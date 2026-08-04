@@ -746,12 +746,14 @@ try {
     const tooling = await import("@invokta/tooling");
     const deploy = await import("@invokta/deploy");
     const deployScaffold = await import("@invokta/deploy/scaffold");
+    const installerEngine = await import("@invokta/installer/engine");
     if (typeof core.createEngine !== "function") throw new Error("core import failed");
     if (typeof cli.runCli !== "function") throw new Error("cli import failed");
     if (typeof mcp.serveMcpStdio !== "function") throw new Error("mcp import failed");
     if (typeof tooling.checkCapabilities !== "function") throw new Error("tooling import failed");
     if (typeof deploy.runDeployCli !== "function") throw new Error("deploy import failed");
     if (typeof deployScaffold.createMcpHttpScaffoldFiles !== "function") throw new Error("deploy scaffold import failed");
+    if (typeof installerEngine.runEngineInstallerCli !== "function") throw new Error("installer engine import failed");
   `;
   run("node", ["--input-type=module", "--eval", smokeProgram], {
     cwd: consumerDirectory,
@@ -1052,6 +1054,7 @@ try {
       "npm",
       [
         "install",
+        "--no-save",
         "--ignore-scripts",
         "--no-audit",
         "--no-fund",
@@ -1121,6 +1124,52 @@ try {
   const generatedProjectDirectory = generatedProfileDirectories.get("complete");
   if (generatedProjectDirectory === undefined) {
     throw new Error("complete generated profile is missing");
+  }
+
+  const generatedEnginePackReport = JSON.parse(
+    run("npm", ["pack", "--json", "--pack-destination", artifactDirectory], {
+      cwd: generatedProjectDirectory,
+      capture: true,
+    }),
+  )[0];
+  if (
+    !generatedEnginePackReport ||
+    typeof generatedEnginePackReport.filename !== "string"
+  ) {
+    throw new Error("generated engine pack did not report a tarball");
+  }
+  const generatedEngineTarball = join(
+    artifactDirectory,
+    generatedEnginePackReport.filename,
+  );
+  run(
+    "npm",
+    [
+      "install",
+      "--no-save",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      generatedEngineTarball,
+    ],
+    { cwd: consumerDirectory },
+  );
+  const generatedEngineCommand = join(
+    consumerDirectory,
+    "node_modules",
+    ".bin",
+    "release-engine",
+  );
+  const generatedEngineHelp = run(generatedEngineCommand, ["--help"], {
+    cwd: consumerDirectory,
+    capture: true,
+    env: { NODE_OPTIONS: `--no-warnings --import=${networkSentinel}` },
+  });
+  if (
+    generatedEngineHelp !==
+    "Usage:\n  release-engine install\n  release-engine uninstall\n  release-engine --help\n"
+  ) {
+    throw new Error("packed generated engine binary help smoke failed");
   }
 
   const installerFixtureHome = join(temporaryRoot, "installer-home");
