@@ -831,11 +831,17 @@ try {
         ...commonCreatorEntries,
         ...httpCreatorEntries,
         "invokta.mcp.json",
+        "src/bin.ts",
         "src/cli.ts",
         "src/mcp-stdio.ts",
       ],
-      dependencies: ["@invokta/cli", "@invokta/core", "@invokta/mcp"],
-      devDependencies: ["@invokta/deploy", "@invokta/installer"],
+      dependencies: [
+        "@invokta/cli",
+        "@invokta/core",
+        "@invokta/installer",
+        "@invokta/mcp",
+      ],
+      devDependencies: ["@invokta/deploy"],
       scripts: [
         "build",
         "check",
@@ -863,10 +869,11 @@ try {
       entries: [
         ...commonCreatorEntries,
         "invokta.mcp.json",
+        "src/bin.ts",
         "src/mcp-stdio.ts",
       ],
-      dependencies: ["@invokta/core", "@invokta/mcp"],
-      devDependencies: ["@invokta/installer"],
+      dependencies: ["@invokta/core", "@invokta/installer", "@invokta/mcp"],
+      devDependencies: [],
       scripts: [
         "build",
         "check",
