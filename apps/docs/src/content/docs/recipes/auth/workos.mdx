@@ -1,0 +1,265 @@
+---
+title: Authenticate with WorkOS AuthKit
+description: Verify WorkOS AuthKit access tokens at the MCP HTTP boundary and key authorization on the organization claim.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+WorkOS AuthKit issues a JWT access token signed by a JWKS scoped to your
+environment's client id. The engine verifies that token in the `authenticate`
+hook and maps its claims to a `Principal`; the organization claim is what a
+multi-tenant access rule keys on.
+
+This recipe covers only the WorkOS specifics. The generic JWKS mechanics —
+bearer parsing, the 401 versus 500 split, and the offline local-JWKS test
+approach — live in the [JWT bearer recipe](/recipes/auth/jwt-bearer/).
+
+## Build the integration
+
+<Steps>
+
+1. Point key resolution at your WorkOS client
+
+   ```ts
+   export const WORKOS_DEFAULT_AUTH_DOMAIN = "https://api.workos.com";
+   export const WORKOS_DEFAULT_ISSUER = "https://api.workos.com/";
+
+   export function workOsJwksUrl(
+     clientId: string,
+     authDomain: string = WORKOS_DEFAULT_AUTH_DOMAIN,
+   ): URL {
+     if (clientId.trim() === "") {
+       throw new Error("A WorkOS client id is required to derive the JWKS URL.");
+     }
+     const base = authDomain.endsWith("/") ? authDomain : `${authDomain}/`;
+     return new URL(`sso/jwks/${encodeURIComponent(clientId)}`, base);
+   }
+   ```
+
+   WorkOS publishes the signing keys at `sso/jwks/<clientId>` and issues
+   tokens with `iss` set to `https://api.workos.com/`. When the environment
+   uses a custom auth domain, both values move to that domain, so the verifier
+   accepts an explicit issuer and JWKS URL.
+
+2. Verify the access token with injectable key resolution
+
+   ```ts
+   const keys =
+     options.keys ??
+     createRemoteJWKSet(
+       options.jwksUrl === undefined
+         ? workOsJwksUrl(options.clientId)
+         : new URL(options.jwksUrl),
+       { timeoutDuration: timeoutMs },
+     );
+
+   const verified = await withDeadline(
+     jwtVerify(token, keys, {
+       issuer,
+       algorithms,
+       clockTolerance,
+       ...(options.audience === undefined
+         ? {}
+         : { audience: options.audience }),
+     }),
+     deadline,
+   );
+   ```
+
+   Production wiring resolves the remote JWKS; tests inject
+   `createLocalJWKSet`, so signature verification is real and offline.
+   `deadline` is `AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])`,
+   which bounds the verifier's own wait and observes the request signal.
+
+3. Separate an invalid credential from an unavailable check
+
+   ```ts
+   function isInvalidCredential(error: unknown): boolean {
+     return (
+       error instanceof errors.JWTExpired ||
+       error instanceof errors.JWTClaimValidationFailed ||
+       error instanceof errors.JWTInvalid ||
+       error instanceof errors.JWSInvalid ||
+       error instanceof errors.JWSSignatureVerificationFailed ||
+       error instanceof errors.JOSEAlgNotAllowed ||
+       error instanceof errors.JWKSNoMatchingKey ||
+       error instanceof errors.JWKSMultipleMatchingKeys
+     );
+   }
+   ```
+
+   Only these prove the credential itself is unusable, so only these become
+   `null`. A JWKS timeout, a network fault, or any unknown failure throws
+   `WorkOsVerificationUnavailableError`, which carries no message detail and no
+   cause so token material cannot reach a log or an HTTP 500 body.
+
+4. Map the WorkOS claims to a principal
+
+   ```ts
+   export function toPrincipal(claims: WorkOsAccessTokenClaims): Principal {
+     const attributes = {
+       ...(claims.sid === undefined ? {} : { sid: claims.sid }),
+       ...(claims.org_id === undefined ? {} : { org_id: claims.org_id }),
+       ...(claims.role === undefined ? {} : { role: claims.role }),
+       ...(claims.permissions === undefined
+         ? {}
+         : { permissions: Object.freeze([...claims.permissions]) }),
+     };
+
+     return Object.keys(attributes).length === 0
+       ? Object.freeze({ id: claims.sub })
+       : Object.freeze({ id: claims.sub, attributes: Object.freeze(attributes) });
+   }
+   ```
+
+   An AuthKit access token carries `sub` (the WorkOS user id), `sid` (the
+   session id), and — when the user selected an organization — `org_id`,
+   `role`, and `permissions`. The verifier narrows the payload to exactly those
+   claims before mapping, so nothing else the token carries can reach the
+   principal.
+
+5. Wire the hook into the adapter
+
+   ```ts
+   export function createWorkOsAuthenticate(
+     verifier: WorkOsAccessTokenVerifier,
+   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
+     return async (request) => {
+       const token = readBearerToken(request);
+       if (token === null) return null;
+
+       const claims = await verifier.verify(token, { signal: request.signal });
+       return claims === null ? null : toPrincipal(claims);
+     };
+   }
+
+   return serveMcpHttp(engine, {
+     auth: {
+       mode: "required",
+       authenticate: createWorkOsAuthenticate(options.verifier),
+       ...(options.resourceMetadata === undefined
+         ? {}
+         : { resourceMetadata: options.resourceMetadata }),
+     },
+   });
+   ```
+
+   When AuthKit acts as the authorization server for this engine, register the
+   engine's `/mcp` URL as a resource indicator in WorkOS, expect it as `aud`,
+   and publish the same value as `resourceMetadata.resource`. Without a
+   registered resource, AuthKit falls back to an environment-scoped audience
+   and audience validation would reject every token.
+
+6. Let capabilities read the verified identity only
+
+   ```ts
+   export const whoami = defineCapability({
+     title: "Who am I",
+     description: "Return the verified identity of the current caller.",
+     input: z.object({}),
+     output: z.object({
+       principalId: z.string(),
+       attributes: z.record(z.string(), z.unknown()),
+     }),
+     access: "authenticated",
+     async run({ context }) {
+       const { principal } = context;
+       if (principal === null) {
+         throw new EngineError({
+           code: "UNAUTHENTICATED",
+           message: "An authenticated principal is required.",
+         });
+       }
+       return {
+         principalId: principal.id,
+         attributes: { ...principal.attributes },
+       };
+     },
+   });
+   ```
+
+   The hook proves who the caller is; the capability's `access` rule decides
+   what that caller may do. A tenant-scoped capability replaces
+   `access: "authenticated"` with a function that keys on
+   `principal.attributes.org_id`, the verified organization claim, so a caller
+   cannot select another tenant through capability input. See
+   [Authorize with domain data](/recipes/domain-authorization/) for a
+   fail-closed permission port built on principal attributes.
+
+</Steps>
+
+<Aside type="note" title="SDK variant">
+  With `@workos-inc/node`, replace the JWKS URL helper with the SDK's own
+  accessor and keep the rest of the verifier unchanged:
+
+  ```ts
+  import { WorkOS } from "@workos-inc/node";
+
+  const workos = new WorkOS(process.env.WORKOS_API_KEY);
+  const keys = createRemoteJWKSet(
+    new URL(workos.userManagement.getJwksUrl(process.env.WORKOS_CLIENT_ID)),
+  );
+  ```
+
+  AuthKit session helpers (`authkit-nextjs`, `authkit-session`) resolve a
+  session in a host application instead. That is the embedded surface: the
+  route handler passes the session's principal to `engine.invoke` directly, so
+  no HTTP authentication hook is involved.
+</Aside>
+
+<Aside type="caution" title="Keep the token out of the principal">
+  Map only `sub`, `org_id`, `role`, `permissions`, and `sid`. Never place the
+  raw access token, the full claim set, or a WorkOS SDK object in
+  `Principal.attributes`, and never log the `Authorization` header.
+</Aside>
+
+## Run it
+
+Build the repository, then start the engine against your WorkOS environment:
+
+```sh
+yarn build
+WORKOS_CLIENT_ID=client_... \
+WORKOS_MCP_RESOURCE=https://engine.example.com/mcp \
+PORT=3000 \
+yarn workspace @invokta/example-auth-workos mcp:http
+```
+
+`WORKOS_CLIENT_ID` selects the JWKS and is the only required variable; no API
+key or client secret is needed to verify a token. `WORKOS_ISSUER` and
+`WORKOS_JWKS_URL` override the defaults for a custom auth domain.
+
+Call the engine with an AuthKit access token your application already holds:
+
+```sh
+curl -sS http://127.0.0.1:3000/mcp \
+  -H "authorization: Bearer $WORKOS_ACCESS_TOKEN" \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+```
+
+The result echoes the verified identity, including `org_id`. Dropping the
+header answers HTTP 401 before `engine.invoke` runs.
+
+## Verify it
+
+```sh
+yarn workspace @invokta/example-auth-workos test
+```
+
+The tests mint RS256 tokens in the AuthKit claim shape from a locally
+generated key pair and assert that a valid token yields the expected principal,
+that every invalid class resolves to `null`, that an unavailable JWKS rejects
+instead, and that no token material reaches the principal.
+
+Read the complete
+[`auth-workos-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-workos-engine)
+example for the verifier, the claims mapping, and the full test matrix.
+
+## Related
+
+- [Capability authorization](/guides/capability-authorization/) for the policy
+  half of the boundary.
+- [HTTP authentication](/guides/http-authentication/) for the hook contract and
+  the secret and logging rules.
