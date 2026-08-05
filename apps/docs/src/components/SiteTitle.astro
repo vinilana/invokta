@@ -1,0 +1,35 @@
+---
+/*
+ * Starlight's own `SiteTitle` renders the configured logo as `<img src>`, and
+ * an external image cannot read the page's custom properties. The brand mark
+ * is drawn from `--accent-text` and `--ink-fg` so it follows the theme
+ * toggle, so this override inlines the SVG instead of linking it.
+ *
+ * Everything else matches the upstream component: same anchor, same
+ * `.site-title` class, same wordmark span.
+ */
+// biome-ignore lint/correctness/noUnusedImports: Biome does not track references from Astro frontmatter into the template.
+import mark from "../assets/invokta-mark.svg?raw";
+
+// biome-ignore lint/correctness/noUnusedVariables: These values are rendered by the Astro template below.
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title sl-flex">
+  <Fragment set:html={mark} />
+  <span translate="no">{siteTitle}</span>
+</a>
+
+<style>
+  .site-title {
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .site-title span {
+    overflow: hidden;
+  }
+</style>

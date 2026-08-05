@@ -1,23 +1,31 @@
 <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
   <title>Invokta documentation</title>
-  <rect width="1200" height="630" fill="#0a0a0a"/>
-  <path d="M0 1h1200M0 629h1200M1 0v630M1199 0v630" stroke="#2a2a2a"/>
+  <!--
+    Social preview card. A link unfurl cannot read page tokens, so every
+    colour is the literal dark-theme resolution of the design tokens:
+    #09090b --ink-bg, #27272a --ink-line, #fafafa --ink-fg, #a1a1aa --ink-body,
+    #6f93ff --accent-text.
+  -->
+  <rect width="1200" height="630" fill="#09090b"/>
+  <path d="M0 1h1200M0 629h1200M1 0v630M1199 0v630" stroke="#27272a"/>
   <g transform="translate(96 94)">
-    <rect width="72" height="72" rx="18" fill="#fff"/>
-    <path d="M20 20h12v32H20V20Zm20 0h12v12H40V20Zm0 20h12v12H40V40Z" fill="#0a0a0a"/>
+    <g transform="scale(1.4)" fill="none" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 15 L29 32 L11 49" stroke="#6f93ff" transform="translate(-6.5,-10.5)"/>
+      <path d="M36 49 H53" stroke="#fafafa" transform="translate(-6.5,-10.5)"/>
+    </g>
   </g>
-  <text x="96" y="265" fill="#fff" font-family="Arial, sans-serif" font-size="88" font-weight="650">Invokta</text>
-  <text x="96" y="353" fill="#a1a1a1" font-family="Arial, sans-serif" font-size="36">Typed domain capabilities, one execution path.</text>
-  <g transform="translate(96 454)" fill="none" stroke="#3f3f46">
-    <rect width="210" height="70" rx="12"/>
-    <rect x="234" width="210" height="70" rx="12"/>
-    <rect x="468" width="210" height="70" rx="12"/>
-    <rect x="702" width="210" height="70" rx="12"/>
+  <text x="96" y="265" fill="#fafafa" font-family="Inter Tight, Arial, sans-serif" font-size="88" font-weight="600" letter-spacing="-3">Invokta</text>
+  <text x="96" y="353" fill="#a1a1aa" font-family="Inter Tight, Arial, sans-serif" font-size="36" letter-spacing="-0.36">Typed domain capabilities, one execution path.</text>
+  <g transform="translate(96 454)" fill="none" stroke="#27272a">
+    <rect width="210" height="70" rx="6"/>
+    <rect x="234" width="210" height="70" rx="6"/>
+    <rect x="468" width="210" height="70" rx="6"/>
+    <rect x="702" width="210" height="70" rx="6"/>
   </g>
-  <g fill="#d4d4d8" font-family="monospace" font-size="24" text-anchor="middle">
-    <text x="201" y="498">direct</text>
+  <g fill="#a1a1aa" font-family="JetBrains Mono, monospace" font-size="24" letter-spacing="3.4" text-anchor="middle">
+    <text x="201" y="498">DIRECT</text>
     <text x="435" y="498">CLI</text>
-    <text x="669" y="498">MCP stdio</text>
+    <text x="669" y="498">MCP STDIO</text>
     <text x="903" y="498">MCP HTTP</text>
   </g>
 </svg>

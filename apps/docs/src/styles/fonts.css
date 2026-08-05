@@ -1,0 +1,15 @@
+/*
+ * Typefaces — Inter Tight for display/UI, JetBrains Mono for code and labels.
+ *
+ * Only the weights the design system actually uses are loaded:
+ *   400 body copy, mono, annotations
+ *   500 buttons, badges, active tabs, arrow links
+ *   700 the wordmark
+ * Weight 600 (headings) resolves to the nearest real face because
+ * `font-synthesis-weight: none` is set on `body` — never fake a weight.
+ */
+@import "@fontsource/inter-tight/400.css";
+@import "@fontsource/inter-tight/500.css";
+@import "@fontsource/inter-tight/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";

@@ -1,4 +1,17 @@
-<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Invokta mark">
-  <rect width="32" height="32" rx="8" fill="#fafafa"/>
-  <path d="M9 9h5v14H9V9Zm8 0h6v5h-6V9Zm0 8h6v6h-6v-6Z" fill="#09090b"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 51 43" fill="none" aria-hidden="true" focusable="false">
+  <!--
+    Invokta mark — terminal prompt: accent chevron plus an ink underscore.
+    Ported from the landing page (lp-invokta InvoktaMark). Aspect is 51:43;
+    control the height and let the width follow.
+
+    The stroke colours read the page tokens so the mark tracks the theme
+    toggle. That only works because `src/components/SiteTitle.astro` inlines
+    this file into the document; the literal fallbacks are the light-theme
+    values, so the mark still draws if it is ever referenced as an external
+    image instead.
+  -->
+  <g transform="translate(-6.5,-10.5)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M11 15 L29 32 L11 49" stroke="var(--accent-text, #3d50f5)"/>
+    <path d="M36 49 H53" stroke="var(--ink-fg, #18181b)"/>
+  </g>
 </svg>

@@ -1,176 +1,936 @@
-@import "@fontsource-variable/geist";
-@import "@fontsource-variable/geist/wght-italic.css";
-@import "@fontsource-variable/geist-mono";
+/*
+ * Invokta docs — component surfaces.
+ *
+ * Everything here is deliberately unlayered: Starlight ships its own styles
+ * inside `@layer starlight.*`, and unlayered author CSS outranks every
+ * cascade layer regardless of specificity. That lets these rules stay short
+ * and readable instead of fighting selector arithmetic.
+ *
+ * The house rules, taken from the landing page:
+ *   - Every border is a 1px hairline in `--ink-line`. The only 2px edge is
+ *     the aside's accent border.
+ *   - Shadow is reserved for the one recipe, `--shadow-raised`.
+ *   - Text is never coloured with `--accent`; use `--accent-text`.
+ *   - Labels the site itself authors (sidebar groups, TOC heading, pagination
+ *     "previous"/"next") use the "annotation" treatment: mono, 11px,
+ *     uppercase, 0.14em tracking. Authored content is never uppercased.
+ *   - `--bp-label` is a decoration tint, not a text colour: it fails AA in
+ *     both themes, so anything a screen reader reaches uses `--ink-muted`.
+ *   - Motion is 120ms/200ms on cubic-bezier(0.2, 0, 0, 1), and collapses
+ *     completely under `prefers-reduced-motion`.
+ */
 
-:root {
-  --sl-font: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  --sl-font-mono: "Geist Mono Variable", "SFMono-Regular", Consolas, monospace;
-  --sl-color-accent-low: #172554;
-  --sl-color-accent: #60a5fa;
-  --sl-color-accent-high: #bfdbfe;
-  --sl-color-white: #fafafa;
-  --sl-color-gray-1: #e4e4e7;
-  --sl-color-gray-2: #a1a1aa;
-  --sl-color-gray-3: #71717a;
-  --sl-color-gray-4: #3f3f46;
-  --sl-color-gray-5: #27272a;
-  --sl-color-gray-6: #18181b;
-  --sl-color-black: #09090b;
-  --sl-color-bg-nav: color-mix(in srgb, var(--sl-color-black) 92%, transparent);
-  --sl-color-bg-sidebar: var(--sl-color-black);
-  --sl-content-width: 48rem;
-  --sl-text-5xl: clamp(3rem, 7vw, 4.75rem);
-}
-
-:root[data-theme="light"] {
-  --sl-color-accent-low: #dbeafe;
-  --sl-color-accent: #2563eb;
-  --sl-color-accent-high: #1e3a8a;
-  --sl-color-white: #18181b;
-  --sl-color-gray-1: #27272a;
-  --sl-color-gray-2: #52525b;
-  --sl-color-gray-3: #71717a;
-  --sl-color-gray-4: #a1a1aa;
-  --sl-color-gray-5: #e4e4e7;
-  --sl-color-gray-6: #f4f4f5;
-  --sl-color-gray-7: #fafafa;
-  --sl-color-black: #ffffff;
-  --sl-color-bg-nav: color-mix(in srgb, white 90%, transparent);
-  --sl-color-bg-sidebar: #ffffff;
-}
+/* ================================================================== *
+ * 1. Base
+ * ================================================================== */
 
 html {
-  letter-spacing: -0.012em;
+  letter-spacing: var(--ivk-track-body);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background-image:
-    linear-gradient(
-      to right,
-      color-mix(in srgb, var(--sl-color-gray-5) 30%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      to bottom,
-      color-mix(in srgb, var(--sl-color-gray-5) 22%, transparent) 1px,
-      transparent 1px
-    );
-  background-position: center top;
-  background-size: 64px 64px;
+  font-synthesis-weight: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-header.header {
-  border-bottom-color: var(--sl-color-gray-5);
-  backdrop-filter: blur(16px) saturate(140%);
+/*
+ * The blueprint rail layer: five 1px verticals on the signature column grid,
+ * pinned to the viewport. This replaces the old 64px gradient lattice — it is
+ * more distinctive and does not fight with content. Hidden on narrow screens,
+ * where there is no margin for it to live in.
+ */
+@media (min-width: 40rem) {
+  body {
+    background-image:
+      linear-gradient(var(--bp-rail), var(--bp-rail)),
+      linear-gradient(var(--bp-rail), var(--bp-rail)),
+      linear-gradient(var(--bp-rail), var(--bp-rail)),
+      linear-gradient(var(--bp-rail), var(--bp-rail)),
+      linear-gradient(var(--bp-rail), var(--bp-rail));
+    background-repeat: no-repeat;
+    background-size: 1px 100%;
+    background-attachment: fixed;
+    background-position:
+      var(--ivk-col-1) 0,
+      var(--ivk-col-2) 0,
+      var(--ivk-col-3) 0,
+      var(--ivk-col-4) 0,
+      var(--ivk-col-5) 0;
+  }
 }
 
-.site-title {
-  gap: 0.65rem;
-  font-weight: 600;
-  letter-spacing: -0.035em;
+::selection {
+  background-color: var(--accent-low);
+  color: var(--ink-fg);
 }
 
-.site-title img {
-  width: 1.75rem;
-  height: 1.75rem;
+/*
+ * The focus ring uses `--accent-text`, not `--accent`, for the same contrast
+ * reason accent text does. Unlike the landing page it does not force a
+ * `border-radius`, which would square off pill-shaped controls while focused.
+ */
+:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
 }
 
-.sidebar-pane {
-  border-inline-end: 1px solid var(--sl-color-gray-5);
+/* ================================================================== *
+ * 2. The annotation label
+ * ================================================================== */
+
+/*
+ * `text-transform: uppercase` is what makes this pattern read as a blueprint
+ * callout, so it is only applied to labels the site itself authors — never to
+ * authored content, where an identifier such as `engine.invoke` has to stay
+ * literal. Table headers and figure captions therefore get their own rules
+ * further down instead of joining this list.
+ *
+ * The colour is `--ink-muted`, not `--bp-label`. Every surface below is real,
+ * screen-reader-exposed text; `--bp-label` is a decoration tint that only
+ * clears ~2:1 against either ground and is reserved for the `aria-hidden`
+ * blueprint layer.
+ */
+.annotation,
+.sidebar-content .group-label > .large,
+.right-sidebar-panel h2 {
+  color: var(--ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: var(--ivk-track-label);
+  text-transform: uppercase;
+  line-height: 1;
 }
 
-.sidebar-content a[aria-current="page"] {
-  border-radius: 0.38rem;
-  font-weight: 550;
+/* ================================================================== *
+ * 3. Typography
+ * ================================================================== */
+
+.sl-markdown-content :is(h1, h2, h3, h4),
+.content-panel h1#_top,
+.hero h1 {
+  color: var(--ink-fg);
+  letter-spacing: var(--ivk-track-display);
+  text-wrap: balance;
 }
 
-.content-panel + .content-panel {
-  border-top-color: var(--sl-color-gray-5);
-}
-
-.sl-markdown-content h1,
-.sl-markdown-content h2,
-.sl-markdown-content h3 {
-  letter-spacing: -0.035em;
-}
-
+.content-panel h1#_top,
 .sl-markdown-content h1 {
-  font-weight: 630;
+  line-height: var(--ivk-leading-tight);
+  font-weight: 600;
 }
 
+/* Section rules: an h2 opens with a hairline across the content column,
+   echoing the landing page's section boundaries. */
 .sl-markdown-content h2 {
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--sl-color-gray-5);
-  font-weight: 610;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--ink-line);
+  line-height: 1.08;
+  font-weight: 600;
+}
+
+.sl-markdown-content :is(h3, h4, h5, h6) {
+  font-weight: 600;
 }
 
 .sl-markdown-content a:not([class]) {
+  color: var(--accent-text);
   text-decoration-color: color-mix(
     in srgb,
-    var(--sl-color-accent) 45%,
+    var(--accent-text) 45%,
     transparent
   );
   text-underline-offset: 0.2em;
+  transition: color var(--ivk-dur-fast) var(--ivk-ease);
+}
+
+.sl-markdown-content a:not([class]):hover {
+  color: var(--accent-text);
+  text-decoration-color: currentColor;
+}
+
+.sl-markdown-content strong {
+  color: var(--ink-fg);
+  font-weight: 600;
 }
 
 .sl-markdown-content code:not(:where(.not-content *)) {
-  border: 1px solid var(--sl-color-gray-5);
-  border-radius: 0.32rem;
+  border: 1px solid var(--ink-line);
+  border-radius: 4px;
+  background-color: var(--ink-surface-2);
+  padding: 0.1rem 0.32rem;
 }
 
-.expressive-code {
-  --ec-brdRad: 0.65rem;
-  --ec-brdWd: 1px;
-  --ec-brdCol: var(--sl-color-gray-5);
+.sl-markdown-content blockquote:not(:where(.not-content *)) {
+  border-inline-start: 2px solid var(--ink-line);
+  color: var(--ink-muted);
 }
+
+.sl-markdown-content hr:not(:where(.not-content *)) {
+  border: 0;
+  border-top: 1px solid var(--ink-line);
+}
+
+/* --- Tables ------------------------------------------------------- */
+
+.sl-markdown-content table:not(:where(.not-content *)) {
+  font-size: 0.875rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-line) transparent;
+}
+
+.sl-markdown-content table:not(:where(.not-content *))::-webkit-scrollbar {
+  height: 6px;
+}
+
+.sl-markdown-content
+  table:not(:where(.not-content *))::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background-color: var(--ink-line);
+}
+
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+  border-bottom: 1px solid var(--ink-line);
+  padding: 0.6rem 1rem;
+}
+
+/*
+ * Header cells keep the annotation *feel* — mono, small, tracked — but not
+ * `text-transform: uppercase`. Two shipped headers carry inline identifiers
+ * (`Reaches <code>engine.invoke</code>`, `Calls <code>run</code>`) and
+ * `text-transform` inherits into `<code>`, which would render them as
+ * ENGINE.INVOKE and RUN. Same reason the figure rules below are guarded for
+ * Expressive Code frame titles: API names have to stay literal.
+ */
+.sl-markdown-content th:not(:where(.not-content *)) {
+  border-bottom-color: var(--ink-line);
+  padding-bottom: 0.5rem;
+  color: var(--ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: var(--ivk-track-label);
+  line-height: 1.4;
+}
+
+/* The label tracking and the 11px step are wrong for an identifier chip, so
+   the inline code inside a header cell opts back out of both. */
+.sl-markdown-content th:not(:where(.not-content *)) code {
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* --- Figures ------------------------------------------------------ *
+ *
+ * Every rule below is guarded with `:not(:where(.not-content, .not-content *))`.
+ * Expressive Code renders each code block as `<figure class="frame
+ * not-content"><figcaption class="header">`, and those live *inside*
+ * `.sl-markdown-content`. Starlight's usual `:not(:where(.not-content *))`
+ * guard is not enough here because the EC figure carries `.not-content`
+ * itself rather than inheriting it from an ancestor, so `.not-content` is
+ * listed in the `:where()` alongside the descendant form.
+ *
+ * Without the guard the caption rules leak onto the code-frame title bar:
+ * `text-transform: uppercase` has nothing in Expressive Code's own CSS to
+ * reset it, so filenames render as `SRC/CAPABILITIES.TS`, and `margin-top`
+ * adds a stray gap above every frame. Filenames have to stay literal.
+ */
+
+.sl-markdown-content figure:not(:where(.not-content, .not-content *)) {
+  margin-block: 2rem;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--ivk-radius-md);
+  background-color: var(--ink-surface);
+  padding: 1rem;
+}
+
+/* The diagram shipped with the docs is drawn on the brand ramp but is still a
+   light-only line drawing, so it keeps its own plate in both themes. */
+.sl-markdown-content
+  figure:not(:where(.not-content, .not-content *))
+  img[src$=".svg"] {
+  border-radius: var(--ivk-radius-sm);
+  background-color: var(--ivk-figure-plate);
+  padding: 0.75rem;
+}
+
+/* A caption is prose, not a label: sentence case at reading size. It also
+   uses `--ink-muted` rather than `--bp-label`, which would not clear AA
+   against the figure plate. */
+.sl-markdown-content figcaption:not(:where(.not-content, .not-content *)) {
+  margin-top: 0.875rem;
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ================================================================== *
+ * 4. Header
+ * ================================================================== */
+
+header.header {
+  border-bottom: 1px solid var(--ink-line);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.site-title {
+  gap: 0.5rem;
+  color: var(--ink-fg);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-transform: lowercase;
+}
+
+/* The mark is a 51:43 drawing: fix the height, let the width follow.
+   1.125rem matches the landing page's nav lockup. */
+.site-title svg {
+  width: auto;
+  height: 1.125rem;
+  flex: none;
+}
+
+.social-icons::after {
+  border-inline-end-color: var(--ink-line);
+}
+
+.social-icons a {
+  color: var(--ink-muted);
+  transition: color var(--ivk-dur-fast) var(--ivk-ease);
+}
+
+.social-icons a:hover {
+  color: var(--ink-fg);
+}
+
+/* Search trigger */
+site-search button[data-open-modal] {
+  border-color: var(--ink-line);
+  border-radius: var(--ivk-radius-pill);
+  background-color: transparent;
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  transition:
+    border-color var(--ivk-dur-fast) var(--ivk-ease),
+    color var(--ivk-dur-fast) var(--ivk-ease);
+}
+
+site-search button[data-open-modal]:hover {
+  border-color: var(--ink-faint);
+  color: var(--ink-fg);
+}
+
+site-search button > kbd {
+  border: 1px solid var(--ink-line);
+  border-radius: 4px;
+  background-color: var(--ink-surface-2);
+  /* The Ctrl/⌘ K hint is informative, not decoration: `--ink-body` is the
+     lightest token that clears AA on `--ink-surface-2` in both themes. */
+  color: var(--ink-body);
+  font-family: var(--sl-font-mono);
+  font-size: 0.625rem;
+}
+
+/* Theme select */
+starlight-theme-select label {
+  color: var(--ink-muted);
+}
+
+starlight-theme-select label:hover {
+  color: var(--ink-fg);
+}
+
+starlight-theme-select select {
+  font-size: 0.8125rem;
+}
+
+starlight-theme-select option {
+  background-color: var(--ink-bg);
+  color: var(--ink-body);
+}
+
+/* Mobile menu button — a hairline plate, not a filled circle. */
+starlight-menu-button button {
+  border: 1px solid var(--ink-line);
+  border-radius: var(--ivk-radius-sm);
+  background-color: var(--ink-surface-2);
+  color: var(--ink-body);
+  box-shadow: none;
+}
+
+starlight-menu-button [aria-expanded="true"] button {
+  border-color: var(--ink-faint);
+  background-color: var(--ink-surface-2);
+  color: var(--ink-fg);
+}
+
+/* Skip link */
+.sl-skip-link:focus {
+  border: 1px solid var(--ink-line);
+  border-radius: var(--ivk-radius-sm);
+  background-color: var(--ink-bg);
+  color: var(--ink-fg);
+  box-shadow: var(--shadow-raised);
+}
+
+/* ================================================================== *
+ * 5. Search dialog
+ * ================================================================== */
+
+site-search dialog {
+  border: 1px solid var(--ink-line);
+  border-radius: var(--ivk-radius-md);
+  background-color: var(--ink-bg);
+  box-shadow: var(--shadow-raised);
+}
+
+site-search button[data-close-modal] {
+  color: var(--ink-muted);
+}
+
+#starlight__search {
+  --pagefind-ui-primary: var(--ink-fg);
+  --pagefind-ui-text: var(--ink-body);
+  --pagefind-ui-background: var(--ink-bg);
+  --pagefind-ui-border: var(--ink-line);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: 0.375rem;
+  --pagefind-ui-tag: var(--ink-surface-2);
+}
+
+#starlight__search .pagefind-ui__search-input {
+  color: var(--ink-fg);
+}
+
+#starlight__search
+  .pagefind-ui__result-title:not(:where(.pagefind-ui__result-nested *)),
+#starlight__search .pagefind-ui__result-nested,
+#starlight__search .pagefind-ui__result-tags {
+  background-color: var(--ink-surface);
+}
+
+/* ================================================================== *
+ * 6. Left sidebar
+ * ================================================================== */
+
+.sidebar-pane {
+  border-inline-end: 1px solid var(--ink-line);
+}
+
+.sidebar-content {
+  gap: 1.25rem;
+}
+
+/* Group headings read as blueprint annotations; the annotation block above
+   supplies the mono/uppercase treatment and the `--ink-muted` colour. */
+
+.sidebar-content summary {
+  padding-block: 0.35rem;
+}
+
+.sidebar-content .caret {
+  color: var(--ink-faint);
+  transition: transform var(--ivk-dur-base) var(--ivk-ease);
+}
+
+/* Top-level links (entries with no group) stay sentence-cased. */
+.sidebar-content ul.top-level > li > a.large {
+  color: var(--ink-fg);
+  font-weight: 500;
+}
+
+.sidebar-content a {
+  border-radius: var(--ivk-radius-sm);
+  color: var(--ink-muted);
+  transition:
+    color var(--ivk-dur-fast) var(--ivk-ease),
+    background-color var(--ivk-dur-fast) var(--ivk-ease);
+}
+
+/*
+ * Below 50rem this sidebar *is* the full-screen mobile navigation, and
+ * Starlight deliberately keeps it at reading size there — shrinking it
+ * unconditionally would drop the links to 13px and their tap targets to
+ * ~26px. Mirror Starlight's own breakpoint and only tighten on desktop.
+ */
+@media (min-width: 50rem) {
+  .sidebar-content a {
+    font-size: 0.8125rem;
+  }
+
+  .sidebar-content ul.top-level > li > a.large {
+    font-size: var(--sl-text-sm);
+  }
+}
+
+.sidebar-content a:hover,
+.sidebar-content a:focus {
+  background-color: color-mix(in srgb, var(--ink-surface-2) 60%, transparent);
+  color: var(--ink-fg);
+}
+
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:hover,
+.sidebar-content a[aria-current="page"]:focus {
+  background-color: color-mix(in srgb, var(--accent-low) 45%, transparent);
+  color: var(--accent-text);
+  font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.sidebar-content ul ul li {
+  border-inline-start-color: var(--ink-line);
+}
+
+/* ================================================================== *
+ * 7. Right sidebar (table of contents)
+ * ================================================================== */
+
+.right-sidebar {
+  border-inline-start: 1px solid var(--ink-line);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-line) transparent;
+}
+
+/* Colour and label treatment come from the annotation block. */
+.right-sidebar-panel h2 {
+  margin-bottom: 0.75rem;
+}
+
+:root starlight-toc nav a {
+  border-radius: var(--ivk-radius-sm);
+  padding-block: 0.3rem;
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  transition: color var(--ivk-dur-fast) var(--ivk-ease);
+}
+
+:root starlight-toc nav a:hover {
+  color: var(--ink-fg);
+}
+
+:root starlight-toc nav a[aria-current="true"] {
+  color: var(--accent-text);
+  font-weight: 500;
+}
+
+/* Mobile table of contents */
+mobile-starlight-toc nav {
+  border-top: 1px solid var(--ink-line);
+  background-color: color-mix(in srgb, var(--ink-bg) 88%, transparent);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+:root mobile-starlight-toc summary {
+  border-bottom: 1px solid var(--ink-line);
+}
+
+mobile-starlight-toc .toggle {
+  border: 1px solid var(--ink-line);
+  border-radius: var(--ivk-radius-sm);
+  background-color: var(--ink-surface);
+  color: var(--ink-muted);
+}
+
+mobile-starlight-toc details[open] .toggle,
+mobile-starlight-toc details .toggle:hover {
+  border-color: var(--ink-faint);
+  color: var(--ink-fg);
+}
+
+mobile-starlight-toc .dropdown {
+  border-color: var(--ink-line);
+  background-color: var(--ink-bg);
+  box-shadow: var(--shadow-raised);
+}
+
+/* ================================================================== *
+ * 8. Content panels, pagination, footer
+ * ================================================================== */
+
+.content-panel + .content-panel {
+  border-top-color: var(--ink-line);
+}
+
+.pagination-links a {
+  border: 1px solid var(--ink-line);
+  border-radius: var(--ivk-radius-md);
+  color: var(--ink-muted);
+  box-shadow: none;
+  transition:
+    transform var(--ivk-dur-base) var(--ivk-ease),
+    border-color var(--ivk-dur-base) var(--ivk-ease),
+    background-color var(--ivk-dur-base) var(--ivk-ease);
+}
+
+.pagination-links a:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--ink-faint) 60%, transparent);
+  background-color: color-mix(in srgb, var(--ink-surface-2) 50%, transparent);
+}
+
+.pagination-links a > span {
+  font-family: var(--sl-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: var(--ivk-track-label);
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.pagination-links .link-title {
+  display: inline-block;
+  margin-top: 0.5rem;
+  color: var(--ink-fg);
+  font-family: var(--sl-font);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: var(--ivk-track-display);
+  text-transform: none;
+}
+
+footer .meta {
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--ink-line);
+  /* Small print, but still readable: `--ink-faint` fails AA in both themes. */
+  color: var(--ink-muted);
+  font-size: 0.75rem;
+}
+
+footer .meta a {
+  color: var(--ink-muted);
+  transition: color var(--ivk-dur-fast) var(--ivk-ease);
+}
+
+footer .meta a:hover {
+  color: var(--accent-text);
+}
+
+footer .meta time {
+  font-family: var(--sl-font-mono);
+}
+
+/* ================================================================== *
+ * 9. Asides
+ * ================================================================== */
+
+.starlight-aside {
+  --ivk-aside-line: var(--accent);
+  --ivk-aside-tint: var(--accent-low);
+  border: 1px solid var(--ink-line);
+  border-inline-start: 2px solid var(--ivk-aside-line);
+  border-radius: var(--ivk-radius-sm);
+  padding: 1rem;
+  background-color: color-mix(in srgb, var(--ivk-aside-tint) 22%, transparent);
+  color: var(--ink-body);
+}
+
+.starlight-aside--note,
+.starlight-aside--tip {
+  --ivk-aside-line: var(--accent);
+  --ivk-aside-tint: var(--accent-low);
+  --sl-color-asides-text-accent: var(--accent-text);
+}
+
+.starlight-aside--caution {
+  --ivk-aside-line: var(--sl-color-orange);
+  --ivk-aside-tint: var(--sl-color-orange-low);
+  --sl-color-asides-text-accent: var(--sl-color-orange-high);
+}
+
+.starlight-aside--danger {
+  --ivk-aside-line: var(--sl-color-red);
+  --ivk-aside-tint: var(--sl-color-red-low);
+  --sl-color-asides-text-accent: var(--sl-color-red-high);
+}
+
+.starlight-aside__title {
+  color: var(--ink-fg);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: var(--ivk-track-display);
+}
+
+.starlight-aside__icon {
+  color: var(--ivk-aside-line);
+  font-size: 1.1em;
+}
+
+.starlight-aside__content {
+  font-size: 0.875rem;
+  line-height: 1.625;
+}
+
+@media (min-width: 40rem) {
+  .starlight-aside {
+    padding: 1rem 1.25rem;
+  }
+}
+
+/* ================================================================== *
+ * 10. Cards, link cards, link buttons, badges
+ * ================================================================== */
+
+.card-grid > article.card {
+  /* Neutralises Starlight's rotating per-position icon hues. */
+  --sl-card-border: var(--ink-line);
+  --sl-card-bg: var(--ink-surface-2);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--ivk-radius-md);
+  background-color: transparent;
+  padding: 1.75rem 1.5rem;
+  box-shadow: none;
+  transition:
+    transform var(--ivk-dur-base) var(--ivk-ease),
+    border-color var(--ivk-dur-base) var(--ivk-ease),
+    background-color var(--ivk-dur-base) var(--ivk-ease);
+}
+
+.card-grid > article.card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--ink-faint) 60%, transparent);
+  background-color: color-mix(in srgb, var(--ink-surface-2) 50%, transparent);
+}
+
+.card .title {
+  gap: 0.75rem;
+  color: var(--ink-fg);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: var(--ivk-track-display);
+}
+
+/* The icon plate: hairline square, recessed fill, accent glyph. */
+.card .icon {
+  border: 1px solid var(--ink-line);
+  border-radius: var(--ivk-radius-sm);
+  background-color: var(--ink-surface-2);
+  color: var(--accent-text);
+  padding: 0.3em;
+}
+
+.card .body {
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+  line-height: 1.625;
+}
+
+.sl-link-card {
+  border: 1px solid var(--ink-line);
+  border-radius: var(--ivk-radius-md);
+  box-shadow: none;
+  transition:
+    transform var(--ivk-dur-base) var(--ivk-ease),
+    border-color var(--ivk-dur-base) var(--ivk-ease),
+    background-color var(--ivk-dur-base) var(--ivk-ease);
+}
+
+.sl-link-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--ink-faint) 60%, transparent);
+  background-color: color-mix(in srgb, var(--ink-surface-2) 50%, transparent);
+}
+
+.sl-link-card .title {
+  color: var(--ink-fg);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: var(--ivk-track-display);
+}
+
+.sl-link-card .description {
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+}
+
+.sl-link-card .icon {
+  color: var(--ink-faint);
+}
+
+.sl-link-button {
+  border-radius: var(--ivk-radius-pill);
+  padding: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition:
+    background-color var(--ivk-dur-fast) var(--ivk-ease),
+    border-color var(--ivk-dur-fast) var(--ivk-ease),
+    color var(--ivk-dur-fast) var(--ivk-ease);
+}
+
+.sl-link-button.primary,
+.sl-link-button.primary:hover {
+  border-color: var(--accent);
+  background-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+/*
+ * Dark lightens the fill to `--accent-text` on hover, so the label has to
+ * flip with it: white on #6f93ff is only 2.88:1. `--ink-bg` gives 6.91:1 in
+ * dark, and in light `--ink-bg` is #ffffff so the resting 5.73:1 is kept.
+ */
+.sl-link-button.primary:hover {
+  border-color: var(--accent-text);
+  background-color: var(--accent-text);
+  color: var(--ink-bg);
+}
+
+.sl-link-button.secondary {
+  border-color: var(--ink-line);
+  background-color: transparent;
+  color: var(--ink-fg);
+}
+
+.sl-link-button.secondary:hover {
+  border-color: var(--ink-faint);
+  background-color: var(--ink-surface-2);
+}
+
+.sl-link-button.minimal {
+  color: var(--accent-text);
+}
+
+.sl-badge {
+  border-radius: var(--ivk-radius-pill);
+  padding: 0.2rem 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+}
+
+/* ================================================================== *
+ * 11. Steps and tabs
+ * ================================================================== */
+
+/* The step marker mirrors the icon plate rather than a generic gray disc. */
+.sl-steps > li::before {
+  border-radius: var(--ivk-radius-sm);
+  background-color: var(--ink-surface-2);
+  box-shadow: inset 0 0 0 1px var(--ink-line);
+  color: var(--ink-fg);
+  font-family: var(--sl-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.sl-steps > li::after {
+  background-color: var(--ink-line);
+}
+
+/* Tabs reproduce the landing page's code-panel tab strip: hairline dividers
+   and a 1px accent underline riding on the strip's own border. */
+starlight-tabs [role="tablist"] {
+  border-bottom: 1px solid var(--ink-line);
+}
+
+.tab > [role="tab"] {
+  --sl-tab-color-border: transparent;
+  border-inline-end: 1px solid var(--ink-line);
+  padding: 0.55rem 1rem;
+  box-shadow: 0 1px 0 var(--sl-tab-color-border);
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  transition:
+    color var(--ivk-dur-fast) var(--ivk-ease),
+    background-color var(--ivk-dur-fast) var(--ivk-ease);
+}
+
+.tab:first-child > [role="tab"] {
+  border-inline-start: 1px solid var(--ink-line);
+}
+
+.tab > [role="tab"]:hover {
+  background-color: var(--ink-surface-2);
+  color: var(--ink-fg);
+}
+
+.tab [role="tab"][aria-selected="true"] {
+  --sl-tab-color-border: var(--accent);
+  background-color: var(--ink-surface-raised);
+  color: var(--ink-fg);
+  font-weight: 500;
+}
+
+.tablist-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-line) transparent;
+}
+
+/* ================================================================== *
+ * 12. Code blocks
+ * ================================================================== */
+
+/*
+ * Colours, fonts and frame geometry are configured in `astro.config.mjs`
+ * under `expressiveCode`. Only the hairline scrollbar recipe lives here,
+ * because it needs the `::-webkit-scrollbar` pseudo-elements.
+ */
+.expressive-code pre,
+.expressive-code .frame {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-line) transparent;
+}
+
+.expressive-code pre::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.expressive-code pre::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background-color: var(--ink-line);
+}
+
+.expressive-code pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Frame titles sit at annotation size without being uppercased — filenames
+   have to stay literal. */
+.expressive-code .frame .title {
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+}
+
+/* ================================================================== *
+ * 13. Splash hero (index page)
+ * ================================================================== */
 
 .hero {
-  padding-block: clamp(3rem, 9vw, 7rem);
+  padding-block: clamp(3rem, 9vw, 6.5rem);
 }
 
 .hero .copy {
   align-items: flex-start;
   text-align: left;
+  gap: 1.25rem;
 }
 
 .hero h1 {
-  max-width: 13ch;
-  font-weight: 650;
-  letter-spacing: -0.06em;
-  line-height: 0.98;
+  max-width: 16ch;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
 }
 
 .hero .tagline {
-  max-width: 42rem;
-  color: var(--sl-color-gray-2);
-  font-size: clamp(1.05rem, 2vw, 1.3rem);
-  line-height: 1.55;
+  max-width: 44rem;
+  color: var(--ink-muted);
+  font-size: clamp(1rem, 1.6vw, 1.125rem);
+  line-height: 1.625;
 }
 
-.hero .actions a {
-  border-radius: 0.5rem;
-  font-weight: 550;
-}
-
-.hero .actions a.primary {
-  color: var(--sl-color-black);
-  background: var(--sl-color-white);
-}
-
-.card-grid > article {
-  border-color: var(--sl-color-gray-5);
-  border-radius: 0.65rem;
-  background: color-mix(in srgb, var(--sl-color-black) 95%, transparent);
-  box-shadow: none;
-  transition:
-    border-color 150ms ease,
-    transform 150ms ease;
-}
-
-.card-grid > article:hover {
-  border-color: var(--sl-color-gray-3);
-  transform: translateY(-2px);
-}
+/* ================================================================== *
+ * 14. Layout
+ * ================================================================== */
 
 @media (min-width: 72rem) {
   .main-pane {
@@ -178,12 +938,39 @@ header.header {
   }
 }
 
+/* ================================================================== *
+ * 15. Reduced motion
+ * ================================================================== */
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
   }
 
-  .card-grid > article {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: The accessibility override must win over component animation rules. */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: The accessibility override must win over component animation rules. */
+    animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: The accessibility override must win over component transition rules. */
+    transition-duration: 0.01ms !important;
+  }
+
+  /*
+   * Structural collapse: hover lifts are removed entirely rather than merely
+   * shortened, so nothing ever animates a transform.
+   */
+  .card-grid > article.card,
+  .sl-link-card,
+  .pagination-links a {
     transition: none;
+  }
+
+  .card-grid > article.card:hover,
+  .sl-link-card:hover,
+  .pagination-links a:hover {
+    transform: none;
   }
 }
