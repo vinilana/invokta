@@ -1,0 +1,358 @@
+/*
+ * Invokta design tokens — ported verbatim from the lp-invokta landing page.
+ *
+ * Two layers live here:
+ *   1. The first-class `--ink-* / --accent-* / --bp-* / --code-* / --ivk-*`
+ *      token set. Component CSS in `global.css` and `InvocationFlow.astro`
+ *      reads these names, never raw hex.
+ *   2. A mapping of those tokens onto Starlight's `--sl-*` variables so the
+ *      framework's own components inherit the palette for free.
+ *
+ * Theme resolution is driven entirely by `data-theme` on <html>, which
+ * Starlight already writes pre-paint from the `starlight-theme` localStorage
+ * key — the same contract the landing page uses, so the two sites stay in
+ * sync. There is deliberately no `prefers-color-scheme` query in this file.
+ *
+ * Starlight's convention is `:root` = dark and `:root[data-theme='light']` =
+ * light, which is the inverse of the landing page's base. Values are assigned
+ * by theme name, not by block order.
+ *
+ * `::backdrop` is included in both blocks so the search dialog's backdrop
+ * cannot desync from the page palette.
+ */
+
+/* ------------------------------------------------------------------ *
+ * Dark theme (the document default)
+ * ------------------------------------------------------------------ */
+:root,
+::backdrop {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --ink-bg: #09090b;
+  --ink-surface: #0e0e11;
+  --ink-surface-2: #18181b;
+  --ink-surface-raised: #18181b;
+
+  /* Text — note that `--ink-body` and `--ink-muted` are deliberately equal
+     in dark and different in light. That asymmetry is intentional. */
+  --ink-fg: #fafafa;
+  --ink-body: #a1a1aa;
+  --ink-muted: #a1a1aa;
+  --ink-faint: #71717a;
+
+  /* Lines */
+  --ink-line: #27272a;
+  --ink-line-soft: #1c1c1f;
+  --ink-grid: #1e1e20;
+
+  /* Accent — dark uses a different blue, not a lightened #3d50f5. */
+  --accent: #3369ff;
+  --accent-hover: #5a85ff;
+  --accent-low: #16224a;
+  --accent-high: #b3c7ff;
+  --accent-spark: #6f93ff;
+  /*
+   * Never colour text with `--accent`; always use `--accent-text`.
+   * Raw #3369ff only reaches 4.4:1 on #09090b, which fails AA at the small
+   * sizes used for links and card copy. The spark value #6f93ff hits 6.9:1,
+   * so dark promotes it into `--accent-text`.
+   */
+  --accent-text: #6f93ff;
+  --accent-fg: #ffffff;
+
+  /* Blueprint decoration layer.
+     Authored as rgb(from <ink token> r g b / a); resolved here so the values
+     survive any CSS transform in the build pipeline.
+     These tints are for aria-hidden decoration only. `--bp-label` in
+     particular sits near 2:1 against either ground, so real text — sidebar
+     group headings, the TOC heading, captions — uses `--ink-muted`. */
+  --bp-rail: rgb(30 30 32 / 0.95); /* --ink-grid @ 95% */
+  --bp-rule: rgb(30 30 32 / 0.85); /* --ink-grid @ 85% */
+  --bp-dot: rgb(113 113 122 / 0.45); /* --ink-faint @ 45% */
+  --bp-label: rgb(113 113 122 / 0.62); /* --ink-faint @ 62% */
+  --bp-cross: rgb(111 147 255 / 0.7); /* --accent-spark @ 70% */
+
+  /*
+   * The single shadow recipe, reserved for surfaces that genuinely lift.
+   * Dark adds a 1px ring because a drop shadow alone is invisible on #09090b.
+   */
+  --shadow-raised:
+    0 1px 2px rgb(0 0 0 / 0.5), 0 16px 40px -12px rgb(0 0 0 / 0.7),
+    0 0 0 1px rgb(39 39 42 / 0.9);
+
+  /* Syntax palette — Night Owl. Mirrors the Expressive Code theme in
+     astro.config.mjs; kept here so non-EC surfaces can reference it. */
+  --code-plain: #d6deeb;
+  --code-comment: #7a8b99;
+  --code-keyword: #c792ea;
+  --code-string: #ecc48d;
+  --code-fn: #82aaff;
+  --code-number: #f78c6c;
+  --code-prop: #7fdbca;
+  --code-punct: #8b96a5;
+
+  /* --- Starlight mapping (dark) ------------------------------------ */
+  --sl-color-white: var(--ink-fg);
+  --sl-color-gray-1: #e4e4e7;
+  --sl-color-gray-2: var(--ink-body);
+  --sl-color-gray-3: var(--ink-faint);
+  --sl-color-gray-4: #3f3f46;
+  --sl-color-gray-5: var(--ink-line);
+  --sl-color-gray-6: var(--ink-surface-2);
+  --sl-color-black: var(--ink-bg);
+
+  --sl-color-accent-low: var(--accent-low);
+  --sl-color-accent: var(--accent);
+  --sl-color-accent-high: var(--accent-high);
+
+  /* Semantic hues, de-rainbowed. Note and tip collapse onto the accent so
+     the palette stays near-monochrome + one blue; caution and danger keep a
+     muted amber and red because they carry real meaning. */
+  --sl-color-blue-low: var(--accent-low);
+  --sl-color-blue: var(--accent);
+  --sl-color-blue-high: var(--accent-text);
+  --sl-color-purple-low: var(--accent-low);
+  --sl-color-purple: var(--accent);
+  --sl-color-purple-high: var(--accent-text);
+  --sl-color-orange-low: #2a1e08;
+  --sl-color-orange: #d9a441;
+  --sl-color-orange-high: #f0c987;
+  --sl-color-red-low: #3a1216;
+  --sl-color-red: #f05a63;
+  --sl-color-red-high: #ffa8ad;
+  --sl-color-green-low: #0e2a1c;
+  --sl-color-green: #3fbf87;
+  --sl-color-green-high: #86e0b6;
+
+  --sl-color-text: var(--ink-body);
+  --sl-color-text-accent: var(--accent-text);
+  --sl-color-text-invert: var(--accent-fg);
+  --sl-color-bg: var(--ink-bg);
+  --sl-color-bg-nav: color-mix(in srgb, var(--ink-bg) 80%, transparent);
+  --sl-color-bg-sidebar: var(--ink-bg);
+  --sl-color-bg-inline-code: var(--ink-surface-2);
+  --sl-color-bg-accent: var(--accent);
+  --sl-color-hairline-light: var(--ink-line);
+  --sl-color-hairline: var(--ink-line);
+  --sl-color-hairline-shade: var(--ink-line);
+  --sl-color-backdrop-overlay: rgb(9 9 11 / 0.72);
+
+  /* Badges — tinted wash, hairline border, accent text (never white on
+     accent, which the stock Starlight badge does). */
+  --sl-badge-default-border: var(--accent-low);
+  --sl-badge-default-bg: color-mix(in srgb, var(--accent-low) 45%, transparent);
+  --sl-badge-default-text: var(--accent-text);
+  --sl-badge-note-border: var(--accent-low);
+  --sl-badge-note-bg: color-mix(in srgb, var(--accent-low) 45%, transparent);
+  --sl-badge-note-text: var(--accent-text);
+  --sl-badge-tip-border: var(--accent-low);
+  --sl-badge-tip-bg: color-mix(in srgb, var(--accent-low) 45%, transparent);
+  --sl-badge-tip-text: var(--accent-text);
+  --sl-badge-caution-border: var(--sl-color-orange-low);
+  --sl-badge-caution-bg: color-mix(
+    in srgb,
+    var(--sl-color-orange-low) 60%,
+    transparent
+  );
+  --sl-badge-caution-text: var(--sl-color-orange-high);
+  --sl-badge-danger-border: var(--sl-color-red-low);
+  --sl-badge-danger-bg: color-mix(
+    in srgb,
+    var(--sl-color-red-low) 60%,
+    transparent
+  );
+  --sl-badge-danger-text: var(--sl-color-red-high);
+  --sl-badge-success-border: var(--sl-color-green-low);
+  --sl-badge-success-bg: color-mix(
+    in srgb,
+    var(--sl-color-green-low) 60%,
+    transparent
+  );
+  --sl-badge-success-text: var(--sl-color-green-high);
+
+  /*
+   * Hairlines carry elevation in this system, so the generic shadow steps
+   * are switched off and only the one real recipe survives.
+   */
+  --sl-shadow-sm: none;
+  --sl-shadow-md: none;
+  --sl-shadow-lg: var(--shadow-raised);
+
+  /*
+   * The illustration in `public/images/how-an-action-engine-works.svg` is a
+   * light-only line drawing, so it is given its own plate in both themes
+   * rather than being recoloured.
+   */
+  --ivk-figure-plate: #ffffff;
+}
+
+/* ------------------------------------------------------------------ *
+ * Light theme
+ * ------------------------------------------------------------------ */
+:root[data-theme="light"],
+[data-theme="light"] ::backdrop {
+  color-scheme: light;
+
+  --ink-bg: #ffffff;
+  --ink-surface: #fafafa;
+  --ink-surface-2: #f4f4f5;
+  --ink-surface-raised: #ffffff;
+
+  --ink-fg: #18181b;
+  --ink-body: #52525b;
+  --ink-muted: #71717a;
+  --ink-faint: #a1a1aa;
+
+  --ink-line: #e4e4e7;
+  --ink-line-soft: #f0f0f1;
+  --ink-grid: #e6e6e9;
+
+  --accent: #3d50f5;
+  --accent-hover: #2a3ce0;
+  --accent-low: #eaecfe;
+  --accent-high: #0f1c8a;
+  --accent-spark: #6e7cf7;
+  /* #3d50f5 already clears AA on #ffffff, so no split is needed here. */
+  --accent-text: #3d50f5;
+  --accent-fg: #ffffff;
+
+  --bp-rail: rgb(230 230 233 / 0.95); /* --ink-grid @ 95% */
+  --bp-rule: rgb(230 230 233 / 0.8); /* --ink-grid @ 80% */
+  --bp-dot: rgb(161 161 170 / 0.4); /* --ink-faint @ 40% */
+  --bp-label: rgb(161 161 170 / 0.72); /* --ink-faint @ 72% */
+  --bp-cross: rgb(110 124 247 / 0.55); /* --accent-spark @ 55% */
+
+  --shadow-raised:
+    0 1px 2px rgb(24 24 27 / 0.04), 0 12px 32px -8px rgb(24 24 27 / 0.1),
+    0 2px 8px -2px rgb(24 24 27 / 0.06);
+
+  /* Night Owl Light. */
+  --code-plain: #403f53;
+  --code-comment: #6b7280;
+  --code-keyword: #8844ae;
+  --code-string: #984e4d;
+  --code-fn: #3b61b0;
+  --code-number: #aa0982;
+  --code-prop: #096e72;
+  --code-punct: #6b7280;
+
+  /* --- Starlight mapping (light) ----------------------------------- */
+  --sl-color-white: var(--ink-fg);
+  --sl-color-gray-1: #27272a;
+  --sl-color-gray-2: var(--ink-body);
+  --sl-color-gray-3: var(--ink-muted);
+  --sl-color-gray-4: var(--ink-faint);
+  --sl-color-gray-5: var(--ink-line);
+  --sl-color-gray-6: var(--ink-surface-2);
+  --sl-color-gray-7: var(--ink-surface);
+  --sl-color-black: var(--ink-bg);
+
+  --sl-color-blue-low: var(--accent-low);
+  --sl-color-blue: var(--accent);
+  --sl-color-blue-high: var(--accent-high);
+  --sl-color-purple-low: var(--accent-low);
+  --sl-color-purple: var(--accent);
+  --sl-color-purple-high: var(--accent-high);
+  --sl-color-orange-low: #fdf1dd;
+  --sl-color-orange: #b45c09;
+  --sl-color-orange-high: #7c3f05;
+  --sl-color-red-low: #fdeaec;
+  --sl-color-red: #c02532;
+  --sl-color-red-high: #8a1620;
+  --sl-color-green-low: #e6f6ee;
+  --sl-color-green: #10794f;
+  --sl-color-green-high: #0a5237;
+
+  --sl-color-bg-inline-code: var(--ink-surface-2);
+  --sl-color-hairline-shade: var(--ink-line);
+  --sl-color-backdrop-overlay: rgb(24 24 27 / 0.4);
+
+  --sl-badge-default-bg: color-mix(in srgb, var(--accent-low) 55%, transparent);
+  --sl-badge-note-bg: color-mix(in srgb, var(--accent-low) 55%, transparent);
+  --sl-badge-tip-bg: color-mix(in srgb, var(--accent-low) 55%, transparent);
+  --sl-badge-caution-bg: color-mix(
+    in srgb,
+    var(--sl-color-orange-low) 70%,
+    transparent
+  );
+  --sl-badge-danger-bg: color-mix(
+    in srgb,
+    var(--sl-color-red-low) 70%,
+    transparent
+  );
+  --sl-badge-success-bg: color-mix(
+    in srgb,
+    var(--sl-color-green-low) 70%,
+    transparent
+  );
+  --sl-badge-caution-text: var(--sl-color-orange-high);
+  --sl-badge-danger-text: var(--sl-color-red-high);
+  --sl-badge-success-text: var(--sl-color-green-high);
+}
+
+/* ------------------------------------------------------------------ *
+ * Theme-independent scalars: type, shape, layout, motion
+ * ------------------------------------------------------------------ */
+:root {
+  /* Fonts */
+  --sl-font: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --sl-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Typography signature */
+  --ivk-track-display: -0.035em;
+  --ivk-track-body: -0.01em;
+  --ivk-track-label: 0.14em;
+  --ivk-leading-tight: 1.04;
+  --ivk-leading-body: 1.6;
+
+  /* Shape */
+  --ivk-radius-sm: 0.375rem; /* 6px — panels, buttons(ghost), plates */
+  --ivk-radius-md: 0.75rem; /* 12px — cards */
+  --ivk-radius-lg: 1.25rem; /* 20px — large surfaces */
+  --ivk-radius-pill: 999px;
+  --ivk-radius-xs: 0.125rem; /* 2px — the tiny tag badge only */
+
+  /* Layout — the readable column matches the landing page's 56rem. */
+  --ivk-frame-width: 76rem;
+  --sl-content-width: 56rem;
+  --sl-nav-height: 3.5rem;
+
+  /* Signature five-column blueprint grid (% of viewport). Brand-kit values —
+     do not round. */
+  --ivk-col-1: 9.2%;
+  --ivk-col-2: 20.5%;
+  --ivk-col-3: 52.6%;
+  --ivk-col-4: 84.5%;
+  --ivk-col-5: 95.8%;
+
+  /* Motion */
+  --ivk-ease: cubic-bezier(0.2, 0, 0, 1);
+  --ivk-dur-fast: 120ms;
+  --ivk-dur-base: 200ms;
+
+  /*
+   * Heading sizes are declared as clamps on the semantic `--sl-text-h*`
+   * roles rather than on the raw `--sl-text-*` scale. Starlight remaps
+   * h1..h4 one step up at >=50em, which produced a visible discontinuity
+   * with the old `--sl-text-5xl` override; clamping removes it.
+   */
+  --sl-text-h1: clamp(2.25rem, 1.55rem + 2.9vw, 3.5rem);
+  --sl-text-h2: clamp(1.625rem, 1.34rem + 1.2vw, 2.125rem);
+  --sl-text-h3: clamp(1.25rem, 1.11rem + 0.6vw, 1.5rem);
+  --sl-text-h4: 1.125rem;
+  --sl-text-h5: 1rem;
+
+  --sl-line-height: 1.65;
+  --sl-line-height-headings: 1.1;
+
+  --sl-text-code: 0.8125rem;
+  --sl-text-code-sm: 0.8125em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ivk-dur-fast: 1ms;
+    --ivk-dur-base: 1ms;
+  }
+}

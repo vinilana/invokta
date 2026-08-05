@@ -1,6 +1,8 @@
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 
+import { invoktaCodeDark, invoktaCodeLight } from "./ec-themes.mjs";
+
 const site = (process.env.DOCS_SITE_URL ?? "https://docs.invokta.dev").replace(
   /\/$/,
   "",
@@ -14,9 +16,15 @@ export default defineConfig({
       description:
         "Build repeatable AI-assisted tasks once and invoke them from any agent, CLI, or application.",
       favicon: "/favicon.svg",
-      logo: {
-        src: "./src/assets/invokta-mark.svg",
-        alt: "Invokta",
+      /*
+       * The brand mark is not declared through `logo` because Starlight would
+       * emit it as `<img src>`, and an external image cannot resolve the
+       * `--accent-text` / `--ink-fg` custom properties the mark is drawn
+       * with. `components.SiteTitle` inlines the same SVG instead, so the
+       * mark follows the theme toggle.
+       */
+      components: {
+        SiteTitle: "./src/components/SiteTitle.astro",
       },
       social: [
         {
@@ -29,11 +37,46 @@ export default defineConfig({
         baseUrl: "https://github.com/vinilana/invokta/edit/main/apps/docs/",
       },
       lastUpdated: true,
-      customCss: ["./src/styles/global.css"],
+      // Ordered: font faces, then design tokens, then component surfaces.
+      customCss: [
+        "./src/styles/fonts.css",
+        "./src/styles/tokens.css",
+        "./src/styles/global.css",
+      ],
+      expressiveCode: {
+        themes: [invoktaCodeDark, invoktaCodeLight],
+        /*
+         * The themes above already carry the frame colours, so Starlight's
+         * `--sl-color-*` overlay is switched off — otherwise it rewrites
+         * `theme.bg` for contrast maths and shifts the Night Owl palette.
+         * A contrast floor of 0 keeps every syntax colour exact.
+         */
+        useStarlightUiThemeColors: false,
+        minSyntaxHighlightingColorContrast: 0,
+        styleOverrides: {
+          borderRadius: "0.375rem",
+          borderWidth: "1px",
+          codeFontFamily: "var(--__sl-font-mono)",
+          codeFontSize: "0.8125rem",
+          codeLineHeight: "1.7",
+          codePaddingBlock: "0.875rem",
+          codePaddingInline: "1rem",
+          uiFontFamily: "var(--__sl-font-mono)",
+          uiFontSize: "0.75rem",
+          frames: {
+            frameBoxShadowCssValue: "none",
+            editorTabBorderRadius: "0",
+            editorTabsMarginInlineStart: "0",
+            editorTabsMarginBlockStart: "0",
+            editorActiveTabIndicatorHeight: "1px",
+            terminalTitlebarDotsOpacity: "0.6",
+          },
+        },
+      },
       head: [
         {
           tag: "meta",
-          attrs: { name: "theme-color", content: "#0a0a0a" },
+          attrs: { name: "theme-color", content: "#09090b" },
         },
         {
           tag: "meta",

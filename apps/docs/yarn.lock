@@ -590,15 +590,15 @@
   dependencies:
     "@expressive-code/core" "^0.44.1"
 
-"@fontsource-variable/geist-mono@5.3.0":
+"@fontsource/inter-tight@5.3.0":
   version "5.3.0"
-  resolved "https://registry.yarnpkg.com/@fontsource-variable/geist-mono/-/geist-mono-5.3.0.tgz#ef4ce98a5d7485a4944ead6f799346dc33eddc63"
-  integrity sha512-vBbuwDEo9AkrqADMXOrlAR3DFcJi4/JxeuU43FoiQERnNwsfXNnvxvReZG02cQKmyk4DZkZdBZX3oTDvy2zBAw==
+  resolved "https://registry.yarnpkg.com/@fontsource/inter-tight/-/inter-tight-5.3.0.tgz#ba4071c249fe7e4e01cd454f5981fc9ec9c119f0"
+  integrity sha512-uRwIrjKSUcCKIFeO2qm3yECA9phwge6Y1qQZvUmwqFgiIVWUELwwuq7pFlmlpPtO33ZtFQVOXQGNuvna1JPs6A==
 
-"@fontsource-variable/geist@5.3.0":
+"@fontsource/jetbrains-mono@5.3.0":
   version "5.3.0"
-  resolved "https://registry.yarnpkg.com/@fontsource-variable/geist/-/geist-5.3.0.tgz#59084c5e2ffa77c6e3c63bc06f3af62ba4dbbdc5"
-  integrity sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==
+  resolved "https://registry.yarnpkg.com/@fontsource/jetbrains-mono/-/jetbrains-mono-5.3.0.tgz#87bfd849f24b536ed72e89b56ae0d42223697f74"
+  integrity sha512-fqDfB5I9f1p1TV486aUgB9t8zP84P0O1FtQR5Ol9vjwPy+S+EIGlVYm1cvj2W5shcZMTg2nZFdVMoH5wFu8a1A==
 
 "@img/colour@^1.1.0":
   version "1.1.0"
