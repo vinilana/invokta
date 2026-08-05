@@ -1,0 +1,289 @@
+---
+title: Authenticate with Clerk
+description: Verify Clerk session tokens at the MCP HTTP boundary and map their claims to a Principal.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Clerk issues short-lived RS256 session tokens signed by your instance. This
+recipe verifies one in the `serveMcpHttp` `auth.authenticate` hook and maps its
+claims to the framework's minimal `Principal`.
+
+The generic JWKS mechanics — bearer parsing, the 401-versus-500 split, and the
+offline local-JWKS test approach — live in
+[the JWT bearer recipe](/recipes/auth/jwt-bearer/). This page covers only what
+is specific to Clerk: the instance JWKS location, the `azp` check, and the
+session claim shape.
+
+## Verify a Clerk session token
+
+<Steps>
+
+1. Point key resolution at the instance JWKS
+
+   Clerk publishes its public keys at your Frontend API URL with
+   `/.well-known/jwks.json` appended. That URL is
+   `https://<slug>.clerk.accounts.dev` in development and
+   `https://clerk.<your-domain>.com` for a production custom domain — the same
+   value Clerk puts in the token's `iss` claim.
+
+   ```ts
+   export function clerkJwksUrl(frontendApiUrl: string): URL {
+     const base = new URL(frontendApiUrl);
+     if (base.protocol !== "https:") {
+       throw new Error("The Clerk Frontend API URL must use HTTPS.");
+     }
+     return new URL("/.well-known/jwks.json", base.origin);
+   }
+
+   export function createClerkRemoteKeys(
+     frontendApiUrl: string,
+     options: { readonly timeoutMs?: number } = {},
+   ): JWTVerifyGetKey {
+     return createRemoteJWKSet(clerkJwksUrl(frontendApiUrl), {
+       timeoutDuration: options.timeoutMs ?? 5_000,
+       cooldownDuration: 30_000,
+       cacheMaxAge: 600_000,
+     });
+   }
+   ```
+
+   Keeping key resolution a parameter is what makes the verifier testable: the
+   composition root passes `createClerkRemoteKeys(...)`, and the tests pass
+   `createLocalJWKSet(...)` so signature verification stays real with no
+   network access. Verification needs no Clerk Secret Key, because a JWKS holds
+   only public keys.
+
+2. Verify the signature, issuer, and lifetime
+
+   ```ts
+   const deadline = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+   let payload: JWTPayload;
+   try {
+     const verified = await settleWith(
+       deadline,
+       jwtVerify(token, keys, {
+         issuer,
+         algorithms: ["RS256"],
+         clockTolerance,
+       }),
+     );
+     payload = verified.payload;
+   } catch (error) {
+     if (isInvalidCredential(error)) return null;
+     throw new ClerkVerificationUnavailableError();
+   }
+   ```
+
+   `issuer` is the Frontend API URL's origin. `jwtVerify` checks `exp` and
+   `nbf` for you; the clock tolerance matches the skew allowance Clerk's own
+   backend SDK applies. The hook's `signal` and the verifier's own timeout
+   together bound the JWKS fetch.
+
+3. Split invalid credentials from an unavailable verifier
+
+   ```ts
+   const INVALID_CREDENTIAL_CODES: ReadonlySet<string> = new Set([
+     errors.JOSEAlgNotAllowed.code,
+     errors.JWKSMultipleMatchingKeys.code,
+     errors.JWKSNoMatchingKey.code,
+     errors.JWSInvalid.code,
+     errors.JWSSignatureVerificationFailed.code,
+     errors.JWTClaimValidationFailed.code,
+     errors.JWTExpired.code,
+     errors.JWTInvalid.code,
+   ]);
+   ```
+
+   An expired token, a rotated-away `kid`, or a foreign signature is an invalid
+   credential and becomes `null`, then HTTP 401. A JWKS timeout or an
+   unreachable Frontend API is not in the set, so it throws and becomes a
+   sanitized HTTP 500. `ClerkVerificationUnavailableError` carries a fixed
+   sentence and no cause, because a jose claim-validation failure holds the
+   decoded payload and none of it may reach a log.
+
+4. Enforce the authorized party
+
+   ```ts
+   const { azp, sid, org_id: orgId, org_role: orgRole } = payload;
+
+   if (azp !== undefined && (typeof azp !== "string" || azp === "")) return null;
+   if (azp !== undefined && !authorizedParties.includes(azp)) return null;
+
+   const subject = payload.sub;
+   if (typeof subject !== "string" || subject === "") return null;
+   ```
+
+   `azp` names the origin the token was minted for. Clerk recommends an
+   explicit allowlist, because a token issued to another origin of the same
+   instance is otherwise a perfectly valid signature here. The check applies
+   when the claim is present: custom JWT templates and machine tokens omit it.
+
+5. Map the verified claims to a `Principal`
+
+   ```ts
+   export function toPrincipal(claims: ClerkSessionClaims): Principal {
+     const attributes: Record<string, unknown> = {};
+     if (claims.sid !== undefined) attributes.sessionId = claims.sid;
+     if (claims.org_id !== undefined) attributes.organizationId = claims.org_id;
+     if (claims.org_role !== undefined) {
+       attributes.organizationRole = claims.org_role;
+     }
+
+     return Object.freeze({
+       id: claims.sub,
+       attributes: Object.freeze(attributes),
+     });
+   }
+   ```
+
+   `sub` is the Clerk user ID and becomes `Principal.id`. `sid`, `org_id`, and
+   `org_role` describe the session and the active organization membership, so
+   they are the claims an access rule can decide on. Nothing else crosses:
+   not the token, not the full claim set, not a Clerk SDK object.
+
+6. Wire the hook at the composition root
+
+   ```ts
+   export function createClerkAuthenticate(
+     verifier: ClerkSessionVerifier,
+   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
+     return async (request) => {
+       const token = readBearerToken(request.headers);
+       if (token === null) return null;
+
+       const claims = await verifier.verify(token, { signal: request.signal });
+       return claims === null ? null : toPrincipal(claims);
+     };
+   }
+
+   export async function startClerkMcpHttp(
+     options: ClerkMcpHttpOptions,
+   ): Promise<McpHttpServerHandle> {
+     return serveMcpHttp(engine, {
+       ...(options.port === undefined ? {} : { port: options.port }),
+       auth: {
+         mode: "required",
+         authenticate: createClerkAuthenticate(options.verifier),
+       },
+     });
+   }
+   ```
+
+   The example refuses to start without `CLERK_AUTHORIZED_PARTIES`, so an
+   allowlist can never be forgotten into an accept-everything default.
+
+7. Read the identity inside a capability
+
+   ```ts
+   access: "authenticated",
+   async run({ context }) {
+     const { principal } = context;
+     if (principal === null) {
+       throw new EngineError({
+         code: "UNAUTHENTICATED",
+         message: "The request has no verified identity.",
+       });
+     }
+     return {
+       principalId: principal.id,
+       attributes: { ...principal.attributes },
+     };
+   },
+   ```
+
+   `identity.whoami` derives its whole result from `context.principal` and
+   ignores its input, so calling it tells you exactly which identity the
+   boundary proved. A capability that must also decide *what* that identity may
+   do — for instance from `organizationRole` — uses a function access rule
+   instead.
+
+</Steps>
+
+## Using `@clerk/backend` instead
+
+The verifier is one function, so Clerk's own backend SDK drops into the same
+place. This variant is not part of the runnable example, which stays on `jose`:
+
+```ts
+// Provider-SDK variant of the verifier above.
+import { verifyToken } from "@clerk/backend";
+
+const claims = await verifyToken(token, {
+  secretKey: process.env.CLERK_SECRET_KEY,
+  authorizedParties: ["https://app.example.com"],
+});
+```
+
+`verifyToken` performs the same `azp`, `exp`, and `nbf` checks and accepts
+`jwtKey` for networkless verification and `clockSkewInMs` for the tolerance. In
+a host that already has a `Request` object, `authenticateRequest()` is the
+higher-level entry point Clerk recommends; the hook then maps its resolved auth
+object to `Principal` exactly as `toPrincipal` does above.
+
+Whichever you choose, keep it at the composition root. The capability sees only
+`Principal`.
+
+<Aside type="note" title="Machine callers are not session tokens">
+  A non-user caller — a script, a partner service, a cron job — presents a Clerk
+  machine token, an API key, or an OAuth token, not a session JWT. M2M tokens
+  use an `mt_` prefix and are opaque by default, so they are verified over the
+  Clerk Backend API (`clerkClient.m2m.verify({ token })`) or through
+  `authenticateRequest({ acceptsToken: "m2m_token" })` rather than against the
+  JWKS. Clerk can also issue them in JWT format, which this verifier's shape
+  accepts once you widen the issuer and drop the `azp` expectation, since
+  machine tokens carry no authorized party. Give machine principals their own ID
+  namespace and their own attributes so an access rule can tell a service apart
+  from a person.
+</Aside>
+
+## Run it
+
+Build the repository, then start the boundary against your Clerk instance:
+
+```sh
+yarn build
+CLERK_FRONTEND_API_URL="https://clean-mayfly-62.clerk.accounts.dev" \
+CLERK_AUTHORIZED_PARTIES="http://localhost:3000,https://app.example.com" \
+PORT=3010 \
+yarn workspace @invokta/example-auth-clerk mcp:http
+```
+
+Copy a session token from a signed-in page by running
+`await window.Clerk.session.getToken()` in the browser console, then call the
+tool:
+
+```sh
+curl -sS http://127.0.0.1:3010/mcp \
+  -H "authorization: Bearer $CLERK_SESSION_TOKEN" \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+```
+
+The result reports the Clerk user ID and the session and organization
+attributes. Clerk session tokens expire in about a minute, so a stale token
+returns HTTP 401 — and so does a token whose `azp` is missing from
+`CLERK_AUTHORIZED_PARTIES`.
+
+## Verify it
+
+```sh
+yarn workspace @invokta/example-auth-clerk test
+```
+
+The tests mint tokens in Clerk's session claim shape from a locally generated
+key pair and resolve them through a local JWKS, so signature verification is
+real while no test touches the network or needs a Clerk account. They cover a
+valid token, an expired one, a foreign issuer, a foreign signature, a rotated
+`kid`, an unlisted `azp`, a malformed credential, an unavailable verifier, and
+the absence of any token material in the produced principal.
+
+Read the complete
+[`auth-clerk-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-clerk-engine)
+example for the verifier, the claim mapping, the hook wiring, and those tests.
+
+Next: [Authorize with capability access rules](/guides/capability-authorization/)
+for the policy half, and
+[Integrating an identity provider at the HTTP boundary](/guides/http-authentication/)
+for the normative hook contract and the secret rules.
