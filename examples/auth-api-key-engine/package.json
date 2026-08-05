@@ -1,0 +1,18 @@
+{
+  "name": "@invokta/example-auth-api-key",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
+    "test": "vitest run test",
+    "direct": "node dist/direct.js",
+    "mcp:http": "node dist/mcp-http.js"
+  },
+  "dependencies": {
+    "@invokta/core": "0.3.0",
+    "@invokta/mcp": "0.3.0",
+    "zod": "4.4.3"
+  }
+}
