@@ -225,6 +225,11 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
   domain authorization, safe errors, and all four execution channels;
 - [`support-harness`](./examples/support-harness/) for a private harness that
   consumes the support capability only through MCP stdio;
+- the ten [`auth-*` examples](./examples/), from
+  [`auth-jwt-bearer-engine`](./examples/auth-jwt-bearer-engine/) to
+  provider-specific engines for Supabase, Clerk, Auth0, Cognito, Firebase,
+  Better Auth, Auth.js, WorkOS, and hashed API keys, each verifying credentials
+  at the MCP HTTP boundary and mapping them into the minimal `Principal`;
 - [`crawl-engine`](./examples/crawl-engine/) for an outbound provider
   integration, crawling the web with Firecrawl behind a port, with target rules
   that run before authorization;

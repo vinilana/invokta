@@ -23,6 +23,7 @@ while its own package owns ports, policies, limits, and provider integrations.
 | Publish deterministic agent-routing policy | `cursor-agent-routing-engine` |
 | Navigate local project knowledge progressively | `obsidian-context-engine` |
 | Publish and compose reusable capabilities | `community-capabilities` and `composed-engine` |
+| Authenticate engine callers with your identity provider | `auth-jwt-bearer-engine`, then the `auth-*` example for your provider |
 
 ## Choose by operational requirement
 
@@ -34,6 +35,7 @@ while its own package owns ports, policies, limits, and provider integrations.
 | `crawl-engine` | `FIRECRAWL_API_KEY` |
 | `image-engine` | `OPENAI_API_KEY`, `ARK_API_KEY`, and `GEMINI_API_KEY` |
 | `observability-engine` | Sentry, Datadog, and New Relic credentials plus their organization or account identifiers |
+| `auth-*` examples | Nothing for the tests, which verify locally generated credentials offline; each README lists the issuer, audience, or key variables its HTTP entry point needs against a real provider project |
 
 The HTTP entry points use example-specific bearer-token environment variables in
 addition to the requirements above. Every linked README gives the exact variable
@@ -126,6 +128,27 @@ so review provider data handling and billing before running them.
     [Open `obsidian-context-engine`](https://github.com/vinilana/invokta/tree/main/examples/obsidian-context-engine)
   </Card>
 </CardGrid>
+
+## Authenticate engine callers
+
+Ten examples share one minimal `identity.whoami` capability and differ only in
+how the composition root verifies a credential and maps it to `Principal`.
+Start with the provider-neutral JWT bearer engine; every provider example
+follows its shape. Each pairs with a page in the
+[authentication recipes](/recipes/auth/).
+
+| Example | Shows |
+| --- | --- |
+| [`auth-jwt-bearer-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-jwt-bearer-engine) | Provider-neutral JWKS verification with `jose`, claims-to-`Principal` mapping, and Protected Resource Metadata for MCP OAuth discovery |
+| [`auth-supabase-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-supabase-engine) | Supabase Auth asymmetric JWTs verified against the project JWKS |
+| [`auth-clerk-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-clerk-engine) | Clerk session tokens with authorized-party enforcement and organization claims |
+| [`auth-auth0-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-auth0-engine) | Auth0 API access tokens with a required audience, scopes, and permissions |
+| [`auth-cognito-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-cognito-engine) | Cognito user-pool access tokens with `client_id`, `token_use`, and group mapping |
+| [`auth-firebase-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-firebase-engine) | Firebase ID-token verification behind an injectable verifier port |
+| [`auth-better-auth-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-better-auth-engine) | Better Auth JWT-plugin tokens plus the embedded same-process surface |
+| [`auth-authjs-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-authjs-engine) | Auth.js sessions passed to `engine.invoke`, with app-issued tokens for HTTP callers |
+| [`auth-workos-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-workos-engine) | WorkOS AuthKit access tokens with organization claims for multi-tenant rules |
+| [`auth-api-key-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-api-key-engine) | Hashed machine-to-machine API keys compared in constant time |
 
 ## Integrate external systems
 

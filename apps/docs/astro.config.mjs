@@ -128,6 +128,23 @@ export default defineConfig({
             { slug: "recipes/capability-composition" },
             { slug: "recipes/mcp-stdio-consumer" },
             { slug: "recipes/external-provider" },
+            {
+              label: "Authentication",
+              items: [
+                { slug: "recipes/auth" },
+                { slug: "recipes/auth/jwt-bearer" },
+                { slug: "recipes/auth/supabase" },
+                { slug: "recipes/auth/clerk" },
+                { slug: "recipes/auth/auth0" },
+                { slug: "recipes/auth/cognito" },
+                { slug: "recipes/auth/firebase" },
+                { slug: "recipes/auth/better-auth" },
+                { slug: "recipes/auth/authjs" },
+                { slug: "recipes/auth/workos" },
+                { slug: "recipes/auth/api-key" },
+                { slug: "recipes/auth/mcp-oauth-discovery" },
+              ],
+            },
           ],
         },
         {

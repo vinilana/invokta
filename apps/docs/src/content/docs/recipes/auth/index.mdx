@@ -1,0 +1,112 @@
+---
+title: Authentication recipes
+description: Connect your identity provider to an Action Engine without moving identity into the framework.
+sidebar:
+  label: Overview
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Invokta ships no identity system. The MCP HTTP adapter accepts a pluggable
+`authenticate` hook that turns a verified request identity into the minimal
+`Principal`, and the core applies each capability's `access` rule on every
+channel. These recipes show where your existing provider plugs into that
+boundary. Each one is backed by a runnable, offline-tested example in the
+repository.
+
+## Choose a surface
+
+| Callers reach the engine through | Use |
+| --- | --- |
+| MCP HTTP with bearer tokens from a hosted issuer | The [JWT bearer recipe](/recipes/auth/jwt-bearer/), then your provider's recipe below |
+| MCP HTTP from services and automations without a user | [API keys](/recipes/auth/api-key/) |
+| Your own application process that already resolved a session | The embedded pattern in the [Auth.js](/recipes/auth/authjs/) and [Better Auth](/recipes/auth/better-auth/) recipes |
+| An OAuth-capable MCP client that discovers your Authorization Server | [MCP OAuth discovery](/recipes/auth/mcp-oauth-discovery/) |
+
+Authentication proves who is calling and produces a `Principal`; whether that
+principal may execute a capability stays a domain decision. Pair any recipe
+here with [domain authorization](/recipes/domain-authorization/) and the
+[HTTP authentication guide](/guides/http-authentication/).
+
+## Provider recipes
+
+<CardGrid>
+  <Card title="JWT bearer (any OIDC issuer)" icon="lock">
+    The foundation: verify a JWKS-signed access token with `jose`, map claims
+    to `Principal`, and honor the null-versus-throw hook contract.
+
+    [Open recipe](/recipes/auth/jwt-bearer/)
+  </Card>
+  <Card title="Supabase" icon="document">
+    Verify Supabase Auth asymmetric JWTs against your project JWKS and map
+    `sub`, role, and session claims.
+
+    [Open recipe](/recipes/auth/supabase/)
+  </Card>
+  <Card title="Clerk" icon="approve-check">
+    Verify Clerk session tokens, enforce the authorized party, and map
+    session and organization claims.
+
+    [Open recipe](/recipes/auth/clerk/)
+  </Card>
+  <Card title="Auth0" icon="setting">
+    Verify Auth0 API access tokens with a required audience and map scope and
+    permission claims. Doubles as the template for Kinde, Logto, and other
+    OIDC issuers.
+
+    [Open recipe](/recipes/auth/auth0/)
+  </Card>
+  <Card title="AWS Cognito" icon="cloud-download">
+    Verify user-pool access tokens, validate `client_id` and `token_use`, and
+    map scopes and groups.
+
+    [Open recipe](/recipes/auth/cognito/)
+  </Card>
+  <Card title="Firebase Auth" icon="rocket">
+    Keep `firebase-admin` behind a verifier port, wire `verifyIdToken` at the
+    composition root, and test the hook against a fake.
+
+    [Open recipe](/recipes/auth/firebase/)
+  </Card>
+  <Card title="Better Auth" icon="puzzle">
+    Verify JWTs issued by your own Better Auth app, or pass its resolved
+    session to `engine.invoke` when engine and app share a process.
+
+    [Open recipe](/recipes/auth/better-auth/)
+  </Card>
+  <Card title="Auth.js (NextAuth)" icon="open-book">
+    Lead with the embedded pattern from a route handler session, and issue an
+    app-owned access token when callers must reach the engine over HTTP.
+
+    [Open recipe](/recipes/auth/authjs/)
+  </Card>
+  <Card title="WorkOS AuthKit" icon="merge">
+    Verify AuthKit access tokens and key multi-tenant access rules on the
+    organization claims.
+
+    [Open recipe](/recipes/auth/workos/)
+  </Card>
+  <Card title="API keys" icon="transfer">
+    Authenticate services with hashed keys and constant-time comparison, and
+    map each key to a service principal.
+
+    [Open recipe](/recipes/auth/api-key/)
+  </Card>
+  <Card title="MCP OAuth discovery" icon="refresh">
+    Publish Protected Resource Metadata so OAuth-capable MCP clients discover
+    your Authorization Server from the Bearer challenge.
+
+    [Open recipe](/recipes/auth/mcp-oauth-discovery/)
+  </Card>
+</CardGrid>
+
+## Rules every recipe follows
+
+- The provider SDK or verification library stays at the composition root;
+  capabilities see only `Principal`.
+- The hook returns a `Principal` for a valid credential, `null` for any
+  invalid one, and throws only when verification infrastructure fails.
+- Principals carry verified, authorization-relevant claims — never the raw
+  token, a full claim dump, or live SDK objects.
+- Tests run offline: JWT recipes generate a local key pair and JWKS with
+  `jose`, so signature verification is real without any network.
