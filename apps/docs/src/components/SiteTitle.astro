@@ -8,8 +8,10 @@
  * Everything else matches the upstream component: same anchor, same
  * `.site-title` class, same wordmark span.
  */
+// biome-ignore lint/correctness/noUnusedImports: Biome does not track references from Astro frontmatter into the template.
 import mark from "../assets/invokta-mark.svg?raw";
 
+// biome-ignore lint/correctness/noUnusedVariables: These values are rendered by the Astro template below.
 const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
 ---
 

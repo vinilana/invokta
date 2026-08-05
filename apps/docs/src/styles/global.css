@@ -408,9 +408,8 @@ site-search button[data-close-modal] {
   color: var(--ink-fg);
 }
 
-#starlight__search .pagefind-ui__result-title:not(
-    :where(.pagefind-ui__result-nested *)
-  ),
+#starlight__search
+  .pagefind-ui__result-title:not(:where(.pagefind-ui__result-nested *)),
 #starlight__search .pagefind-ui__result-nested,
 #starlight__search .pagefind-ui__result-tags {
   background-color: var(--ink-surface);
@@ -504,7 +503,7 @@ site-search button[data-close-modal] {
   margin-bottom: 0.75rem;
 }
 
-starlight-toc nav a {
+:root starlight-toc nav a {
   border-radius: var(--ivk-radius-sm);
   padding-block: 0.3rem;
   color: var(--ink-muted);
@@ -512,11 +511,11 @@ starlight-toc nav a {
   transition: color var(--ivk-dur-fast) var(--ivk-ease);
 }
 
-starlight-toc nav a:hover {
+:root starlight-toc nav a:hover {
   color: var(--ink-fg);
 }
 
-starlight-toc nav a[aria-current="true"] {
+:root starlight-toc nav a[aria-current="true"] {
   color: var(--accent-text);
   font-weight: 500;
 }
@@ -529,7 +528,7 @@ mobile-starlight-toc nav {
   -webkit-backdrop-filter: blur(24px);
 }
 
-mobile-starlight-toc summary {
+:root mobile-starlight-toc summary {
   border-bottom: 1px solid var(--ink-line);
 }
 
@@ -951,8 +950,11 @@ starlight-tabs [role="tablist"] {
   *,
   *::before,
   *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: The accessibility override must win over component animation rules. */
     animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: The accessibility override must win over component animation rules. */
     animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: The accessibility override must win over component transition rules. */
     transition-duration: 0.01ms !important;
   }
 
