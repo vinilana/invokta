@@ -1,0 +1,329 @@
+---
+title: Authenticate with Auth0
+description: Verify an Auth0 access token for a registered API and map its claims to a Principal.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Auth0 issues an access token for a *registered API*. The token is an RS256 JWT
+whose `iss` is the tenant origin **with a trailing slash**, whose `aud` is the
+API identifier you configured, and whose signing keys are published at the
+tenant's JWKS document. Verifying those three facts is the whole integration.
+
+This recipe follows the
+[`auth-auth0-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-auth0-engine)
+example. The generic mechanics of a JWKS-backed `authenticate` hook live in the
+[JWT bearer recipe](/recipes/auth/jwt-bearer/); this page only covers what is
+specific to Auth0.
+
+## Build the integration
+
+<Steps>
+
+1. Register the API and collect two values
+
+   In the Auth0 dashboard, create an API and copy its **Identifier**. That
+   identifier is the `aud` your tokens must carry. Together with the tenant
+   domain it is all the engine needs:
+
+   ```sh
+   AUTH0_DOMAIN=your-tenant.eu.auth0.com
+   AUTH0_AUDIENCE=https://orders.example.com/api
+   ```
+
+   Auth0 mints the `iss` claim as `https://<tenant-domain>/`. The trailing
+   slash is part of the claim value, and an exact-match issuer check fails
+   without it.
+
+2. Derive the issuer and the JWKS document
+
+   ```ts
+   /** Returns the exact `iss` value Auth0 puts in the tenant's tokens. */
+   export function auth0Issuer(domain: string): string {
+     const trimmed = domain.trim();
+     if (trimmed === "") {
+       throw new TypeError("An Auth0 domain is required.");
+     }
+     const url = new URL(
+       trimmed.includes("://") ? trimmed : `https://${trimmed}`,
+     );
+     if (url.protocol !== "https:") {
+       throw new TypeError("The Auth0 domain must use HTTPS.");
+     }
+     // The trailing slash is part of the claim, not a formatting choice.
+     return `${url.origin}/`;
+   }
+
+   /** Returns the tenant's JWKS document URL, derived from the issuer. */
+   export function auth0JwksUri(domain: string): URL {
+     return new URL(".well-known/jwks.json", auth0Issuer(domain));
+   }
+   ```
+
+   The same function accepts `your-tenant.eu.auth0.com`, the full origin, or
+   an Auth0 custom domain.
+
+3. Verify the token with an injectable key source
+
+   ```ts
+   export function createAuth0AccessTokenVerifier(
+     options: Auth0VerifierOptions,
+   ): Auth0AccessTokenVerifier {
+     const issuer = auth0Issuer(options.domain);
+     const audience = options.audience.trim();
+     if (audience === "") {
+       throw new TypeError(
+         "An Auth0 API identifier is required as the audience.",
+       );
+     }
+     const keySource: JWTVerifyGetKey =
+       options.keySource ??
+       createRemoteJWKSet(auth0JwksUri(options.domain), {
+         timeoutDuration: options.jwksTimeoutMs ?? 5_000,
+       });
+
+     return {
+       async verify(token, { signal }) {
+         try {
+           signal.throwIfAborted();
+           const { payload } = await settleWith(
+             jwtVerify(token, keySource, {
+               issuer,
+               audience,
+               algorithms: ["RS256"],
+               clockTolerance: options.clockToleranceSeconds ?? 5,
+             }),
+             signal,
+           );
+           return payload;
+         } catch (error) {
+           if (isInvalidCredential(error)) return null;
+           // The provider error may quote the token, so it is never re-thrown.
+           throw new Auth0VerificationUnavailableError();
+         }
+       },
+     };
+   }
+   ```
+
+   `audience` is not optional. Without it, a token the same tenant minted for
+   another API — or for its own `/userinfo` endpoint — would satisfy the
+   issuer and signature checks. `createRemoteJWKSet` caches and bounds its own
+   fetch, and `settleWith` stops observing the result when the adapter cancels
+   the request.
+
+   The `keySource` option is what makes the verifier testable: production
+   omits it and gets the tenant's remote JWKS, while tests inject
+   `createLocalJWKSet` and verify real signatures offline.
+
+4. Separate an invalid credential from an unreachable tenant
+
+   ```ts
+   const invalidCredentialCodes: ReadonlySet<string> = new Set([
+     "ERR_JOSE_ALG_NOT_ALLOWED",
+     "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
+     "ERR_JWKS_NO_MATCHING_KEY",
+     "ERR_JWS_INVALID",
+     "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
+     "ERR_JWT_CLAIM_VALIDATION_FAILED",
+     "ERR_JWT_EXPIRED",
+     "ERR_JWT_INVALID",
+   ]);
+
+   function isInvalidCredential(error: unknown): boolean {
+     if (typeof error !== "object" || error === null) return false;
+     const code = (error as { readonly code?: unknown }).code;
+     return typeof code === "string" && invalidCredentialCodes.has(code);
+   }
+   ```
+
+   Only these `jose` codes mean "this credential is not valid" and become
+   `null`, which the adapter answers with HTTP 401. A JWKS timeout
+   (`ERR_JWKS_TIMEOUT`) or a transport failure falls through to a thrown
+   `Auth0VerificationUnavailableError`, which becomes a sanitized HTTP 500. A
+   tenant outage must never look like a rejected user.
+
+5. Map the claims Auth0 actually verified
+
+   ```ts
+   export function toAuth0Principal(claims: JWTPayload): Principal | null {
+     const subject = typeof claims.sub === "string" ? claims.sub.trim() : "";
+     if (subject === "") return null;
+
+     const attributes: Record<string, unknown> = {
+       scopes: readScopes(claims.scope),
+     };
+     const permissions = readPermissions(claims.permissions);
+     if (permissions !== null) attributes.permissions = permissions;
+
+     return { id: subject, attributes };
+   }
+
+   /** Auth0 delivers granted scopes as one space-delimited string. */
+   function readScopes(scope: unknown): ReadonlyArray<string> {
+     if (typeof scope !== "string") return [];
+     return [...new Set(scope.split(/\s+/u).filter((value) => value !== ""))];
+   }
+   ```
+
+   `permissions` is an array of strings that Auth0 adds only when the API has
+   **RBAC** and **Add Permissions in the Access Token** enabled. The example
+   drops a malformed `permissions` claim entirely rather than trusting part of
+   it, so an access rule never sees a half-parsed permission set.
+
+   The token, the `azp` client id, and the rest of the claim set stay at the
+   composition root.
+
+6. Wire the hook at the composition root
+
+   ```ts
+   export function createAuth0Authenticate(
+     verifier: Auth0AccessTokenVerifier,
+   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
+     return async (request) => {
+       const token = readBearerToken(request.headers);
+       if (token === null) return null;
+
+       const claims = await verifier.verify(token, { signal: request.signal });
+       return claims === null ? null : toAuth0Principal(claims);
+     };
+   }
+
+   const server = await serveMcpHttp(engine, {
+     host: "127.0.0.1",
+     port: 3000,
+     auth: {
+       mode: "required",
+       authenticate: createAuth0Authenticate(verifier),
+       resourceMetadata: {
+         resource: "http://127.0.0.1:3000/mcp",
+         authorizationServers: [auth0Issuer(domain)],
+         scopesSupported: ["orders:read", "orders:write"],
+       },
+     },
+   });
+   ```
+
+   `resourceMetadata` publishes `/.well-known/oauth-protected-resource/mcp`
+   and names the tenant as the Authorization Server, so an OAuth-capable MCP
+   client discovers where to obtain a token. A 401 then carries
+   `WWW-Authenticate: Bearer resource_metadata="..."`.
+
+7. Keep authorization in the capability
+
+   ```ts
+   export const whoami = defineCapability({
+     title: "Who am I",
+     description:
+       "Return the verified principal Invokta derived from the request credential.",
+     input,
+     output,
+     access: "authenticated",
+     async run({ context }) {
+       const { principal } = context;
+       if (principal === null) {
+         throw new EngineError({
+           code: "UNAUTHENTICATED",
+           message: "This capability requires an authenticated principal.",
+         });
+       }
+       return {
+         principalId: principal.id,
+         attributes: { ...principal.attributes },
+       };
+     },
+   });
+   ```
+
+   The capability never imports `jose` and never sees the token. A real
+   capability replaces `"authenticated"` with a function rule that reads
+   `attributes.scopes` or `attributes.permissions`.
+
+</Steps>
+
+<Aside type="note" title="Provider SDK variant">
+  Auth0's own Node middleware, `express-oauth2-jwt-bearer`, performs the same
+  three checks:
+
+  ```ts
+  import { auth } from "express-oauth2-jwt-bearer";
+
+  const checkJwt = auth({
+    issuerBaseURL: `https://${process.env.AUTH0_DOMAIN}`,
+    audience: process.env.AUTH0_AUDIENCE,
+  });
+  ```
+
+  It is an Express middleware, not a verifier function, so it does not drop
+  into the `authenticate` hook. The example keeps the `jose` verifier, which
+  is the same library the SDK wraps.
+</Aside>
+
+<Aside type="caution" title="Never widen the audience">
+  Dropping `audience`, or accepting an array of audiences you do not control,
+  turns any token from the tenant into a valid credential for this engine —
+  including tokens minted for Auth0's own `/userinfo` endpoint.
+</Aside>
+
+## Run it
+
+Build the repository, then start the adapter against your tenant:
+
+```sh
+yarn build
+AUTH0_DOMAIN=your-tenant.eu.auth0.com \
+AUTH0_AUDIENCE=https://orders.example.com/api \
+AUTH0_MCP_RESOURCE=http://127.0.0.1:3000/mcp \
+AUTH0_MCP_SCOPES="orders:read orders:write" \
+  node examples/auth-auth0-engine/dist/mcp-http.js
+```
+
+Request a machine-to-machine token for the same audience:
+
+```sh
+curl -s --request POST \
+  --url "https://${AUTH0_DOMAIN}/oauth/token" \
+  --header 'content-type: application/json' \
+  --data "{\"client_id\":\"$AUTH0_CLIENT_ID\",\"client_secret\":\"$AUTH0_CLIENT_SECRET\",\"audience\":\"$AUTH0_AUDIENCE\",\"grant_type\":\"client_credentials\"}"
+```
+
+Call the capability with it:
+
+```sh
+curl -i --request POST http://127.0.0.1:3000/mcp \
+  --header "authorization: Bearer $ACCESS_TOKEN" \
+  --header 'accept: application/json, text/event-stream' \
+  --header 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+```
+
+The result echoes the `sub`, the scopes, and the RBAC permissions the token
+proved. Repeat the request without the `authorization` header to get HTTP 401
+and the discovery challenge.
+
+## Verify it
+
+The example's tests mint RS256 tokens from a locally generated key pair and
+resolve them through a local JWKS, so signature verification is real and no
+test reaches Auth0:
+
+```sh
+yarn workspace @invokta/example-auth-auth0 test
+```
+
+They cover a valid token, an expired token, a foreign issuer, an issuer missing
+the trailing slash, a wrong audience, a missing audience, an unknown signing
+key, a forged signature, a malformed token, a missing header, a JWKS outage, and
+the absence of any token material in the produced `Principal`.
+
+<Aside type="tip" title="The same code for other OIDC issuers">
+  Kinde and Logto are drop-in swaps of this integration: keep the verifier and
+  the hook, and change only the issuer origin and the API audience you request.
+  Any issuer that publishes `<issuer>/.well-known/jwks.json` and mints an
+  audience-scoped RS256 access token fits the same file set. Confirm each
+  provider's exact `iss` string — the trailing slash is not universal.
+</Aside>
+
+Read [Authorize with domain data](/guides/capability-authorization/) for the
+policy half, and [HTTP authentication](/guides/http-authentication/) for the
+hook contract and the secret and logging rules.
