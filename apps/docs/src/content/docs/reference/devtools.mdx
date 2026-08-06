@@ -148,10 +148,11 @@ loopback servers:
   web interface, a JSON API, a live trace event stream, and a same-origin
   `POST /mcp` proxy to the engine host.
 
-A compact startup block on standard output reports the engine `name@version`,
-the capability count, the interface address, and the watch status. Terminate
-with `SIGINT` or `SIGTERM` for a clean shutdown. If the default port is already
-in use, the start failure names `EADDRINUSE` and suggests `--port`.
+Standard output carries exactly one ready line, `Invokta devtools listening on
+http://127.0.0.1:<port>/`. The engine `name@version`, the capability count, and
+the watch status accompany it on standard error. Terminate with `SIGINT` or
+`SIGTERM` for a clean shutdown. If the default port is already in use, the
+start failure names `EADDRINUSE` and suggests `--port`.
 
 #### Test identities
 
@@ -197,4 +198,4 @@ The devtools binds only `127.0.0.1`, allows exactly its own origin at the
 engine host, emits no `Access-Control-*` headers, and validates the `Host`
 header of every request. It discovers nothing: the module path is always
 explicit. The normative contract lives in the engine devtools dev server
-specification and ADR 0020 in the repository.
+specification and ADR 0021 in the repository.

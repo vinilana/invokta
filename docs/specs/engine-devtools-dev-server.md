@@ -1,6 +1,6 @@
 # Engine devtools dev server specification
 
-Status: Accepted by ADR 0020
+Status: Accepted by ADR 0021
 
 Contract review verdict: **APPROVED WITH CONDITIONS** (conditions listed in the
 verdict section)
@@ -33,7 +33,7 @@ instance, so every invocation traverses the single `engine.invoke` pipeline
 with source `mcp-http`. The devtools adds no runtime concept, no core hook, and
 no new execution path.
 
-The durable decision is recorded in ADR 0020.
+The durable decision is recorded in ADR 0021.
 
 ## Problem
 
@@ -330,7 +330,7 @@ installing the package and running `invokta-devtools serve dist/engine.js`.
 
 ## Required architecture decision
 
-ADR 0020 must supersede the nine-package count established by ADR 0014,
+ADR 0021 must supersede the nine-package count established by ADR 0014,
 ADR 0012, and ADR 0004 while preserving their dependency direction and
 package isolation; charter the `devtools → core, mcp` dependency edges; grant
 the devtools its bounded process-spawning surface (engine host child and the

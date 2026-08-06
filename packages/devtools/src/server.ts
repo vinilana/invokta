@@ -494,7 +494,7 @@ export async function startDevtoolsServer(
       sendJson(response, 200, options.engineView().doctor);
       return;
     }
-    // There is deliberately no trace export route: ADR 0020 requires the
+    // There is deliberately no trace export route: ADR 0021 requires the
     // trace to stay an in-memory session buffer that leaves the process only
     // through the local event stream.
     if (path === "/api/events") {

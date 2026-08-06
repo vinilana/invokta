@@ -63,8 +63,15 @@ shows how to run and verify the result locally.
 
 ## Before you start
 
-Run the recipes from the repository root with Node.js 22.20.0 or later and Yarn
-1.22.22:
+Bootstrap a recipe example into a new project with
+[`create-invokta-engine --example`](/reference/create-invokta-engine/#github-example-import):
+
+```sh
+npm create invokta-engine@latest my-engine -- --example auth-clerk-engine --yes
+```
+
+Or run the recipes from a full repository checkout with Node.js 22.20.0 or later
+and Yarn 1.22.22:
 
 ```sh
 git clone https://github.com/vinilana/invokta.git

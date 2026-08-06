@@ -1,15 +1,18 @@
 # create-invokta-engine
 
 Create a standalone TypeScript Action Engine with one deterministic capability
-and a selected execution profile. Every generated entry point imports the same
-engine and reaches capability execution through `engine.invoke` or an official
-Invokta adapter.
+and a selected execution profile, or import a public GitHub example tree as the
+project template. Every generated profile entry point imports the same engine
+and reaches capability execution through `engine.invoke` or an official Invokta
+adapter.
 
 ## Commands
 
 ```text
 create-invokta-engine [project-directory]
   [--profile complete|mcp-stdio|mcp-http|cli]
+  [--example <name|github-url>]
+  [--example-path <subdir>]
   [--package-manager npm|pnpm|yarn]
   [--no-install]
   [--yes]
@@ -26,7 +29,8 @@ npm create invokta-engine@latest my-engine
 When standard input and standard error are TTYs, the command asks for a missing
 project directory and profile, displays the normalized plan, and requires a
 final confirmation before writing. An explicit target or profile skips only its
-question. `--yes` requires an explicit target and skips every prompt.
+question. `--example` skips the profile prompt and confirms the example label
+instead. `--yes` requires an explicit target and skips every prompt.
 
 Non-terminal execution never prompts or reads standard input. It requires an
 explicit target and uses `complete` when `--profile` is omitted, preserving
@@ -40,11 +44,16 @@ Terminal automation should make its choices explicit:
 
 ```sh
 create-invokta-engine my-engine --profile complete --no-install --yes
+create-invokta-engine my-engine --example auth-clerk-engine --no-install --yes
 ```
+
+`--example` and `--profile` are mutually exclusive. `--example-path` requires
+`--example`.
 
 The invoking package manager is inferred from `npm_config_user_agent`, with npm
 as the fallback. Use `--package-manager` to choose explicitly. `--no-install`
-generates the selected files without starting a process or network operation.
+skips the package manager. Profile creation without `--example` starts no
+creator-owned network operation. Example import still contacts GitHub.
 
 ## Profiles
 
@@ -96,14 +105,39 @@ copying the instructions. Generated Invokta dependencies exactly match the
 creator version. All generated entries become project-owned and are never
 updated in place.
 
+## GitHub example import
+
+`--example` imports a public GitHub repository or subdirectory as the project
+template, similar to `create-next-app --example`:
+
+```sh
+create-invokta-engine my-engine --example auth-clerk-engine --no-install --yes
+create-invokta-engine my-engine \
+  --example https://github.com/acme/engine-template \
+  --no-install --yes
+create-invokta-engine my-engine \
+  --example https://github.com/acme/repo/tree/main/templates/engine \
+  --no-install --yes
+```
+
+Official short names resolve to `vinilana/invokta` `examples/<name>` on `main`.
+HTTPS `github.com` repository and tree URLs are accepted. `--example-path`
+selects the subdirectory and, for tree URLs, recovers slash-containing refs the
+same way `create-next-app` does. The creator verifies `package.json` is a
+regular file, downloads from `codeload.github.com` after confirmation, copies
+only the selected subtree, and rewrites `package.json` `name` to the project
+directory name. Private repositories, SSH, tokens, and non-GitHub hosts are
+unsupported. Template dependency completeness belongs to the example author.
+
 ## Prompt and target safety
 
 Each answer is strict UTF-8 and limited to 4,096 encoded bytes including the
 line terminator. The directory and profile questions allow three invalid
 answers. Confirmation accepts case-insensitive `y`, `yes`, `n`, or `no`; an
 empty confirmation means no. A negative confirmation writes
-`Creation cancelled. No files were created.` and performs no filesystem,
-process, or network operation.
+`Creation cancelled. No files were created.` and performs no filesystem or
+package-manager operation. Cancelled example imports also skip the archive
+download.
 
 The target must be relative, absent or an empty real directory. Absolute paths,
 parent segments, symbolic-link components, non-directories, and non-empty
@@ -115,18 +149,19 @@ an accepted parent path are escaped in the confirmation instead of being
 emitted as terminal-active text.
 
 Unless `--no-install` is present, exactly one shell-free foreground package
-manager install starts after every selected scaffold entry exists. An install
-failure preserves the complete generated profile for retry.
+manager install starts after every selected scaffold or example entry exists. An
+install failure preserves the complete generated project for retry.
 
 ## Exit codes and diagnostics
 
 | Exit | Meaning |
 | ---: | --- |
 | `0` | Help, version, creation, or normal cancellation succeeded |
-| `1` | Prompt interruption, target safety, filesystem, or installation failed |
-| `2` | Usage, required interaction, prompt input, path, or name was invalid |
+| `1` | Prompt interruption, target safety, filesystem, example, or installation failed |
+| `2` | Usage, required interaction, prompt input, path, name, or example reference was invalid |
 
 Creator diagnostics are `INTERACTIVE_REQUIRED`, `PROMPT_INVALID`,
 `PROMPT_ABORTED`, `TARGET_INVALID`, `TARGET_UNSAFE`, `TARGET_NOT_EMPTY`,
-`SCAFFOLD_CONFLICT`, `WRITE_FAILED`, and `INSTALL_FAILED`. They never include a
-rejected answer or argument, environment value, child error, stack, or cause.
+`SCAFFOLD_CONFLICT`, `WRITE_FAILED`, `INSTALL_FAILED`, `EXAMPLE_INVALID`,
+`EXAMPLE_UNAVAILABLE`, and `EXAMPLE_FAILED`. They never include a rejected
+answer or argument, environment value, child error, stack, or cause.

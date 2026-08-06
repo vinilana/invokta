@@ -22,7 +22,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   official SDK for stdio and Streamable HTTP connections. SDK types, transport
   details, credentials, and protocol errors remain contained inside the MCP
   package boundary.
-- Added `@invokta/devtools`, the tenth package (ADR 0020): a development-time
+- Added `@invokta/devtools`, the tenth package (ADR 0021): a development-time
   dev server and doctor for one built engine. `invokta-devtools doctor` runs
   read-only checks with deterministic stderr diagnostics, and
   `invokta-devtools serve` hosts the engine through the unmodified MCP HTTP

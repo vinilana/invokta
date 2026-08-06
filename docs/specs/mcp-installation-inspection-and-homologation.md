@@ -1,6 +1,6 @@
 # MCP installation inspection and homologation specification
 
-Status: Accepted by ADR 0021 and extended by ADR 0022
+Status: Accepted by ADR 0022 and extended by ADR 0023
 
 Contract review verdict: **APPROVED**
 
@@ -23,11 +23,11 @@ about `engine.invoke` or its implementation.
 `@invokta/mcp` encapsulates the approved official SDK behind a new plain-type
 client facade. Devtools does not import SDK packages or expose SDK values.
 
-The durable decisions are recorded in ADR 0021 and ADR 0022.
+The durable decisions are recorded in ADR 0022 and ADR 0023.
 
 ## Problem
 
-The ADR 0020 dev server requires a built engine module. That is appropriate
+The ADR 0021 dev server requires a built engine module. That is appropriate
 while developing an Invokta engine, but it cannot homologate what an MCP client
 will actually launch or reach when:
 
@@ -93,7 +93,7 @@ invokta-devtools serve <esm-module> [--export <name>] [--port <number>]
   [--engine-port <number>] [--watch --build <command>]
 ```
 
-Bare invocation and `open` are exact aliases. `--port` follows the ADR 0020
+Bare invocation and `open` are exact aliases. `--port` follows the ADR 0021
 range and defaults to `4100`; the server binds only `127.0.0.1`. Startup prints
 the existing ready line:
 
@@ -719,7 +719,7 @@ values, or discover configuration.
 
 ### AE-DEVTOOLS-ATTACH-02: Compatible engine mode
 
-`doctor <module>` and `serve <module>` MUST preserve ADR 0020 behavior. Only
+`doctor <module>` and `serve <module>` MUST preserve ADR 0021 behavior. Only
 `serve` may expose engine Doctor, principals, workspace watch, core trace, or
 claim the `engine.invoke` path. Attached mode MUST use MCP server terminology.
 
@@ -773,7 +773,7 @@ without revealing values, and omit workspace-only surfaces.
 ### AE-DEVTOOLS-ATTACH-09: Closed homologation scope
 
 Attached inspection MUST NOT implement persistence, configuration import,
-target discovery, multiple targets, OAuth grants other than the ADR 0022
+target discovery, multiple targets, OAuth grants other than the ADR 0023
 ephemeral Authorization Code with PKCE flow, resources, prompts, automatic
 calls, connected tool-call retries, evals, judging, certification, release
 gating, or project and client configuration writes.
@@ -796,7 +796,7 @@ document through a public surface.
 | AC-MCP-CLIENT-03 | MCP-CLIENT-02 | HTTP boundary tests reject credentials, query, fragment, non-loopback HTTP, redirects, duplicate or forbidden headers, and CR/LF before protocol dispatch while accepting HTTPS and literal loopback HTTP. |
 | AC-MCP-CLIENT-04 | MCP-CLIENT-02, MCP-CLIENT-03 | Official client/server fixtures cover initialize, one-page and multi-page tool lists, empty cursors, manual tool success, `isError`, cancellation, idempotent public close over both transports, and the conservative 10 MiB stdio SDK read buffer without asserting private child-process signals or reap timing. |
 | AC-ATTACH-01 | DEVTOOLS-ATTACH-01 | Instrumented seams prove bare and `open` startup perform no module load, workspace read, outbound request, spawn, discovery, or credential lookup before Connect. |
-| AC-ATTACH-02 | DEVTOOLS-ATTACH-02 | Existing ADR 0020 doctor, serve, authenticated invocation, principal, trace, and watch suites pass unchanged; attached route tests expose none of those claims. |
+| AC-ATTACH-02 | DEVTOOLS-ATTACH-02 | Existing ADR 0021 doctor, serve, authenticated invocation, principal, trace, and watch suites pass unchanged; attached route tests expose none of those claims. |
 | AC-ATTACH-03 | DEVTOOLS-ATTACH-03 | Stdio and HTTP verification fixtures observe initialize and every `tools/list` cursor, observe zero `tools/call` requests, and assert exact stdout, stderr, cleanup, and `0/1/2` exits. |
 | AC-ATTACH-04 | DEVTOOLS-ATTACH-04 | Lifecycle tests cover idle, connecting, connected, failure cleanup, disconnect, shutdown, a rejected second target, a rejected concurrent call, and no implicit retry. |
 | AC-ATTACH-05 | DEVTOOLS-ATTACH-05 | Canary secrets supplied through every CLI and UI credential surface are absent from stdout, stderr, errors, API responses, browser storage, Activity, traces, and snapshots after disconnect. |

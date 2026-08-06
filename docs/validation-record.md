@@ -1,12 +1,13 @@
 # Validation record
 
-- Last reviewed: 2026-08-01
+- Last reviewed: 2026-08-06
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
   accepted in ADR 0016; engine-scoped MCP uninstall accepted in ADR 0017;
   interactive engine creator profiles and the public deploy scaffold planner
-  accepted in ADR 0018
+  accepted in ADR 0018; GitHub example import for `create-invokta-engine`
+  accepted in ADR 0020
 
 ## Reuse evidence
 
@@ -28,9 +29,9 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 1,847 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 2,268 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  86.15% statements, 80.28% branches, 88.60% functions, and 87.89% lines.
+  85.38% statements, 79.30% branches, 87.73% functions, and 87.08% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
@@ -52,7 +53,10 @@ consumer can use the protocol surface without coupling to engine code.
   on effective-ID collisions.
 - The creators, installer, and deploy packages remain outside the capability
   call graph and exercise only their documented project creation, local
-  configuration, and generation authority.
+  configuration, and generation authority. Injected fetch harnesses cover
+  `create-invokta-engine --example` resolution, download, package-name rewrite,
+  cancellation before archive download, and mutual exclusion with `--profile`
+  without live network access.
 - Packed creator smoke tests generate the exact `complete`, `mcp-stdio`,
   `mcp-http`, and `cli` file sets from release tarballs. Every profile installs,
   type-checks, tests, builds, and invokes the shared capability directly and

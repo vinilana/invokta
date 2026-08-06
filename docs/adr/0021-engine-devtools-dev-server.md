@@ -1,4 +1,4 @@
-# ADR 0020: Engine devtools dev server
+# ADR 0021: Engine devtools dev server
 
 - Status: Accepted
 - Date: 2026-08-05

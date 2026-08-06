@@ -1246,7 +1246,7 @@ async function runServe(
   }
 
   const address = result.handles.devtoolsAddress;
-  // ADR 0020 pins stdout to exactly this ready line, and `open` prints the
+  // ADR 0021 pins stdout to exactly this ready line, and `open` prints the
   // same one; the extra startup context is a diagnostic and goes to stderr.
   await writeStderr(
     io,

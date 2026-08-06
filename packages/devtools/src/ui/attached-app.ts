@@ -464,7 +464,7 @@ async function responseJson<Value>(response: Response): Promise<Value> {
 }
 
 /**
- * Adapts the ADR 0021 loopback routes while keeping the session CSRF token in
+ * Adapts the ADR 0022 loopback routes while keeping the session CSRF token in
  * this closure. No target descriptor or credential is written to storage.
  */
 export function createRouteAttachedApi(fetcher: Fetcher = fetch): AttachedApi {

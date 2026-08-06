@@ -817,7 +817,7 @@ describe("trace panel", () => {
     const { renderTracePanel } = await import("../src/ui/trace.js");
     const container = new FakeElement("main");
     const dispose = renderTracePanel(container);
-    // ADR 0020 keeps the trace in memory: the panel offers no export.
+    // ADR 0021 keeps the trace in memory: the panel offers no export.
     expect(walk(container).filter((node) => node.tagName === "A")).toHaveLength(
       0,
     );

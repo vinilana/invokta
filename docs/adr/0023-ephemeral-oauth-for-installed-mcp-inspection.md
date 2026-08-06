@@ -1,11 +1,11 @@
-# ADR 0022: Ephemeral OAuth for installed MCP inspection
+# ADR 0023: Ephemeral OAuth for installed MCP inspection
 
 - Status: Accepted
 - Date: 2026-08-06
 
 ## Context
 
-ADR 0021 permits the installed-MCP workbench to connect to an explicit HTTP
+ADR 0022 permits the installed-MCP workbench to connect to an explicit HTTP
 target with no authentication, a supplied bearer token, or custom headers. It
 deliberately excludes OAuth because an authorization redirect, callback, PKCE
 state, token exchange, and credential lifecycle require a larger authority than
@@ -107,7 +107,7 @@ cancel it; other sessions observe only that the slot is busy. The successful
 callback completes initialization and catalog validation before the state
 becomes `connected`.
 
-This decision supersedes only ADR 0021's OAuth exclusion. Its prohibitions on
+This decision supersedes only ADR 0022's OAuth exclusion. Its prohibitions on
 persistence, target discovery, multiple targets, automatic tool calls, retries,
 evals, and release gating remain in force.
 

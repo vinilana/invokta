@@ -24,7 +24,7 @@
   ],
   "scripts": {
     "build": "tsc -b --pretty false",
-    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit && tsc -p packages/devtools/tsconfig.test.json --pretty false --noEmit",
     "typecheck:devtools-ui": "tsc -p packages/devtools/tsconfig.testui.json --pretty false",
     "test": "vitest",
     "test:run": "vitest run",

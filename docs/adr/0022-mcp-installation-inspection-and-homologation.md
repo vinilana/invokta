@@ -1,11 +1,11 @@
-# ADR 0021: MCP installation inspection and homologation
+# ADR 0022: MCP installation inspection and homologation
 
 - Status: Accepted
 - Date: 2026-08-06
 
 ## Context
 
-ADR 0020 gives an Invokta engine author a local development surface by loading
+ADR 0021 gives an Invokta engine author a local development surface by loading
 an explicitly named built engine module. That mode is deliberately tied to a
 workspace composition root: it can run Doctor against the engine contract,
 mint development principals, host the engine through `serveMcpHttp`, and
@@ -97,7 +97,7 @@ echoed, or included in activity data.
 
 The existing commands remain compatible:
 
-- `doctor <module>` and `serve <module>` keep their ADR 0020 behavior,
+- `doctor <module>` and `serve <module>` keep their ADR 0021 behavior,
   diagnostics, and exit codes;
 - the explicit module requirement continues to apply to those commands; and
 - `serve` remains the only mode that claims Invokta engine internals and the

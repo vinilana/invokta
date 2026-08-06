@@ -26,10 +26,11 @@ npx @invokta/devtools serve dist/engine.js
 npx @invokta/devtools verify --stdio node --arg dist/mcp-stdio.js
 ```
 
-`serve` prints a compact startup block — the engine `name@version`, the
-capability count, the interface URL, and the watch status — and keeps the dev
-server running until `SIGINT` or `SIGTERM`. Open the printed loopback URL to
-invoke capabilities from the web interface.
+`serve` prints one ready line on standard output — `Invokta devtools
+listening on http://127.0.0.1:<port>/` — and keeps the dev server running
+until `SIGINT` or `SIGTERM`. The engine `name@version`, the capability count,
+and the watch status accompany it on standard error. Open the printed loopback
+URL to invoke capabilities from the web interface.
 
 ## Watch mode
 
@@ -238,11 +239,13 @@ npx @invokta/devtools serve \
 `<esm-module>` is resolved against the current working directory and must
 already be built to native ESM. `--export <name>` defaults to `engine`.
 
-The startup block on standard output reports the engine `name@version`, the
-capability count, the interface address, and the watch status. Exit `0` means
-the dev server shut down cleanly, `1` means the doctor preflight reported
-findings or the server could not start, and `2` means invalid usage, a module
-that failed to load, a missing export, or a non-engine export.
+Standard output carries exactly one ready line, `Invokta devtools listening on
+http://127.0.0.1:<port>/`; the engine `name@version`, the capability count,
+and the watch status are written to standard error with the other diagnostics.
+Exit `0` means the dev server shut down cleanly, `1` means the doctor
+preflight reported findings or the server could not start, and `2` means
+invalid usage, a module that failed to load, a missing export, or a non-engine
+export.
 
 The built-engine interface uses one compact workbench surface across
 Playground, Activity, Diagnostics, and Test identities. Playground summarizes
@@ -306,10 +309,10 @@ node packages/devtools/dist/cli.js serve examples/hello-engine/dist/engine.js
 
 The built-engine contract is specified in the
 [engine devtools dev server specification](../../docs/specs/engine-devtools-dev-server.md)
-and chartered by [ADR 0020](../../docs/adr/0020-engine-devtools-dev-server.md).
+and chartered by [ADR 0021](../../docs/adr/0021-engine-devtools-dev-server.md).
 Installed-target inspection is specified in the
 [MCP installation inspection and homologation specification](../../docs/specs/mcp-installation-inspection-and-homologation.md)
 and chartered by
-[ADR 0021](../../docs/adr/0021-mcp-installation-inspection-and-homologation.md),
+[ADR 0022](../../docs/adr/0022-mcp-installation-inspection-and-homologation.md),
 with interactive OAuth accepted by
-[ADR 0022](../../docs/adr/0022-ephemeral-oauth-for-installed-mcp-inspection.md).
+[ADR 0023](../../docs/adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md).

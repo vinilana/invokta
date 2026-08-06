@@ -333,7 +333,7 @@ describe("startServe", () => {
     const call = await callTool({ authorization: `Bearer ${token}` });
     await call.arrayBuffer();
 
-    // ADR 0020 keeps the trace in memory: there is no export route at all.
+    // ADR 0021 keeps the trace in memory: there is no export route at all.
     const exported = await fetch(`${base}/api/trace/export`);
     expect(exported.status).toBe(404);
 
@@ -486,7 +486,7 @@ describe("invokta-devtools serve", () => {
       stderr += chunk;
     });
 
-    // ADR 0020 pins stdout to exactly this line.
+    // ADR 0021 pins stdout to exactly this line.
     const readyLine = `Invokta devtools listening on http://127.0.0.1:${String(port)}/\n`;
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(
