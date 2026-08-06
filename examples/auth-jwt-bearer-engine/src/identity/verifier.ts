@@ -64,11 +64,17 @@ export class AccessTokenVerificationUnavailableError extends Error {
  * jose failures that mean "this credential is not acceptable". Everything else
  * — a JWKS timeout, an unusable key set, an unexpected error — is an
  * infrastructure failure and must not be reported as a clean rejection.
+ *
+ * `JWKSMultipleMatchingKeys` is deliberately absent: two same-algorithm keys
+ * published without `kid` headers is the issuer's key-publication problem, not
+ * evidence against the credential, and answering 401 would silently reject
+ * every legitimate token during a kid-less key rotation. jose documents a
+ * candidate-retry iteration on this error for deployments that must tolerate
+ * such issuers; this example reports the honest 500 instead.
  */
 const invalidCredentialCodes: ReadonlySet<string> = new Set([
   errors.JOSEAlgNotAllowed.code,
   errors.JOSENotSupported.code,
-  errors.JWKSMultipleMatchingKeys.code,
   errors.JWKSNoMatchingKey.code,
   errors.JWSInvalid.code,
   errors.JWSSignatureVerificationFailed.code,
@@ -90,6 +96,15 @@ function isInvalidCredential(error: unknown): boolean {
  * well-known suffix is appended, so the same normalization backs every derived
  * URL below.
  */
+function isLoopbackHttp(url: URL): boolean {
+  return (
+    url.protocol === "http:" &&
+    (url.hostname === "127.0.0.1" ||
+      url.hostname === "localhost" ||
+      url.hostname === "[::1]")
+  );
+}
+
 function normalizeIssuer(issuer: string): string {
   let url: URL;
   try {
@@ -98,12 +113,7 @@ function normalizeIssuer(issuer: string): string {
     throw new TypeError("The issuer must be an absolute HTTPS URL.");
   }
 
-  const loopbackDevelopment =
-    url.protocol === "http:" &&
-    (url.hostname === "127.0.0.1" ||
-      url.hostname === "localhost" ||
-      url.hostname === "[::1]");
-  if (url.protocol !== "https:" && !loopbackDevelopment) {
+  if (url.protocol !== "https:" && !isLoopbackHttp(url)) {
     throw new TypeError(
       "The issuer must use HTTPS, except for loopback development.",
     );
@@ -140,12 +150,24 @@ export function conventionalJwksUri(issuer: string): string {
   return `${normalizeIssuer(issuer)}/.well-known/jwks.json`;
 }
 
-/** Uses an explicit JWKS URI when configured, otherwise the convention. */
+/**
+ * Uses an explicit JWKS URI when configured, otherwise the convention. The
+ * override is held to the same HTTPS-or-loopback rule as the issuer: keys
+ * fetched over plaintext HTTP could be replaced by an on-path attacker, and a
+ * substituted key set turns into accepted attacker-minted tokens.
+ */
 export function resolveJwksUri(issuer: string, override?: string): string {
   if (override !== undefined && override !== "") {
-    const url = new URL(override);
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      throw new TypeError("The JWKS URI must be an HTTP(S) URL.");
+    let url: URL;
+    try {
+      url = new URL(override);
+    } catch {
+      throw new TypeError("The JWKS URI override must be an absolute URL.");
+    }
+    if (url.protocol !== "https:" && !isLoopbackHttp(url)) {
+      throw new TypeError(
+        "The JWKS URI must use HTTPS, except for loopback development.",
+      );
     }
     return url.href;
   }

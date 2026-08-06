@@ -14,6 +14,7 @@ import {
   conventionalJwksUri,
   createAccessTokenVerifier,
   openIdConfigurationUrl,
+  resolveJwksUri,
 } from "../src/identity/verifier.js";
 import {
   createJwtBearerAuthenticate,
@@ -139,6 +140,22 @@ describe("JWKS location", () => {
       conventionalJwksUri("https://identity.example.com?tenant=a"),
     ).toThrow(/issuer/iu);
     expect(() => conventionalJwksUri("not-a-url")).toThrow(/issuer/iu);
+  });
+
+  it("holds the JWKS override to the same HTTPS-or-loopback rule as the issuer", () => {
+    expect(resolveJwksUri(issuer, "https://keys.example.com/jwks.json")).toBe(
+      "https://keys.example.com/jwks.json",
+    );
+    expect(resolveJwksUri(issuer, "http://127.0.0.1:8080/jwks.json")).toBe(
+      "http://127.0.0.1:8080/jwks.json",
+    );
+    expect(resolveJwksUri(issuer)).toBe(
+      "https://identity.example.com/.well-known/jwks.json",
+    );
+    expect(() =>
+      resolveJwksUri(issuer, "http://keys.internal:8080/jwks.json"),
+    ).toThrow(/HTTPS/u);
+    expect(() => resolveJwksUri(issuer, "not-a-url")).toThrow(/JWKS/u);
   });
 });
 
@@ -274,6 +291,31 @@ describe("access token verifier", () => {
     await expect(
       verifier().verify(token, { signal: freshSignal() }),
     ).resolves.toMatchObject({ id: "user-42" });
+  });
+
+  it("rejects when the key set is ambiguous for the token", async () => {
+    const first = await generateKeyPair("RS256", { extractable: true });
+    const second = await generateKeyPair("RS256", { extractable: true });
+    const ambiguous = createLocalJWKSet({
+      keys: [
+        { ...(await exportJWK(first.publicKey)), alg: "RS256", use: "sig" },
+        { ...(await exportJWK(second.publicKey)), alg: "RS256", use: "sig" },
+      ],
+    });
+    // No kid in the header, two same-algorithm keys in the set: jose cannot
+    // pick a candidate, which is the issuer's publication problem.
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", typ: "at+jwt" })
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setSubject("user-42")
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(first.privateKey);
+
+    await expect(
+      verifier(ambiguous).verify(token, { signal: freshSignal() }),
+    ).rejects.toThrow(/unavailable/iu);
   });
 
   it("rejects when the key source cannot complete the check", async () => {

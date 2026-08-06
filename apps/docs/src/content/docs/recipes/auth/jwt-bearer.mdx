@@ -116,7 +116,6 @@ the same.
    const invalidCredentialCodes: ReadonlySet<string> = new Set([
      errors.JOSEAlgNotAllowed.code,
      errors.JOSENotSupported.code,
-     errors.JWKSMultipleMatchingKeys.code,
      errors.JWKSNoMatchingKey.code,
      errors.JWSInvalid.code,
      errors.JWSSignatureVerificationFailed.code,
@@ -138,6 +137,14 @@ the same.
    failure means the check never happened, so `verify` rejects instead. The
    rejection carries a fixed sentence and no cause, so no token, URL, or
    provider response can reach a log through it.
+
+   `JWKSMultipleMatchingKeys` stays out of the invalid set on purpose. Two
+   same-algorithm keys published without `kid` headers is the issuer's
+   key-publication problem, not evidence against the credential, and treating
+   it as 401 would silently reject every legitimate token during a kid-less
+   key rotation. This example reports the honest 500; jose also documents a
+   candidate-retry iteration on that error for deployments that must tolerate
+   such issuers.
 
 5. Read the Bearer credential
 
@@ -201,7 +208,10 @@ the same.
    `<issuer>/.well-known/jwks.json` — a widespread convention, not a
    specification requirement. The authoritative location is the `jwks_uri`
    member of `<issuer>/.well-known/openid-configuration`; read it once and set
-   `AUTH_JWT_JWKS_URI` when your provider hosts its key set elsewhere.
+   `AUTH_JWT_JWKS_URI` when your provider hosts its key set elsewhere. The
+   override is held to the same HTTPS-or-loopback rule as the issuer: a key
+   set fetched over plaintext HTTP could be replaced by an on-path attacker,
+   and a substituted key turns into accepted attacker-minted tokens.
 
 8. Keep the capability free of identity plumbing
 
