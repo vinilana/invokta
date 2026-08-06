@@ -3,7 +3,11 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { connectMcpClient, type McpClientConnection } from "../src/index.js";
+import {
+  connectMcpClient,
+  type McpClientConnection,
+  type McpJsonValue,
+} from "../src/index.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixturePath = fileURLToPath(
@@ -121,10 +125,34 @@ describe("plain MCP client facade over stdio", () => {
     });
   });
 
+  it("preserves own __proto__ JSON data without changing snapshot prototypes", async () => {
+    const connection = await connectStdio();
+    const hostileValue = Object.create(null) as Record<string, McpJsonValue>;
+    Object.defineProperty(hostileValue, "__proto__", {
+      enumerable: true,
+      value: { polluted: true },
+    });
+
+    const result = await connection.callTool("fixture.inspect", {
+      value: hostileValue,
+    });
+    const structured = result.response.structuredContent as Record<
+      string,
+      unknown
+    >;
+    const returned = structured.value as Record<string, unknown>;
+
+    expect(Object.hasOwn(returned, "__proto__")).toBe(true);
+    expect(
+      Reflect.getOwnPropertyDescriptor(returned, "__proto__")?.value,
+    ).toEqual({ polluted: true });
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
+  });
+
   it("rejects non-lossless JSON call arguments without invoking accessors", async () => {
     const connection = await connectStdio();
     let reads = 0;
-    const argumentsValue: Record<string, unknown> = {};
+    const argumentsValue: Record<string, McpJsonValue> = {};
     Object.defineProperty(argumentsValue, "secret", {
       enumerable: true,
       get() {

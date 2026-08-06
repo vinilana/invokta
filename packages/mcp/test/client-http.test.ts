@@ -1,4 +1,9 @@
-import { createServer, type Server as NodeHttpServer } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server as NodeHttpServer,
+  type RequestListener,
+} from "node:http";
 
 import { createEngine, defineCapability } from "@invokta/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -109,7 +114,7 @@ async function startHttpServer(): Promise<{
 }
 
 async function listenNodeServer(
-  handler: Parameters<typeof createServer>[0],
+  handler: RequestListener,
 ): Promise<{ readonly server: NodeHttpServer; readonly url: string }> {
   const server = createServer(handler);
   nodeServers.push(server);
@@ -122,7 +127,7 @@ async function listenNodeServer(
 }
 
 async function readRequestBody(
-  request: Parameters<NonNullable<Parameters<typeof createServer>[0]>>[0],
+  request: IncomingMessage,
 ): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));

@@ -27,7 +27,9 @@ it.each([
   { transport: "http", url: "http://localhost/mcp" },
   { transport: "http", url: "http://127.0.0.2/mcp" },
   { transport: "http", url: "https://user@example.com/mcp" },
+  { transport: "http", url: "https://example.com/mcp?" },
   { transport: "http", url: "https://example.com/mcp?secret=value" },
+  { transport: "http", url: "https://example.com/mcp#" },
   { transport: "http", url: "https://example.com/mcp#fragment" },
   {
     transport: "http",
@@ -97,6 +99,19 @@ it("rejects accessor-backed targets without invoking the accessor", async () => 
 
   await expectInvalidTarget(target as McpClientTarget);
   expect(reads).toBe(0);
+});
+
+it("rejects an own __proto__ target field instead of changing the snapshot prototype", async () => {
+  const target: Record<string, unknown> = {
+    transport: "stdio",
+    command: "must-not-be-started",
+  };
+  Object.defineProperty(target, "__proto__", {
+    enumerable: true,
+    value: { transport: "http" },
+  });
+
+  await expectInvalidTarget(target as McpClientTarget);
 });
 
 it("rejects a pre-aborted initialization without starting the target", async () => {

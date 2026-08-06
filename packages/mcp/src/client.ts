@@ -199,10 +199,27 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+function createDataRecord<Value>(): Record<string, Value> {
+  return Object.create(null) as Record<string, Value>;
+}
+
+function defineDataProperty<Value>(
+  record: Record<string, Value>,
+  key: string,
+  value: Value,
+): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
 function dataProperties(value: unknown): Record<string, unknown> | undefined {
   if (!isPlainRecord(value)) return undefined;
   const descriptors = Object.getOwnPropertyDescriptors(value);
-  const snapshot: Record<string, unknown> = {};
+  const snapshot = createDataRecord<unknown>();
   for (const key of Reflect.ownKeys(descriptors)) {
     if (typeof key !== "string") return undefined;
     const descriptor = descriptors[key];
@@ -213,7 +230,7 @@ function dataProperties(value: unknown): Record<string, unknown> | undefined {
     ) {
       return undefined;
     }
-    snapshot[key] = descriptor.value;
+    defineDataProperty(snapshot, key, descriptor.value);
   }
   return snapshot;
 }
@@ -277,7 +294,7 @@ function snapshotStringRecord(
 ): Record<string, string> | undefined {
   const record = dataProperties(value);
   if (record === undefined) return undefined;
-  const snapshot: Record<string, string> = {};
+  const snapshot = createDataRecord<string>();
   for (const [key, entry] of Object.entries(record)) {
     if (
       !validateName(key) ||
@@ -286,13 +303,20 @@ function snapshotStringRecord(
     ) {
       return undefined;
     }
-    snapshot[key] = entry;
+    defineDataProperty(snapshot, key, entry);
   }
   return snapshot;
 }
 
 function parseCanonicalHttpUrl(value: unknown): URL | undefined {
-  if (typeof value !== "string" || value.length === 0) return undefined;
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.includes("?") ||
+    value.includes("#")
+  ) {
+    return undefined;
+  }
   let url: URL;
   try {
     url = new URL(value);
@@ -567,9 +591,10 @@ function snapshotJson(value: unknown): McpJsonValue {
       const record = dataProperties(entry);
       if (record === undefined)
         throw new ClientBoundaryFailure("PROTOCOL_ERROR");
-      const snapshot: Record<string, McpJsonValue> = {};
-      for (const [key, child] of Object.entries(record))
-        snapshot[key] = visit(child);
+      const snapshot = createDataRecord<McpJsonValue>();
+      for (const [key, child] of Object.entries(record)) {
+        defineDataProperty(snapshot, key, visit(child));
+      }
       return snapshot;
     } finally {
       active.delete(entry);
