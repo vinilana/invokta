@@ -52,10 +52,13 @@ const defaultMaxTokenLength = 4_096;
  * listed here is treated as an infrastructure failure, so a broken key source
  * can never be reported to a caller as "invalid credential".
  */
+// ERR_JWKS_MULTIPLE_MATCHING_KEYS is deliberately absent: an ambiguous key
+// set is the app's key-publication problem, not evidence against the
+// credential, so it surfaces as an infrastructure failure (500) instead of
+// silently rejecting legitimate tokens during a kid-less key rotation.
 const invalidCredentialCodes: ReadonlySet<string> = new Set([
   "ERR_JOSE_ALG_NOT_ALLOWED",
   "ERR_JWK_INVALID",
-  "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
   "ERR_JWKS_NO_MATCHING_KEY",
   "ERR_JWS_INVALID",
   "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",

@@ -77,6 +77,14 @@ describe("Auth.js session to principal mapping", () => {
       sessionToPrincipal(createTestSession({ expires: "not-a-timestamp" })),
     ).toBeNull();
   });
+
+  it("returns null for a session without an expiry bound", () => {
+    // Auth.js always sets expires; a hand-built session object without one
+    // must fail closed instead of becoming a permanent identity.
+    expect(
+      sessionToPrincipal(createTestSession({ expires: undefined })),
+    ).toBeNull();
+  });
 });
 
 describe("verified access token to principal mapping", () => {

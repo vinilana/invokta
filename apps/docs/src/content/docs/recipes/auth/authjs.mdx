@@ -149,6 +149,31 @@ covers only what is specific to Auth.js.
    capability denial is 403, and only infrastructure failure is a sanitized
    500.
 
+   <Aside type="caution" title="The default JWT strategy does not expose the user id">
+     With Auth.js v5's default JWT session strategy, `session.user` carries
+     only `name`, `email`, and `image` — `session.user.id` stays unset, so
+     `sessionToPrincipal` fails closed and every signed-in user receives 401
+     from this route. Add the documented
+     [session-extension callbacks](https://authjs.dev/guides/extending-the-session)
+     to your Auth.js config so the user id reaches the session:
+
+     ```ts
+     // auth.ts
+     export const { auth, handlers } = NextAuth({
+       // ...providers...
+       callbacks: {
+         session({ session, token }) {
+           session.user.id = token.sub ?? "";
+           return session;
+         },
+       },
+     });
+     ```
+
+     Database-session deployments populate `session.user.id` already and need
+     no callback.
+   </Aside>
+
 </Steps>
 
 ## Issue a token for callers outside the process
@@ -158,12 +183,33 @@ covers only what is specific to Auth.js.
 1. Mint a short-lived token from the session
 
    ```ts
+   const defaultLifetimeSeconds = 300;
+   const maximumLifetimeSeconds = 900;
+
    export async function issueEngineAccessToken(
      session: AuthjsSession | null | undefined,
      options: EngineAccessTokenIssuerOptions,
    ): Promise<string | null> {
+     const lifetimeSeconds = options.lifetimeSeconds ?? defaultLifetimeSeconds;
+     if (
+       !Number.isInteger(lifetimeSeconds) ||
+       lifetimeSeconds < 1 ||
+       lifetimeSeconds > maximumLifetimeSeconds
+     ) {
+       throw new TypeError(
+         `lifetimeSeconds must be an integer between 1 and ${maximumLifetimeSeconds}.`,
+       );
+     }
+
      const principal = sessionToPrincipal(session);
      if (principal === null) return null;
+
+     const attributes = principal.attributes ?? {};
+     const claims: Record<string, unknown> = {
+       scope: [...(options.scopes ?? defaultScopes)].join(" "),
+     };
+     if (typeof attributes.email === "string") claims.email = attributes.email;
+     if (typeof attributes.name === "string") claims.name = attributes.name;
 
      const issuedAt = Math.floor(Date.now() / 1000);
      return new SignJWT(claims)
@@ -194,7 +240,6 @@ covers only what is specific to Auth.js.
    const invalidCredentialCodes: ReadonlySet<string> = new Set([
      "ERR_JOSE_ALG_NOT_ALLOWED",
      "ERR_JWK_INVALID",
-     "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
      "ERR_JWKS_NO_MATCHING_KEY",
      "ERR_JWS_INVALID",
      "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",

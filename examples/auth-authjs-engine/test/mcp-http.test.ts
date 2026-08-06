@@ -98,6 +98,16 @@ describe("MCP HTTP authentication hook", () => {
     ).resolves.toBeNull();
   });
 
+  it("accepts the authentication scheme case-insensitively", async () => {
+    // RFC 9110 makes the scheme token case-insensitive.
+    const token = await issueToken();
+    const authenticate = createAuthjsAuthenticate(verifier());
+
+    await expect(
+      authenticate(authenticationRequest(`bearer ${token}`)),
+    ).resolves.toMatchObject({ id: "user_2f1a" });
+  });
+
   it("returns a principal that carries no token material", async () => {
     const token = await issueToken();
     const authenticate = createAuthjsAuthenticate(verifier());

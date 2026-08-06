@@ -77,6 +77,13 @@ import { createWhoamiRouteHandler } from "./embedded.js";
 export const POST = createWhoamiRouteHandler({ resolveSession: auth });
 ```
 
+With Auth.js v5's default JWT session strategy, `session.user.id` stays unset
+until your Auth.js config adds the documented session-extension callback
+(`session.user.id = token.sub`); without it, `sessionToPrincipal` fails closed
+and every signed-in user receives 401. See the
+[recipe's aside](https://docs.invokta.dev/recipes/auth/authjs/) for the exact
+callback, and note that database-session deployments need no callback.
+
 ## Run the MCP HTTP surface
 
 The engine trusts one issuer, one audience, and one JWKS document, all owned by

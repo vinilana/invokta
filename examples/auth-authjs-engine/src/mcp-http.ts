@@ -23,7 +23,8 @@ import {
  * Auth.js session cookie. See src/identity/verifier.ts for why.
  */
 
-const bearerPattern = /^Bearer ([^\s]+)$/;
+// RFC 9110 makes the authentication scheme case-insensitive.
+const bearerPattern = /^Bearer ([^\s]+)$/iu;
 
 export function readBearerToken(
   headers: McpHttpAuthenticationRequest["headers"],

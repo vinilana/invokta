@@ -119,6 +119,35 @@ describe("app-issued engine access token verifier", () => {
     ).resolves.toBeNull();
   });
 
+  it("throws when the key set is ambiguous for the token", async () => {
+    // Two same-algorithm keys without kid headers: jose cannot pick a
+    // candidate, which is the app's key-publication problem, not proof
+    // against the credential — so it surfaces as unavailable, not null.
+    const { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } =
+      await import("jose");
+    const first = await generateKeyPair("ES256", { extractable: true });
+    const second = await generateKeyPair("ES256", { extractable: true });
+    const ambiguous = createLocalJWKSet({
+      keys: [
+        { ...(await exportJWK(first.publicKey)), alg: "ES256", use: "sig" },
+        { ...(await exportJWK(second.publicKey)), alg: "ES256", use: "sig" },
+      ],
+    });
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const token = await new SignJWT({ scope: "engine:invoke" })
+      .setProtectedHeader({ alg: "ES256", typ: "at+jwt" })
+      .setIssuer(testIssuer)
+      .setAudience(testAudience)
+      .setSubject("user_2f1a")
+      .setIssuedAt(nowSeconds)
+      .setExpirationTime(nowSeconds + 300)
+      .sign(first.privateKey);
+
+    await expect(
+      createVerifier({ resolveKey: ambiguous }).verify(token, signal()),
+    ).rejects.toBeInstanceOf(EngineAccessTokenVerificationError);
+  });
+
   it("throws a sanitized infrastructure error when key resolution fails", async () => {
     const token = await signTestToken(keys.signingKey);
     const resolveKey = vi.fn(() => {

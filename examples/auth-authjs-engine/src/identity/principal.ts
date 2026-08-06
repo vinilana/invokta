@@ -44,9 +44,14 @@ function nonEmptyString(value: unknown): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-/** A present expiry must parse and still be in the future. */
+/**
+ * The expiry must be present, parse, and still be in the future. Auth.js
+ * always sets `expires` on a real session, so requiring it costs nothing
+ * there — and a hand-built or partially deserialized session object without
+ * an expiry bound fails closed instead of becoming a permanent identity.
+ */
 function isUnexpired(expires: string | undefined): boolean {
-  if (expires === undefined) return true;
+  if (expires === undefined) return false;
   const expiresAt = Date.parse(expires);
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
 }
