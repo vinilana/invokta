@@ -79,7 +79,7 @@ async function startWithEngine(
   const engineHost = await startEngineHost({
     engine: options.engine,
     ...(options.enginePort === undefined ? {} : { port: options.enginePort }),
-    allowedOrigin,
+    allowedOrigins: [allowedOrigin],
     authenticate: principals.authenticate,
     onRecord: (record) => {
       trace.appendInvocation(record);

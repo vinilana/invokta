@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { ServeHandles } from "../src/serve.js";
 import { startServe } from "../src/serve.js";
+import { startOnAvailablePort } from "./available-port.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const uiRoot = fileURLToPath(new URL("./fixtures/ui", import.meta.url));
@@ -98,14 +99,15 @@ describe("startServe", () => {
   let token = "";
 
   beforeAll(async () => {
-    const port = await freePort();
-    const result = await startServe({
-      engine,
-      cwd: repositoryRoot,
-      composedCapabilitiesExport: false,
-      port,
-      uiRoot,
-    });
+    const result = await startOnAvailablePort((port) =>
+      startServe({
+        engine,
+        cwd: repositoryRoot,
+        composedCapabilitiesExport: false,
+        port,
+        uiRoot,
+      }),
+    );
     if (result.kind !== "started") throw new Error("serve was refused");
     handles = result.handles;
     base = `http://127.0.0.1:${String(handles.devtoolsAddress.port)}`;
@@ -120,7 +122,7 @@ describe("startServe", () => {
   });
 
   afterAll(async () => {
-    await handles.close();
+    await handles?.close();
   });
 
   function callTool(headers: Readonly<Record<string, string>> = {}) {
@@ -354,7 +356,6 @@ describe("startServe preflight", () => {
       engine: brokenEngine,
       cwd: repositoryRoot,
       composedCapabilitiesExport: false,
-      port: await freePort(),
       uiRoot,
     });
 

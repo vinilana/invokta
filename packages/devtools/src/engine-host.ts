@@ -21,8 +21,8 @@ export interface StartEngineHostOptions {
   readonly engine: LoadedEngine;
   /** Defaults to an ephemeral loopback port. */
   readonly port?: number;
-  /** The devtools interface origin, the only origin the host accepts. */
-  readonly allowedOrigin: string;
+  /** The devtools interface origins, the only origins the host accepts. */
+  readonly allowedOrigins: ReadonlyArray<string>;
   readonly authenticate: (
     request: McpHttpAuthenticationRequest,
   ) => Principal | null | Promise<Principal | null>;
@@ -67,6 +67,7 @@ function createObservingDelegate(
       options?: InvokeOptions,
     ): Promise<never> {
       sequence += 1;
+      const invocationSequence = sequence;
       const startedAt = new Date().toISOString();
       const startedAtMs = performance.now();
       const durationMs = (): number =>
@@ -74,7 +75,7 @@ function createObservingDelegate(
       try {
         const result = await engine.invoke(capabilityId, input, options);
         safeEmit({
-          sequence,
+          sequence: invocationSequence,
           capabilityId,
           startedAt,
           durationMs: durationMs(),
@@ -84,7 +85,7 @@ function createObservingDelegate(
       } catch (error) {
         const errorCode = readErrorCode(error);
         safeEmit({
-          sequence,
+          sequence: invocationSequence,
           capabilityId,
           startedAt,
           durationMs: durationMs(),
@@ -113,7 +114,7 @@ export async function startEngineHost(
   return serveMcpHttp(delegate, {
     host: "127.0.0.1",
     port: options.port ?? 0,
-    allowedOrigins: [options.allowedOrigin],
+    allowedOrigins: options.allowedOrigins,
     auth: { mode: "required", authenticate: options.authenticate },
   });
 }

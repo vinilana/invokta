@@ -21,6 +21,8 @@ interface TraceEntryView {
   readonly notice?: string;
 }
 
+const maximumVisibleEntries = 500;
+
 function timeOf(entry: TraceEntryView): string {
   const index = entry.at.indexOf("T");
   return index === -1 ? entry.at : entry.at.slice(index + 1).replace("Z", "");
@@ -78,11 +80,15 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
  * over the `/api/events` stream, newest first, including a replay of the
  * session buffer on connect.
  */
-export function renderTracePanel(container: HTMLElement): void {
+export function renderTracePanel(container: HTMLElement): () => void {
   const list = el("div", { class: "trace-list" }, []);
-  const status = el("p", { class: "hint" }, ["Connecting to /api/events…"]);
+  const status = el("p", { class: "hint", role: "status" }, [
+    "Connecting to /api/events…",
+  ]);
   container.append(el("h2", {}, ["Trace"]), status, list);
 
+  const visibleKeys: string[] = [];
+  const seen = new Set<string>();
   const source = new EventSource("/api/events");
   source.addEventListener("open", () => {
     status.textContent =
@@ -96,10 +102,21 @@ export function renderTracePanel(container: HTMLElement): void {
       const entry = JSON.parse(
         (event as MessageEvent<string>).data,
       ) as TraceEntryView;
+      const key = `${String(entry.id)}:${entry.at}:${entry.kind}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      visibleKeys.unshift(key);
       list.prepend(renderEntry(entry));
-      while (list.childElementCount > 500) list.lastElementChild?.remove();
+      while (list.childElementCount > maximumVisibleEntries) {
+        list.lastElementChild?.remove();
+        const removed = visibleKeys.pop();
+        if (removed !== undefined) seen.delete(removed);
+      }
     } catch {
       // A malformed frame is dropped; the stream continues.
     }
   });
+  return () => {
+    source.close();
+  };
 }

@@ -10,11 +10,19 @@ import { getActiveToken } from "./principals.js";
  * exactly what any MCP client would exchange with the engine.
  */
 export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
-  const editor = el("textarea", { rows: "10", class: "editor" }, [
-    pretty(exampleFromSchema(capability.inputSchema)),
-  ]);
-  const feedback = el("p", { class: "feedback" }, []);
-  const resultView = el("pre", { class: "result" }, []);
+  const editorId = `input-${capability.id.replaceAll(/[^A-Za-z0-9_-]/g, "-")}`;
+  const editor = el(
+    "textarea",
+    {
+      id: editorId,
+      rows: "10",
+      class: "editor",
+      spellcheck: "false",
+    },
+    [pretty(exampleFromSchema(capability.inputSchema))],
+  );
+  const feedback = el("p", { class: "feedback", role: "alert" }, []);
+  const resultView = el("pre", { class: "result", "aria-live": "polite" }, []);
   const rawRequest = el("pre", { class: "raw" }, []);
   const rawResponse = el("pre", { class: "raw" }, []);
   const rawSection = el("details", {}, [
@@ -29,12 +37,20 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   const reset = el("button", { type: "button" }, ["Reset example"]);
   reset.addEventListener("click", () => {
     editor.value = pretty(exampleFromSchema(capability.inputSchema));
+    feedback.textContent = "";
+    resultView.textContent = "";
+    resultView.classList.remove("error");
+    rawRequest.textContent = "";
+    rawResponse.textContent = "";
+    rawSection.hidden = true;
   });
 
   const invoke = el("button", { type: "button", class: "primary" }, ["Invoke"]);
   invoke.addEventListener("click", () => {
     feedback.textContent = "";
     resultView.textContent = "";
+    resultView.classList.remove("error");
+    rawSection.hidden = true;
     let args: unknown;
     try {
       args = JSON.parse(editor.value);
@@ -43,6 +59,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
       return;
     }
     invoke.disabled = true;
+    invoke.textContent = "Invoking…";
     void callTool(capability.id, args, getActiveToken())
       .then((exchange) => {
         rawSection.hidden = false;
@@ -51,6 +68,14 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
         if (exchange.status === 401) {
           feedback.textContent =
             "401 unauthorized — select a principal with a minted token.";
+          resultView.classList.add("error");
+          resultView.textContent = exchange.responseBody;
+          return;
+        }
+        if (exchange.status < 200 || exchange.status >= 300) {
+          feedback.textContent = `The MCP request failed with HTTP ${String(exchange.status)}.`;
+          resultView.classList.add("error");
+          resultView.textContent = exchange.responseBody;
           return;
         }
         const parsed = parseMcpResponse(
@@ -68,6 +93,8 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
           | undefined;
         const result = message?.result;
         if (result === undefined) {
+          feedback.textContent = "The MCP response could not be interpreted.";
+          resultView.classList.add("error");
           resultView.textContent = exchange.responseBody;
           return;
         }
@@ -95,11 +122,13 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
       })
       .finally(() => {
         invoke.disabled = false;
+        invoke.textContent = "Invoke";
       });
   });
 
   return el("div", { class: "invoke-panel" }, [
     el("h3", {}, ["Invoke"]),
+    el("label", { for: editorId }, ["JSON input"]),
     editor,
     el("div", { class: "invoke-actions" }, [invoke, reset]),
     feedback,

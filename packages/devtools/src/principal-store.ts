@@ -44,9 +44,15 @@ function readBearerToken(header: string | null): string | null {
 export function createPrincipalStore(): PrincipalStore {
   const records = new Map<string, { token: string; principal: Principal }>();
   const listeners = new Set<() => void>();
-  let nextKey = 0;
 
   const mintToken = (): string => randomBytes(24).toString("base64url");
+  const mintKey = (): string => {
+    let key: string;
+    do {
+      key = `p_${randomBytes(9).toString("base64url")}`;
+    } while (records.has(key));
+    return key;
+  };
 
   const notify = (): void => {
     for (const listener of listeners) {
@@ -60,8 +66,7 @@ export function createPrincipalStore(): PrincipalStore {
 
   const issue = (principal: Principal): DevPrincipal => {
     const snapshot = structuredClone(principal);
-    nextKey += 1;
-    const key = `p${String(nextKey)}`;
+    const key = mintKey();
     const token = mintToken();
     records.set(key, { token, principal: snapshot });
     notify();

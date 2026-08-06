@@ -91,7 +91,7 @@ async function main(): Promise<number> {
     ...(portArgument === undefined || portArgument === "0"
       ? {}
       : { port: Number(portArgument) }),
-    allowedOrigin,
+    allowedOrigins: [allowedOrigin],
     authenticate: (request) => {
       const header = request.headers.get("authorization");
       if (header === null) return null;

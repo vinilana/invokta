@@ -57,6 +57,12 @@ function buildEngine(events: EngineEvent[]) {
         output: fixtureSchema,
         access: "public",
         async run({ input }) {
+          const delayMs = input.delayMs;
+          if (typeof delayMs === "number" && delayMs > 0) {
+            await new Promise((resolvePromise) =>
+              setTimeout(resolvePromise, delayMs),
+            );
+          }
           return { echoed: input };
         },
       }),
@@ -88,7 +94,7 @@ describe("startEngineHost", () => {
 
     const host = await startEngineHost({
       engine,
-      allowedOrigin: devtoolsOrigin,
+      allowedOrigins: [devtoolsOrigin],
       authenticate: store.authenticate,
       onRecord: (record) => {
         records.push(record);
@@ -199,6 +205,23 @@ describe("startEngineHost", () => {
     expect(record.errorCode).toBe("INPUT_INVALID");
   });
 
+  it("keeps unique arrival sequences when concurrent calls finish out of order", async () => {
+    records.length = 0;
+
+    const first = callEcho(
+      { call: "first", delayMs: 40 },
+      { authorization: `Bearer ${token}` },
+    );
+    const second = callEcho(
+      { call: "second" },
+      { authorization: `Bearer ${token}` },
+    );
+    await Promise.all([first, second]);
+
+    expect(records[0]?.sequence).toBe((records[1]?.sequence ?? 0) + 1);
+    expect(new Set(records.map((record) => record.sequence)).size).toBe(2);
+  });
+
   it("matches the bearer scheme case-insensitively", async () => {
     const response = await callEcho(
       { message: "case" },
@@ -262,6 +285,15 @@ describe("createPrincipalStore", () => {
     expect(principals[0]?.token).toBeTruthy();
   });
 
+  it("does not reuse management keys across store instances", () => {
+    const firstKey = createPrincipalStore().list()[0]?.key;
+    const secondKey = createPrincipalStore().list()[0]?.key;
+
+    expect(firstKey).toBeTruthy();
+    expect(secondKey).toBeTruthy();
+    expect(secondKey).not.toBe(firstKey);
+  });
+
   it("issues distinct tokens and resolves them to snapshots", () => {
     const store = createPrincipalStore();
     const attributes: Record<string, unknown> = { role: "reviewer" };
@@ -288,7 +320,7 @@ describe("createPrincipalStore", () => {
     expect(rotated?.token).not.toBe(issued.token);
     expect(store.resolve(issued.token)).toBeNull();
     expect(store.resolve(rotated?.token as string)?.id).toBe("rotating");
-    expect(store.rotate("p999")).toBeNull();
+    expect(store.rotate("missing")).toBeNull();
   });
 
   it("removes principals by key", () => {

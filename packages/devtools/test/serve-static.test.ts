@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { createServer as createNetServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -13,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { ServeHandles } from "../src/serve.js";
 import { startServe } from "../src/serve.js";
+import { startOnAvailablePort } from "./available-port.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
@@ -30,19 +30,6 @@ const fixtureSchema = {
   Readonly<Record<string, unknown>>,
   Readonly<Record<string, unknown>>
 >;
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createNetServer();
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const port = (probe.address() as { port: number }).port;
-      probe.close(() => {
-        resolve(port);
-      });
-    });
-  });
-}
 
 describe("shipped interface bundle", () => {
   let handles: ServeHandles;
@@ -77,20 +64,22 @@ describe("shipped interface bundle", () => {
       },
     });
 
-    const result = await startServe({
-      engine,
-      cwd: repositoryRoot,
-      composedCapabilitiesExport: false,
-      port: await freePort(),
-      uiRoot: join(repositoryRoot, "packages/devtools/dist/ui"),
-    });
+    const result = await startOnAvailablePort((port) =>
+      startServe({
+        engine,
+        cwd: repositoryRoot,
+        composedCapabilitiesExport: false,
+        port,
+        uiRoot: join(repositoryRoot, "packages/devtools/dist/ui"),
+      }),
+    );
     if (result.kind !== "started") throw new Error("serve was refused");
     handles = result.handles;
     base = `http://127.0.0.1:${String(handles.devtoolsAddress.port)}`;
   });
 
   afterAll(async () => {
-    await handles.close();
+    await handles?.close();
   });
 
   it("builds every interface module into dist/ui", () => {

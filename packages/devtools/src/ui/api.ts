@@ -69,11 +69,12 @@ export const api = {
     return (await response.json()) as IssuedPrincipal;
   },
   removePrincipal: async (key: string): Promise<void> => {
-    await fetch("/api/principals", {
+    const response = await fetch("/api/principals", {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ key }),
     });
+    if (!response.ok) throw new Error("The principal could not be deleted.");
   },
 };
 

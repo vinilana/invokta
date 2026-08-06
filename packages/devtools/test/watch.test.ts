@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { createServer as createNetServer } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { ServeHandles } from "../src/serve.js";
 import { startServe } from "../src/serve.js";
+import { startOnAvailablePort } from "./available-port.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectRoot = join(
@@ -57,19 +57,6 @@ export const engine = createEngine({
 `;
 }
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createNetServer();
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const port = (probe.address() as { port: number }).port;
-      probe.close(() => {
-        resolve(port);
-      });
-    });
-  });
-}
-
 async function waitFor<Value>(
   probe: () => Promise<Value | undefined>,
   timeoutMs: number,
@@ -112,15 +99,17 @@ describe("serve --watch", () => {
       stdio: "pipe",
     });
 
-    const result = await startServe({
-      cwd: projectRoot,
-      port: await freePort(),
-      watch: {
-        moduleSpecifier: "out/engine.js",
-        exportName: "engine",
-        buildCommand: `${JSON.stringify(process.execPath)} build.mjs`,
-      },
-    });
+    const result = await startOnAvailablePort((port) =>
+      startServe({
+        cwd: projectRoot,
+        port,
+        watch: {
+          moduleSpecifier: "out/engine.js",
+          exportName: "engine",
+          buildCommand: `${JSON.stringify(process.execPath)} build.mjs`,
+        },
+      }),
+    );
     if (result.kind !== "started") {
       throw new Error(`watch serve did not start: ${result.kind}`);
     }
@@ -136,7 +125,7 @@ describe("serve --watch", () => {
   }, 30_000);
 
   afterAll(async () => {
-    await handles.close();
+    await handles?.close();
     rmSync(projectRoot, { recursive: true, force: true });
   });
 

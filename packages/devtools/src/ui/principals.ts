@@ -9,10 +9,28 @@ function readTokens(): Record<string, string> {
     const raw = sessionStorage.getItem(tokensStorageKey);
     if (raw === null) return {};
     const parsed = JSON.parse(raw) as unknown;
-    if (typeof parsed !== "object" || parsed === null) return {};
-    return parsed as Record<string, string>;
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
   } catch {
     return {};
+  }
+}
+
+function readActiveKey(): string | null {
+  try {
+    return sessionStorage.getItem(activeStorageKey);
+  } catch {
+    return null;
   }
 }
 
@@ -25,11 +43,16 @@ function writeTokens(tokens: Record<string, string>): void {
 }
 
 const tokens = readTokens();
-let activeKey: string | null = sessionStorage.getItem(activeStorageKey);
+let activeKey: string | null = readActiveKey();
 const changeListeners = new Set<() => void>();
 
 function storeToken(key: string, token: string): void {
   tokens[key] = token;
+  writeTokens(tokens);
+}
+
+function forgetToken(key: string): void {
+  delete tokens[key];
   writeTokens(tokens);
 }
 
@@ -41,7 +64,13 @@ export function setActivePrincipal(key: string | null): void {
   } catch {
     // Session storage is a convenience only.
   }
-  for (const listener of changeListeners) listener();
+  for (const listener of changeListeners) {
+    try {
+      listener();
+    } catch {
+      // One interface listener cannot prevent the remaining updates.
+    }
+  }
 }
 
 export function getActivePrincipalKey(): string | null {
@@ -63,18 +92,51 @@ export function onPrincipalChange(listener: () => void): void {
  * an explicit issuance, so the credential is returned exactly once.
  */
 export async function ensureActiveToken(): Promise<void> {
-  if (getActiveToken() !== null) return;
   const principals = await api.principals();
-  const first = principals[0];
-  if (first === undefined) return;
-  const issued = await api.rotatePrincipal(first.key);
+  const knownKeys = new Set(principals.map(({ key }) => key));
+  let tokensChanged = false;
+  for (const key of Object.keys(tokens)) {
+    if (knownKeys.has(key)) continue;
+    delete tokens[key];
+    tokensChanged = true;
+  }
+  if (tokensChanged) writeTokens(tokens);
+
+  const selected =
+    principals.find(({ key }) => key === activeKey) ?? principals[0];
+  if (selected === undefined) {
+    setActivePrincipal(null);
+    return;
+  }
+  if (tokens[selected.key] !== undefined) {
+    setActivePrincipal(selected.key);
+    return;
+  }
+
+  const issued = await api.rotatePrincipal(selected.key);
   storeToken(issued.key, issued.token);
   setActivePrincipal(issued.key);
 }
 
-export function renderPrincipalsPanel(container: HTMLElement): void {
+export function renderPrincipalsPanel(container: HTMLElement): () => void {
+  let active = true;
+
   const render = async (): Promise<void> => {
-    const principals = await api.principals();
+    let principals: readonly PrincipalInfo[];
+    try {
+      principals = await api.principals();
+    } catch {
+      if (!active) return;
+      clear(container);
+      container.append(
+        el("h2", {}, ["Development principals"]),
+        el("p", { class: "feedback", role: "alert" }, [
+          "Principals could not be loaded. Check that the dev server is still running.",
+        ]),
+      );
+      return;
+    }
+    if (!active) return;
     clear(container);
 
     const rows = principals.map((entry: PrincipalInfo) => {
@@ -84,23 +146,61 @@ export function renderPrincipalsPanel(container: HTMLElement): void {
         hasToken ? "Mint new token" : "Mint token",
       ]);
       mint.addEventListener("click", () => {
-        void api.rotatePrincipal(entry.key).then((issued) => {
-          storeToken(issued.key, issued.token);
-          setActivePrincipal(issued.key);
-          void render();
-        });
+        mint.disabled = true;
+        void api
+          .rotatePrincipal(entry.key)
+          .then((issued) => {
+            if (!active) return;
+            storeToken(issued.key, issued.token);
+            setActivePrincipal(issued.key);
+            void render();
+          })
+          .catch(() => {
+            if (!active) return;
+            mint.disabled = false;
+            mint.textContent = "Try again";
+          });
       });
-      const activate = el("button", { type: "button" }, ["Use"]);
+      const activate = el("button", { type: "button" }, [
+        hasToken ? "Use" : "Mint and use",
+      ]);
       activate.addEventListener("click", () => {
-        setActivePrincipal(entry.key);
-        void render();
+        if (hasToken) {
+          setActivePrincipal(entry.key);
+          void render();
+          return;
+        }
+        activate.disabled = true;
+        void api
+          .rotatePrincipal(entry.key)
+          .then((issued) => {
+            if (!active) return;
+            storeToken(issued.key, issued.token);
+            setActivePrincipal(issued.key);
+            void render();
+          })
+          .catch(() => {
+            if (!active) return;
+            activate.disabled = false;
+            activate.textContent = "Try again";
+          });
       });
       const remove = el("button", { type: "button" }, ["Delete"]);
       remove.addEventListener("click", () => {
-        void api.removePrincipal(entry.key).then(() => {
-          if (activeKey === entry.key) setActivePrincipal(null);
-          void render();
-        });
+        remove.disabled = true;
+        void api
+          .removePrincipal(entry.key)
+          .then(() => {
+            if (!active) return;
+            forgetToken(entry.key);
+            if (activeKey === entry.key) setActivePrincipal(null);
+            void render();
+          })
+          .catch(() => {
+            if (!active) return;
+            remove.disabled = false;
+            remove.textContent = "Try again";
+          });
       });
       return el("div", { class: `principal-row${isActive ? " active" : ""}` }, [
         el("div", { class: "principal-summary" }, [
@@ -118,17 +218,23 @@ export function renderPrincipalsPanel(container: HTMLElement): void {
       ]);
     });
 
+    const idInputId = "new-principal-id";
+    const attributesInputId = "new-principal-attributes";
     const idInput = el("input", {
+      id: idInputId,
       type: "text",
       placeholder: "principal id",
+      autocomplete: "off",
     });
     const attributesInput = el("textarea", {
+      id: attributesInputId,
       rows: "3",
       placeholder: '{"role":"reviewer"} (optional attributes JSON)',
     });
-    const feedback = el("p", { class: "feedback" }, []);
+    const feedback = el("p", { class: "feedback", role: "alert" }, []);
     const create = el("button", { type: "button" }, ["Create principal"]);
     create.addEventListener("click", () => {
+      feedback.textContent = "";
       const id = idInput.value.trim();
       if (id === "") {
         feedback.textContent = "A principal id is required.";
@@ -138,25 +244,38 @@ export function renderPrincipalsPanel(container: HTMLElement): void {
       const attributesText = attributesInput.value.trim();
       if (attributesText !== "") {
         try {
-          attributes = JSON.parse(attributesText) as Readonly<
-            Record<string, unknown>
-          >;
+          const parsed = JSON.parse(attributesText) as unknown;
+          if (
+            typeof parsed !== "object" ||
+            parsed === null ||
+            Array.isArray(parsed)
+          ) {
+            feedback.textContent = "The attributes must be a JSON object.";
+            return;
+          }
+          attributes = parsed as Readonly<Record<string, unknown>>;
         } catch {
           feedback.textContent = "The attributes must be a JSON object.";
           return;
         }
       }
+      create.disabled = true;
+      create.textContent = "Creating…";
       void api
         .createPrincipal({
           id,
           ...(attributes === undefined ? {} : { attributes }),
         })
         .then((issued) => {
+          if (!active) return;
           storeToken(issued.key, issued.token);
           setActivePrincipal(issued.key);
           void render();
         })
         .catch(() => {
+          if (!active) return;
+          create.disabled = false;
+          create.textContent = "Create principal";
           feedback.textContent = "The principal could not be created.";
         });
     });
@@ -170,7 +289,9 @@ export function renderPrincipalsPanel(container: HTMLElement): void {
       ...rows,
       el("div", { class: "principal-create" }, [
         el("h3", {}, ["New principal"]),
+        el("label", { for: idInputId }, ["Principal ID"]),
         idInput,
+        el("label", { for: attributesInputId }, ["Attributes (optional)"]),
         attributesInput,
         create,
         feedback,
@@ -178,5 +299,13 @@ export function renderPrincipalsPanel(container: HTMLElement): void {
     );
   };
 
+  clear(container);
+  container.append(
+    el("h2", {}, ["Development principals"]),
+    el("p", { class: "hint", role: "status" }, ["Loading principals…"]),
+  );
   void render();
+  return () => {
+    active = false;
+  };
 }
