@@ -739,16 +739,69 @@ function readTarHeaderSize(header: Buffer): number {
   return Number.isFinite(size) && size >= 0 ? size : Number.NaN;
 }
 
+function parsePaxSizeOverride(body: Buffer): number | undefined {
+  const text = body.toString("utf8");
+  let offset = 0;
+  while (offset < text.length) {
+    const space = text.indexOf(" ", offset);
+    if (space < 0) break;
+    const length = Number.parseInt(text.slice(offset, space), 10);
+    if (!Number.isFinite(length) || length <= 0) break;
+    if (offset + length > text.length) break;
+    const record = text.slice(offset, offset + length);
+    const separator = record.indexOf("=");
+    if (separator >= 0) {
+      const key = record.slice(space - offset + 1, separator);
+      const value = record.slice(separator + 1).replace(/\n$/u, "");
+      if (key === "size") {
+        const size = Number.parseInt(value, 10);
+        if (Number.isFinite(size) && size >= 0) return size;
+      }
+    }
+    offset += length;
+  }
+  return undefined;
+}
+
 /**
  * node-tar silently skips some unsupported typeflags before filter/onentry.
  * Scan raw ustar headers so SparseFile/symlink/device entries cannot bypass rejection.
+ * PAX `size` overrides are applied so the scanner stays aligned with node-tar.
  */
 async function assertArchiveHeadersSafe(archivePath: string): Promise<void> {
   const gunzip = createGunzip();
   const source = createReadStream(archivePath);
+  // Ignore late stream errors after we intentionally abort the scan.
+  gunzip.on("error", () => undefined);
+  source.on("error", () => undefined);
   const stream = source.pipe(gunzip);
   let buffer = Buffer.alloc(0);
   let pendingData = 0;
+  let pendingKind: "skip" | "pax-x" | "pax-g" | undefined;
+  let pendingBodySize = 0;
+  let pendingChunks: Buffer[] = [];
+  let nextFileSizeOverride: number | undefined;
+  let globalSizeOverride: number | undefined;
+
+  const finishPending = (): void => {
+    if (pendingKind === "pax-x" || pendingKind === "pax-g") {
+      const body = Buffer.concat(pendingChunks).subarray(0, pendingBodySize);
+      const override = parsePaxSizeOverride(body);
+      if (override !== undefined) {
+        if (pendingKind === "pax-g") globalSizeOverride = override;
+        else nextFileSizeOverride = override;
+      }
+    }
+    pendingKind = undefined;
+    pendingBodySize = 0;
+    pendingChunks = [];
+  };
+
+  const stopStreams = (): void => {
+    source.destroy();
+    gunzip.destroy();
+  };
+
   try {
     for await (const chunk of stream) {
       buffer = Buffer.concat([buffer, chunk as Buffer]);
@@ -756,8 +809,12 @@ async function assertArchiveHeadersSafe(archivePath: string): Promise<void> {
         if (pendingData > 0) {
           if (buffer.byteLength === 0) break;
           const take = Math.min(pendingData, buffer.byteLength);
+          if (pendingKind === "pax-x" || pendingKind === "pax-g") {
+            pendingChunks.push(buffer.subarray(0, take));
+          }
           buffer = buffer.subarray(take);
           pendingData -= take;
+          if (pendingData === 0) finishPending();
           continue;
         }
         if (buffer.byteLength < 512) break;
@@ -767,17 +824,44 @@ async function assertArchiveHeadersSafe(archivePath: string): Promise<void> {
         const typeflag = String.fromCharCode(header[156] ?? 0);
         if (!allowedTarTypeflags.has(typeflag)) failedExample();
         const headerPath = readTarHeaderPath(header).split(sep).join(posix.sep);
-        if (headerPath !== "" && isUnsafeArchivePath(headerPath)) {
+        if (
+          typeflag !== "x" &&
+          typeflag !== "g" &&
+          headerPath !== "" &&
+          isUnsafeArchivePath(headerPath)
+        ) {
           failedExample();
         }
-        const size = readTarHeaderSize(header);
-        if (!Number.isFinite(size)) failedExample();
-        pendingData = Math.ceil(size / 512) * 512;
+        const headerSize = readTarHeaderSize(header);
+        if (!Number.isFinite(headerSize)) failedExample();
+
+        if (typeflag === "x" || typeflag === "g") {
+          pendingKind = typeflag === "x" ? "pax-x" : "pax-g";
+          pendingBodySize = headerSize;
+          pendingChunks = [];
+          pendingData = Math.ceil(headerSize / 512) * 512;
+          if (pendingData === 0) finishPending();
+          continue;
+        }
+
+        const effectiveSize =
+          nextFileSizeOverride ?? globalSizeOverride ?? headerSize;
+        nextFileSizeOverride = undefined;
+        if (!Number.isFinite(effectiveSize) || effectiveSize < 0) {
+          failedExample();
+        }
+        pendingKind = "skip";
+        pendingData = Math.ceil(effectiveSize / 512) * 512;
+        if (pendingData === 0) finishPending();
       }
     }
+    if (pendingData > 0) failedExample();
   } catch (error) {
+    stopStreams();
     if (error instanceof CreatorError) throw error;
     failedExample();
+  } finally {
+    stopStreams();
   }
 }
 

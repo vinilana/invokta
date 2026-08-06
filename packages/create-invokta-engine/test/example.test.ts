@@ -33,19 +33,18 @@ afterEach(() => {
   }
 });
 
-function createUstarEntry(
+function createUstarHeader(
   name: string,
-  content: string | Buffer,
+  size: number,
   typeflag: string,
 ): Buffer {
-  const data = typeof content === "string" ? Buffer.from(content) : content;
   const header = Buffer.alloc(512, 0);
   const nameBytes = Buffer.from(name);
   nameBytes.copy(header, 0, 0, Math.min(nameBytes.byteLength, 100));
   header.write("0000644\0", 100);
   header.write("0000000\0", 108);
   header.write("0000000\0", 116);
-  header.write(`${data.byteLength.toString(8).padStart(11, "0")}\0`, 124);
+  header.write(`${size.toString(8).padStart(11, "0")}\0`, 124);
   header.write(
     `${Math.floor(Date.now() / 1000)
       .toString(8)
@@ -59,8 +58,31 @@ function createUstarEntry(
   let checksum = 0;
   for (let index = 0; index < 512; index += 1) checksum += header[index] ?? 0;
   header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148);
+  return header;
+}
+
+function createUstarEntry(
+  name: string,
+  content: string | Buffer,
+  typeflag: string,
+): Buffer {
+  const data = typeof content === "string" ? Buffer.from(content) : content;
+  const header = createUstarHeader(name, data.byteLength, typeflag);
   const padding = (512 - (data.byteLength % 512)) % 512;
   return Buffer.concat([header, data, Buffer.alloc(padding)]);
+}
+
+/** Build a PAX `size=` record with a correct length prefix. */
+function createPaxSizeRecord(size: number): Buffer {
+  const payload = `size=${size}\n`;
+  let lengthDigits = 1;
+  while (true) {
+    const length = lengthDigits + 1 + payload.length;
+    if (String(length).length === lengthDigits) {
+      return Buffer.from(`${length} ${payload}`);
+    }
+    lengthDigits += 1;
+  }
 }
 
 function buildRawTarGz(
@@ -440,6 +462,50 @@ describe("createExampleProject", () => {
         fetch: createFetch({ archive }),
       }),
     ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+  });
+
+  it("rejects SparseFile hidden by a PAX size override desync", async () => {
+    // PAX size=0 makes node-tar treat the next file as empty, while the ustar
+    // size claims enough bytes to swallow a following SparseFile header. A
+    // scanner that ignores PAX size never sees typeflag S and would accept.
+    const cwd = createWorkingDirectory();
+    const sparseEntry = createUstarEntry(
+      "repo-main/sparse.bin",
+      "0123456789abcdef",
+      "S",
+    );
+    const archive = gzipSync(
+      Buffer.concat([
+        createUstarEntry(
+          "repo-main/package.json",
+          '{"name":"template"}\n',
+          "0",
+        ),
+        createUstarEntry("PaxHeader/decoy", createPaxSizeRecord(0), "x"),
+        createUstarHeader("repo-main/decoy.bin", sparseEntry.byteLength, "0"),
+        sparseEntry,
+        Buffer.alloc(1024),
+      ]),
+    );
+    const info: ExampleRepoInfo = {
+      owner: "acme",
+      repository: "repo",
+      branch: "main",
+      filePath: "",
+      label: "acme/repo",
+    };
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: info,
+        fetch: createFetch({ archive }),
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+    expect(() =>
+      readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
+    ).toThrow();
   });
 
   it("rejects absolute archive entry paths", async () => {
