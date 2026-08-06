@@ -8,11 +8,11 @@
 | --- | --- |
 | `@invokta/core` | Capability contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
-| `@invokta/mcp` | MCP tools over stdio and stateless Streamable HTTP |
+| `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, and probing |
-| `@invokta/devtools` | Development-time engine dev server, web inspector, and doctor diagnostics |
+| `@invokta/devtools` | Development-time engine dev server, doctor diagnostics, and installed MCP inspection and homologation |
 | `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile |
 | `create-invokta-capability` | Creation of a standalone atomic capability package |
 | `create-invokta-capability-library` | Creation of a standalone capability-library package |
@@ -51,6 +51,8 @@ useful.
 | Cross-cutting hooks | 1: `onEvent` |
 | Auth or PDP implementations | 0 |
 | Containers or runtime plugin systems | 0 |
+| Concurrent attached devtools targets | 1 |
+| Concurrent attached devtools tool calls | 1, explicitly initiated |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,
@@ -73,6 +75,14 @@ language, relationship graph, PDP adapter, or session binding.
 **AE-LIMIT-05 — MCP.** Invokta does not provide MCP resources, prompts,
 sampling, elicitation, tasks, stateful sessions, resumption, or server-to-client
 requests.
+
+**AE-LIMIT-06 — Installed MCP inspection.** Devtools may initialize, list tools
+from, and manually call one explicitly configured stdio or Streamable HTTP MCP
+target. It does not discover or import installations, persist connections or
+credentials, connect multiple targets, invoke automatically, retry, evaluate,
+judge, certify, or gate a release. Workspace-only Doctor, principals, watch,
+core events, and `engine.invoke` trace claims do not apply to an attached
+external target.
 
 ## Evolution triggers
 
