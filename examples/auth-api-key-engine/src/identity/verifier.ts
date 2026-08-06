@@ -61,7 +61,10 @@ export interface ApiKeyVerifierOptions {
   readonly lookupTimeoutMs?: number;
 }
 
-const recordSchema = z.object({
+// strictObject fails closed on unknown fields: an entry pasted with a
+// leftover plaintext "secret" or "key" property must be rejected at startup,
+// not silently stripped while the credential lingers in the env store.
+const recordSchema = z.strictObject({
   keyId: z.string().regex(KEY_ID_PATTERN),
   secretHash: z.string().regex(DIGEST_PATTERN),
   serviceName: z.string().trim().min(1),

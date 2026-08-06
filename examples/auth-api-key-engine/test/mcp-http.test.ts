@@ -77,6 +77,11 @@ describe("bearer credential parsing", () => {
     expect(readBearerCredential(headerView(`Bearer ${apiKey}`))).toBe(apiKey);
   });
 
+  it("accepts the authentication scheme case-insensitively", () => {
+    // RFC 9110 makes the scheme token case-insensitive.
+    expect(readBearerCredential(headerView(`bearer ${apiKey}`))).toBe(apiKey);
+  });
+
   it.each([
     ["a missing header", null],
     ["another scheme", `Basic ${apiKey}`],

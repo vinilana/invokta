@@ -16,7 +16,8 @@ import {
   createApiKeyVerifier,
 } from "./identity/verifier.js";
 
-const BEARER_PATTERN = /^Bearer ([^\s]+)$/u;
+// RFC 9110 makes the authentication scheme case-insensitive.
+const BEARER_PATTERN = /^Bearer ([^\s]+)$/iu;
 
 export interface ApiKeyMcpHttpOptions {
   readonly verifier: ApiKeyVerifier;

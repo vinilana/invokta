@@ -195,6 +195,18 @@ describe("api key registry configuration", () => {
       ]),
     ],
     [
+      "an entry carrying an unrecognized field",
+      JSON.stringify([
+        {
+          keyId: "svc_reports_2026a",
+          secretHash: hashApiKeySecret(secret),
+          serviceName: "reports-worker",
+          scopes: ["identity:read"],
+          secret,
+        },
+      ]),
+    ],
+    [
       "a duplicate key id",
       JSON.stringify([
         {
