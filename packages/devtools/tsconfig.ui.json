@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "types": [],
+    "rootDir": "src/ui",
+    "outDir": "dist/ui",
+    "tsBuildInfoFile": "tsconfig.ui.tsbuildinfo"
+  },
+  "include": ["src/ui/**/*.ts"]
+}

@@ -43,8 +43,8 @@ const publicPackages = [
   {
     directory: "devtools",
     name: "@invokta/devtools",
-    // The dev-only package also ships the `invokta-devtools` executable.
-    requiredFiles: [...distEntryFiles, "dist/cli.js"],
+    // The dev-only package ships the executable and the interface bundle.
+    requiredFiles: [...distEntryFiles, "dist/cli.js", "dist/ui/app.js"],
   },
   {
     directory: "installer",

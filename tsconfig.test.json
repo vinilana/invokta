@@ -9,5 +9,6 @@
     "packages/*/test/**/*.ts",
     "examples/*/src/**/*.ts",
     "examples/*/test/**/*.ts"
-  ]
+  ],
+  "exclude": ["packages/devtools/src/ui"]
 }

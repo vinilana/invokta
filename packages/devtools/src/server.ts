@@ -45,12 +45,16 @@ const host = "127.0.0.1";
 const apiBodyLimitBytes = 64 * 1024;
 const mcpBodyLimitBytes = 1024 * 1024;
 
-const placeholderPage = `<!doctype html>
+const appShellPage = `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Invokta devtools</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invokta devtools</title>
+</head>
 <body>
-<h1>Invokta devtools</h1>
-<p>The interface bundle is missing from this installation.</p>
+<noscript>The Invokta devtools interface requires JavaScript.</noscript>
+<script type="module" src="/assets/app.js"></script>
 </body>
 </html>
 `;
@@ -236,7 +240,7 @@ export async function startDevtoolsServer(
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
     });
-    response.end(placeholderPage);
+    response.end(appShellPage);
   };
 
   const handlePrincipals = async (
