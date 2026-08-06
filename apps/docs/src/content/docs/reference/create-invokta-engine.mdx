@@ -1,12 +1,13 @@
 ---
 title: 'create-invokta-engine'
-description: Interactive profiles, automation, generated-project, filesystem, package-manager, and diagnostic contracts for the Invokta engine creator.
+description: Interactive profiles, GitHub example import, automation, filesystem, package-manager, and diagnostic contracts for the Invokta engine creator.
 ---
 
 `create-invokta-engine` creates one standalone TypeScript Action Engine with a
 public capability shared by direct invocation and the adapters selected by a
-closed scaffold profile. It is a binary-only development package, not a runtime
-adapter or template framework.
+closed scaffold profile, or imports a public GitHub example tree as the project
+template. It is a binary-only development package, not a runtime adapter or
+template framework.
 
 ## Install
 
@@ -25,6 +26,8 @@ executable.
 ```text
 create-invokta-engine [project-directory]
   [--profile complete|mcp-stdio|mcp-http|cli]
+  [--example <name|github-url>]
+  [--example-path <subdir>]
   [--package-manager npm|pnpm|yarn]
   [--no-install]
   [--yes]
@@ -34,8 +37,9 @@ create-invokta-engine --version
 
 Options may appear before or after the one project directory; each option value
 must immediately follow its option. Duplicates, missing values, unknown options
-or profiles, `--option=value`, extra positionals, or combining help or version
-with another argument are invalid. `--yes` requires an explicit target.
+or profiles, `--option=value`, extra positionals, combining `--example` with
+`--profile`, using `--example-path` without `--example`, or combining help or
+version with another argument are invalid. `--yes` requires an explicit target.
 
 ## Interaction modes
 
@@ -43,10 +47,12 @@ Without `--yes`, the creator is interactive only when standard input and
 standard error are both TTYs. It asks, in order, for any missing project
 directory and profile, preflights and plans the full scaffold, then requests one
 final confirmation naming the normalized relative target, profile, package
-manager, and installation choice. Nothing is written and no child starts before
-an affirmative answer. Unicode control, format, line-separator, and
-paragraph-separator characters in an accepted parent path are escaped in the
-confirmation instead of being emitted as terminal-active text.
+manager, and installation choice. When `--example` is present it skips the
+profile prompt and confirms the example label instead. Nothing is written and no
+child starts before an affirmative answer. Unicode control, format,
+line-separator, and paragraph-separator characters in an accepted parent path
+are escaped in the confirmation instead of being emitted as terminal-active
+text.
 
 The profile choices are:
 
@@ -140,6 +146,34 @@ Generated authentication fails closed until implemented. HTTP profiles ignore
 `develop-invokta-project` skill adds project-specific RED/GREEN/REFACTOR and
 single-`engine.invoke` guidance without runtime discovery or behavior.
 
+## GitHub example import
+
+`--example` bootstraps from a public GitHub repository instead of a closed
+profile scaffold, similar to `create-next-app --example`:
+
+```sh
+create-invokta-engine my-engine --example auth-clerk-engine --no-install --yes
+create-invokta-engine my-engine \
+  --example https://github.com/acme/engine-template \
+  --no-install --yes
+create-invokta-engine my-engine \
+  --example https://github.com/acme/repo/tree/main/templates/engine \
+  --no-install --yes
+```
+
+Official short names resolve to `vinilana/invokta` `examples/<name>` on `main`.
+HTTPS `github.com` repository and tree URLs resolve owner, repository, ref, and
+optional subdirectory. `--example-path` supplies or overrides the subdirectory
+when the URL cannot encode it cleanly.
+
+Before confirmation the creator verifies that `package.json` exists at the
+example root. After confirmation it downloads only from `codeload.github.com`,
+extracts the selected subtree, rewrites `package.json` `name` to the project
+directory name, and copies regular files through the same exclusive-create and
+rollback boundary. Archive symbolic links, hard links, and path escapes are
+rejected. Private repositories, SSH, tokens, and non-GitHub hosts are out of
+scope. Dependency completeness belongs to the template author.
+
 ## Target and transaction contract
 
 The project directory is relative to the current working directory. Absolute
@@ -178,9 +212,10 @@ pnpm, or Yarn from `npm_config_user_agent` and falls back to npm.
 Exactly one foreground install starts directly without a shell, retry, or
 creator-owned timeout, and only after every selected entry exists. An
 unavailable manager, non-zero exit, or signal is `INSTALL_FAILED`; the generated
-profile remains for retry. `--no-install`, prompt failure, and cancellation
-start no process or network operation. The creator itself never makes a network
-request.
+project remains for retry. `--no-install` starts no package manager. Profile
+creation without `--example` still performs no creator-owned network request.
+Example import may contact `api.github.com` and `codeload.github.com` only, even
+when `--no-install` is set.
 
 ## Output and errors
 
@@ -206,3 +241,6 @@ credentials, child errors, stacks, or causes.
 | `SCAFFOLD_CONFLICT` | A planned entry appeared during creation |
 | `WRITE_FAILED` | A scaffold write or rollback failed |
 | `INSTALL_FAILED` | The selected package manager was unavailable or unsuccessful |
+| `EXAMPLE_INVALID` | The example name, URL, or path was invalid |
+| `EXAMPLE_UNAVAILABLE` | The example could not be resolved or downloaded |
+| `EXAMPLE_FAILED` | Example extraction or target copy failed |

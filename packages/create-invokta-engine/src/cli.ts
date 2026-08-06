@@ -1,4 +1,9 @@
 import { CreatorError, renderCreatorDiagnostic } from "./errors.js";
+import {
+  createExampleProject,
+  type ExampleFetch,
+  resolveExampleReference,
+} from "./example.js";
 import { installProjectDependencies, selectPackageManager } from "./install.js";
 import {
   isPackageManager,
@@ -7,6 +12,7 @@ import {
 } from "./package-manager.js";
 import { createBoundedPromptInput, promptInputLimits } from "./prompt.js";
 import {
+  assertCreatableStarterTarget,
   planStarterProject,
   validateStarterTargetSyntax,
   writeStarterProject,
@@ -19,6 +25,8 @@ import {
 const helpText = `Usage:
   create-invokta-engine [project-directory]
     [--profile complete|mcp-stdio|mcp-http|cli]
+    [--example <name|github-url>]
+    [--example-path <subdir>]
     [--package-manager npm|pnpm|yarn]
     [--no-install]
     [--yes]
@@ -101,11 +109,14 @@ export interface RunCreateEngineCliOptions {
   readonly terminal?: CreateEngineTerminal;
   readonly install?: InstallProject;
   readonly loadPackageVersion?: () => Promise<string>;
+  readonly fetch?: ExampleFetch;
 }
 
 interface CreateArguments {
   readonly target?: string;
   readonly profile?: EngineStarterProfile;
+  readonly example?: string;
+  readonly examplePath?: string;
   readonly packageManager?: PackageManager;
   readonly noInstall: boolean;
   readonly yes: boolean;
@@ -117,6 +128,10 @@ function parseCreateArguments(
   let target: string | undefined;
   let profile: EngineStarterProfile | undefined;
   let profileSeen = false;
+  let example: string | undefined;
+  let exampleSeen = false;
+  let examplePath: string | undefined;
+  let examplePathSeen = false;
   let packageManager: PackageManager | undefined;
   let packageManagerSeen = false;
   let noInstall = false;
@@ -145,6 +160,28 @@ function parseCreateArguments(
       index += 1;
       continue;
     }
+    if (argument === "--example") {
+      if (exampleSeen) return undefined;
+      exampleSeen = true;
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("-") || value === "") {
+        return undefined;
+      }
+      example = value;
+      index += 1;
+      continue;
+    }
+    if (argument === "--example-path") {
+      if (examplePathSeen) return undefined;
+      examplePathSeen = true;
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("-") || value === "") {
+        return undefined;
+      }
+      examplePath = value;
+      index += 1;
+      continue;
+    }
     if (argument === "--package-manager") {
       if (packageManagerSeen) return undefined;
       packageManagerSeen = true;
@@ -165,9 +202,13 @@ function parseCreateArguments(
   }
 
   if (yes && target === undefined) return undefined;
+  if (examplePath !== undefined && example === undefined) return undefined;
+  if (example !== undefined && profile !== undefined) return undefined;
   return {
     ...(target === undefined ? {} : { target }),
     ...(profile === undefined ? {} : { profile }),
+    ...(example === undefined ? {} : { example }),
+    ...(examplePath === undefined ? {} : { examplePath }),
     ...(packageManager === undefined ? {} : { packageManager }),
     noInstall,
     yes,
@@ -206,12 +247,12 @@ async function writeDiagnostic(
 
 function renderSuccess(
   projectName: string,
-  profile: EngineStarterProfile,
+  sourceLabel: string,
   packageManager: PackageManager,
   noInstall: boolean,
 ): string {
   const commands = packageManagerCommands[packageManager];
-  const firstLine = `Created ${projectName} with the ${profileLabels[profile]} scaffold.`;
+  const firstLine = `Created ${projectName} ${sourceLabel}.`;
   if (noInstall) {
     return (
       `${firstLine}\n\n` +
@@ -312,7 +353,7 @@ function quoteTerminalValue(value: string): string {
   );
 }
 
-function renderConfirmation(
+function renderProfileConfirmation(
   profile: EngineStarterProfile,
   normalizedTarget: string,
   packageManager: PackageManager,
@@ -322,6 +363,18 @@ function renderConfirmation(
     ? "without installing dependencies"
     : `and install dependencies with ${packageManager}`;
   return `Create the ${profileLabels[profile]} scaffold in ${quoteTerminalValue(normalizedTarget)} ${installation}? (y/N) `;
+}
+
+function renderExampleConfirmation(
+  exampleLabel: string,
+  normalizedTarget: string,
+  packageManager: PackageManager,
+  noInstall: boolean,
+): string {
+  const installation = noInstall
+    ? "without installing dependencies"
+    : `and install dependencies with ${packageManager}`;
+  return `Create from GitHub example ${quoteTerminalValue(exampleLabel)} in ${quoteTerminalValue(normalizedTarget)} ${installation}? (y/N) `;
 }
 
 async function promptForConfirmation(
@@ -382,14 +435,66 @@ export async function runCreateEngineCli(
   const cwd = options.cwd ?? process.cwd();
   try {
     const target = parsed.target ?? (await promptForTarget(cwd, io, terminal));
-    const profile =
-      parsed.profile ??
-      (interactive ? await promptForProfile(io, terminal) : "complete");
     const environment = options.env ?? process.env;
     const packageManager = selectPackageManager(
       parsed.packageManager,
       environment.npm_config_user_agent,
     );
+
+    if (parsed.example !== undefined) {
+      const exampleInfo = await resolveExampleReference(
+        parsed.example,
+        parsed.examplePath,
+        options.fetch,
+      );
+      const targetMeta = await assertCreatableStarterTarget(cwd, target);
+
+      if (interactive) {
+        const confirmed = await promptForConfirmation(
+          io,
+          terminal,
+          renderExampleConfirmation(
+            exampleInfo.label,
+            targetMeta.normalizedTarget,
+            packageManager,
+            parsed.noInstall,
+          ),
+        );
+        if (!confirmed) {
+          await io.writeStdout(cancellationText);
+          return 0;
+        }
+      }
+
+      const project = await createExampleProject({
+        cwd,
+        target,
+        example: parsed.example,
+        ...(parsed.examplePath === undefined
+          ? {}
+          : { examplePath: parsed.examplePath }),
+        ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+      });
+      if (!parsed.noInstall) {
+        await (options.install ?? installProjectDependencies)({
+          directory: project.directory,
+          packageManager,
+        });
+      }
+      await io.writeStdout(
+        renderSuccess(
+          project.projectName,
+          `from example ${project.label}`,
+          packageManager,
+          parsed.noInstall,
+        ),
+      );
+      return 0;
+    }
+
+    const profile =
+      parsed.profile ??
+      (interactive ? await promptForProfile(io, terminal) : "complete");
     const invoktaVersion = await (
       options.loadPackageVersion ?? loadDefaultPackageVersion
     )();
@@ -405,7 +510,7 @@ export async function runCreateEngineCli(
       const confirmed = await promptForConfirmation(
         io,
         terminal,
-        renderConfirmation(
+        renderProfileConfirmation(
           profile,
           plan.normalizedTarget,
           packageManager,
@@ -428,7 +533,7 @@ export async function runCreateEngineCli(
     await io.writeStdout(
       renderSuccess(
         project.projectName,
-        profile,
+        `with the ${profileLabels[profile]} scaffold`,
         packageManager,
         parsed.noInstall,
       ),

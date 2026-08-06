@@ -1,11 +1,9 @@
 import { readFileSync } from "node:fs";
-
-import { describe, expect, it } from "vitest";
-
 import {
   createMcpHttpScaffoldFiles,
   starterDeployManifest,
 } from "@invokta/deploy/scaffold";
+import { describe, expect, it } from "vitest";
 
 import {
   createStarterFiles,
@@ -118,7 +116,10 @@ describe("createStarterFiles", () => {
     expect(source).toContain('from "@invokta/deploy/scaffold"');
     expect(source).not.toContain("packages/deploy/src");
     expect(source).not.toContain("../deploy/");
-    expect(manifest.dependencies).toEqual({ "@invokta/deploy": "0.3.0" });
+    expect(manifest.dependencies).toEqual({
+      "@invokta/deploy": "0.3.0",
+      tar: "7.5.22",
+    });
   });
 
   it.each([

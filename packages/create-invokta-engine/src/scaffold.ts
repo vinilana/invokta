@@ -181,6 +181,27 @@ export function validateStarterTargetSyntax(
   });
 }
 
+/** Validates syntax and the no-follow empty-target boundary without planning files. */
+export async function assertCreatableStarterTarget(
+  cwd: string,
+  target: string,
+  fileSystem: ScaffoldFileSystem = defaultScaffoldFileSystem,
+): Promise<
+  Readonly<{
+    directory: string;
+    projectName: string;
+    normalizedTarget: string;
+  }>
+> {
+  const resolved = resolveTarget(cwd, target);
+  await inspectTarget(cwd, resolved, fileSystem);
+  return Object.freeze({
+    directory: resolved.directory,
+    projectName: resolved.projectName,
+    normalizedTarget: resolved.normalizedTarget,
+  });
+}
+
 async function readStatus(
   fileSystem: ScaffoldFileSystem,
   path: string,

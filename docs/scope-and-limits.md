@@ -12,7 +12,7 @@
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, and probing |
-| `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile |
+| `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile, or import of one public GitHub example tree |
 | `create-invokta-capability` | Creation of a standalone atomic capability package |
 | `create-invokta-capability-library` | Creation of a standalone capability-library package |
 

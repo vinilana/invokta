@@ -9,6 +9,9 @@ export const creatorErrorMessages = Object.freeze({
   SCAFFOLD_CONFLICT: "A scaffold file appeared during creation.",
   WRITE_FAILED: "The project scaffold could not be written.",
   INSTALL_FAILED: "The project dependencies could not be installed.",
+  EXAMPLE_INVALID: "The example reference is invalid.",
+  EXAMPLE_UNAVAILABLE: "The example could not be resolved or downloaded.",
+  EXAMPLE_FAILED: "The example project could not be created.",
 } as const);
 
 export type CreatorErrorCode = keyof typeof creatorErrorMessages;
@@ -24,6 +27,9 @@ const creatorErrorExitCodes = Object.freeze({
   SCAFFOLD_CONFLICT: 1,
   WRITE_FAILED: 1,
   INSTALL_FAILED: 1,
+  EXAMPLE_INVALID: 2,
+  EXAMPLE_UNAVAILABLE: 1,
+  EXAMPLE_FAILED: 1,
 } as const) satisfies Readonly<Record<CreatorErrorCode, CreatorExitCode>>;
 
 /** A sanitized creator failure. It intentionally stores no cause or raw input. */
