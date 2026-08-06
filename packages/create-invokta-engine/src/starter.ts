@@ -165,6 +165,17 @@ ${commands.check}
 \`\`\`sh
 ${commands.direct}
 \`\`\`
+
+## Develop interactively
+
+\`\`\`sh
+${runScript("dev")}
+\`\`\`
+
+Builds the engine and opens the Invokta devtools on http://127.0.0.1:4100/:
+browse capabilities, invoke them from schema-seeded JSON, follow the live
+invocation trace, switch development principals, and read the doctor report.
+Source changes rebuild and restart the hosted engine automatically.
 ${cliSection}${stdioSection}${httpSection}`;
 }
 
@@ -290,6 +301,7 @@ function renderPackageManifest(
     check:
       "tsc -p tsconfig.json --pretty false --noEmit && tsc -p tsconfig.test.json --pretty false --noEmit && vitest run && tsc -p tsconfig.json --pretty false",
     direct: "node dist/direct.js",
+    dev: 'tsc -p tsconfig.json --pretty false && invokta-devtools serve dist/engine.js --watch --build "tsc -p tsconfig.json --pretty false"',
     ...(features.cli ? { cli: "node dist/cli.js" } : {}),
     ...(features.mcpStdio
       ? {
@@ -318,6 +330,7 @@ function renderPackageManifest(
   };
   const devDependencies = {
     ...(features.mcpHttp ? { "@invokta/deploy": invoktaVersion } : {}),
+    "@invokta/devtools": invoktaVersion,
     "@types/node": "26.1.2",
     typescript: "7.0.2",
     vitest: "4.1.10",

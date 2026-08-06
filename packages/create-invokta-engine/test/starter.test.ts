@@ -131,13 +131,20 @@ describe("createStarterFiles", () => {
         "@invokta/mcp",
         "zod",
       ],
-      ["@invokta/deploy", "@types/node", "typescript", "vitest"],
+      [
+        "@invokta/deploy",
+        "@invokta/devtools",
+        "@types/node",
+        "typescript",
+        "vitest",
+      ],
       [
         "build",
         "check",
         "cli",
         "deploy:package",
         "deploy:probe",
+        "dev",
         "direct",
         "mcp:http",
         "mcp:install",
@@ -150,10 +157,11 @@ describe("createStarterFiles", () => {
     [
       "mcp-stdio",
       ["@invokta/core", "@invokta/installer", "@invokta/mcp", "zod"],
-      ["@types/node", "typescript", "vitest"],
+      ["@invokta/devtools", "@types/node", "typescript", "vitest"],
       [
         "build",
         "check",
+        "dev",
         "direct",
         "mcp:install",
         "mcp:stdio",
@@ -165,12 +173,19 @@ describe("createStarterFiles", () => {
     [
       "mcp-http",
       ["@invokta/core", "@invokta/mcp", "zod"],
-      ["@invokta/deploy", "@types/node", "typescript", "vitest"],
+      [
+        "@invokta/deploy",
+        "@invokta/devtools",
+        "@types/node",
+        "typescript",
+        "vitest",
+      ],
       [
         "build",
         "check",
         "deploy:package",
         "deploy:probe",
+        "dev",
         "direct",
         "mcp:http",
         "test",
@@ -180,8 +195,8 @@ describe("createStarterFiles", () => {
     [
       "cli",
       ["@invokta/cli", "@invokta/core", "zod"],
-      ["@types/node", "typescript", "vitest"],
-      ["build", "check", "cli", "direct", "test", "typecheck"],
+      ["@invokta/devtools", "@types/node", "typescript", "vitest"],
+      ["build", "check", "cli", "dev", "direct", "test", "typecheck"],
     ],
   ] as const)(
     "renders only the dependencies and scripts required by %s",

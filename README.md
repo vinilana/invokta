@@ -165,6 +165,9 @@ Invokta supplies the shared runtime mechanics and delivery adapters:
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure
   stateless HTTP while keeping the official MCP SDK behind the adapter boundary;
 - `@invokta/tooling` validates composed capabilities during development;
+- `@invokta/devtools` serves a built engine through the MCP HTTP adapter with
+  a local web inspector — invocation playground, live trace, doctor
+  diagnostics, and principal switching — plus watch by process replacement;
 - `@invokta/installer` detects supported local MCP clients, installs local or
   remote Action Engines across selected clients, and manages those entries;
 - `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes
@@ -191,6 +194,8 @@ Create a standalone engine:
 npm create invokta-engine@latest my-engine
 cd my-engine
 npm run check
+npm run dev
+# Opens the devtools inspector on http://127.0.0.1:4100/ with watch mode.
 npm run mcp:install
 # Later, remove the engine from every managed MCP client:
 npm run mcp:uninstall

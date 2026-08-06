@@ -24,14 +24,13 @@ Proposed specifications are non-normative until their required architecture
 decision is accepted and the implementation evidence is complete.
 
 - [Engine-scoped MCP uninstall](./specs/engine-scoped-mcp-uninstall.md)
-- [Engine devtools dev server](./specs/engine-devtools-dev-server.md),
-  accepted by [ADR 0020](./adr/0020-engine-devtools-dev-server.md) with
-  implementation evidence in progress
 
 ## Delivered specifications
 
 - [Interactive engine creator profiles](./specs/interactive-engine-creator-profiles.md),
   accepted by [ADR 0018](./adr/0018-interactive-engine-creator-profiles.md)
+- [Engine devtools dev server](./specs/engine-devtools-dev-server.md),
+  accepted by [ADR 0020](./adr/0020-engine-devtools-dev-server.md)
 
 ## Guides and examples
 

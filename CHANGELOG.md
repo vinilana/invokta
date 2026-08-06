@@ -9,6 +9,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added `@invokta/devtools`, the tenth package (ADR 0020): a development-time
+  dev server and doctor for one built engine. `invokta-devtools doctor` runs
+  read-only checks with deterministic stderr diagnostics, and
+  `invokta-devtools serve` hosts the engine through the unmodified MCP HTTP
+  adapter behind minted development bearer tokens while serving a loopback
+  web interface with a capability browser, schema-seeded invocation editor,
+  raw MCP exchange view, live trace, and principal switcher. `--watch --build`
+  replaces the engine-host child process after each successful explicit
+  build; modules are never reloaded in process. The contract is recorded in
+  `docs/specs/engine-devtools-dev-server.md`.
+- Generated engine starters now include `@invokta/devtools` as a development
+  dependency and a `dev` script that builds the project and serves it with
+  the devtools in watch mode.
+
 - Added ten authentication examples under `examples/auth-*` — a
   provider-neutral JWT bearer engine plus Supabase, Clerk, Auth0, AWS Cognito,
   Firebase Auth, Better Auth, Auth.js, WorkOS AuthKit, and hashed API-key
