@@ -72,6 +72,22 @@ function createUstarEntry(
   return Buffer.concat([header, data, Buffer.alloc(padding)]);
 }
 
+function createUstarLinkEntry(
+  name: string,
+  linkpath: string,
+  typeflag: "1" | "2",
+): Buffer {
+  const header = createUstarHeader(name, 0, typeflag);
+  const linkBytes = Buffer.from(linkpath);
+  linkBytes.copy(header, 157, 0, Math.min(linkBytes.byteLength, 100));
+  // Recalculate checksum after writing linkpath.
+  header.write("        ", 148);
+  let checksum = 0;
+  for (let index = 0; index < 512; index += 1) checksum += header[index] ?? 0;
+  header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148);
+  return header;
+}
+
 /** Build a PAX `size=` record with a correct length prefix. */
 function createPaxSizeRecord(size: number): Buffer {
   const payload = `size=${size}\n`;
@@ -109,12 +125,24 @@ function buildSparseSmugglingArchive(options: {
 
 function buildRawTarGz(
   entries: ReadonlyArray<
-    Readonly<{ name: string; content?: string | Buffer; typeflag: string }>
+    Readonly<{
+      name: string;
+      content?: string | Buffer;
+      typeflag: string;
+      linkpath?: string;
+    }>
   >,
 ): Buffer {
-  const parts = entries.map((entry) =>
-    createUstarEntry(entry.name, entry.content ?? "", entry.typeflag),
-  );
+  const parts = entries.map((entry) => {
+    if (entry.typeflag === "1" || entry.typeflag === "2") {
+      return createUstarLinkEntry(
+        entry.name,
+        entry.linkpath ?? "",
+        entry.typeflag,
+      );
+    }
+    return createUstarEntry(entry.name, entry.content ?? "", entry.typeflag);
+  });
   parts.push(Buffer.alloc(1024));
   return gzipSync(Buffer.concat(parts));
 }
@@ -387,17 +415,33 @@ describe("createExampleProject", () => {
 
   it("rejects symlink and hardlink archives without crashing", async () => {
     const cwd = createWorkingDirectory();
+    // Build links from raw ustar headers so pack/gzip of live links cannot
+    // race and emit uncaught Z_STREAM_ERROR after the assertion.
     for (const archive of [
-      await buildRepositoryArchive({
-        rootName: "repo-main",
-        files: { "package.json": '{"name":"template"}\n' },
-        symlinks: { "linked.txt": "package.json" },
-      }),
-      await buildRepositoryArchive({
-        rootName: "repo-main",
-        files: { "package.json": '{"name":"template"}\n' },
-        hardlinks: { "linked.txt": "package.json" },
-      }),
+      buildRawTarGz([
+        {
+          name: "repo-main/package.json",
+          content: '{"name":"template"}\n',
+          typeflag: "0",
+        },
+        {
+          name: "repo-main/linked.txt",
+          typeflag: "2",
+          linkpath: "package.json",
+        },
+      ]),
+      buildRawTarGz([
+        {
+          name: "repo-main/package.json",
+          content: '{"name":"template"}\n',
+          typeflag: "0",
+        },
+        {
+          name: "repo-main/linked.txt",
+          typeflag: "1",
+          linkpath: "package.json",
+        },
+      ]),
     ]) {
       const info: ExampleRepoInfo = {
         owner: "acme",
@@ -414,6 +458,9 @@ describe("createExampleProject", () => {
           fetch: createFetch({ archive }),
         }),
       ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+      expect(() =>
+        readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
+      ).toThrow();
     }
   });
 
@@ -620,36 +667,42 @@ describe("createExampleProject", () => {
     ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
   });
 
-  it("rejects absolute archive entry paths", async () => {
+  it("rejects absolute, parent, drive, and UNC archive entry paths", async () => {
     const cwd = createWorkingDirectory();
-    const archive = buildRawTarGz([
-      {
-        name: "/package.json",
-        content: '{"name":"template"}\n',
-        typeflag: "0",
-      },
-      {
-        name: "/src/engine.ts",
-        content: "export {}\n",
-        typeflag: "0",
-      },
-    ]);
-    const info: ExampleRepoInfo = {
-      owner: "acme",
-      repository: "repo",
-      branch: "main",
-      filePath: "",
-      label: "acme/repo",
-    };
-
-    await expect(
-      createExampleProject({
-        cwd,
-        target: "my-engine",
-        example: info,
-        fetch: createFetch({ archive }),
-      }),
-    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+    const unsafeNames = [
+      "/package.json",
+      "repo-main/../outside.txt",
+      "C:/windows/package.json",
+      "C:\\windows\\package.json",
+      "//server/share/package.json",
+      "\\\\server\\share\\package.json",
+    ];
+    for (const name of unsafeNames) {
+      const archive = buildRawTarGz([
+        {
+          name,
+          content: '{"name":"template"}\n',
+          typeflag: "0",
+        },
+      ]);
+      await expect(
+        createExampleProject({
+          cwd,
+          target: "my-engine",
+          example: {
+            owner: "acme",
+            repository: "repo",
+            branch: "main",
+            filePath: "",
+            label: "acme/repo",
+          },
+          fetch: createFetch({ archive }),
+        }),
+      ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+      expect(() =>
+        readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
+      ).toThrow();
+    }
   });
 
   it("rejects a directory named package.json", async () => {
@@ -820,10 +873,12 @@ describe("createExampleProject", () => {
 
 describe("success output sanitization", () => {
   it("escapes control characters the success renderer would emit", () => {
-    const hostile = "acme/repo/\u001b[31mevil";
-    const line = `Created my-engine from example ${sanitizeDiagnosticDetail(hostile)}.`;
-    expect(line).not.toContain("\u001b");
-    expect(line).toContain("\\u001b");
-    expect(line).toContain("from example acme/repo/");
+    // Mirrors cli.ts renderSuccess first-line shape.
+    const projectName = "my-engine";
+    const sourceLabel = "acme/repo/\u001b[31mevil";
+    const firstLine = `Created ${sanitizeDiagnosticDetail(projectName)} ${sanitizeDiagnosticDetail(sourceLabel)}.`;
+    expect(firstLine).not.toContain("\u001b");
+    expect(firstLine).toContain("\\u001b");
+    expect(firstLine).toBe("Created my-engine acme/repo/\\u001b[31mevil.");
   });
 });
