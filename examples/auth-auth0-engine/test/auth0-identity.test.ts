@@ -1,3 +1,10 @@
+import {
+  createLocalJWKSet,
+  exportJWK,
+  generateKeyPair,
+  generateSecret,
+  SignJWT,
+} from "jose";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { engine } from "../src/engine.js";
@@ -131,12 +138,58 @@ describe("auth0 access token verification", () => {
     ],
     ["a malformed token", async () => "not-a-json-web-token"],
     ["an empty token", async () => ""],
+    [
+      "a signed token without an expiry",
+      async () => tokens.sign(validClaims(), { expiresAt: null }),
+    ],
   ])("rejects %s with null", async (_label, build) => {
     const token = await build();
 
     await expect(
       verifier().verify(token, { signal: new AbortController().signal }),
     ).resolves.toBeNull();
+  });
+
+  it("rejects a token signed outside the algorithm allowlist", async () => {
+    // Pins algorithms: ["RS256"] — an HS256 token must never verify, even
+    // with otherwise perfect claims.
+    const secret = await generateSecret("HS256", { extractable: true });
+    const now = Math.floor(Date.now() / 1000);
+    const token = await new SignJWT(validClaims())
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt(now)
+      .setExpirationTime(now + 3600)
+      .sign(secret);
+
+    await expect(
+      verifier().verify(token, { signal: new AbortController().signal }),
+    ).resolves.toBeNull();
+  });
+
+  it("throws when the key set is ambiguous for the token", async () => {
+    // Two same-algorithm keys without kid headers: jose cannot pick a
+    // candidate, which is the tenant's key-publication problem, not proof
+    // against the credential — so it surfaces as unavailable, not null.
+    const first = await generateKeyPair("RS256", { extractable: true });
+    const second = await generateKeyPair("RS256", { extractable: true });
+    const ambiguous = createLocalJWKSet({
+      keys: [
+        { ...(await exportJWK(first.publicKey)), alg: "RS256", use: "sig" },
+        { ...(await exportJWK(second.publicKey)), alg: "RS256", use: "sig" },
+      ],
+    });
+    const now = Math.floor(Date.now() / 1000);
+    const token = await new SignJWT(validClaims())
+      .setProtectedHeader({ alg: "RS256" })
+      .setIssuedAt(now)
+      .setExpirationTime(now + 3600)
+      .sign(first.privateKey);
+
+    await expect(
+      verifier(ambiguous).verify(token, {
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBeInstanceOf(Auth0VerificationUnavailableError);
   });
 
   it("throws when key resolution itself fails", async () => {
@@ -234,6 +287,16 @@ describe("auth0 authentication hook", () => {
         permissions: ["orders:read"],
       },
     });
+  });
+
+  it("accepts the authentication scheme case-insensitively", async () => {
+    // RFC 9110 makes the scheme token case-insensitive.
+    const token = await tokens.sign(validClaims());
+    const authenticate = createAuth0Authenticate(verifier());
+
+    await expect(
+      authenticate(authenticationRequest(`bearer ${token}`)),
+    ).resolves.toMatchObject({ id: "auth0|64f0c0ffee0000000000abcd" });
   });
 
   it("never carries credential material into the principal", async () => {

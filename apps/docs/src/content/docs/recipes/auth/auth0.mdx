@@ -44,9 +44,12 @@ specific to Auth0.
      if (trimmed === "") {
        throw new TypeError("An Auth0 domain is required.");
      }
-     const url = new URL(
-       trimmed.includes("://") ? trimmed : `https://${trimmed}`,
-     );
+     let url: URL;
+     try {
+       url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+     } catch {
+       throw new TypeError("The Auth0 domain is not a valid origin.");
+     }
      if (url.protocol !== "https:") {
        throw new TypeError("The Auth0 domain must use HTTPS.");
      }
@@ -91,6 +94,7 @@ specific to Auth0.
                issuer,
                audience,
                algorithms: ["RS256"],
+               requiredClaims: ["sub", "iss", "aud", "exp"],
                clockTolerance: options.clockToleranceSeconds ?? 5,
              }),
              signal,
@@ -121,7 +125,6 @@ specific to Auth0.
    ```ts
    const invalidCredentialCodes: ReadonlySet<string> = new Set([
      "ERR_JOSE_ALG_NOT_ALLOWED",
-     "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
      "ERR_JWKS_NO_MATCHING_KEY",
      "ERR_JWS_INVALID",
      "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
@@ -139,7 +142,9 @@ specific to Auth0.
 
    Only these `jose` codes mean "this credential is not valid" and become
    `null`, which the adapter answers with HTTP 401. A JWKS timeout
-   (`ERR_JWKS_TIMEOUT`) or a transport failure falls through to a thrown
+   (`ERR_JWKS_TIMEOUT`), a transport failure, or an ambiguous key set
+   (`ERR_JWKS_MULTIPLE_MATCHING_KEYS` — the tenant's key-publication problem,
+   not the caller's) falls through to a thrown
    `Auth0VerificationUnavailableError`, which becomes a sanitized HTTP 500. A
    tenant outage must never look like a rejected user.
 
@@ -316,11 +321,15 @@ the trailing slash, a wrong audience, a missing audience, an unknown signing
 key, a forged signature, a malformed token, a missing header, a JWKS outage, and
 the absence of any token material in the produced `Principal`.
 
-<Aside type="tip" title="The same code for other OIDC issuers">
-  Kinde and Logto are drop-in swaps of this integration: keep the verifier and
-  the hook, and change only the issuer origin and the API audience you request.
-  Any issuer that publishes `<issuer>/.well-known/jwks.json` and mints an
-  audience-scoped RS256 access token fits the same file set. Confirm each
+<Aside type="tip" title="Adapting this code to other OIDC issuers">
+  This integration derives the issuer from an origin and fetches
+  `<origin>/.well-known/jwks.json`, so it fits issuers that follow that exact
+  convention. Many do not: Logto's issuer is path-bearing
+  (`https://<endpoint>/oidc`) with its JWKS at `<issuer>/jwks`, and Kinde
+  serves its key set at `<issuer>/.well-known/jwks` without the `.json`
+  suffix — shapes this file's origin-based derivation cannot represent. For
+  those providers, resolve `jwks_uri` from the OIDC discovery document as the
+  [JWT bearer recipe](/recipes/auth/jwt-bearer/) shows, and confirm each
   provider's exact `iss` string — the trailing slash is not universal.
 </Aside>
 

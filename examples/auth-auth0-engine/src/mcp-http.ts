@@ -16,7 +16,8 @@ import {
   createAuth0AccessTokenVerifier,
 } from "./identity/verifier.js";
 
-const bearerCredential = /^Bearer ([^\s]+)$/;
+// RFC 9110 makes the authentication scheme case-insensitive.
+const bearerCredential = /^Bearer ([^\s]+)$/iu;
 
 /**
  * Reads the bearer credential. The adapter has already rejected a request

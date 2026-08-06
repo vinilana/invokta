@@ -31,7 +31,8 @@ export interface Auth0TokenFactory {
 
 export interface SignOptions {
   readonly issuedAt?: number;
-  readonly expiresAt?: number;
+  /** `null` mints a token without an `exp` claim. */
+  readonly expiresAt?: number | null;
   readonly keyId?: string;
 }
 
@@ -53,14 +54,16 @@ export async function createAuth0TokenFactory(): Promise<Auth0TokenFactory> {
     failingKeySource: () => Promise.reject(new Error("JWKS endpoint refused.")),
     async sign(claims, options = {}) {
       const issuedAt = options.issuedAt ?? now();
-      return new SignJWT(claims)
+      const jwt = new SignJWT(claims)
         .setProtectedHeader({
           alg: "RS256",
           kid: options.keyId ?? publishedKeyId,
         })
-        .setIssuedAt(issuedAt)
-        .setExpirationTime(options.expiresAt ?? issuedAt + 3600)
-        .sign(published.privateKey);
+        .setIssuedAt(issuedAt);
+      if (options.expiresAt !== null) {
+        jwt.setExpirationTime(options.expiresAt ?? issuedAt + 3600);
+      }
+      return jwt.sign(published.privateKey);
     },
     async signWithForeignKey(claims) {
       const issuedAt = now();
