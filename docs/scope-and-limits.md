@@ -2,7 +2,7 @@
 
 ## Public packages
 
-**AE-SCOPE-01 — Nine packages with isolated roles.** Invokta publishes:
+**AE-SCOPE-01 — Ten packages with isolated roles.** Invokta publishes:
 
 | Package | Responsibility |
 | --- | --- |
@@ -12,6 +12,7 @@
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, and probing |
+| `@invokta/devtools` | Development-time engine dev server, web inspector, and doctor diagnostics |
 | `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile |
 | `create-invokta-capability` | Creation of a standalone atomic capability package |
 | `create-invokta-capability-library` | Creation of a standalone capability-library package |
@@ -40,7 +41,7 @@ useful.
 | Dimension | Limit |
 | --- | --- |
 | Framework runtime packages | 3: core, CLI, and MCP |
-| Supporting packages | 6: tooling, installer, deploy, and three project creators |
+| Supporting packages | 7: tooling, installer, deploy, devtools, and three project creators |
 | Official adapters | CLI and MCP |
 | MCP transports | stdio and stateless Streamable HTTP |
 | Core primitives | Capability, Engine, Context, and Principal |

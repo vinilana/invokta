@@ -24,14 +24,14 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | AI implementation | Keep implementation replaceable | Own prompts, models, retrieval, tools, evidence, and risk controls | Provider SDKs, prompt registry, RAG abstraction, or memory |
 | Quality | Validate contracts and provide testable direct execution | Own fixtures, evals, regression suites, and human review | Eval runner, automated judge, or canary platform |
 | Capability reuse | Eager explicit composition with deterministic collision detection | Choose imports, effective IDs, and trusted dependencies | Runtime plugin marketplace or remote discovery |
-| Supporting tools | Engine and capability-package creators, composition checker, MCP client installer, and deployment generator | Review generated files and own local, package, or deployment authority | Autonomous publishing, installation, or deployment service |
+| Supporting tools | Engine and capability-package creators, composition checker, MCP client installer, deployment generator, and engine dev server with doctor diagnostics | Review generated files and own local, package, or deployment authority | Autonomous publishing, installation, or deployment service |
 
 ## Fixed limits
 
 | Dimension | Limit |
 | --- | --- |
 | Framework runtime packages | 3 |
-| Supporting packages | 6 |
+| Supporting packages | 7 |
 | Official adapters | 2: CLI and MCP |
 | MCP transports | 2: stdio and stateless Streamable HTTP |
 | Core primitives | 4: Capability, Engine, Context, Principal |

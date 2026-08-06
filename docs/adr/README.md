@@ -26,3 +26,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0017](0017-engine-scoped-mcp-uninstall.md) | Engine-scoped MCP uninstall | Accepted | 2026-07-30 |
 | [0018](0018-interactive-engine-creator-profiles.md) | Interactive engine creator profiles | Accepted | 2026-07-30 |
 | [0019](0019-engine-embedded-mcp-install-commands.md) | Engine-embedded MCP install and uninstall commands | Accepted | 2026-08-02 |
+| [0020](0020-engine-devtools-dev-server.md) | Engine devtools dev server | Accepted | 2026-08-05 |
