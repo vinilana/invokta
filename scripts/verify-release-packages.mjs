@@ -41,6 +41,12 @@ const publicPackages = [
     requiredFiles: [...distEntryFiles, "dist/cli.js"],
   },
   {
+    directory: "devtools",
+    name: "@invokta/devtools",
+    // The dev-only package also ships the `invokta-devtools` executable.
+    requiredFiles: [...distEntryFiles, "dist/cli.js"],
+  },
+  {
     directory: "installer",
     name: "@invokta/installer",
     // The installer is binary-first; its only import API is the engine subpath.

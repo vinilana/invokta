@@ -1,0 +1,44 @@
+{
+  "name": "@invokta/devtools",
+  "version": "0.3.0",
+  "description": "Development-time engine dev server, web inspector, and doctor diagnostics for Invokta.",
+  "author": "Vini Lana <vini@aicoders.academy>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vinilana/invokta.git",
+    "directory": "packages/devtools"
+  },
+  "homepage": "https://docs.invokta.dev/reference/devtools/",
+  "bugs": {
+    "url": "https://github.com/vinilana/invokta/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "invokta-devtools": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "prepack": "npm run --silent build"
+  },
+  "dependencies": {
+    "@invokta/core": "0.3.0"
+  }
+}
