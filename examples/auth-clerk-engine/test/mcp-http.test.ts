@@ -1,7 +1,7 @@
+import type { McpHttpServerHandle } from "@invokta/mcp";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { McpHttpServerHandle } from "@invokta/mcp";
 import {
   createLocalJWKSet,
   errors,
@@ -14,8 +14,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
-  createClerkSessionVerifier,
   type ClerkSessionVerifier,
+  createClerkSessionVerifier,
 } from "../src/identity/verifier.js";
 import { startClerkMcpHttp } from "../src/mcp-http.js";
 
@@ -76,11 +76,13 @@ beforeAll(async () => {
     ],
   };
   keys = createLocalJWKSet(jwks);
+  // Session token v2: organization data in the compact `o` object.
   sessionToken = await new SignJWT({
     azp: authorizedParties[0],
     sid: "sess_2abcDEF",
-    org_id: "org_2xyz",
-    org_role: "org:admin",
+    v: 2,
+    sts: "active",
+    o: { id: "org_2xyz", rol: "admin", slg: "acme" },
   })
     .setProtectedHeader({ alg: "RS256", kid: signingKeyId })
     .setIssuer(frontendApiUrl)
@@ -118,7 +120,7 @@ describe("clerk MCP HTTP boundary", () => {
           attributes: {
             sessionId: "sess_2abcDEF",
             organizationId: "org_2xyz",
-            organizationRole: "org:admin",
+            organizationRole: "admin",
           },
         },
       });
@@ -150,6 +152,17 @@ describe("clerk MCP HTTP boundary", () => {
     expect(malformed.status).toBe(401);
     expect(wrongScheme.status).toBe(401);
     expect(expired.status).toBe(401);
+  });
+
+  it("accepts the authentication scheme case-insensitively", async () => {
+    // RFC 9110 makes the scheme token case-insensitive.
+    const url = await startServer(
+      createClerkSessionVerifier({ frontendApiUrl, authorizedParties, keys }),
+    );
+
+    const response = await postToolCall(url, `bearer ${sessionToken}`);
+
+    expect(response.status).toBe(200);
   });
 
   it("answers 500 when verification infrastructure fails", async () => {

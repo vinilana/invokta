@@ -15,7 +15,9 @@ describe("auth-clerk engine", () => {
           sub: "user_2abcDEF",
           sid: "sess_2abcDEF",
           org_id: "org_2xyz",
-          org_role: "org:admin",
+          // The verifier normalizes the role to the v2 form without the
+          // "org:" prefix before the claims reach this mapping.
+          org_role: "admin",
         }),
       },
     );
@@ -25,7 +27,7 @@ describe("auth-clerk engine", () => {
       attributes: {
         sessionId: "sess_2abcDEF",
         organizationId: "org_2xyz",
-        organizationRole: "org:admin",
+        organizationRole: "admin",
       },
     });
   });

@@ -3,6 +3,7 @@ import {
   errors,
   exportJWK,
   generateKeyPair,
+  generateSecret,
   type JSONWebKeySet,
   type JWTVerifyGetKey,
   SignJWT,
@@ -42,25 +43,30 @@ beforeAll(async () => {
 interface MintOptions {
   readonly claims?: Readonly<Record<string, unknown>>;
   readonly issuer?: string;
-  readonly expiresIn?: string;
+  /** `null` mints a token without an `exp` claim. */
+  readonly expiresIn?: string | null;
   readonly key?: CryptoKey;
   readonly keyId?: string;
 }
 
-/** Mints a token in Clerk's session-token claim shape from the local key. */
+/** Mints a token in Clerk's session-token v2 claim shape from the local key. */
 async function mintSessionToken(options: MintOptions = {}): Promise<string> {
-  return new SignJWT({
+  const jwt = new SignJWT({
     azp: authorizedParties[0],
     sid: "sess_2abcDEF",
+    v: 2,
+    sts: "active",
     ...options.claims,
   })
     .setProtectedHeader({ alg: "RS256", kid: options.keyId ?? signingKeyId })
     .setIssuer(options.issuer ?? frontendApiUrl)
     .setSubject("user_2abcDEF")
     .setIssuedAt()
-    .setNotBefore("0s")
-    .setExpirationTime(options.expiresIn ?? "60s")
-    .sign(options.key ?? signingKey);
+    .setNotBefore("0s");
+  if (options.expiresIn !== null) {
+    jwt.setExpirationTime(options.expiresIn ?? "60s");
+  }
+  return jwt.sign(options.key ?? signingKey);
 }
 
 function createVerifier(overrides: { readonly keys?: JWTVerifyGetKey } = {}) {
@@ -94,13 +100,12 @@ describe("clerk JWKS location", () => {
 });
 
 describe("clerk session verifier", () => {
-  it("accepts a valid session token and maps its claims to a principal", async () => {
+  it("accepts a valid v2 session token and maps its claims to a principal", async () => {
+    // Session token v2 carries the organization in the compact `o` object,
+    // and its `rol` value drops the v1 `org:` prefix.
     const token = await mintSessionToken({
       claims: {
-        azp: authorizedParties[0],
-        sid: "sess_2abcDEF",
-        org_id: "org_2xyz",
-        org_role: "org:admin",
+        o: { id: "org_2xyz", rol: "admin", slg: "acme" },
       },
     });
 
@@ -110,16 +115,49 @@ describe("clerk session verifier", () => {
       sub: "user_2abcDEF",
       sid: "sess_2abcDEF",
       org_id: "org_2xyz",
-      org_role: "org:admin",
+      org_role: "admin",
     });
     expect(toPrincipal(claims as NonNullable<typeof claims>)).toEqual({
       id: "user_2abcDEF",
       attributes: {
         sessionId: "sess_2abcDEF",
         organizationId: "org_2xyz",
-        organizationRole: "org:admin",
+        organizationRole: "admin",
       },
     });
+  });
+
+  it("reads the deprecated v1 organization claims and normalizes the role", async () => {
+    const token = await mintSessionToken({
+      claims: {
+        v: 1,
+        sts: undefined,
+        org_id: "org_2xyz",
+        org_role: "org:admin",
+      },
+    });
+
+    await expect(verifyWith(createVerifier(), token)).resolves.toMatchObject({
+      org_id: "org_2xyz",
+      org_role: "admin",
+    });
+  });
+
+  it("rejects a malformed organization object with null", async () => {
+    const scalar = await mintSessionToken({ claims: { o: "org_2xyz" } });
+    const emptyId = await mintSessionToken({ claims: { o: { id: "" } } });
+
+    await expect(verifyWith(createVerifier(), scalar)).resolves.toBeNull();
+    await expect(verifyWith(createVerifier(), emptyId)).resolves.toBeNull();
+  });
+
+  it("rejects a pending session with null", async () => {
+    // A user who signed in but has unfinished session tasks (MFA enrollment,
+    // mandatory organization selection) holds a validly signed token with
+    // sts "pending"; Clerk's own SDKs treat it as signed out by default.
+    const token = await mintSessionToken({ claims: { sts: "pending" } });
+
+    await expect(verifyWith(createVerifier(), token)).resolves.toBeNull();
   });
 
   it("omits organization attributes for a personal-account session", async () => {
@@ -175,6 +213,81 @@ describe("clerk session verifier", () => {
     });
 
     await expect(verifyWith(createVerifier(), token)).resolves.toBeNull();
+  });
+
+  it("passes an azp-less token by default and rejects it in strict mode", async () => {
+    // Custom JWT templates and machine tokens carry no azp; the default
+    // mirrors Clerk SDK semantics, and requireAuthorizedParty closes the
+    // path when every legitimate caller is a session.
+    const token = await mintSessionToken({ claims: { azp: undefined } });
+
+    await expect(verifyWith(createVerifier(), token)).resolves.toMatchObject({
+      sub: "user_2abcDEF",
+    });
+
+    const strict = createClerkSessionVerifier({
+      frontendApiUrl,
+      authorizedParties,
+      requireAuthorizedParty: true,
+      keys,
+    });
+    await expect(verifyWith(strict, token)).resolves.toBeNull();
+  });
+
+  it("rejects a signed token without an expiry with null", async () => {
+    const token = await mintSessionToken({ expiresIn: null });
+
+    await expect(verifyWith(createVerifier(), token)).resolves.toBeNull();
+  });
+
+  it("rejects a token signed outside the algorithm allowlist", async () => {
+    // Pins algorithms: ["RS256"] — an HS256 token must never verify, even
+    // with otherwise perfect claims.
+    const secret = await generateSecret("HS256", { extractable: true });
+    const token = await new SignJWT({
+      azp: authorizedParties[0],
+      sid: "sess_2abcDEF",
+      v: 2,
+      sts: "active",
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuer(frontendApiUrl)
+      .setSubject("user_2abcDEF")
+      .setIssuedAt()
+      .setExpirationTime("60s")
+      .sign(secret);
+
+    await expect(verifyWith(createVerifier(), token)).resolves.toBeNull();
+  });
+
+  it("throws when the key set is ambiguous for the token", async () => {
+    // Two same-algorithm keys without kid headers: jose cannot pick a
+    // candidate, which is the instance's key-publication problem, not proof
+    // against the credential — so it surfaces as unavailable, not null.
+    const first = await generateKeyPair("RS256", { extractable: true });
+    const second = await generateKeyPair("RS256", { extractable: true });
+    const ambiguous = createLocalJWKSet({
+      keys: [
+        { ...(await exportJWK(first.publicKey)), alg: "RS256", use: "sig" },
+        { ...(await exportJWK(second.publicKey)), alg: "RS256", use: "sig" },
+      ],
+    });
+    const token = await new SignJWT({
+      azp: authorizedParties[0],
+      sid: "sess_2abcDEF",
+      v: 2,
+      sts: "active",
+    })
+      .setProtectedHeader({ alg: "RS256" })
+      .setIssuer(frontendApiUrl)
+      .setSubject("user_2abcDEF")
+      .setIssuedAt()
+      .setExpirationTime("60s")
+      .sign(first.privateKey);
+
+    await expect(
+      verifyWith(createVerifier({ keys: ambiguous }), token),
+    ).rejects.toBeInstanceOf(ClerkVerificationUnavailableError);
   });
 
   it("rejects a token signed by another key with null", async () => {

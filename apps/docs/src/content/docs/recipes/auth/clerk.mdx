@@ -65,6 +65,10 @@ session claim shape.
        jwtVerify(token, keys, {
          issuer,
          algorithms: ["RS256"],
+         // Clerk session tokens carry no aud; azp is the party binding.
+         // These claims are always minted, so a signed token missing one
+         // — notably exp — must not become a permanent credential.
+         requiredClaims: ["sub", "iss", "exp"],
          clockTolerance,
        }),
      );
@@ -75,17 +79,17 @@ session claim shape.
    }
    ```
 
-   `issuer` is the Frontend API URL's origin. `jwtVerify` checks `exp` and
-   `nbf` for you; the clock tolerance matches the skew allowance Clerk's own
-   backend SDK applies. The hook's `signal` and the verifier's own timeout
-   together bound the JWKS fetch.
+   `issuer` is the Frontend API URL's origin. `jwtVerify` validates `exp` and
+   `nbf`, and `requiredClaims` makes the expiry mandatory rather than
+   validated-when-present; the clock tolerance matches the skew allowance
+   Clerk's own backend SDK applies. The hook's `signal` and the verifier's own
+   timeout together bound the JWKS fetch.
 
 3. Split invalid credentials from an unavailable verifier
 
    ```ts
    const INVALID_CREDENTIAL_CODES: ReadonlySet<string> = new Set([
      errors.JOSEAlgNotAllowed.code,
-     errors.JWKSMultipleMatchingKeys.code,
      errors.JWKSNoMatchingKey.code,
      errors.JWSInvalid.code,
      errors.JWSSignatureVerificationFailed.code,
@@ -96,30 +100,88 @@ session claim shape.
    ```
 
    An expired token, a rotated-away `kid`, or a foreign signature is an invalid
-   credential and becomes `null`, then HTTP 401. A JWKS timeout or an
-   unreachable Frontend API is not in the set, so it throws and becomes a
-   sanitized HTTP 500. `ClerkVerificationUnavailableError` carries a fixed
-   sentence and no cause, because a jose claim-validation failure holds the
-   decoded payload and none of it may reach a log.
+   credential and becomes `null`, then HTTP 401. A JWKS timeout, an
+   unreachable Frontend API, or an ambiguous key set
+   (`JWKSMultipleMatchingKeys` — the instance's key-publication problem, not
+   the caller's) is not in the set, so it throws and becomes a sanitized HTTP
+   500. `ClerkVerificationUnavailableError` carries a fixed sentence and no
+   cause, because a jose claim-validation failure holds the decoded payload
+   and none of it may reach a log.
 
-4. Enforce the authorized party
+4. Enforce the session status and the authorized party
 
    ```ts
-   const { azp, sid, org_id: orgId, org_role: orgRole } = payload;
+   const { azp, sid, sts } = payload;
 
-   if (azp !== undefined && (typeof azp !== "string" || azp === "")) return null;
-   if (azp !== undefined && !authorizedParties.includes(azp)) return null;
+   if (sts !== undefined && sts !== "active") return null;
+
+   if (azp === undefined) {
+     if (requireAuthorizedParty) return null;
+   } else {
+     if (typeof azp !== "string" || azp === "") return null;
+     if (!authorizedParties.includes(azp)) return null;
+   }
 
    const subject = payload.sub;
    if (typeof subject !== "string" || subject === "") return null;
    ```
 
+   Session token v2 carries `sts`. A user who signed in but has unfinished
+   [session tasks](https://clerk.com/docs/guides/configure/session-tasks) —
+   MFA enrollment, a mandatory organization selection — holds a validly
+   signed token with `sts: "pending"`, and Clerk's own SDKs treat pending as
+   signed out by default; rejecting it server-side closes the same door here.
+
    `azp` names the origin the token was minted for. Clerk recommends an
    explicit allowlist, because a token issued to another origin of the same
-   instance is otherwise a perfectly valid signature here. The check applies
-   when the claim is present: custom JWT templates and machine tokens omit it.
+   instance is otherwise a perfectly valid signature here. By default the
+   check applies when the claim is present — custom JWT templates and machine
+   tokens omit it, and such a token passes the allowlist unchecked. When every
+   legitimate caller is a session, set `requireAuthorizedParty: true` (the
+   example's composition root does, since it already demands the allowlist)
+   so azp-less tokens are rejected too.
 
-5. Map the verified claims to a `Principal`
+5. Read the organization from the v2 compact claims
+
+   ```ts
+   function readOrganization(
+     payload: JWTPayload,
+   ): { readonly orgId?: string; readonly orgRole?: string } | null {
+     const compact = payload.o;
+     if (compact !== undefined) {
+       if (typeof compact !== "object" || compact === null) return null;
+       const { id, rol } = compact as {
+         readonly id?: unknown;
+         readonly rol?: unknown;
+       };
+       if (!isAbsentOrNonEmptyString(id)) return null;
+       if (!isAbsentOrNonEmptyString(rol)) return null;
+       return {
+         ...(id === undefined ? {} : { orgId: id }),
+         ...(rol === undefined ? {} : { orgRole: rol }),
+       };
+     }
+
+     const { org_id: orgId, org_role: orgRole } = payload;
+     if (!isAbsentOrNonEmptyString(orgId)) return null;
+     if (!isAbsentOrNonEmptyString(orgRole)) return null;
+     return {
+       ...(orgId === undefined ? {} : { orgId }),
+       ...(orgRole === undefined
+         ? {}
+         : { orgRole: orgRole.replace(/^org:/u, "") }),
+     };
+   }
+   ```
+
+   [Session token v2](https://clerk.com/changelog/2025-04-14-session-token-jwt-v2)
+   — the current standard — moved the organization into the compact top-level
+   `o` object: `o.id`, `o.rol` (without the v1 `org:` prefix), `o.slg`, and
+   permission data. The v1 `org_id`/`org_role` claims remain a fallback for
+   unmigrated instances, with the role normalized to the v2 form so an access
+   rule sees one stable shape either way.
+
+6. Map the verified claims to a `Principal`
 
    ```ts
    export function toPrincipal(claims: ClerkSessionClaims): Principal {
@@ -142,7 +204,7 @@ session claim shape.
    they are the claims an access rule can decide on. Nothing else crosses:
    not the token, not the full claim set, not a Clerk SDK object.
 
-6. Wire the hook at the composition root
+7. Wire the hook at the composition root
 
    ```ts
    export function createClerkAuthenticate(
@@ -173,7 +235,7 @@ session claim shape.
    The example refuses to start without `CLERK_AUTHORIZED_PARTIES`, so an
    allowlist can never be forgotten into an accept-everything default.
 
-7. Read the identity inside a capability
+8. Read the identity inside a capability
 
    ```ts
    access: "authenticated",
@@ -272,12 +334,15 @@ returns HTTP 401 — and so does a token whose `azp` is missing from
 yarn workspace @invokta/example-auth-clerk test
 ```
 
-The tests mint tokens in Clerk's session claim shape from a locally generated
-key pair and resolve them through a local JWKS, so signature verification is
-real while no test touches the network or needs a Clerk account. They cover a
-valid token, an expired one, a foreign issuer, a foreign signature, a rotated
-`kid`, an unlisted `azp`, a malformed credential, an unavailable verifier, and
-the absence of any token material in the produced principal.
+The tests mint tokens in Clerk's session token v2 claim shape — with a v1
+fallback case — from a locally generated key pair and resolve them through a
+local JWKS, so signature verification is real while no test touches the
+network or needs a Clerk account. They cover a valid token, a pending
+session, an expired one, a token without an expiry, a foreign issuer, a
+foreign signature, a rotated `kid`, an unlisted `azp`, an azp-less token in
+both modes, an algorithm outside the allowlist, a malformed credential, an
+unavailable verifier, an ambiguous key set, and the absence of any token
+material in the produced principal.
 
 Read the complete
 [`auth-clerk-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-clerk-engine)

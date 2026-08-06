@@ -16,7 +16,8 @@ import {
   createClerkSessionVerifier,
 } from "./identity/verifier.js";
 
-const BEARER_CREDENTIAL = /^Bearer ([^\s]+)$/;
+// RFC 9110 makes the authentication scheme case-insensitive.
+const BEARER_CREDENTIAL = /^Bearer ([^\s]+)$/iu;
 const DEFAULT_PORT = 3000;
 const MAXIMUM_PORT = 65_535;
 
@@ -97,6 +98,11 @@ export async function main(): Promise<McpHttpServerHandle> {
     verifier: createClerkSessionVerifier({
       frontendApiUrl,
       authorizedParties,
+      // With an allowlist configured, an azp-less token (custom JWT template,
+      // machine token) is rejected too — otherwise it would bypass the
+      // allowlist this composition root just required. Construct the verifier
+      // without this flag when such callers are legitimate.
+      requireAuthorizedParty: true,
       keys: createClerkRemoteKeys(frontendApiUrl),
     }),
     port,

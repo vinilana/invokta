@@ -14,13 +14,17 @@ identity the boundary proved.
 
 - `src/identity/verifier.ts` — Clerk session-token verification: RS256
   signature against the instance JWKS, `iss` equal to the Frontend API URL,
-  `exp` and `nbf` within a clock tolerance, and `azp` inside the configured
-  authorized-party allowlist. Key resolution is injected, so production uses
-  the remote JWKS and tests use a local one.
+  a required `exp` within a clock tolerance, a v2 session status other than
+  `active` rejected, and `azp` inside the configured authorized-party
+  allowlist (required by this composition root, so azp-less JWT-template and
+  machine tokens are rejected too). The organization comes from the v2
+  compact `o` object with a v1 `org_id`/`org_role` fallback, the role
+  normalized to the v2 unprefixed form. Key resolution is injected, so
+  production uses the remote JWKS and tests use a local one.
 - `src/identity/principal.ts` — claims to `Principal`: `sub` becomes the
-  principal ID, and `sid`, `org_id`, and `org_role` become attributes when the
-  session has them. The token, the raw claim set, and SDK objects never leave
-  the composition root.
+  principal ID, and the session and organization claims become attributes
+  when the session has them. The token, the raw claim set, and SDK objects
+  never leave the composition root.
 - `src/mcp-http.ts` — the `serveMcpHttp` `auth.authenticate` hook in
   `mode: "required"`: a `Principal` for a valid credential, `null` for every
   invalid one (HTTP 401), and a rejection only when verification could not

@@ -16,9 +16,12 @@ const COMPACT_JWS = /^[\w-]+\.[\w-]+\.[\w-]+$/;
 
 /**
  * The verified subset of a Clerk session token that this engine is allowed to
- * carry forward. `sub` is the Clerk user ID, `sid` the session ID, and
- * `org_id` / `org_role` the active organization membership when the session
- * has one. Everything else in the token stays at this boundary.
+ * carry forward. `sub` is the Clerk user ID and `sid` the session ID. The
+ * organization membership comes from the v2 compact `o` object (`o.id`,
+ * `o.rol`) with a fallback to the v1 `org_id`/`org_role` claims Clerk
+ * deprecated on 2025-04-14; the role is normalized to the v2 form without the
+ * `org:` prefix so access rules see one stable shape. Everything else in the
+ * token stays at this boundary.
  */
 export interface ClerkSessionClaims {
   readonly sub: string;
@@ -40,6 +43,13 @@ export interface ClerkSessionVerifierOptions {
    * origin of the same instance is otherwise a valid credential here.
    */
   readonly authorizedParties: ReadonlyArray<string>;
+  /**
+   * When true, a token WITHOUT an `azp` claim is rejected too. Session tokens
+   * carry `azp`, but custom JWT templates and machine tokens may not — with
+   * the default `false` those pass the allowlist unchecked, mirroring Clerk
+   * SDK semantics. Enable this when every legitimate caller is a session.
+   */
+  readonly requireAuthorizedParty?: boolean;
   /**
    * Key resolution. Production wiring passes `createClerkRemoteKeys(...)`;
    * tests pass `createLocalJWKSet(...)` so signature verification stays real
@@ -70,10 +80,15 @@ export class ClerkVerificationUnavailableError extends Error {
   }
 }
 
-/** These jose failures mean "this credential is invalid", never "try again". */
+/**
+ * These jose failures mean "this credential is invalid", never "try again".
+ * `JWKSMultipleMatchingKeys` is deliberately absent: an ambiguous key set is
+ * the instance's key-publication problem, not evidence against the
+ * credential, so it surfaces as an infrastructure failure (500) instead of
+ * silently rejecting legitimate tokens during a kid-less key rotation.
+ */
 const INVALID_CREDENTIAL_CODES: ReadonlySet<string> = new Set([
   errors.JOSEAlgNotAllowed.code,
-  errors.JWKSMultipleMatchingKeys.code,
   errors.JWKSNoMatchingKey.code,
   errors.JWSInvalid.code,
   errors.JWSSignatureVerificationFailed.code,
@@ -115,30 +130,79 @@ function isAbsentOrNonEmptyString(value: unknown): value is string | undefined {
 }
 
 /**
- * Reads the claims this engine trusts, and enforces the authorized party.
- * `azp` is absent from custom JWT templates and machine tokens, so it is
- * checked when present rather than required.
+ * Reads the organization membership. Session token v2 (the current standard)
+ * carries it in the compact top-level `o` object; the v1 `org_id`/`org_role`
+ * claims, deprecated on 2025-04-14, are still read as a fallback for
+ * unmigrated instances. The v1 role's `org:` prefix is stripped so both
+ * versions produce the v2 shape. Malformed organization data fails closed.
+ */
+function readOrganization(
+  payload: JWTPayload,
+): { readonly orgId?: string; readonly orgRole?: string } | null {
+  const compact = payload.o;
+  if (compact !== undefined) {
+    if (typeof compact !== "object" || compact === null) return null;
+    const { id, rol } = compact as {
+      readonly id?: unknown;
+      readonly rol?: unknown;
+    };
+    if (!isAbsentOrNonEmptyString(id)) return null;
+    if (!isAbsentOrNonEmptyString(rol)) return null;
+    return {
+      ...(id === undefined ? {} : { orgId: id }),
+      ...(rol === undefined ? {} : { orgRole: rol }),
+    };
+  }
+
+  const { org_id: orgId, org_role: orgRole } = payload;
+  if (!isAbsentOrNonEmptyString(orgId)) return null;
+  if (!isAbsentOrNonEmptyString(orgRole)) return null;
+  return {
+    ...(orgId === undefined ? {} : { orgId }),
+    ...(orgRole === undefined
+      ? {}
+      : { orgRole: orgRole.replace(/^org:/u, "") }),
+  };
+}
+
+/**
+ * Reads the claims this engine trusts, enforcing the session status and the
+ * authorized party. A v2 `sts` other than `active` — Clerk mints `pending`
+ * for a user who signed in but has unfinished session tasks such as MFA
+ * enrollment or a mandatory organization selection — is rejected, matching
+ * the signed-out treatment Clerk's own SDKs apply by default. `azp` is absent
+ * from custom JWT templates and machine tokens, so by default it is checked
+ * when present; `requireAuthorizedParty` closes that path too.
  */
 function readSessionClaims(
   payload: JWTPayload,
   authorizedParties: ReadonlyArray<string>,
+  requireAuthorizedParty: boolean,
 ): ClerkSessionClaims | null {
-  const { azp, sid, org_id: orgId, org_role: orgRole } = payload;
+  const { azp, sid, sts } = payload;
 
-  if (azp !== undefined && (typeof azp !== "string" || azp === "")) return null;
-  if (azp !== undefined && !authorizedParties.includes(azp)) return null;
+  if (sts !== undefined && sts !== "active") return null;
+
+  if (azp === undefined) {
+    if (requireAuthorizedParty) return null;
+  } else {
+    if (typeof azp !== "string" || azp === "") return null;
+    if (!authorizedParties.includes(azp)) return null;
+  }
 
   const subject = payload.sub;
   if (typeof subject !== "string" || subject === "") return null;
   if (!isAbsentOrNonEmptyString(sid)) return null;
-  if (!isAbsentOrNonEmptyString(orgId)) return null;
-  if (!isAbsentOrNonEmptyString(orgRole)) return null;
+  const organization = readOrganization(payload);
+  if (organization === null) return null;
 
   return {
     sub: subject,
     ...(sid === undefined ? {} : { sid }),
-    ...(orgId === undefined ? {} : { org_id: orgId }),
-    ...(orgRole === undefined ? {} : { org_role: orgRole }),
+    ...(organization.orgId === undefined ? {} : { org_id: organization.orgId }),
+    ...(organization.orgRole === undefined
+      ? {}
+      : { org_role: organization.orgRole }),
   };
 }
 
@@ -170,6 +234,7 @@ export function createClerkSessionVerifier(
 ): ClerkSessionVerifier {
   const issuer = new URL(options.frontendApiUrl).origin;
   const authorizedParties = Object.freeze([...options.authorizedParties]);
+  const requireAuthorizedParty = options.requireAuthorizedParty ?? false;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const clockTolerance =
     options.clockToleranceSeconds ?? DEFAULT_CLOCK_TOLERANCE_SECONDS;
@@ -192,6 +257,10 @@ export function createClerkSessionVerifier(
           jwtVerify(token, keys, {
             issuer,
             algorithms: [...SIGNING_ALGORITHMS],
+            // Clerk session tokens carry no aud; azp is the party binding.
+            // These claims are always minted, so a signed token missing one
+            // — notably exp — must not become a permanent credential.
+            requiredClaims: ["sub", "iss", "exp"],
             clockTolerance,
           }),
         );
@@ -201,7 +270,11 @@ export function createClerkSessionVerifier(
         throw new ClerkVerificationUnavailableError();
       }
 
-      return readSessionClaims(payload, authorizedParties);
+      return readSessionClaims(
+        payload,
+        authorizedParties,
+        requireAuthorizedParty,
+      );
     },
   };
 }
