@@ -201,9 +201,7 @@ examples that implement this hook contract for common TypeScript identity
 providers — generic OIDC/JWT bearer, Supabase, Clerk, Auth0, AWS Cognito,
 Firebase Auth, Better Auth, Auth.js, WorkOS AuthKit, and machine-to-machine API
 keys — under [`examples/auth-*`](../examples/). Each pairs with a documentation
-recipe at <https://docs.invokta.dev/recipes/auth/>. The plan and scope for this
-catalog are recorded in
-[`docs/specs/auth-provider-examples-and-recipes.md`](./specs/auth-provider-examples-and-recipes.md).
+recipe at <https://docs.invokta.dev/recipes/auth/>.
 
 ## Dangerous development mode
 

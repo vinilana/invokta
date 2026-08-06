@@ -19,8 +19,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   web interface with a capability browser, schema-seeded invocation editor,
   raw MCP exchange view, live trace, and test-identity switcher. `--watch --build`
   replaces the engine-host child process after each successful explicit
-  build; modules are never reloaded in process. The contract is recorded in
-  `docs/specs/engine-devtools-dev-server.md`.
+  build; modules are never reloaded in process.
 - `@invokta/devtools` also opens an idle, workspace-independent MCP workbench
   that can attach to one explicit stdio command or Streamable HTTP endpoint.
   The compact interface supports catalog inspection, one deliberate tool call,
@@ -46,16 +45,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   downloads only from `codeload.github.com` after confirmation or `--yes`,
   rewrites the generated package name to the project directory, and preserves
   the existing target safety, exclusive-write, rollback, and package-manager
-  boundaries. Profile creation without `--example` remains offline. The
-  contract is recorded in `docs/specs/github-example-import.md`.
+  boundaries. Profile creation without `--example` remains offline.
 - Added ten authentication examples under `examples/auth-*` — a
   provider-neutral JWT bearer engine plus Supabase, Clerk, Auth0, AWS Cognito,
   Firebase Auth, Better Auth, Auth.js, WorkOS AuthKit, and hashed API-key
   engines — each verifying credentials at the composition root, mapping them
   into the minimal `Principal`, and testing the hook contract offline with
   locally generated keys. Twelve matching documentation recipes, including an
-  MCP OAuth discovery walkthrough, ship under a new Authentication group; the
-  scope is recorded in `docs/specs/auth-provider-examples-and-recipes.md`.
+  MCP OAuth discovery walkthrough, ship under a new Authentication group.
 - `@invokta/installer` now exposes the `@invokta/installer/engine` subpath with
   `runEngineInstallerCli`, so a distributed engine binary can run the existing
   engine-scoped install and removal sessions against its own package root

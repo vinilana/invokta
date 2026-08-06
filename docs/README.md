@@ -18,24 +18,21 @@ contracts below define one implementation of that concept.
 6. [Architecture decision records](./adr/README.md)
 7. [Validation record](./validation-record.md)
 
-## Proposed changes
+## Delivered changes
 
-Proposed specifications are non-normative until their required architecture
-decision is accepted and the implementation evidence is complete.
+Each delivered change is normative through its accepted architecture decision:
 
-- [Engine-scoped MCP uninstall](./specs/engine-scoped-mcp-uninstall.md)
-
-## Delivered specifications
-
-- [Interactive engine creator profiles](./specs/interactive-engine-creator-profiles.md),
-  accepted by [ADR 0018](./adr/0018-interactive-engine-creator-profiles.md)
-- [GitHub example import for create-invokta-engine](./specs/github-example-import.md),
-  accepted by [ADR 0020](./adr/0020-github-example-import-for-engine-creator.md)
-- [Engine devtools dev server](./specs/engine-devtools-dev-server.md),
-  accepted by [ADR 0021](./adr/0021-engine-devtools-dev-server.md)
-- [MCP installation inspection and homologation](./specs/mcp-installation-inspection-and-homologation.md),
-  accepted by [ADR 0022](./adr/0022-mcp-installation-inspection-and-homologation.md)
-  and extended with ephemeral OAuth by
+- Engine-scoped MCP uninstall —
+  [ADR 0017](./adr/0017-engine-scoped-mcp-uninstall.md)
+- Interactive engine creator profiles —
+  [ADR 0018](./adr/0018-interactive-engine-creator-profiles.md)
+- GitHub example import for `create-invokta-engine` —
+  [ADR 0020](./adr/0020-github-example-import-for-engine-creator.md)
+- Engine devtools dev server —
+  [ADR 0021](./adr/0021-engine-devtools-dev-server.md)
+- MCP installation inspection and homologation —
+  [ADR 0022](./adr/0022-mcp-installation-inspection-and-homologation.md),
+  extended with ephemeral OAuth by
   [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md)
 
 ## Guides and examples
