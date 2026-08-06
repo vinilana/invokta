@@ -437,6 +437,20 @@ export async function startDevtoolsServer(
       await handlePrincipals(request, response);
       return;
     }
+    if (path === "/api/trace/clear") {
+      if (method !== "POST") {
+        sendJson(
+          response,
+          405,
+          { error: "method_not_allowed" },
+          { allow: "POST" },
+        );
+        return;
+      }
+      options.trace.clear();
+      sendJson(response, 200, { cleared: true });
+      return;
+    }
     if (method !== "GET") {
       sendJson(
         response,
@@ -478,6 +492,14 @@ export async function startDevtoolsServer(
     }
     if (path === "/api/doctor") {
       sendJson(response, 200, options.engineView().doctor);
+      return;
+    }
+    if (path === "/api/trace/export") {
+      response.writeHead(200, {
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end(options.trace.toNdjson());
       return;
     }
     if (path === "/api/events") {

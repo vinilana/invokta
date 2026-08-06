@@ -36,6 +36,40 @@ const tabs: ReadonlyArray<{
   },
 ];
 
+/** Hash routes keep the active section shareable across reloads. */
+const tabRoutes: Readonly<Record<TabName, string>> = {
+  capabilities: "capabilities",
+  trace: "activity",
+  doctor: "diagnostics",
+  principals: "identities",
+};
+
+function currentHash(): string {
+  try {
+    return typeof location === "undefined" ? "" : location.hash;
+  } catch {
+    return "";
+  }
+}
+
+function tabFromHash(hash: string): TabName | undefined {
+  const route = hash.replace(/^#\/?/, "").split("/")[0];
+  return tabs.find((tab) => tabRoutes[tab.name] === route)?.name;
+}
+
+function syncHash(name: TabName): void {
+  try {
+    if (typeof location === "undefined") return;
+    const current = location.hash.replace(/^#/, "");
+    // A deep link such as #capabilities/<id> survives reselecting the tab.
+    if (name === "capabilities" && current.startsWith("capabilities/")) return;
+    const desired = `#${tabRoutes[name]}`;
+    if (location.hash !== desired) location.hash = desired;
+  } catch {
+    // Hash routing is a convenience; the tabs work without it.
+  }
+}
+
 function createBrandMark(): SVGSVGElement {
   const namespace = "http://www.w3.org/2000/svg";
   const mark = document.createElementNS(namespace, "svg");
@@ -127,6 +161,7 @@ function boot(): void {
 
     main.append(panel.element);
     activePanel = { name, ...panel };
+    syncHash(name);
   };
 
   const nav = el(
@@ -272,14 +307,65 @@ function boot(): void {
   document.body.append(
     el("div", { class: "app-shell" }, [rails, topbar, context, main]),
   );
-  show("capabilities");
+  show(tabFromHash(currentHash()) ?? "capabilities");
+
+  if (typeof window !== "undefined" && typeof location !== "undefined") {
+    window.addEventListener("hashchange", () => {
+      const name = tabFromHash(location.hash);
+      if (name !== undefined) show(name);
+    });
+  }
+
+  // A tiny reference for the gestures this shell supports; "?" toggles it.
+  let shortcutsOverlay: HTMLElement | undefined;
+  const closeShortcuts = (): void => {
+    shortcutsOverlay?.remove();
+    shortcutsOverlay = undefined;
+  };
+  const shortcutEntry = (keys: string, action: string): HTMLElement =>
+    el("div", { class: "shortcuts-entry" }, [
+      el("dt", {}, [el("kbd", {}, [keys])]),
+      el("dd", {}, [action]),
+    ]);
+  const toggleShortcuts = (): void => {
+    if (shortcutsOverlay !== undefined) {
+      closeShortcuts();
+      return;
+    }
+    shortcutsOverlay = el(
+      "div",
+      {
+        class: "shortcuts-overlay",
+        role: "dialog",
+        "aria-label": "Keyboard shortcuts",
+      },
+      [
+        el("div", { class: "shortcuts-card" }, [
+          el("h2", {}, ["Keyboard shortcuts"]),
+          el("dl", { class: "shortcuts-list" }, [
+            shortcutEntry("/", "Focus the Playground search"),
+            shortcutEntry("Ctrl/⌘ + Enter", "Invoke the edited capability"),
+            shortcutEntry("← →", "Move between tabs"),
+            shortcutEntry("?", "Toggle this overlay"),
+          ]),
+          el("p", { class: "hint" }, ["Press ? or Escape to close."]),
+        ]),
+      ],
+    );
+    document.body.append(shortcutsOverlay);
+  };
 
   // One global gesture: "/" jumps to the catalog filter from anywhere that is
   // not already a text field, matching how developers search other dev tools.
   document.body.addEventListener("keydown", (event) => {
     const keyboardEvent = event as KeyboardEvent;
+    if (keyboardEvent.key === "Escape" && shortcutsOverlay !== undefined) {
+      closeShortcuts();
+      keyboardEvent.preventDefault();
+      return;
+    }
     if (
-      keyboardEvent.key !== "/" ||
+      (keyboardEvent.key !== "/" && keyboardEvent.key !== "?") ||
       keyboardEvent.ctrlKey ||
       keyboardEvent.metaKey ||
       keyboardEvent.altKey
@@ -295,6 +381,12 @@ function boot(): void {
     ) {
       return;
     }
+    if (keyboardEvent.key === "?") {
+      keyboardEvent.preventDefault();
+      toggleShortcuts();
+      return;
+    }
+    closeShortcuts();
     show("capabilities");
     if (focusCapabilitySearch()) keyboardEvent.preventDefault();
   });

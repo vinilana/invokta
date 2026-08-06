@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { doctorReportToJson, inspectEngine } from "../src/doctor.js";
+import type { LoadedEngine } from "../src/load-engine.js";
 import { runDevtoolsCli } from "../src/run-devtools-cli.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -57,9 +59,9 @@ module: "${fixture("valid-engine.js")}"
 export: "engine"
 engine: name="fixture-engine" version="0.1.0" capabilities=2
 notes: 4
-note: code="TITLE_MISSING" capabilityId="fixture.echo"
-note: code="ANNOTATIONS_MISSING" capabilityId="fixture.echo"
-note: code="MCP_MANIFEST_MISSING"
+note: code="TITLE_MISSING" capabilityId="fixture.echo" hint: Add a title to the capability definition.
+note: code="ANNOTATIONS_MISSING" capabilityId="fixture.echo" hint: Add annotations such as { readOnly: true } to the capability definition.
+note: code="MCP_MANIFEST_MISSING" hint: Add an invokta.mcp.json manifest next to the project to make the engine installable as an MCP server (scaffolded by create-invokta-engine).
 note: code="COMPOSITION_CHECK_AVAILABLE" reason: run "invokta check-capabilities" against the composed export.
 `;
 
@@ -132,6 +134,14 @@ describe("invokta-devtools doctor", () => {
       'finding: code="SCHEMA_UNREADABLE" capabilityId="fixture.opaque" schema="input"',
     );
     expect(result.stderr).not.toContain('schema="output"');
+  });
+
+  it("reports duplicate capability ids as an advisory note", () => {
+    const result = runCommand("doctor", fixture("duplicate-id-engine.js"));
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain('code="DUPLICATE_CAPABILITY_ID"');
   });
 
   it("keeps doctor diagnostics free of capability payloads", () => {
@@ -227,6 +237,153 @@ describe("invokta-devtools doctor", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("");
     expect(result.stderr).toBe(validEngineReport);
+  });
+});
+
+describe("inspectEngine advisory checks", () => {
+  function unitEngine(
+    list: LoadedEngine["list"],
+    describeCapability: (capabilityId: string) => unknown,
+  ): LoadedEngine {
+    return {
+      name: "unit-engine",
+      version: "0.0.1",
+      invoke: async () => ({}),
+      list,
+      describe: describeCapability as LoadedEngine["describe"],
+    };
+  }
+
+  function fullDescription(
+    overrides: Readonly<Record<string, unknown>> = {},
+  ): Record<string, unknown> {
+    return {
+      id: "fixture.op",
+      description: "Described.",
+      title: "Fixture",
+      annotations: { readOnly: true },
+      inputSchema: { type: "object" },
+      outputSchema: { type: "object" },
+      ...overrides,
+    };
+  }
+
+  it("notes duplicate capability ids in the list", () => {
+    const report = inspectEngine(
+      unitEngine(
+        () => [
+          { id: "fixture.op", description: "One." },
+          { id: "fixture.op", description: "Two." },
+        ],
+        () => fullDescription(),
+      ),
+    );
+
+    const duplicates = report.notes.filter(
+      (note) => note.code === "DUPLICATE_CAPABILITY_ID",
+    );
+    expect(duplicates).toHaveLength(1);
+    expect(duplicates[0]).toMatchObject({
+      capabilityId: "fixture.op",
+      hint: expect.any(String),
+    });
+    expect(report.findings).toEqual([]);
+  });
+
+  it("notes a missing or empty description", () => {
+    const report = inspectEngine(
+      unitEngine(
+        () => [
+          { id: "fixture.missing", description: "One." },
+          { id: "fixture.empty", description: "Two." },
+          { id: "fixture.blank", description: "Three." },
+        ],
+        (capabilityId) =>
+          fullDescription({
+            id: capabilityId,
+            ...(capabilityId === "fixture.missing"
+              ? { description: undefined }
+              : capabilityId === "fixture.empty"
+                ? { description: "" }
+                : { description: "   " }),
+          }),
+      ),
+    );
+
+    expect(
+      report.notes
+        .filter((note) => note.code === "DESCRIPTION_MISSING")
+        .map((note) => ("capabilityId" in note ? note.capabilityId : "")),
+    ).toEqual(["fixture.missing", "fixture.empty", "fixture.blank"]);
+  });
+
+  it("notes a schema object without a type keyword", () => {
+    const report = inspectEngine(
+      unitEngine(
+        () => [{ id: "fixture.op", description: "One." }],
+        () =>
+          fullDescription({
+            inputSchema: { properties: {} },
+            outputSchema: { type: "object" },
+          }),
+      ),
+    );
+
+    expect(report.findings).toEqual([]);
+    expect(report.notes).toContainEqual(
+      expect.objectContaining({
+        code: "SCHEMA_WITHOUT_TYPE",
+        capabilityId: "fixture.op",
+        schema: "input",
+        hint: expect.any(String),
+      }),
+    );
+    expect(
+      report.notes.filter((note) => note.code === "SCHEMA_WITHOUT_TYPE"),
+    ).toHaveLength(1);
+  });
+
+  it("keeps schema-without-type advisory while an unreadable schema stays a finding", () => {
+    const report = inspectEngine(
+      unitEngine(
+        () => [{ id: "fixture.op", description: "One." }],
+        () => fullDescription({ inputSchema: null }),
+      ),
+    );
+
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        code: "SCHEMA_UNREADABLE",
+        capabilityId: "fixture.op",
+        schema: "input",
+        hint: expect.any(String),
+      }),
+    );
+    expect(
+      report.notes.filter((note) => note.code === "SCHEMA_WITHOUT_TYPE"),
+    ).toEqual([]);
+  });
+
+  it("carries remediation hints into the JSON-safe report body", () => {
+    const report = inspectEngine(
+      unitEngine(
+        () => [{ id: "fixture.op", description: "One." }],
+        () => fullDescription({ inputSchema: null }),
+      ),
+      { mcpManifestPresent: false },
+    );
+
+    const body = doctorReportToJson(report) as {
+      readonly findings: ReadonlyArray<Readonly<Record<string, unknown>>>;
+      readonly notes: ReadonlyArray<Readonly<Record<string, unknown>>>;
+    };
+    expect(body.findings[0]?.code).toBe("SCHEMA_UNREADABLE");
+    expect(typeof body.findings[0]?.hint).toBe("string");
+    const manifestNote = body.notes.find(
+      (note) => note.code === "MCP_MANIFEST_MISSING",
+    );
+    expect(typeof manifestNote?.hint).toBe("string");
+    expect(JSON.stringify(body)).toContain("invokta.mcp.json");
   });
 });
 

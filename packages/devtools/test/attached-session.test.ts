@@ -349,8 +349,17 @@ describe("createAttachedSessionController", () => {
 
     await controller.disconnect(owner);
     expect(client.close).toHaveBeenCalledOnce();
-    expect(controller.state(owner)).toEqual({ state: "idle" });
-    expect(controller.activity(owner)).toEqual([]);
+    expect(controller.state(owner)).toMatchObject({ state: "idle" });
+    const retained = controller.activity(owner);
+    expect(retained.map((record) => record.operation)).toEqual([
+      "initialize",
+      "tools/list",
+      "disconnect",
+    ]);
+    expect(controller.state(owner)).toMatchObject({
+      state: "idle",
+      activity: retained,
+    });
   });
 
   it("walks every page sequentially, including an empty cursor, in server order", async () => {
@@ -600,7 +609,9 @@ describe("createAttachedSessionController", () => {
     await expectCode(firstCall, "CANCELLED");
     expect(client.callTool).toHaveBeenCalledOnce();
     expect(client.close).toHaveBeenCalledOnce();
-    expect(controller.activity(owner)).toEqual([]);
+    expect(
+      controller.activity(owner).map((record) => record.operation),
+    ).toEqual(["initialize", "tools/list", "tools/call", "disconnect"]);
   });
 
   it("times out a manual call at exactly 60 seconds and releases the target", async () => {
@@ -644,6 +655,65 @@ describe("createAttachedSessionController", () => {
     expect(activity.every((record) => record.operation === "tools/call")).toBe(
       true,
     );
+  });
+
+  it("retains only the newest 50 records in the idle state", async () => {
+    const client = connection(async () => ({ tools: [tool("fixture.echo")] }));
+    const controller = controllerWith(vi.fn(async () => client));
+    await controller.connect(owner, target);
+    for (let index = 0; index < 60; index += 1) {
+      await controller.call(owner, "fixture.echo", { index });
+    }
+
+    await controller.disconnect(owner);
+
+    // Sequences: 1 initialize, 2 tools/list, 3-62 calls, 63 disconnect.
+    const retained = controller.activity(owner);
+    expect(retained).toHaveLength(
+      ATTACHED_SESSION_LIMITS.retainedActivityRecords,
+    );
+    expect(retained[0]?.sequence).toBe(14);
+    expect(retained.at(-1)?.operation).toBe("disconnect");
+    const idle = controller.state(owner);
+    expect(idle.state).toBe("idle");
+    if (idle.state !== "idle") return;
+    expect(idle.activity).toEqual(retained);
+  });
+
+  it("drops the retained records when a new target connects", async () => {
+    const client = connection(async () => ({ tools: [tool("fixture.echo")] }));
+    const controller = controllerWith(vi.fn(async () => client));
+    await controller.connect(owner, target);
+    await controller.disconnect(owner);
+    expect(controller.activity(owner).length).toBeGreaterThan(0);
+
+    await controller.connect(owner, target);
+
+    expect(controller.state(owner).state).toBe("connected");
+    expect(
+      controller.activity(owner).map((record) => record.operation),
+    ).toEqual(["initialize", "tools/list"]);
+  });
+
+  it("retains the records that preceded a connection failure", async () => {
+    const client = connection(async () => {
+      throw new Error("catalog blew up");
+    });
+    const controller = controllerWith(vi.fn(async () => client));
+
+    await expectCode(controller.connect(owner, target), "PROTOCOL_ERROR");
+
+    const idle = controller.state(owner);
+    expect(idle.state).toBe("idle");
+    if (idle.state !== "idle") return;
+    expect(idle.validation?.error.code).toBe("PROTOCOL_ERROR");
+    expect(
+      idle.activity?.map((record) => [record.operation, record.outcome]),
+    ).toEqual([
+      ["initialize", "success"],
+      ["tools/list", "error"],
+    ]);
+    expect(controller.activity(owner)).toEqual(idle.activity);
   });
 
   it("bounds server-provided tool names before adding them to Activity", async () => {

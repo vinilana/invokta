@@ -1,5 +1,9 @@
 import { api, type DoctorInfo } from "./api.js";
+import { createCopyButton } from "./clipboard.js";
 import { clear, el, pretty } from "./dom.js";
+
+const compositionCheckCommand = "invokta check-capabilities";
+const restartRecheckDelayMs = 250;
 
 type DiagnosticKind = "finding" | "note";
 type Diagnostic = Readonly<Record<string, unknown>>;
@@ -46,11 +50,36 @@ function describeDiagnostic(
     case "MCP_MANIFEST_MISSING":
       return "No invokta.mcp.json was found in the working directory.";
     case "COMPOSITION_CHECK_AVAILABLE":
-      return "Run invokta check-capabilities to inspect composition provenance.";
+      return `Run ${compositionCheckCommand} to inspect composition provenance.`;
     default:
       return kind === "finding"
         ? "The doctor reported an issue that needs attention."
         : "Additional doctor information is available.";
+  }
+}
+
+/** Routes to the Playground and asks the invoke panel to select a capability. */
+function openInPlayground(capabilityId: string): void {
+  try {
+    if (typeof location !== "undefined") {
+      location.hash = `#capabilities/${encodeURIComponent(capabilityId)}`;
+    }
+  } catch {
+    // Hash routing is a convenience; the selection event still fires.
+  }
+  try {
+    if (
+      typeof CustomEvent === "function" &&
+      typeof document.dispatchEvent === "function"
+    ) {
+      document.dispatchEvent(
+        new CustomEvent("invokta:select-capability", {
+          detail: { id: capabilityId },
+        }),
+      );
+    }
+  } catch {
+    // The invoke panel may not be listening.
   }
 }
 
@@ -61,8 +90,31 @@ function renderDiagnostic(
 ): HTMLLIElement {
   const code = readString(diagnostic, "code") ?? "UNKNOWN_DIAGNOSTIC";
   const isFinding = kind === "finding";
+  const hint = readString(diagnostic, "hint");
+  const capabilityId = readString(diagnostic, "capabilityId");
   const codeId = `doctor-${kind}-${String(index)}-code`;
   const messageId = `doctor-${kind}-${String(index)}-message`;
+  const actions: HTMLElement[] = [];
+  if (code === "COMPOSITION_CHECK_AVAILABLE") {
+    actions.push(
+      createCopyButton("command", () => compositionCheckCommand, "copy-button"),
+    );
+  }
+  if (capabilityId !== undefined) {
+    const playground = el(
+      "button",
+      {
+        type: "button",
+        class: "diagnostic-playground",
+        title: `Inspect ${capabilityId} in the Playground`,
+      },
+      ["Open in Playground"],
+    );
+    playground.addEventListener("click", () => {
+      openInPlayground(capabilityId);
+    });
+    actions.push(playground);
+  }
   return el(
     "li",
     {
@@ -81,6 +133,12 @@ function renderDiagnostic(
         el("p", { class: "diagnostic-message", id: messageId }, [
           describeDiagnostic(kind, diagnostic),
         ]),
+        hint === undefined
+          ? null
+          : el("p", { class: "diagnostic-hint" }, [hint]),
+        actions.length === 0
+          ? null
+          : el("div", { class: "diagnostic-actions" }, actions),
       ]),
       el("details", { class: "diagnostic-details" }, [
         el("summary", {}, ["Raw details"]),
@@ -230,7 +288,7 @@ export function renderDoctorPanel(container: HTMLElement): () => void {
   );
   container.append(panel);
 
-  const runChecks = async (): Promise<void> => {
+  const runChecks = async (reason?: "restart"): Promise<void> => {
     if (!active || loading) return;
     loading = true;
     panel.setAttribute("aria-busy", "true");
@@ -238,7 +296,8 @@ export function renderDoctorPanel(container: HTMLElement): () => void {
     status.setAttribute("class", "doctor-state hint");
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
-    status.textContent = "Running checks…";
+    status.textContent =
+      reason === "restart" ? "Re-checking after restart…" : "Running checks…";
 
     try {
       const report = await api.doctor();
@@ -274,10 +333,40 @@ export function renderDoctorPanel(container: HTMLElement): () => void {
     void runChecks();
   };
   refresh.addEventListener("click", handleRefresh);
+
+  // A restart invalidates every check result, so the same lifecycle stream the
+  // trace panel consumes triggers a debounced re-run here.
+  let restartTimer: ReturnType<typeof setTimeout> | undefined;
+  let source: EventSource | undefined;
+  if (typeof EventSource === "function") {
+    source = new EventSource("/api/events");
+    source.addEventListener("trace", (event) => {
+      try {
+        const entry = JSON.parse((event as MessageEvent<string>).data) as {
+          readonly kind?: string;
+          readonly notice?: string;
+        };
+        if (entry.kind !== "notice" || entry.notice !== "engine-restarted") {
+          return;
+        }
+        if (restartTimer !== undefined) clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          restartTimer = undefined;
+          void runChecks("restart");
+        }, restartRecheckDelayMs);
+      } catch {
+        // A malformed frame is dropped; the stream continues.
+      }
+    });
+  }
+
   void runChecks();
 
   return () => {
     active = false;
     refresh.removeEventListener("click", handleRefresh);
+    if (restartTimer !== undefined) clearTimeout(restartTimer);
+    restartTimer = undefined;
+    source?.close();
   };
 }

@@ -2023,4 +2023,156 @@ details.trace-row--exchange {
 
   .status-dot { forced-color-adjust: none; }
 }
+
+/* DX batch: trace filters and handoff, doctor actions, identity presets,
+   and the shortcuts overlay. Appended only; existing rules are unchanged. */
+
+.trace-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.4rem;
+}
+
+.trace-open-playground,
+.diagnostic-playground,
+.principal-preset {
+  min-height: 1.6rem;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  color: var(--accent-text);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trace-open-playground:hover,
+.diagnostic-playground:hover,
+.principal-preset:hover {
+  border-color: var(--accent);
+}
+
+.trace-notice-detail {
+  margin: 0.45rem 0 0;
+}
+
+.trace-dropped {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+a.trace-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.diagnostic-hint {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.diagnostic-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.principal-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+.shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  background: rgb(0 0 0 / 35%);
+}
+
+.shortcuts-card {
+  min-width: 17rem;
+  max-width: min(24rem, calc(100vw - 2rem));
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--raised);
+  color: var(--body);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 22%);
+}
+
+.shortcuts-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+}
+
+.shortcuts-list { margin: 0; }
+
+.shortcuts-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.2rem 0;
+  font-size: 0.75rem;
+}
+
+.shortcuts-entry dt { margin: 0; }
+.shortcuts-entry dd { margin: 0; }
+
+.shortcuts-entry kbd {
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.25rem;
+  background: var(--surface-2);
+  font-family: inherit;
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.shortcuts-card .hint { margin: 0.6rem 0 0; }
+
+/* --- Invoke flow DX: nested schema tree, raw status, retry/cancel --- */
+
+.schema-nested-sections {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.schema-nested {
+  display: grid;
+  gap: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--line);
+}
+
+.schema-nested-label {
+  margin: 0 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.raw-response-status {
+  margin-left: 0.35rem;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: normal;
+}
+
+.invoke-cancel[hidden] { display: none; }
+
+.capability-retry { margin-top: 0.5rem; }
 `;

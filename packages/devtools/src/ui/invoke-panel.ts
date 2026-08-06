@@ -1,4 +1,4 @@
-import { type CapabilityInfo, callTool } from "./api.js";
+import { type CapabilityInfo, callTool, toolCallRequest } from "./api.js";
 import { createCopyButton, formatDuration } from "./clipboard.js";
 import { el, pretty } from "./dom.js";
 import { exampleFromSchema } from "./example-from-schema.js";
@@ -6,6 +6,147 @@ import { parseMcpResponse } from "./mcp-response.js";
 import { getActiveToken } from "./principals.js";
 
 const emptyResult = "Invoke the capability to see its result.";
+
+const timeoutSlackMs = 2_000;
+const defaultTimeoutMs = 28_000;
+const elapsedTickMs = 100;
+
+function readSession(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // Session storage is a convenience; the editor still works in-memory.
+  }
+}
+
+function dropSession(key: string): void {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // Session storage is a convenience only.
+  }
+}
+
+type SchemaRecord = Readonly<Record<string, unknown>>;
+
+function asRecord(value: unknown): SchemaRecord | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as SchemaRecord;
+}
+
+function schemaTypeOf(schema: SchemaRecord): string | undefined {
+  const type = schema.type;
+  if (typeof type === "string") return type;
+  if (Array.isArray(type) && typeof type[0] === "string") return type[0];
+  return undefined;
+}
+
+function matchesType(type: string, value: unknown): boolean {
+  switch (type) {
+    case "string":
+      return typeof value === "string";
+    case "number":
+      return typeof value === "number";
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "object":
+      return (
+        typeof value === "object" && value !== null && !Array.isArray(value)
+      );
+    case "array":
+      return Array.isArray(value);
+    case "null":
+      return value === null;
+    default:
+      return true;
+  }
+}
+
+const typeLabels: Readonly<Record<string, string>> = {
+  string: "a string",
+  number: "a number",
+  integer: "an integer",
+  boolean: "a boolean",
+  object: "an object",
+  array: "an array",
+  null: "null",
+};
+
+function fieldIssue(
+  name: string,
+  value: unknown,
+  schema: unknown,
+): string | undefined {
+  const record = asRecord(schema);
+  if (record === undefined) return undefined;
+  const type = schemaTypeOf(record);
+  if (type !== undefined && !matchesType(type, value)) {
+    return `"${name}" must be ${typeLabels[type] ?? `of type ${type}`}.`;
+  }
+  if (Array.isArray(record.enum) && record.enum.length > 0) {
+    const allowed = record.enum.some(
+      (candidate) => pretty(candidate) === pretty(value),
+    );
+    if (!allowed) return `"${name}" must be one of the allowed values.`;
+  }
+  return undefined;
+}
+
+/** Surfaces the SyntaxError position info instead of a bare "invalid JSON". */
+function syntaxDetail(error: unknown): string {
+  return error instanceof SyntaxError && error.message !== ""
+    ? ` ${error.message}`
+    : "";
+}
+
+/**
+ * Light client-side check of the top-level fields so obvious mistakes are
+ * caught before the round trip. Only required properties, primitive types,
+ * and enum membership are checked; engine validation stays authoritative.
+ */
+export function validateArguments(
+  args: unknown,
+  schema: unknown,
+): string | undefined {
+  const record = asRecord(schema);
+  if (record === undefined) return undefined;
+  const type = schemaTypeOf(record);
+  const isObjectSchema =
+    type === "object" ||
+    (type === undefined && record.properties !== undefined);
+  if (!isObjectSchema) return undefined;
+  if (typeof args !== "object" || args === null || Array.isArray(args)) {
+    return "Arguments must be a JSON object.";
+  }
+  const fields = args as Record<string, unknown>;
+  if (Array.isArray(record.required)) {
+    for (const name of record.required) {
+      if (typeof name === "string" && !(name in fields)) {
+        return `"${name}" is required.`;
+      }
+    }
+  }
+  const properties = asRecord(record.properties);
+  if (properties === undefined) return undefined;
+  for (const [name, property] of Object.entries(properties)) {
+    if (!(name in fields)) continue;
+    const issue = fieldIssue(name, fields[name], property);
+    if (issue !== undefined) return issue;
+  }
+  return undefined;
+}
 
 /**
  * The invocation playground for one capability: a schema-seeded JSON editor,
@@ -16,6 +157,16 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   const safeId = capability.id.replaceAll(/[^A-Za-z0-9_-]/g, "-");
   const editorId = `input-${safeId}`;
   const feedbackId = `input-feedback-${safeId}`;
+  const draftKey = `invokta-devtools:draft:${capability.id}`;
+  const prefillKey = `invokta-devtools:prefill:${capability.id}`;
+  // A prefill handoff (for example "Open in Playground" from Activity) wins
+  // over the persisted draft, and both win over the schema-seeded example.
+  const prefill = readSession(prefillKey);
+  if (prefill !== null) dropSession(prefillKey);
+  const seed =
+    prefill ??
+    readSession(draftKey) ??
+    pretty(exampleFromSchema(capability.inputSchema));
   const editor = el(
     "textarea",
     {
@@ -26,7 +177,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
       "aria-describedby": feedbackId,
       "aria-invalid": "false",
     },
-    [pretty(exampleFromSchema(capability.inputSchema))],
+    [seed],
   );
   const feedback = el(
     "p",
@@ -73,13 +224,16 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     { class: "raw", "aria-label": "Raw MCP response body" },
     [],
   );
+  // The status lives outside the <pre> so copying the response yields the
+  // pure, still-parsable body.
+  const rawResponseStatus = el("span", { class: "raw-response-status" }, []);
   const rawHeading = (
-    heading: string,
+    heading: string | HTMLElement,
     copyLabel: string,
     read: () => string,
   ): HTMLElement =>
     el("div", { class: "raw-heading" }, [
-      el("h4", {}, [heading]),
+      typeof heading === "string" ? el("h4", {}, [heading]) : heading,
       createCopyButton(copyLabel, read),
     ]);
   const rawSection = el("details", {}, [
@@ -91,7 +245,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     ),
     rawRequest,
     rawHeading(
-      "Response",
+      el("h4", {}, ["Response", rawResponseStatus]),
       "raw MCP response",
       () => rawResponse.textContent ?? "",
     ),
@@ -124,17 +278,30 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     },
     ["Invoke capability"],
   );
+  const cancel = el("button", { type: "button", class: "invoke-cancel" }, [
+    "Cancel",
+  ]);
+  cancel.hidden = true;
   let pending = false;
+  let activeController: AbortController | undefined;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  let elapsedHandle: ReturnType<typeof setInterval> | undefined;
+  let cancelledByUser = false;
+  let timedOut = false;
+  const clientTimeoutMs =
+    (capability.timeoutMs ?? defaultTimeoutMs) + timeoutSlackMs;
 
   const resetOutput = (): void => {
     feedback.textContent = "";
     showResult("not run", emptyResult);
     rawRequest.textContent = "";
     rawResponse.textContent = "";
+    rawResponseStatus.textContent = "";
     rawSection.hidden = true;
   };
 
   reset.addEventListener("click", () => {
+    dropSession(draftKey);
     editor.value = pretty(exampleFromSchema(capability.inputSchema));
     editor.setAttribute("aria-invalid", "false");
     resetOutput();
@@ -145,14 +312,16 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     editor.setAttribute("aria-invalid", "false");
     try {
       editor.value = pretty(JSON.parse(editor.value) as unknown);
-    } catch {
+      writeSession(draftKey, editor.value);
+    } catch (error) {
       editor.setAttribute("aria-invalid", "true");
-      feedback.textContent = "Enter valid JSON before formatting.";
+      feedback.textContent = `Enter valid JSON before formatting.${syntaxDetail(error)}`;
       editor.focus();
     }
   });
 
   editor.addEventListener("input", () => {
+    writeSession(draftKey, editor.value);
     if (editor.getAttribute("aria-invalid") === "true") {
       editor.setAttribute("aria-invalid", "false");
       feedback.textContent = "";
@@ -162,11 +331,18 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   const setPending = (next: boolean): void => {
     pending = next;
     invoke.setAttribute("aria-disabled", String(next));
+    cancel.hidden = !next;
     reset.disabled = next;
     format.disabled = next;
     invoke.textContent = next ? "Invoking…" : "Invoke capability";
     resultView.setAttribute("aria-busy", String(next));
   };
+
+  cancel.addEventListener("click", () => {
+    if (!pending) return;
+    cancelledByUser = true;
+    activeController?.abort();
+  });
 
   const runInvocation = (): void => {
     if (pending) return;
@@ -174,13 +350,22 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     editor.setAttribute("aria-invalid", "false");
     rawRequest.textContent = "";
     rawResponse.textContent = "";
+    rawResponseStatus.textContent = "";
     rawSection.hidden = true;
     let args: unknown;
     try {
       args = JSON.parse(editor.value);
-    } catch {
+    } catch (error) {
       editor.setAttribute("aria-invalid", "true");
-      feedback.textContent = "Enter valid JSON before invoking.";
+      feedback.textContent = `Enter valid JSON before invoking.${syntaxDetail(error)}`;
+      showResult("not run", "The capability was not invoked.", true);
+      editor.focus();
+      return;
+    }
+    const issue = validateArguments(args, capability.inputSchema);
+    if (issue !== undefined) {
+      editor.setAttribute("aria-invalid", "true");
+      feedback.textContent = issue;
       showResult("not run", "The capability was not invoked.", true);
       editor.focus();
       return;
@@ -188,12 +373,24 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     setPending(true);
     showResult("running", `Running ${capability.id}…`);
     const startedAt = performance.now();
-    void callTool(capability.id, args, getActiveToken())
+    cancelledByUser = false;
+    timedOut = false;
+    const controller = new AbortController();
+    activeController = controller;
+    elapsedHandle = setInterval(() => {
+      resultState.textContent = `Result · running · ${formatDuration(performance.now() - startedAt)}`;
+    }, elapsedTickMs);
+    timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, clientTimeoutMs);
+    void callTool(capability.id, args, getActiveToken(), controller.signal)
       .then((exchange) => {
         const elapsedMs = performance.now() - startedAt;
         rawSection.hidden = false;
         rawRequest.textContent = exchange.requestBody;
-        rawResponse.textContent = `HTTP ${String(exchange.status)}\n${exchange.responseBody}`;
+        rawResponseStatus.textContent = ` · HTTP ${String(exchange.status)}`;
+        rawResponse.textContent = exchange.responseBody;
         if (exchange.status === 401) {
           feedback.textContent =
             "Authentication failed (HTTP 401). In Test identities, select an identity with a session token, then try again.";
@@ -288,16 +485,38 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
         showResult("success", pretty(output), false, elapsedMs);
       })
       .catch(() => {
+        const elapsedMs = performance.now() - startedAt;
+        if (cancelledByUser) {
+          feedback.textContent = "Invocation cancelled.";
+          showResult(
+            "cancelled",
+            "The invocation was cancelled before a response arrived.",
+            true,
+            elapsedMs,
+          );
+          return;
+        }
+        if (timedOut) {
+          const seconds = Math.max(1, Math.round(clientTimeoutMs / 1_000));
+          feedback.textContent = `No response within ${String(seconds)} s — the capability may be stuck.`;
+          showResult(
+            "timeout",
+            "No response received before the client timeout.",
+            true,
+            elapsedMs,
+          );
+          return;
+        }
         feedback.textContent =
           "Couldn’t reach the MCP endpoint. Check that the dev server is running, then try again.";
-        showResult(
-          "no response",
-          "No response received.",
-          true,
-          performance.now() - startedAt,
-        );
+        showResult("no response", "No response received.", true, elapsedMs);
       })
       .finally(() => {
+        if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+        if (elapsedHandle !== undefined) clearInterval(elapsedHandle);
+        timeoutHandle = undefined;
+        elapsedHandle = undefined;
+        activeController = undefined;
         setPending(false);
       });
   };
@@ -309,17 +528,38 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     runInvocation();
   });
 
+  const readCurlCommand = (): string => {
+    let args: unknown;
+    try {
+      args = JSON.parse(editor.value);
+    } catch {
+      return "";
+    }
+    const request = toolCallRequest(capability.id, args, getActiveToken());
+    const origin = (globalThis as { location?: { origin?: unknown } }).location
+      ?.origin;
+    const target = `${typeof origin === "string" ? origin : ""}${request.path}`;
+    const lines = [`curl -X ${request.method} ${target}`];
+    for (const [name, value] of Object.entries(request.headers)) {
+      lines.push(`  -H "${name}: ${value}"`);
+    }
+    lines.push(`  -d '${request.body}'`);
+    return lines.join(" \\\n");
+  };
+
   const requestPane = el("section", { class: "invoke-request" }, [
     el("label", { for: editorId, class: "field-label" }, ["Arguments (JSON)"]),
     el("div", { class: "code-window" }, [
       windowBar(
         "tools/call arguments",
         createCopyButton("arguments", () => editor.value),
+        createCopyButton("curl command", readCurlCommand),
       ),
       editor,
     ]),
     el("div", { class: "invoke-actions" }, [
       invoke,
+      cancel,
       format,
       reset,
       el("span", { class: "shortcut-hint" }, [

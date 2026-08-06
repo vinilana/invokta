@@ -4,6 +4,17 @@ import { clear, el, pretty } from "./dom.js";
 const tokensStorageKey = "invokta-devtools.tokens";
 const activeStorageKey = "invokta-devtools.active";
 
+/** Quick-fill identities for the create form; none of them mints anything. */
+const attributePresets: ReadonlyArray<{
+  readonly label: string;
+  readonly id: string;
+  readonly attributes?: Readonly<Record<string, unknown>>;
+}> = [
+  { label: "Admin", id: "admin", attributes: { role: "admin" } },
+  { label: "Reviewer", id: "reviewer", attributes: { role: "reviewer" } },
+  { label: "Anonymous", id: "anonymous" },
+];
+
 function readTokens(): Record<string, string> {
   try {
     const raw = sessionStorage.getItem(tokensStorageKey);
@@ -421,11 +432,30 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
             );
           });
       });
+      const duplicate = el(
+        "button",
+        {
+          type: "button",
+          "aria-label": `Duplicate test identity ${entry.principal.id}`,
+        },
+        ["Duplicate"],
+      );
+      duplicate.addEventListener("click", () => {
+        clearPanelStatus();
+        resetCreateValidation();
+        createSection.setAttribute("open", "");
+        idInput.value = `${entry.principal.id}-copy`;
+        attributesInput.value =
+          entry.principal.attributes === undefined
+            ? ""
+            : pretty(entry.principal.attributes);
+        idInput.focus();
+      });
       cancelConfirmation.addEventListener("click", () => {
         resetConfirmation();
         setActionStatus("");
       });
-      actionButtons.push(tokenAction, remove, cancelConfirmation);
+      actionButtons.push(tokenAction, duplicate, remove, cancelConfirmation);
 
       const row = el(
         "div",
@@ -564,6 +594,25 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
     attributesInput.addEventListener("input", () => {
       clearFieldError(attributesInput);
     });
+    const presetButtons = attributePresets.map((preset) => {
+      const button = el(
+        "button",
+        {
+          type: "button",
+          class: "principal-preset",
+          "aria-label": `Fill the form with the ${preset.label} preset`,
+        },
+        [preset.label],
+      );
+      button.addEventListener("click", () => {
+        resetCreateValidation();
+        idInput.value = preset.id;
+        attributesInput.value =
+          preset.attributes === undefined ? "" : pretty(preset.attributes);
+        idInput.focus();
+      });
+      return button;
+    });
     const create = el("button", { type: "button" }, ["Add identity"]);
     create.addEventListener("click", () => {
       clearPanelStatus();
@@ -619,12 +668,14 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           setActivePrincipal(issued.key);
           void render();
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (!active) return;
           create.disabled = false;
           create.textContent = "Add identity";
           setCreateFeedback(
-            "The test identity could not be added. Try again.",
+            error instanceof Error && error.message !== ""
+              ? error.message
+              : "The test identity could not be added. Try again.",
             "error",
           );
         });
@@ -667,6 +718,15 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
             attributesInput,
           ]),
         ]),
+        el(
+          "div",
+          {
+            class: "principal-presets",
+            role: "group",
+            "aria-label": "Quick-fill presets",
+          },
+          [el("span", { class: "hint" }, ["Quick fill:"]), ...presetButtons],
+        ),
         el("div", { class: "principal-create-actions" }, [create]),
         feedback,
       ]),

@@ -1,17 +1,21 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { startAttachedDevtoolsServer } from "./attached-server.js";
 import {
+  asRecord,
   describeThrownValue,
   programName,
   quote,
+  readThrownValueInfo,
   renderLines,
   token,
   UsageError,
 } from "./diagnostics.js";
 import type { DoctorFinding, DoctorNote, DoctorReport } from "./doctor.js";
-import { inspectEngine } from "./doctor.js";
+import { doctorReportToJson, inspectEngine } from "./doctor.js";
+import type { LoadedEngine } from "./load-engine.js";
 import {
   hasComposedCapabilitiesExport,
   loadEngineModule,
@@ -37,6 +41,7 @@ export interface DoctorCommand {
   readonly command: "doctor";
   readonly moduleSpecifier: string;
   readonly exportName: string;
+  readonly json?: boolean;
 }
 
 export interface ServeCommand {
@@ -46,11 +51,22 @@ export interface ServeCommand {
   readonly port?: number;
   readonly enginePort?: number;
   readonly buildCommand?: string;
+  readonly watchInclude?: readonly string[];
+  readonly watchIgnore?: readonly string[];
+  readonly traceCapacity?: number;
 }
 
 export interface OpenCommand {
   readonly command: "open";
   readonly port?: number;
+}
+
+export interface HelpCommand {
+  readonly command: "help";
+}
+
+export interface VersionCommand {
+  readonly command: "version";
 }
 
 export interface VerifyEnvironmentReference {
@@ -65,6 +81,9 @@ export interface VerifyHeaderEnvironmentReference {
 
 export interface VerifyStdioCommand {
   readonly command: "verify";
+  readonly timeoutMs?: number;
+  readonly maxTools?: number;
+  readonly json?: boolean;
   readonly target: {
     readonly transport: "stdio";
     readonly command: string;
@@ -76,6 +95,9 @@ export interface VerifyStdioCommand {
 
 export interface VerifyHttpCommand {
   readonly command: "verify";
+  readonly timeoutMs?: number;
+  readonly maxTools?: number;
+  readonly json?: boolean;
   readonly target: {
     readonly transport: "http";
     readonly url: string;
@@ -94,7 +116,9 @@ export type ParsedDevtoolsCommand =
   | DoctorCommand
   | ServeCommand
   | OpenCommand
-  | VerifyCommand;
+  | VerifyCommand
+  | HelpCommand
+  | VersionCommand;
 type EngineCommand = DoctorCommand | ServeCommand;
 
 export type ResolvedVerifyTarget =
@@ -134,9 +158,11 @@ const defaultExportName = "engine";
 const mcpManifestFileName = "invokta.mcp.json";
 
 const engineUsage = `Usage:
-  invokta-devtools doctor <esm-module> [--export <name>]
+  invokta-devtools doctor <esm-module> [--export <name>] [--json]
   invokta-devtools serve <esm-module> [--export <name>] [--port <number>]
     [--engine-port <number>] [--watch --build <command>]
+    [--watch-include <path>]... [--watch-ignore <pattern>]...
+    [--trace-capacity <count>]
 
 The module path is resolved against the current working directory and must
 already be built to ESM. The selected export defaults to "engine" and must be
@@ -149,6 +175,11 @@ http://127.0.0.1:4100/ unless --port selects another loopback port.
 --watch requires --build and runs the engine in a replaceable child process:
 project changes run the explicit build command, and only a successful build
 replaces the running engine host. Modules are never reloaded in process.
+--watch-include and --watch-ignore narrow which project paths trigger a
+rebuild; --trace-capacity bounds the retained invocation trace entries.
+
+doctor --json prints the report as JSON to stdout instead of the human
+summary.
 
 Exit codes:
   0  the engine passed the doctor checks, or the dev server shut down cleanly
@@ -163,18 +194,28 @@ const usage = engineUsage.replace(
   invokta-devtools open [--port <number>]
   invokta-devtools verify --stdio <executable> [--arg <value>]...
     [--cwd <directory>] [--env <child-name>=<source-environment-name>]...
+    [--timeout-ms <ms>] [--max-tools <count>] [--json]
   invokta-devtools verify --http <url> [--auth <none|bearer|headers>]
     [--bearer-env <environment-name>]
     [--header-env <header-name>=<environment-name>]...
+    [--timeout-ms <ms>] [--max-tools <count>] [--json]
+  invokta-devtools --help
+  invokta-devtools --version
+
+--timeout-ms bounds the initialization and catalog deadlines, --max-tools
+bounds the accepted tool count, and --json prints the verification result as
+JSON (success to stdout, failure to stderr).
 `,
 );
 
 function parseModuleArguments(args: readonly string[]): {
   readonly moduleSpecifier: string;
   readonly exportName: string;
+  readonly json?: boolean;
 } {
   let moduleSpecifier: string | undefined;
   let exportName: string | undefined;
+  let json = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index] as string;
     if (argument === "--export") {
@@ -189,6 +230,15 @@ function parseModuleArguments(args: readonly string[]): {
       }
       exportName = value;
       index += 1;
+      continue;
+    }
+    if (argument === "--json") {
+      if (json) {
+        throw new UsageError(
+          "The --json option must be provided at most once.",
+        );
+      }
+      json = true;
       continue;
     }
     if (argument.startsWith("-")) {
@@ -206,7 +256,11 @@ function parseModuleArguments(args: readonly string[]): {
   if (moduleSpecifier === undefined) {
     throw new UsageError("A module path is required.");
   }
-  return { moduleSpecifier, exportName: exportName ?? defaultExportName };
+  return {
+    moduleSpecifier,
+    exportName: exportName ?? defaultExportName,
+    ...(json ? { json: true } : {}),
+  };
 }
 
 function parsePort(option: string, value: string | undefined): number {
@@ -220,6 +274,20 @@ function parsePort(option: string, value: string | undefined): number {
     );
   }
   return port;
+}
+
+function parsePositiveIntegerOption(
+  option: string,
+  value: string | undefined,
+): number {
+  if (value === undefined || value === "" || value.startsWith("-")) {
+    throw new UsageError(`The ${option} option requires a positive integer.`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new UsageError(`The ${option} option requires a positive integer.`);
+  }
+  return parsed;
 }
 
 function parseOpenArguments(
@@ -374,6 +442,9 @@ function parseVerifyArguments(args: readonly string[]): VerifyCommand {
   let bearerSourceName: string | undefined;
   const headerEnvironment: VerifyHeaderEnvironmentReference[] = [];
   const normalizedHeaderNames = new Set<string>();
+  let timeoutMs: number | undefined;
+  let maxTools: number | undefined;
+  let json = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index] as string;
@@ -478,6 +549,35 @@ function parseVerifyArguments(args: readonly string[]): VerifyCommand {
       index += 1;
       continue;
     }
+    if (argument === "--timeout-ms") {
+      if (timeoutMs !== undefined) {
+        throw new UsageError(
+          "The --timeout-ms option must be provided at most once.",
+        );
+      }
+      timeoutMs = parsePositiveIntegerOption("--timeout-ms", args[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (argument === "--max-tools") {
+      if (maxTools !== undefined) {
+        throw new UsageError(
+          "The --max-tools option must be provided at most once.",
+        );
+      }
+      maxTools = parsePositiveIntegerOption("--max-tools", args[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (argument === "--json") {
+      if (json) {
+        throw new UsageError(
+          "The --json option must be provided at most once.",
+        );
+      }
+      json = true;
+      continue;
+    }
     if (argument.startsWith("-")) {
       throw new UsageError(`Unknown option ${quote(argument)}.`);
     }
@@ -485,6 +585,12 @@ function parseVerifyArguments(args: readonly string[]): VerifyCommand {
       "The verify command does not accept positional arguments.",
     );
   }
+
+  const verificationOptions = {
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(maxTools === undefined ? {} : { maxTools }),
+    ...(json ? { json: true } : {}),
+  };
 
   if (stdioProvided === httpProvided) {
     throw new UsageError(
@@ -504,6 +610,7 @@ function parseVerifyArguments(args: readonly string[]): VerifyCommand {
     }
     return {
       command: "verify",
+      ...verificationOptions,
       target: {
         transport: "stdio",
         command: stdioCommand as string,
@@ -530,6 +637,7 @@ function parseVerifyArguments(args: readonly string[]): VerifyCommand {
     }
     return {
       command: "verify",
+      ...verificationOptions,
       target: {
         transport: "http",
         url: httpUrl as string,
@@ -546,6 +654,7 @@ function parseVerifyArguments(args: readonly string[]): VerifyCommand {
     }
     return {
       command: "verify",
+      ...verificationOptions,
       target: {
         transport: "http",
         url: httpUrl as string,
@@ -563,6 +672,7 @@ function parseVerifyArguments(args: readonly string[]): VerifyCommand {
   }
   return {
     command: "verify",
+    ...verificationOptions,
     target: {
       transport: "http",
       url: httpUrl as string,
@@ -580,6 +690,9 @@ function parseServeArguments(
   let enginePort: number | undefined;
   let watch = false;
   let buildCommand: string | undefined;
+  const watchInclude: string[] = [];
+  const watchIgnore: string[] = [];
+  let traceCapacity: number | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index] as string;
     if (argument === "--watch") {
@@ -639,6 +752,31 @@ function parseServeArguments(
       index += 1;
       continue;
     }
+    if (argument === "--watch-include") {
+      watchInclude.push(
+        requiredOptionValue("--watch-include", args[index + 1]),
+      );
+      index += 1;
+      continue;
+    }
+    if (argument === "--watch-ignore") {
+      watchIgnore.push(requiredOptionValue("--watch-ignore", args[index + 1]));
+      index += 1;
+      continue;
+    }
+    if (argument === "--trace-capacity") {
+      if (traceCapacity !== undefined) {
+        throw new UsageError(
+          "The --trace-capacity option must be provided at most once.",
+        );
+      }
+      traceCapacity = parsePositiveIntegerOption(
+        "--trace-capacity",
+        args[index + 1],
+      );
+      index += 1;
+      continue;
+    }
     if (argument.startsWith("-")) {
       throw new UsageError(`Unknown option ${quote(argument)}.`);
     }
@@ -659,12 +797,20 @@ function parseServeArguments(
       "The --watch and --build options must be provided together.",
     );
   }
+  if (!watch && (watchInclude.length > 0 || watchIgnore.length > 0)) {
+    throw new UsageError(
+      "The --watch-include and --watch-ignore options require --watch.",
+    );
+  }
   return {
     moduleSpecifier: positional[0] as string,
     exportName: exportName ?? defaultExportName,
     ...(port === undefined ? {} : { port }),
     ...(enginePort === undefined ? {} : { enginePort }),
     ...(buildCommand === undefined ? {} : { buildCommand }),
+    ...(watchInclude.length === 0 ? {} : { watchInclude }),
+    ...(watchIgnore.length === 0 ? {} : { watchIgnore }),
+    ...(traceCapacity === undefined ? {} : { traceCapacity }),
   };
 }
 
@@ -677,6 +823,12 @@ export function parseDevtoolsCommand(
 ): ParsedDevtoolsCommand {
   const [command, ...args] = argv;
   if (command === undefined) return { command: "open" };
+  if (command === "--help" || command === "-h") {
+    return { command: "help" };
+  }
+  if (command === "--version" || command === "-v") {
+    return { command: "version" };
+  }
   if (command.startsWith("-")) {
     return { command: "open", ...parseOpenArguments(argv) };
   }
@@ -714,7 +866,7 @@ export function resolveVerifyTargetEnvironment(
         if (value === undefined || value === "") {
           throw new VerifyEnvironmentError(
             "ENVIRONMENT_VALUE_MISSING",
-            "A required environment value is missing.",
+            `${quote(sourceName)} is not set.`,
           );
         }
         return [childName, value] as const;
@@ -742,7 +894,7 @@ export function resolveVerifyTargetEnvironment(
     if (tokenValue === undefined || tokenValue === "") {
       throw new VerifyEnvironmentError(
         "ENVIRONMENT_VALUE_MISSING",
-        "A required environment value is missing.",
+        `${quote(command.target.authentication.sourceName)} is not set.`,
       );
     }
     if (
@@ -770,7 +922,7 @@ export function resolveVerifyTargetEnvironment(
       if (value === undefined) {
         throw new VerifyEnvironmentError(
           "ENVIRONMENT_VALUE_MISSING",
-          "A required environment value is missing.",
+          `${quote(sourceName)} is not set.`,
         );
       }
       if (value.includes("\r") || value.includes("\n")) {
@@ -805,19 +957,28 @@ function renderUsageError(error: UsageError, selectedUsage = usage): string {
 
 function renderVerifyFailure(
   code: "ENVIRONMENT_VALUE_MISSING" | "INVALID_TARGET",
+  message: string,
 ): string {
-  const message =
-    code === "ENVIRONMENT_VALUE_MISSING"
-      ? "A required environment value is missing."
-      : "The verify command arguments are invalid.";
   return `${programName} verify: ${code}: ${message}\n`;
 }
 
-function renderLoadFailure(command: EngineCommand, error: unknown): string {
+function renderLoadFailure(
+  command: EngineCommand,
+  error: unknown,
+  cwd: string,
+): string {
+  const hint =
+    readThrownValueInfo(error).code === "ERR_MODULE_NOT_FOUND" ||
+    !existsSync(resolve(cwd, command.moduleSpecifier))
+      ? [
+          "reason: build the engine module first (the path must point to built ESM output).",
+        ]
+      : [];
   return renderLines([
     `${programName}: the module could not be loaded.`,
     ...renderContext(command),
     describeThrownValue(error),
+    ...hint,
   ]);
 }
 
@@ -837,32 +998,42 @@ function renderNotAnEngine(command: EngineCommand): string {
   ]);
 }
 
+function renderHint(owner: { readonly hint?: string }): string {
+  return owner.hint === undefined ? "" : ` hint: ${owner.hint}`;
+}
+
 function renderFinding(finding: DoctorFinding): string {
   if (finding.code === "LIST_UNREADABLE") {
     const suffix =
       finding.error === undefined
         ? ""
         : ` ${describeThrownValue(finding.error)}`;
-    return `finding: code="LIST_UNREADABLE"${suffix}`;
+    return `finding: code="LIST_UNREADABLE"${suffix}${renderHint(finding)}`;
   }
   if (finding.code === "DESCRIBE_FAILED") {
     const suffix =
       finding.error === undefined
         ? ""
         : ` ${describeThrownValue(finding.error)}`;
-    return `finding: code="DESCRIBE_FAILED" capabilityId=${quote(finding.capabilityId)}${suffix}`;
+    return `finding: code="DESCRIBE_FAILED" capabilityId=${quote(finding.capabilityId)}${suffix}${renderHint(finding)}`;
   }
-  return `finding: code="SCHEMA_UNREADABLE" capabilityId=${quote(finding.capabilityId)} schema=${quote(finding.schema)}`;
+  return `finding: code="SCHEMA_UNREADABLE" capabilityId=${quote(finding.capabilityId)} schema=${quote(finding.schema)}${renderHint(finding)}`;
 }
 
 function renderNote(note: DoctorNote): string {
-  if (note.code === "TITLE_MISSING" || note.code === "ANNOTATIONS_MISSING") {
-    return `note: code=${quote(note.code)} capabilityId=${quote(note.capabilityId)}`;
+  const parts = [`note: code=${quote(note.code)}`];
+  if ("capabilityId" in note) {
+    parts.push(`capabilityId=${quote(note.capabilityId)}`);
+  }
+  if ("schema" in note) {
+    parts.push(`schema=${quote(note.schema)}`);
   }
   if (note.code === "COMPOSITION_CHECK_AVAILABLE") {
-    return `note: code="COMPOSITION_CHECK_AVAILABLE" reason: run "invokta check-capabilities" against the composed export.`;
+    parts.push(
+      `reason: run "invokta check-capabilities" against the composed export.`,
+    );
   }
-  return `note: code=${quote(note.code)}`;
+  return `${parts.join(" ")}${renderHint(note)}`;
 }
 
 function renderReport(command: EngineCommand, report: DoctorReport): string {
@@ -921,7 +1092,7 @@ async function runDoctor(
     cwd,
   });
   if (loaded.kind === "load-failed") {
-    await writeStderr(io, renderLoadFailure(command, loaded.error));
+    await writeStderr(io, renderLoadFailure(command, loaded.error, cwd));
     return 2;
   }
   if (loaded.kind === "export-missing") {
@@ -937,8 +1108,30 @@ async function runDoctor(
     mcpManifestPresent: existsSync(resolve(cwd, mcpManifestFileName)),
     composedCapabilitiesExport: hasComposedCapabilitiesExport(loaded.namespace),
   });
-  await writeStderr(io, renderReport(command, report));
+  if (command.json === true) {
+    try {
+      await io.writeStdout(
+        `${JSON.stringify(doctorReportToJson(report), null, 2)}\n`,
+      );
+    } catch {
+      // A gone stdout cannot change the doctor result.
+    }
+  } else {
+    await writeStderr(io, renderReport(command, report));
+  }
   return report.findings.length === 0 ? 0 : 1;
+}
+
+/**
+ * Summarizes the loaded engine for the serve startup block. A listing
+ * failure only drops the summary line; it never blocks the server start.
+ */
+function renderServeEngineSummary(engine: LoadedEngine): string | undefined {
+  try {
+    return `engine: name=${token(engine.name)} version=${token(engine.version)} capabilities=${String(engine.list().length)}`;
+  } catch {
+    return undefined;
+  }
 }
 
 function renderServeFailure(command: EngineCommand, error: unknown): string {
@@ -967,6 +1160,7 @@ async function runServe(
   io: DevtoolsIo,
 ): Promise<number> {
   let serveOptions: StartServeOptions;
+  let engineSummary: string | undefined;
   if (command.buildCommand !== undefined) {
     // In watch mode the module belongs to the child host; the parent never
     // imports it, so a rebuild can only ever apply by process replacement.
@@ -976,6 +1170,12 @@ async function runServe(
         moduleSpecifier: command.moduleSpecifier,
         exportName: command.exportName,
         buildCommand: command.buildCommand,
+        ...(command.watchInclude === undefined
+          ? {}
+          : { include: [...command.watchInclude] }),
+        ...(command.watchIgnore === undefined
+          ? {}
+          : { ignore: [...command.watchIgnore] }),
       },
       onDiagnostic: (text) => {
         void writeStderr(io, text);
@@ -984,6 +1184,9 @@ async function runServe(
       ...(command.enginePort === undefined
         ? {}
         : { enginePort: command.enginePort }),
+      ...(command.traceCapacity === undefined
+        ? {}
+        : { traceCapacity: command.traceCapacity }),
     };
   } else {
     const loaded = await loadEngineModule({
@@ -992,7 +1195,7 @@ async function runServe(
       cwd,
     });
     if (loaded.kind === "load-failed") {
-      await writeStderr(io, renderLoadFailure(command, loaded.error));
+      await writeStderr(io, renderLoadFailure(command, loaded.error, cwd));
       return 2;
     }
     if (loaded.kind === "export-missing") {
@@ -1003,6 +1206,7 @@ async function runServe(
       await writeStderr(io, renderNotAnEngine(command));
       return 2;
     }
+    engineSummary = renderServeEngineSummary(loaded.engine);
     serveOptions = {
       engine: loaded.engine,
       cwd,
@@ -1013,6 +1217,9 @@ async function runServe(
       ...(command.enginePort === undefined
         ? {}
         : { enginePort: command.enginePort }),
+      ...(command.traceCapacity === undefined
+        ? {}
+        : { traceCapacity: command.traceCapacity }),
     };
   }
 
@@ -1025,7 +1232,7 @@ async function runServe(
   }
   if (result.kind === "load-error") {
     if (result.stage === "load-failed") {
-      await writeStderr(io, renderLoadFailure(command, result.error));
+      await writeStderr(io, renderLoadFailure(command, result.error, cwd));
     } else if (result.stage === "export-missing") {
       await writeStderr(io, renderMissingExport(command));
     } else {
@@ -1041,7 +1248,14 @@ async function runServe(
   const address = result.handles.devtoolsAddress;
   try {
     await io.writeStdout(
-      `Invokta devtools listening on http://${address.host}:${String(address.port)}/\n`,
+      renderLines([
+        ...(engineSummary === undefined ? [] : [engineSummary]),
+        `ui: http://${address.host}:${String(address.port)}/`,
+        command.buildCommand === undefined
+          ? "watch: off"
+          : `watch: on build=${quote(command.buildCommand)}`,
+        "Ctrl+C to stop",
+      ]),
     );
   } catch {
     // A gone stdout must not abort a running dev server.
@@ -1057,10 +1271,18 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
     server = await startAttachedDevtoolsServer({
       ...(command.port === undefined ? {} : { port: command.port }),
     });
-  } catch {
+  } catch (error) {
+    const hint =
+      readThrownValueInfo(error).code === "EADDRINUSE"
+        ? ["hint: pass --port <number> to select another loopback port."]
+        : [];
     await writeStderr(
       io,
-      `${programName}: the MCP workbench could not start.\n`,
+      renderLines([
+        `${programName}: the MCP workbench could not start.`,
+        describeThrownValue(error),
+        ...hint,
+      ]),
     );
     return 1;
   }
@@ -1086,9 +1308,87 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
 }
 
 /**
+ * Reads the package version from the manifest. The built output sits in
+ * dist/ next to package.json; the TypeScript sources sit one level deeper.
+ */
+function packageVersion(): string {
+  for (const candidate of ["../package.json", "../../package.json"]) {
+    try {
+      const manifest: unknown = JSON.parse(
+        readFileSync(
+          fileURLToPath(new URL(candidate, import.meta.url)),
+          "utf8",
+        ),
+      );
+      const record = asRecord(manifest);
+      if (record !== undefined && typeof record.version === "string") {
+        return record.version;
+      }
+    } catch {
+      // Try the next layout candidate.
+    }
+  }
+  return "<unknown>";
+}
+
+function verifyEnvironmentErrorDetail(error: VerifyEnvironmentError): string {
+  const prefix = `${error.code}: `;
+  return error.message.startsWith(prefix)
+    ? error.message.slice(prefix.length)
+    : error.message;
+}
+
+/**
+ * Runs the MCP verification and renders the structured result. Human output
+ * keeps the `CODE: message` convention on stderr; --json prints the full
+ * result (success to stdout, failure to stderr).
+ */
+async function runVerify(
+  command: VerifyCommand,
+  target: ResolvedVerifyTarget,
+  io: DevtoolsIo,
+): Promise<number> {
+  const result = await runMcpVerification({
+    target,
+    ...(command.timeoutMs === undefined
+      ? {}
+      : {
+          initializationDeadlineMs: command.timeoutMs,
+          catalogDeadlineMs: command.timeoutMs,
+        }),
+    ...(command.maxTools === undefined ? {} : { maxTools: command.maxTools }),
+  });
+  if (result.ok) {
+    try {
+      // Human output keeps the legacy success line byte-identical (no `ok`
+      // discriminant); --json prints the full structured result.
+      const { ok: _ok, ...legacy } = result;
+      await io.writeStdout(
+        command.json === true
+          ? `${JSON.stringify(result, null, 2)}\n`
+          : `${JSON.stringify(legacy)}\n`,
+      );
+    } catch {
+      // A gone stdout cannot change the verification result.
+    }
+    return 0;
+  }
+  if (command.json === true) {
+    await writeStderr(io, `${JSON.stringify(result, null, 2)}\n`);
+  } else {
+    await writeStderr(
+      io,
+      `${programName} verify: ${result.code}: ${result.message}\n`,
+    );
+  }
+  return result.code === "INVALID_TARGET" ? 2 : 1;
+}
+
+/**
  * Runs `invokta-devtools` and resolves with its exit code. Diagnostics are
- * written only to `stderr`; `open` and `serve` write one ready line to
- * `stdout`.
+ * written only to `stderr`; `open` and `serve` write their ready output,
+ * `doctor --json` and verify results write JSON, and `--help`/`--version`
+ * write the usage and the version to `stdout`.
  */
 export async function runDevtoolsCli(
   options: RunDevtoolsCliOptions = {},
@@ -1104,13 +1404,30 @@ export async function runDevtoolsCli(
     await writeStderr(
       io,
       argv[0] === "verify"
-        ? renderVerifyFailure("INVALID_TARGET")
+        ? renderVerifyFailure("INVALID_TARGET", error.message)
         : renderUsageError(
             error,
             argv[0] === "doctor" || argv[0] === "serve" ? engineUsage : usage,
           ),
     );
     return 2;
+  }
+
+  if (command.command === "help") {
+    try {
+      await io.writeStdout(`${usage}\n`);
+    } catch {
+      // A gone stdout cannot change the command's numeric result.
+    }
+    return 0;
+  }
+  if (command.command === "version") {
+    try {
+      await io.writeStdout(`${programName} ${packageVersion()}\n`);
+    } catch {
+      // A gone stdout cannot change the command's numeric result.
+    }
+    return 0;
   }
 
   const cwd = options.cwd ?? process.cwd();
@@ -1131,8 +1448,11 @@ export async function runDevtoolsCli(
     );
   } catch (error) {
     if (!(error instanceof VerifyEnvironmentError)) throw error;
-    await writeStderr(io, renderVerifyFailure(error.code));
+    await writeStderr(
+      io,
+      renderVerifyFailure(error.code, verifyEnvironmentErrorDetail(error)),
+    );
     return 2;
   }
-  return runMcpVerification({ target, io });
+  return runVerify(command, target, io);
 }

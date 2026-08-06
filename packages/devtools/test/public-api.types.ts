@@ -3,15 +3,22 @@ import { expectTypeOf } from "vitest";
 import {
   type DevtoolsIo,
   type DoctorReport,
+  doctorReportToJson,
   inspectEngine,
   type LoadedEngine,
   loadEngineModule,
-  runDevtoolsCli,
   type RunDevtoolsCliOptions,
+  resolveVerifyTargetEnvironment,
+  runDevtoolsCli,
+  runMcpVerification,
+  type VerifyEnvironmentError,
+  type VerifyFailure,
+  type VerifyRunResult,
 } from "../src/index.js";
 
 declare const io: DevtoolsIo;
 declare const engine: LoadedEngine;
+declare const report: DoctorReport;
 
 expectTypeOf<
   DevtoolsIo["writeStderr"]
@@ -39,6 +46,9 @@ expectTypeOf(
   inspectEngine(engine, { mcpManifestPresent: true }),
 ).toEqualTypeOf<DoctorReport>();
 
+// The JSON body keeps the report shape but erases thrown values.
+expectTypeOf(doctorReportToJson(report)).toEqualTypeOf<unknown>();
+
 expectTypeOf(
   loadEngineModule({
     moduleSpecifier: "dist/engine.js",
@@ -46,6 +56,17 @@ expectTypeOf(
     cwd: "/workspace/app",
   }),
 ).resolves.toHaveProperty("kind");
+
+// The MCP verification runner and the target environment resolver are part
+// of the public surface together with their result and error types.
+expectTypeOf(runMcpVerification).toBeFunction();
+expectTypeOf(resolveVerifyTargetEnvironment).toBeFunction();
+declare const verifyResult: VerifyRunResult;
+declare const verifyFailure: VerifyFailure;
+expectTypeOf(verifyResult).not.toBeUnknown();
+expectTypeOf(verifyFailure).not.toBeUnknown();
+declare const verifyError: VerifyEnvironmentError;
+expectTypeOf(verifyError).toMatchTypeOf<Error>();
 
 // @ts-expect-error An argument vector is a list of arguments, not a command line.
 runDevtoolsCli({ argv: "doctor dist/engine.js" });

@@ -61,6 +61,8 @@ export type AttachedConnectionState =
         readonly status: "error";
         readonly error: { readonly code: string; readonly message: string };
       };
+      /** Activity the server retained from the disconnected target. */
+      readonly recentActivity?: readonly AttachedActivityRecord[];
     }
   | { readonly state: "busy" | "connecting" | "closing" }
   | {
@@ -129,6 +131,9 @@ export interface SecretControl {
 }
 
 export const attachedPrimaryTabs = ["Tools", "Activity", "Connection"] as const;
+
+/** Light refresh cadence while the Activity tab is visible. */
+const activityPollDelayMs = 5_000;
 
 type AttachedTab = "tools" | "activity" | "connection";
 type Fetcher = typeof fetch;
@@ -640,6 +645,66 @@ function clockReading(instant: string): string {
   return instant.slice(separator + 1).replace("Z", "");
 }
 
+/**
+ * Reads the activity a server may retain from a disconnected target. The field
+ * is optional and its name is accepted in both spellings, so the workbench
+ * degrades to showing nothing when the server exposes no retained records.
+ */
+export function retainedActivityOf(
+  state: AttachedConnectionState,
+): readonly AttachedActivityRecord[] {
+  if (state.state !== "idle") return [];
+  const candidate =
+    (state as { readonly recentActivity?: unknown }).recentActivity ??
+    (state as { readonly activity?: unknown }).activity;
+  return Array.isArray(candidate)
+    ? (candidate as readonly AttachedActivityRecord[])
+    : [];
+}
+
+/** Protocol-operation table shared by the Activity tab and the idle recap. */
+function activityTable(
+  records: readonly AttachedActivityRecord[],
+): HTMLElement {
+  const body = el(
+    "tbody",
+    {},
+    records.map((record) =>
+      el("tr", {}, [
+        el("td", { class: "att-mono" }, [String(record.sequence)]),
+        el("td", {}, [record.operation]),
+        el("td", { class: "att-mono" }, [record.toolName ?? "—"]),
+        el("td", { class: "att-mono", title: record.startedAt }, [
+          clockReading(record.startedAt),
+        ]),
+        el("td", { class: "att-mono att-numeric" }, [
+          `${String(record.durationMs)} ms`,
+        ]),
+        el(
+          "td",
+          {
+            class: `att-status-text ${record.outcome === "success" ? "success" : "error"}`,
+          },
+          [record.errorCode ?? record.outcome],
+        ),
+      ]),
+    ),
+  );
+  return el("table", { class: "att-activity-table" }, [
+    el("thead", {}, [
+      el("tr", {}, [
+        el("th", { scope: "col" }, ["Sequence"]),
+        el("th", { scope: "col" }, ["Operation"]),
+        el("th", { scope: "col" }, ["Tool"]),
+        el("th", { scope: "col" }, ["Started"]),
+        el("th", { scope: "col" }, ["Duration"]),
+        el("th", { scope: "col" }, ["Outcome"]),
+      ]),
+    ]),
+    body,
+  ]);
+}
+
 function statusPill(state: AttachedConnectionState): HTMLElement {
   const label =
     state.state === "connected"
@@ -706,6 +771,7 @@ export function mountAttachedApp(
   let activityLoaded = false;
   let activityLoading = false;
   let activityError = "";
+  let activityPoll: ReturnType<typeof setInterval> | undefined;
   let connectionError = "";
   let secretConfigured = false;
   let oauthAuthorizationUrl: string | undefined;
@@ -769,6 +835,7 @@ export function mountAttachedApp(
             } else if (oauthFlowActive && session.state === "connecting") {
               targetState = { state: "authorizing" };
             } else {
+              const retained = retainedActivityOf(session);
               targetState =
                 session.state === "connected"
                   ? {
@@ -783,6 +850,9 @@ export function mountAttachedApp(
                         ...(session.validation === undefined
                           ? {}
                           : { validation: session.validation }),
+                        ...(retained.length === 0
+                          ? {}
+                          : { recentActivity: retained }),
                       }
                     : { state: session.state };
             }
@@ -1506,7 +1576,39 @@ export function mountAttachedApp(
     };
 
     paintForm();
-    shell(el("div", { class: "att-card att-idle" }, [intro, formHost]), false);
+    const card = el("div", { class: "att-card att-idle" }, [intro, formHost]);
+    const retained = retainedActivityOf(targetState);
+    if (retained.length === 0) {
+      shell(card, false);
+      return;
+    }
+    shell(
+      el("div", {}, [
+        card,
+        el(
+          "section",
+          {
+            class: "att-card att-view att-retained",
+            "aria-label": "Activity retained from the disconnected target",
+          },
+          [
+            el("div", { class: "att-section-heading" }, [
+              el("div", {}, [
+                el("h2", {}, ["Last session activity"]),
+                el("span", { class: "att-hint" }, [
+                  "Protocol operations retained from the disconnected target",
+                ]),
+              ]),
+              el("span", { class: "att-pill" }, [
+                `${String(retained.length)} ${retained.length === 1 ? "operation" : "operations"}`,
+              ]),
+            ]),
+            activityTable(retained),
+          ],
+        ),
+      ]),
+      false,
+    );
   }
 
   function renderUnavailableState(): void {
@@ -2001,45 +2103,7 @@ export function mountAttachedApp(
         ]),
       );
     } else {
-      const body = el(
-        "tbody",
-        {},
-        activity.map((record) =>
-          el("tr", {}, [
-            el("td", { class: "att-mono" }, [String(record.sequence)]),
-            el("td", {}, [record.operation]),
-            el("td", { class: "att-mono" }, [record.toolName ?? "—"]),
-            el("td", { class: "att-mono", title: record.startedAt }, [
-              clockReading(record.startedAt),
-            ]),
-            el("td", { class: "att-mono att-numeric" }, [
-              `${String(record.durationMs)} ms`,
-            ]),
-            el(
-              "td",
-              {
-                class: `att-status-text ${record.outcome === "success" ? "success" : "error"}`,
-              },
-              [record.errorCode ?? record.outcome],
-            ),
-          ]),
-        ),
-      );
-      content.push(
-        el("table", { class: "att-activity-table" }, [
-          el("thead", {}, [
-            el("tr", {}, [
-              el("th", { scope: "col" }, ["Sequence"]),
-              el("th", { scope: "col" }, ["Operation"]),
-              el("th", { scope: "col" }, ["Tool"]),
-              el("th", { scope: "col" }, ["Started"]),
-              el("th", { scope: "col" }, ["Duration"]),
-              el("th", { scope: "col" }, ["Outcome"]),
-            ]),
-          ]),
-          body,
-        ]),
-      );
+      content.push(activityTable(activity));
     }
     return el("section", { class: "att-view" }, content);
   }
@@ -2084,6 +2148,7 @@ export function mountAttachedApp(
           secretConfigured = false;
           connectionError = "";
           activeTab = "tools";
+          stopActivityPolling();
           render();
         })
         .catch((error: unknown) => {
@@ -2128,11 +2193,31 @@ export function mountAttachedApp(
 
   async function selectTab(name: AttachedTab): Promise<void> {
     activeTab = name;
+    if (name === "activity") startActivityPolling();
+    else stopActivityPolling();
     render();
-    if (name === "activity" && !activityLoaded && !activityLoading) {
+    if (name === "activity") {
+      // An invoke marks the cache stale, and other clients may add records;
+      // entering the tab always re-reads the server instead of showing it.
       await loadActivity();
     }
   }
+
+  const stopActivityPolling = (): void => {
+    if (activityPoll !== undefined) clearInterval(activityPoll);
+    activityPoll = undefined;
+  };
+
+  const startActivityPolling = (): void => {
+    stopActivityPolling();
+    activityPoll = setInterval(() => {
+      if (destroyed || activeTab !== "activity") {
+        stopActivityPolling();
+        return;
+      }
+      void loadActivity();
+    }, activityPollDelayMs);
+  };
 
   async function loadTools(): Promise<void> {
     if (toolsLoading) return;
@@ -2174,6 +2259,7 @@ export function mountAttachedApp(
   void api
     .session()
     .then((session) => {
+      const retained = retainedActivityOf(session);
       targetState =
         session.state === "connected"
           ? {
@@ -2188,6 +2274,7 @@ export function mountAttachedApp(
                 ...(session.validation === undefined
                   ? {}
                   : { validation: session.validation }),
+                ...(retained.length === 0 ? {} : { recentActivity: retained }),
               }
             : { state: session.state };
       connectionError =
@@ -2219,6 +2306,7 @@ export function mountAttachedApp(
     destroy() {
       destroyed = true;
       stopAuthorizationPolling();
+      stopActivityPolling();
       oauthAuthorizationUrl = undefined;
       oauthFlowActive = false;
       authorizationPollingPaused = false;

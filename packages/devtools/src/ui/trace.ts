@@ -21,7 +21,14 @@ interface TraceEntryView {
   };
   readonly requestTruncated?: boolean;
   readonly responseTruncated?: boolean;
+  /** Original body lengths before truncation, when the server reports them. */
+  readonly requestOriginalSize?: number;
+  readonly responseOriginalSize?: number;
+  /** Shared truncation metadata applied to whichever body was truncated. */
+  readonly originalSize?: number;
   readonly notice?: string;
+  /** Extra lifecycle detail attached to a notice, shown on demand. */
+  readonly detail?: string;
 }
 
 const maximumVisibleEntries = 500;
@@ -67,12 +74,20 @@ function exchangeBody(
   label: string,
   body: string,
   truncated: boolean,
+  originalSize?: number,
 ): HTMLElement {
   const heading = el(
     "h4",
     { class: "field-label" },
     truncated
-      ? [`${label} — `, el("span", { class: "badge warn" }, ["Truncated"])]
+      ? [
+          `${label} — `,
+          el("span", { class: "badge warn" }, [
+            originalSize === undefined
+              ? "Truncated"
+              : `Truncated from ${String(originalSize)} chars`,
+          ]),
+        ]
       : [label],
   );
   const content = el(
@@ -114,6 +129,60 @@ function entrySubject(kind: string, value: string): HTMLElement {
   ]);
 }
 
+/**
+ * Hands a traced exchange to the Playground: the parsed JSON-RPC arguments are
+ * staged in session storage for the invoke panel, the hash routes to the
+ * capability, and the panel is notified so it can select the entry.
+ */
+export function openCapabilityInPlayground(
+  capabilityId: string,
+  prefill?: string,
+): void {
+  if (prefill !== undefined) {
+    try {
+      sessionStorage.setItem(
+        `invokta-devtools:prefill:${capabilityId}`,
+        prefill,
+      );
+    } catch {
+      // Session storage is a convenience; navigation still happens.
+    }
+  }
+  try {
+    if (typeof location !== "undefined") {
+      location.hash = `#capabilities/${encodeURIComponent(capabilityId)}`;
+    }
+  } catch {
+    // Hash routing is a convenience; the selection event still fires.
+  }
+  try {
+    if (
+      typeof CustomEvent === "function" &&
+      typeof document.dispatchEvent === "function"
+    ) {
+      document.dispatchEvent(
+        new CustomEvent("invokta:select-capability", {
+          detail: { id: capabilityId },
+        }),
+      );
+    }
+  } catch {
+    // The invoke panel may not be listening; the prefill remains staged.
+  }
+}
+
+/** Extracts `params.arguments` from a traced JSON-RPC request body. */
+function playgroundPrefill(requestBody: string): string {
+  try {
+    const parsed = JSON.parse(requestBody) as {
+      readonly params?: { readonly arguments?: unknown };
+    };
+    return JSON.stringify(parsed.params?.arguments ?? {});
+  } catch {
+    return "{}";
+  }
+}
+
 function renderEntry(entry: TraceEntryView): HTMLElement {
   if (entry.kind === "invocation" && entry.invocation !== undefined) {
     const invocation = entry.invocation;
@@ -138,6 +207,26 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
   }
   if (entry.kind === "exchange" && entry.exchange !== undefined) {
     const exchange = entry.exchange;
+    const capabilityId = exchange.capabilityId;
+    const playground =
+      capabilityId === undefined
+        ? null
+        : el(
+            "button",
+            {
+              type: "button",
+              class: "trace-open-playground",
+              title: "Edit and re-run this call in the Playground",
+            },
+            ["Open in Playground"],
+          );
+    playground?.addEventListener("click", () => {
+      if (capabilityId === undefined) return;
+      openCapabilityInPlayground(
+        capabilityId,
+        playgroundPrefill(exchange.requestBody),
+      );
+    });
     return el("details", { class: "trace-row exchange trace-row--exchange" }, [
       el("summary", { title: "Show raw request and response bodies" }, [
         timestamp(entry),
@@ -150,21 +239,38 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
         ),
         duration(exchange.durationMs),
       ]),
+      playground === null
+        ? null
+        : el("div", { class: "trace-row-actions" }, [playground]),
       el("div", { class: "trace-payload-grid" }, [
         exchangeBody(
           "Request body",
           exchange.requestBody,
           entry.requestTruncated === true,
+          entry.requestOriginalSize ??
+            (entry.requestTruncated === true ? entry.originalSize : undefined),
         ),
         exchangeBody(
           "Response body",
           exchange.responseBody,
           entry.responseTruncated === true,
+          entry.responseOriginalSize ??
+            (entry.responseTruncated === true ? entry.originalSize : undefined),
         ),
       ]),
     ]);
   }
   const notice = sentenceCase(entry.notice ?? "notice");
+  if (entry.detail !== undefined && entry.detail !== "") {
+    return el("details", { class: "trace-row notice trace-row--notice" }, [
+      el("summary", { title: "Show lifecycle detail" }, [
+        timestamp(entry),
+        el("span", { class: "badge warn" }, ["Lifecycle"]),
+        el("span", { class: "trace-entry-message" }, [notice]),
+      ]),
+      el("pre", { class: "raw trace-notice-detail" }, [entry.detail]),
+    ]);
+  }
   return el("div", { class: "trace-row notice trace-row--notice" }, [
     timestamp(entry),
     el("span", { class: "badge warn" }, ["Lifecycle"]),
@@ -204,7 +310,72 @@ function searchTextOf(entry: TraceEntryView): string {
     );
   }
   if (entry.notice !== undefined) parts.push(entry.notice);
+  if (entry.detail !== undefined) parts.push(entry.detail);
   return parts.join("\n").toLowerCase();
+}
+
+interface TraceStatusFilter {
+  readonly operator: ">=" | "<=" | ">" | "<" | "=";
+  readonly value: number;
+}
+
+/**
+ * Structured filters parsed out of the search box. Recognized tokens are
+ * `capability:<id>`, `outcome:<completed|failed>`, and
+ * `status:<op><code>`; everything else stays a free substring search.
+ */
+interface TraceQuery {
+  readonly capability?: string;
+  readonly outcome?: string;
+  readonly status?: TraceStatusFilter;
+  readonly free: string;
+}
+
+function parseTraceQuery(raw: string): TraceQuery {
+  const free: string[] = [];
+  let capability: string | undefined;
+  let outcome: string | undefined;
+  let status: TraceStatusFilter | undefined;
+  for (const token of raw.split(/\s+/).filter((part) => part !== "")) {
+    const statusMatch = /^status:(>=|<=|>|<|=)?(\d+)$/.exec(token);
+    if (statusMatch !== null) {
+      status = {
+        operator: (statusMatch[1] ?? "=") as TraceStatusFilter["operator"],
+        value: Number(statusMatch[2]),
+      };
+      continue;
+    }
+    if (token.startsWith("capability:")) {
+      capability = token.slice("capability:".length);
+      continue;
+    }
+    if (token.startsWith("outcome:")) {
+      outcome = token.slice("outcome:".length);
+      continue;
+    }
+    free.push(token);
+  }
+  return {
+    ...(capability === undefined ? {} : { capability }),
+    ...(outcome === undefined ? {} : { outcome }),
+    ...(status === undefined ? {} : { status }),
+    free: free.join(" "),
+  };
+}
+
+function matchesStatus(status: number, filter: TraceStatusFilter): boolean {
+  switch (filter.operator) {
+    case ">=":
+      return status >= filter.value;
+    case "<=":
+      return status <= filter.value;
+    case ">":
+      return status > filter.value;
+    case "<":
+      return status < filter.value;
+    default:
+      return status === filter.value;
+  }
 }
 
 interface TraceRecord {
@@ -212,6 +383,10 @@ interface TraceRecord {
   readonly kind: TraceEntryView["kind"];
   readonly element: HTMLElement;
   readonly searchText: string;
+  readonly capabilityId?: string;
+  readonly outcome?: string;
+  readonly status?: number;
+  readonly isError: boolean;
 }
 
 /**
@@ -287,6 +462,8 @@ export function renderTracePanel(container: HTMLElement): () => void {
     [];
   const seen = new Set<string>();
   let activeKind: TraceKindFilter = "all";
+  let errorsOnly = false;
+  let droppedEntries = 0;
   let holding = false;
   let connected = false;
   let replayPending = true;
@@ -298,12 +475,32 @@ export function renderTracePanel(container: HTMLElement): () => void {
       id: "trace-search",
       class: "trace-search",
       type: "search",
-      placeholder: "Capability, method, status, or payload",
+      placeholder: "Search, or capability:<id> outcome:failed status:>=400",
       autocomplete: "off",
       "aria-controls": "trace-list",
     },
     [],
   );
+  const errorsOnlyToggle = el(
+    "button",
+    {
+      type: "button",
+      class: "trace-toolbar-button trace-errors-toggle",
+      "aria-pressed": "false",
+      title: "Show only failed invocations and error responses",
+    },
+    ["Errors only"],
+  );
+  const dropped = el(
+    "p",
+    {
+      id: "trace-dropped",
+      class: "trace-dropped",
+      role: "note",
+    },
+    [],
+  );
+  dropped.hidden = true;
   const hold = el(
     "button",
     {
@@ -319,28 +516,52 @@ export function renderTracePanel(container: HTMLElement): () => void {
     {
       type: "button",
       class: "trace-toolbar-button",
-      title: "Remove every entry from this view",
+      title: "Remove every entry from this view and the server buffer",
     },
     ["Clear view"],
+  );
+  const exportTrace = el(
+    "a",
+    {
+      class: "trace-toolbar-button trace-export",
+      href: "/api/trace/export",
+      download: "invokta-trace.ndjson",
+      title: "Download the buffered trace as NDJSON",
+    },
+    ["Export"],
   );
   const kindButtons = new Map<TraceKindFilter, HTMLButtonElement>();
   let query = "";
 
   const applyFilter = (): void => {
+    const parsed = parseTraceQuery(query);
     let visible = 0;
     for (const record of records) {
       const matches =
         (activeKind === "all" || record.kind === activeKind) &&
-        (query === "" || record.searchText.includes(query));
+        (!errorsOnly || record.isError) &&
+        (parsed.capability === undefined ||
+          record.capabilityId === parsed.capability) &&
+        (parsed.outcome === undefined || record.outcome === parsed.outcome) &&
+        (parsed.status === undefined ||
+          (record.status !== undefined &&
+            matchesStatus(record.status, parsed.status))) &&
+        (parsed.free === "" || record.searchText.includes(parsed.free));
       record.element.hidden = !matches;
       if (matches) visible += 1;
     }
-    const filtering = query !== "" || activeKind !== "all";
+    const filtering = query !== "" || activeKind !== "all" || errorsOnly;
     count.textContent = filtering
       ? `${String(visible)} of ${entryCount(records.length)}`
       : entryCount(records.length);
     empty.hidden = records.length !== 0;
     filterEmpty.hidden = !(filtering && records.length !== 0 && visible === 0);
+  };
+
+  const paintDropped = (): void => {
+    dropped.hidden = droppedEntries === 0;
+    if (droppedEntries === 0) return;
+    dropped.textContent = `Older entries were dropped (view limited to ${String(maximumVisibleEntries)}).`;
   };
 
   const paintHold = (): void => {
@@ -353,20 +574,32 @@ export function renderTracePanel(container: HTMLElement): () => void {
   };
 
   const admit = (key: string, entry: TraceEntryView): void => {
+    const capabilityId =
+      entry.invocation?.capabilityId ?? entry.exchange?.capabilityId;
+    const outcome = entry.invocation?.outcome;
+    const status = entry.exchange?.status;
     const record: TraceRecord = {
       key,
       kind: entry.kind,
       element: renderEntry(entry),
       searchText: searchTextOf(entry),
+      ...(capabilityId === undefined
+        ? {}
+        : { capabilityId: capabilityId.toLowerCase() }),
+      ...(outcome === undefined ? {} : { outcome }),
+      ...(status === undefined ? {} : { status }),
+      isError: outcome === "failed" || (status !== undefined && status >= 400),
     };
     records.unshift(record);
     list.prepend(record.element);
     while (records.length > maximumVisibleEntries) {
-      const dropped = records.pop();
-      if (dropped === undefined) break;
-      dropped.element.remove();
-      seen.delete(dropped.key);
+      const evicted = records.pop();
+      if (evicted === undefined) break;
+      evicted.element.remove();
+      seen.delete(evicted.key);
+      droppedEntries += 1;
     }
+    paintDropped();
   };
 
   const filterGroup = el(
@@ -441,6 +674,12 @@ export function renderTracePanel(container: HTMLElement): () => void {
     applyFilter();
   });
 
+  errorsOnlyToggle.addEventListener("click", () => {
+    errorsOnly = !errorsOnly;
+    errorsOnlyToggle.setAttribute("aria-pressed", String(errorsOnly));
+    applyFilter();
+  });
+
   hold.addEventListener("click", () => {
     holding = !holding;
     if (!holding) {
@@ -456,8 +695,14 @@ export function renderTracePanel(container: HTMLElement): () => void {
     records.length = 0;
     held.length = 0;
     seen.clear();
+    droppedEntries = 0;
+    paintDropped();
     paintHold();
     applyFilter();
+    // The server buffer is cleared best-effort; the view is already sane.
+    if (typeof fetch === "function") {
+      void fetch("/api/trace/clear", { method: "POST" }).catch(() => {});
+    }
   });
 
   const toolbar = el("div", { class: "trace-toolbar" }, [
@@ -465,8 +710,13 @@ export function renderTracePanel(container: HTMLElement): () => void {
       "Filter",
     ]),
     search,
+    errorsOnlyToggle,
     filterGroup,
-    el("div", { class: "trace-toolbar-actions" }, [hold, clearView]),
+    el("div", { class: "trace-toolbar-actions" }, [
+      hold,
+      clearView,
+      exportTrace,
+    ]),
   ]);
 
   const panel = el(
@@ -492,6 +742,7 @@ export function renderTracePanel(container: HTMLElement): () => void {
             count,
           ]),
           toolbar,
+          dropped,
           empty,
           filterEmpty,
           list,
@@ -555,9 +806,13 @@ export function renderTracePanel(container: HTMLElement): () => void {
       if (holding) {
         held.push({ key, entry });
         while (held.length > maximumVisibleEntries) {
-          const dropped = held.shift();
-          if (dropped !== undefined) seen.delete(dropped.key);
+          const evicted = held.shift();
+          if (evicted !== undefined) {
+            seen.delete(evicted.key);
+            droppedEntries += 1;
+          }
         }
+        paintDropped();
         paintHold();
         scheduleReplaySettlement();
         return;

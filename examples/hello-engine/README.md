@@ -96,3 +96,18 @@ This equality check is intentionally a local authentication-hook demonstration,
 not production identity. It does not issue, validate, refresh, or persist real
 tokens. In production, keep `mode: "required"` and replace the hook with your
 organization's existing identity implementation. Never commit the demo token.
+
+## Inspect with devtools
+
+Build the example, then serve the compiled engine module through
+`@invokta/devtools`:
+
+```bash
+yarn workspace @invokta/example-hello build
+yarn workspace @invokta/example-hello devtools
+```
+
+The inspector on `http://127.0.0.1:4100/` invokes
+`onboarding.create-welcome-message` from a schema-seeded editor, shows the raw
+MCP exchange and a live invocation trace, and switches between test identities
+backed by development `Principal` values.

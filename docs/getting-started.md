@@ -311,7 +311,7 @@ pipeline.
 adapter and opens a local web inspector:
 
 ```sh
-npx invokta-devtools serve dist/engine.js
+npx @invokta/devtools serve dist/engine.js
 ```
 
 The interface on `http://127.0.0.1:4100/` lists every capability with its

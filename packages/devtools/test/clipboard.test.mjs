@@ -33,6 +33,8 @@ class FakeText extends FakeNode {
 class FakeElement extends FakeNode {
   #attributes = new Map();
   childNodes = [];
+  value = "";
+  selected = false;
 
   constructor(tagName) {
     super();
@@ -53,6 +55,17 @@ class FakeElement extends FakeNode {
       node.parentNode = this;
       this.childNodes.push(node);
     }
+  }
+
+  select() {
+    this.selected = true;
+  }
+
+  remove() {
+    if (this.parentNode === null) return;
+    const index = this.parentNode.childNodes.indexOf(this);
+    if (index !== -1) this.parentNode.childNodes.splice(index, 1);
+    this.parentNode = null;
   }
 
   get textContent() {
@@ -153,6 +166,48 @@ describe("copy control", () => {
     click(unsupported);
     expect(unsupported.textContent).toBe("Unavailable");
     expect(unsupported.getAttribute("data-state")).toBe("failed");
+  });
+
+  it("falls back to a hidden textarea and execCommand without the async clipboard", async () => {
+    vi.useFakeTimers();
+    const body = new FakeElement("body");
+    const execCommand = vi.fn(() => true);
+    installGlobal("document", {
+      body,
+      createElement: (tagName) => new FakeElement(tagName),
+      execCommand,
+    });
+    installGlobal("navigator", {});
+
+    const { createCopyButton } = await import("../src/ui/clipboard.js");
+    const button = createCopyButton("raw response", () => "payload");
+
+    click(button);
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(button.textContent).toBe("Copied");
+    expect(button.getAttribute("data-state")).toBe("copied");
+    // The textarea is removed again once the copy succeeded.
+    expect(body.childNodes).toHaveLength(0);
+  });
+
+  it("selects the text for a manual copy when execCommand is unavailable", async () => {
+    vi.useFakeTimers();
+    const body = new FakeElement("body");
+    installGlobal("document", {
+      body,
+      createElement: (tagName) => new FakeElement(tagName),
+    });
+    installGlobal("navigator", {});
+
+    const { createCopyButton } = await import("../src/ui/clipboard.js");
+    const button = createCopyButton("raw response", () => "payload");
+
+    click(button);
+    expect(button.textContent).toBe("Selected");
+    const area = body.childNodes[0];
+    expect(area.tagName).toBe("TEXTAREA");
+    expect(area.value).toBe("payload");
+    expect(area.selected).toBe(true);
   });
 });
 

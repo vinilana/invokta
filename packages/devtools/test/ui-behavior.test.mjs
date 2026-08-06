@@ -706,4 +706,60 @@ describe("browser API failures", () => {
       "The test identity could not be deleted.",
     );
   });
+
+  it("appends the server error code when the body carries no message", async () => {
+    installGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ error: "unknown_principal" }, 404)),
+    );
+    const { api, ApiError } = await import("../src/ui/api.js");
+
+    const failure = await api.removePrincipal("missing").then(
+      () => null,
+      (error) => error,
+    );
+    expect(failure).toBeInstanceOf(ApiError);
+    expect(failure.message).toBe(
+      "The test identity could not be deleted. (unknown_principal)",
+    );
+    expect(failure.code).toBe("unknown_principal");
+  });
+
+  it("propagates the server error message when present", async () => {
+    installGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          { error: "invalid_principal", message: "Principal id is taken." },
+          400,
+        ),
+      ),
+    );
+    const { api, ApiError } = await import("../src/ui/api.js");
+
+    const failure = await api.createPrincipal({ id: "local-dev" }).then(
+      () => null,
+      (error) => error,
+    );
+    expect(failure).toBeInstanceOf(ApiError);
+    expect(failure.message).toBe("Principal id is taken.");
+    expect(failure.code).toBe("invalid_principal");
+  });
+
+  it("sends read requests with a timeout signal", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        name: "fixture-engine",
+        version: "1.0.0",
+        capabilityCount: 0,
+        engineHost: { host: "127.0.0.1", port: 4101 },
+      }),
+    );
+    installGlobal("fetch", fetchMock);
+    const { api } = await import("../src/ui/api.js");
+
+    await api.engine();
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+  });
 });

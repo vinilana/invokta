@@ -1,12 +1,12 @@
 import { createConnection } from "node:net";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-
 import type {
   AttachedConnectionSummary,
   AttachedServerController,
 } from "../src/attached-server.js";
 import { startAttachedDevtoolsServer } from "../src/attached-server.js";
+import { createAttachedSessionController } from "../src/attached-session.js";
 import { startOnAvailablePort } from "./available-port.js";
 
 const connection: AttachedConnectionSummary = {
@@ -663,6 +663,73 @@ describe("attached devtools server", () => {
     expect(await disconnected.json()).toEqual({ state: "idle" });
     expect(disconnected.headers.get("x-invokta-csrf")).not.toBe(nextCsrf);
     expect(controller.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes the retained activity in the idle session state", async () => {
+    const controller = createAttachedSessionController({
+      connectClient: vi.fn(async () => ({
+        server: {
+          name: "fixture-mcp",
+          version: "1.0.0",
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+        },
+        listTools: vi.fn(async () => ({ tools: [] })),
+        callTool: vi.fn(async () => ({ response: { content: [] } })),
+        close: vi.fn(async () => undefined),
+      })) as never,
+    });
+    const server = await startOnAvailablePort((port) =>
+      startAttachedDevtoolsServer({ port, controller }),
+    );
+    servers.push(server);
+    const base = `http://127.0.0.1:${String(server.address().port)}`;
+    const session = await fetch(`${base}/api/session`);
+    const cookie = cookiePair(session);
+    const csrf = ((await session.json()) as { csrfToken: string }).csrfToken;
+    const target = {
+      transport: "http",
+      url: "https://mcp.example.test/mcp",
+      authentication: { type: "none" },
+    };
+
+    const connected = await fetch(`${base}/api/connection`, {
+      method: "POST",
+      headers: mutationHeaders(base, cookie, csrf),
+      body: JSON.stringify(target),
+    });
+    expect(connected.status).toBe(200);
+    const nextCsrf = connected.headers.get("x-invokta-csrf") as string;
+
+    const disconnected = await fetch(`${base}/api/connection`, {
+      method: "DELETE",
+      headers: { cookie, origin: base, "x-invokta-csrf": nextCsrf },
+    });
+    expect(disconnected.status).toBe(200);
+
+    const polled = await fetch(`${base}/api/session`, {
+      headers: { cookie },
+    });
+    expect(polled.status).toBe(200);
+    const idle = (await polled.json()) as {
+      readonly state: string;
+      readonly activity?: ReadonlyArray<{ readonly operation: string }>;
+    };
+    expect(idle.state).toBe("idle");
+    expect(idle.activity?.map((record) => record.operation)).toEqual([
+      "initialize",
+      "tools/list",
+      "disconnect",
+    ]);
+
+    const activity = await fetch(`${base}/api/activity`, {
+      headers: { cookie },
+    });
+    expect(activity.status).toBe(200);
+    const activityBody = (await activity.json()) as {
+      readonly records: readonly unknown[];
+    };
+    expect(activityBody.records).toHaveLength(3);
   });
 
   it("starts OAuth and completes its one-time callback without exposing secrets", async () => {

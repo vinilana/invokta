@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -83,21 +83,14 @@ describe("shipped interface bundle", () => {
   });
 
   it("builds every interface module into dist/ui", () => {
-    for (const name of [
-      "app.js",
-      "api.js",
-      "capabilities.js",
-      "doctor-panel.js",
-      "dom.js",
-      "example-from-schema.js",
-      "invoke-panel.js",
-      "mcp-response.js",
-      "principals.js",
-      "schema-view.js",
-      "styles.js",
-      "theme.js",
-      "trace.js",
-    ]) {
+    const expectedModules = readdirSync(
+      join(repositoryRoot, "packages/devtools/src/ui"),
+    )
+      .filter((name) => name.endsWith(".ts"))
+      .map((name) => name.replace(/\.ts$/u, ".js"));
+    expect(expectedModules.length).toBeGreaterThan(0);
+
+    for (const name of expectedModules) {
       expect(
         existsSync(join(repositoryRoot, "packages/devtools/dist/ui", name)),
         name,

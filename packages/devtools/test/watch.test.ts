@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,11 +11,7 @@ import { startServe } from "../src/serve.js";
 import { startOnAvailablePort } from "./available-port.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const projectRoot = join(
-  repositoryRoot,
-  "packages/devtools/test",
-  `.tmp-watch-${String(process.pid)}`,
-);
+let projectRoot = "";
 
 const workingBuildScript = `import { copyFileSync, mkdirSync } from "node:fs";
 mkdirSync("out", { recursive: true });
@@ -90,8 +87,14 @@ describe("serve --watch", () => {
       { cwd: repositoryRoot, stdio: "pipe" },
     );
 
-    rmSync(projectRoot, { recursive: true, force: true });
-    mkdirSync(projectRoot, { recursive: true });
+    projectRoot = mkdtempSync(join(tmpdir(), "invokta-devtools-watch-"));
+    // Outside the repository the fixture cannot resolve workspace
+    // dependencies on its own; link the hoisted modules in.
+    symlinkSync(
+      join(repositoryRoot, "node_modules"),
+      join(projectRoot, "node_modules"),
+      "dir",
+    );
     writeFileSync(join(projectRoot, "engine-source.js"), engineSource("one"));
     writeFileSync(join(projectRoot, "build.mjs"), workingBuildScript);
     execFileSync(process.execPath, ["build.mjs"], {

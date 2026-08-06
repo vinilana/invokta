@@ -1,7 +1,9 @@
 import { createCopyButton } from "./clipboard.js";
-import { el, pretty, type Child } from "./dom.js";
+import { type Child, el, pretty } from "./dom.js";
 
 type JsonSchema = Readonly<Record<string, unknown>>;
+
+const maxFieldDepth = 6;
 
 function asSchema(value: unknown): JsonSchema | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -85,6 +87,7 @@ function renderField(
   name: string,
   schema: JsonSchema,
   required: boolean,
+  depth = 0,
 ): HTMLElement {
   const constraints = constraintItems(schema);
   return el("article", { class: "schema-field", role: "listitem" }, [
@@ -101,7 +104,74 @@ function renderField(
     constraints.length === 0
       ? null
       : el("div", { class: "schema-constraints" }, constraints),
+    renderNested(schema, depth),
   ]);
+}
+
+/**
+ * Renders what a field hides below its own row: nested object properties,
+ * array item shapes, and oneOf/anyOf branches — each one level deeper.
+ */
+function renderNested(
+  schema: JsonSchema,
+  depth: number,
+  includeProperties = true,
+): Child {
+  if (depth >= maxFieldDepth) return null;
+  const sections: Child[] = [];
+  if (includeProperties) {
+    const fields = propertyEntries(schema);
+    if (fields.length > 0) {
+      const required = requiredFields(schema);
+      sections.push(
+        el(
+          "div",
+          { class: "schema-nested", role: "list" },
+          fields.map(([name, field]) =>
+            renderField(name, field, required.has(name), depth + 1),
+          ),
+        ),
+      );
+    }
+  }
+  const items = asSchema(schema.items);
+  if (items !== undefined) {
+    const itemView = renderNested(items, depth + 1);
+    if (itemView !== null) {
+      sections.push(
+        el("div", { class: "schema-nested-items" }, [
+          el("p", { class: "schema-nested-label" }, ["Each item"]),
+          itemView,
+        ]),
+      );
+    }
+  }
+  for (const combinator of ["oneOf", "anyOf"] as const) {
+    const branches = schema[combinator];
+    if (!Array.isArray(branches)) continue;
+    const rendered = branches.flatMap((branch, index) => {
+      const branchSchema = asSchema(branch);
+      if (branchSchema === undefined) return [];
+      const title = branchSchema.title;
+      const label =
+        typeof title === "string" && title.trim() !== ""
+          ? title
+          : `Option ${String(index + 1)}`;
+      return [renderField(label, branchSchema, false, depth + 1)];
+    });
+    if (rendered.length > 0) {
+      sections.push(
+        el("div", { class: "schema-branches" }, [
+          el("p", { class: "schema-nested-label" }, [
+            combinator === "oneOf" ? "One of" : "Any of",
+          ]),
+          el("div", { class: "schema-nested", role: "list" }, rendered),
+        ]),
+      );
+    }
+  }
+  if (sections.length === 0) return null;
+  return el("div", { class: "schema-nested-sections" }, sections);
 }
 
 /** Renders a compact field-oriented view while keeping the source schema available. */
@@ -149,6 +219,7 @@ export function renderSchemaView(
               renderField(name, field, required.has(name)),
             ),
           ),
+      renderNested(schema, 0, false),
       el("details", { class: "schema-raw" }, [
         el("summary", {}, ["Raw JSON Schema"]),
         el("pre", { class: "raw" }, [raw]),

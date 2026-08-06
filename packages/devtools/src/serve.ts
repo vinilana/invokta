@@ -20,6 +20,8 @@ interface ServeCommonOptions {
   readonly enginePort?: number;
   /** Directory holding the built interface bundle; defaults to the shipped one. */
   readonly uiRoot?: string;
+  /** Oldest trace entries are dropped beyond this bound. Defaults to 500. */
+  readonly traceCapacity?: number;
   /** Receives child and build diagnostics in watch mode. */
   readonly onDiagnostic?: (text: string) => void;
 }
@@ -35,6 +37,10 @@ export interface ServeWatchOptions extends ServeCommonOptions {
     readonly moduleSpecifier: string;
     readonly exportName: string;
     readonly buildCommand: string;
+    /** Watch roots relative to the cwd; defaults to the cwd itself. */
+    readonly include?: string[];
+    /** Extra ignored path segments or suffix globs (for example "*.log"). */
+    readonly ignore?: string[];
   };
 }
 
@@ -72,7 +78,11 @@ async function startWithEngine(
   }
 
   const principals = createPrincipalStore();
-  const trace = createTraceStore();
+  const trace = createTraceStore(
+    options.traceCapacity === undefined
+      ? {}
+      : { capacity: options.traceCapacity },
+  );
   const devtoolsPort = options.port ?? 4100;
   const allowedOrigin = `http://127.0.0.1:${String(devtoolsPort)}`;
 
@@ -86,7 +96,13 @@ async function startWithEngine(
     },
   });
 
+  // The in-process engine never changes, so the doctor report and the
+  // capability descriptions are computed once instead of on every view
+  // request. Watch mode rebuilds its own snapshot per child restart, so no
+  // invalidation is needed here.
+  let cachedView: EngineView | undefined;
   const engineView = (): EngineView => {
+    if (cachedView !== undefined) return cachedView;
     let capabilities: EngineView["capabilities"] = [];
     try {
       capabilities = options.engine
@@ -95,12 +111,13 @@ async function startWithEngine(
     } catch {
       capabilities = [];
     }
-    return {
+    cachedView = {
       name: options.engine.name,
       version: options.engine.version,
       capabilities,
-      doctor: doctorReportToJson(doctor()),
+      doctor: doctorReportToJson(preflight),
     };
+    return cachedView;
   };
 
   let devtools: Awaited<ReturnType<typeof startDevtoolsServer>>;
@@ -135,7 +152,11 @@ async function startWithWatch(
   options: ServeWatchOptions,
 ): Promise<StartServeResult> {
   const principals = createPrincipalStore();
-  const trace = createTraceStore();
+  const trace = createTraceStore(
+    options.traceCapacity === undefined
+      ? {}
+      : { capacity: options.traceCapacity },
+  );
   const devtoolsPort = options.port ?? 4100;
   const allowedOrigin = `http://127.0.0.1:${String(devtoolsPort)}`;
 
@@ -148,6 +169,12 @@ async function startWithWatch(
     ...(options.enginePort === undefined
       ? {}
       : { enginePort: options.enginePort }),
+    ...(options.watch.include === undefined
+      ? {}
+      : { include: options.watch.include }),
+    ...(options.watch.ignore === undefined
+      ? {}
+      : { ignore: options.watch.ignore }),
     principals,
     trace,
     ...(options.onDiagnostic === undefined

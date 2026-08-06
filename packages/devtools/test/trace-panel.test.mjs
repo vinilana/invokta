@@ -8,6 +8,19 @@ const originalEventSource = Object.getOwnPropertyDescriptor(
   globalThis,
   "EventSource",
 );
+const originalSessionStorage = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "sessionStorage",
+);
+const originalLocation = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "location",
+);
+const originalFetch = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+const originalCustomEvent = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "CustomEvent",
+);
 
 function installGlobal(name, value) {
   Object.defineProperty(globalThis, name, {
@@ -15,6 +28,27 @@ function installGlobal(name, value) {
     writable: true,
     value,
   });
+}
+
+function restoreGlobal(name, descriptor) {
+  if (descriptor === undefined) delete globalThis[name];
+  else Object.defineProperty(globalThis, name, descriptor);
+}
+
+class MemoryStorage {
+  #values = new Map();
+
+  getItem(key) {
+    return this.#values.get(key) ?? null;
+  }
+
+  setItem(key, value) {
+    this.#values.set(key, String(value));
+  }
+
+  removeItem(key) {
+    this.#values.delete(key);
+  }
 }
 
 class FakeNode extends EventTarget {
@@ -157,10 +191,12 @@ function installTraceEnvironment() {
 afterEach(() => {
   vi.useRealTimers();
   vi.resetModules();
-  if (originalDocument === undefined) delete globalThis.document;
-  else Object.defineProperty(globalThis, "document", originalDocument);
-  if (originalEventSource === undefined) delete globalThis.EventSource;
-  else Object.defineProperty(globalThis, "EventSource", originalEventSource);
+  restoreGlobal("document", originalDocument);
+  restoreGlobal("EventSource", originalEventSource);
+  restoreGlobal("sessionStorage", originalSessionStorage);
+  restoreGlobal("location", originalLocation);
+  restoreGlobal("fetch", originalFetch);
+  restoreGlobal("CustomEvent", originalCustomEvent);
 });
 
 describe("trace panel", () => {
@@ -504,6 +540,306 @@ describe("trace panel", () => {
     });
     expect(log.childElementCount).toBe(1);
     expect(sources[0].closed).toBe(false);
+
+    dispose();
+    expect(sources[0].closed).toBe(true);
+  });
+
+  it("offers an errors-only toggle and structured search filters", async () => {
+    vi.useFakeTimers();
+    const sources = installTraceEnvironment();
+    const { renderTracePanel } = await import("../src/ui/trace.js");
+    const container = new FakeElement("main");
+    const dispose = renderTracePanel(container);
+    const log = walk(container).find(
+      (node) => node.getAttribute?.("role") === "log",
+    );
+    const count = walk(container).find(
+      (node) => node.getAttribute?.("id") === "trace-count",
+    );
+    const search = walk(container).find(
+      (node) => node.getAttribute?.("id") === "trace-search",
+    );
+    const errorsOnly = walk(container).find(
+      (node) =>
+        node.getAttribute?.("class") ===
+        "trace-toolbar-button trace-errors-toggle",
+    );
+    expect(errorsOnly.textContent).toBe("Errors only");
+    expect(errorsOnly.getAttribute("aria-pressed")).toBe("false");
+
+    sources[0].dispatchEvent(new Event("open"));
+    dispatchTrace(sources[0], {
+      kind: "invocation",
+      id: 1,
+      at: "2026-08-06T12:00:00.000Z",
+      invocation: {
+        capabilityId: "support.classify",
+        durationMs: 4,
+        outcome: "completed",
+      },
+    });
+    dispatchTrace(sources[0], {
+      kind: "invocation",
+      id: 2,
+      at: "2026-08-06T12:00:01.000Z",
+      invocation: {
+        capabilityId: "orders.lookup",
+        durationMs: 9,
+        outcome: "failed",
+        errorCode: "NOT_FOUND",
+      },
+    });
+    dispatchTrace(sources[0], {
+      kind: "exchange",
+      id: 3,
+      at: "2026-08-06T12:00:02.000Z",
+      exchange: {
+        status: 503,
+        durationMs: 8,
+        mcpMethod: "tools/call",
+        capabilityId: "support.classify",
+        requestBody: "{}",
+        responseBody: "{}",
+      },
+    });
+    dispatchTrace(sources[0], {
+      kind: "exchange",
+      id: 4,
+      at: "2026-08-06T12:00:03.000Z",
+      exchange: {
+        status: 200,
+        durationMs: 3,
+        mcpMethod: "tools/list",
+        requestBody: "{}",
+        responseBody: "{}",
+      },
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(count.textContent).toBe("4 entries");
+
+    click(errorsOnly);
+    expect(errorsOnly.getAttribute("aria-pressed")).toBe("true");
+    expect(count.textContent).toBe("2 of 4 entries");
+    const visible = () => log.childNodes.filter((node) => !node.hidden);
+    expect(
+      visible()
+        .map((node) => node.textContent)
+        .join(" "),
+    ).toContain("orders.lookup");
+    expect(
+      visible()
+        .map((node) => node.textContent)
+        .join(" "),
+    ).toContain("HTTP 503");
+    click(errorsOnly);
+    expect(count.textContent).toBe("4 entries");
+
+    search.value = "capability:support.classify";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("2 of 4 entries");
+
+    search.value = "capability:support.classify status:>=400";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("1 of 4 entries");
+    expect(visible()[0].textContent).toContain("HTTP 503");
+
+    search.value = "outcome:failed";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("1 of 4 entries");
+    expect(visible()[0].textContent).toContain("orders.lookup");
+
+    search.value = "status:503";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("1 of 4 entries");
+
+    search.value = "";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("4 entries");
+
+    dispose();
+    expect(sources[0].closed).toBe(true);
+  });
+
+  it("renders truncation sizes, notice detail, and a dropped-entries note", async () => {
+    vi.useFakeTimers();
+    const sources = installTraceEnvironment();
+    const { renderTracePanel } = await import("../src/ui/trace.js");
+    const container = new FakeElement("main");
+    const dispose = renderTracePanel(container);
+    const log = walk(container).find(
+      (node) => node.getAttribute?.("role") === "log",
+    );
+    const dropped = walk(container).find(
+      (node) => node.getAttribute?.("id") === "trace-dropped",
+    );
+    expect(dropped.hidden).toBe(true);
+
+    sources[0].dispatchEvent(new Event("open"));
+    dispatchTrace(sources[0], {
+      kind: "exchange",
+      id: 1,
+      at: "2026-08-06T12:00:00.000Z",
+      exchange: {
+        status: 200,
+        durationMs: 3,
+        mcpMethod: "tools/call",
+        requestBody: '{"trimmed":true}',
+        responseBody: "{}",
+      },
+      requestTruncated: true,
+      requestOriginalSize: 90321,
+    });
+    dispatchTrace(sources[0], {
+      kind: "notice",
+      id: 2,
+      at: "2026-08-06T12:00:01.000Z",
+      notice: "engine-restarted",
+      detail: "watch: src/engine.ts changed",
+    });
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(log.textContent).toContain("Truncated from 90321 chars");
+    expect(walk(log).some((node) => node.textContent === "Truncated")).toBe(
+      false,
+    );
+    const noticeRow = walk(log).find(
+      (node) => node.textContent === "watch: src/engine.ts changed",
+    );
+    expect(noticeRow).toBeDefined();
+    expect(noticeRow.getAttribute("class")).toBe("raw trace-notice-detail");
+    expect(dropped.hidden).toBe(true);
+
+    for (let id = 10; id <= 510; id += 1) {
+      dispatchTrace(sources[0], {
+        kind: "notice",
+        id,
+        at: `2026-08-06T12:01:${String(id).padStart(3, "0")}Z`,
+        notice: `replay-${String(id)}`,
+      });
+    }
+    expect(log.childElementCount).toBe(500);
+    expect(dropped.hidden).toBe(false);
+    expect(dropped.textContent).toBe(
+      "Older entries were dropped (view limited to 500).",
+    );
+
+    const [, clearView] = byClass(container, "trace-toolbar-button");
+    click(clearView);
+    expect(dropped.hidden).toBe(true);
+
+    dispose();
+    expect(sources[0].closed).toBe(true);
+  });
+
+  it("stages playground prefill, routes, and notifies on Open in Playground", async () => {
+    vi.useFakeTimers();
+    const sources = installTraceEnvironment();
+    const storage = new MemoryStorage();
+    const dispatched = [];
+    const locationStub = { hash: "" };
+    installGlobal("sessionStorage", storage);
+    installGlobal("location", locationStub);
+    installGlobal(
+      "CustomEvent",
+      class FakeCustomEvent extends Event {
+        constructor(type, init) {
+          super(type);
+          this.detail = init?.detail;
+        }
+      },
+    );
+    globalThis.document.dispatchEvent = (event) => {
+      dispatched.push(event);
+      return true;
+    };
+
+    const { renderTracePanel } = await import("../src/ui/trace.js");
+    const container = new FakeElement("main");
+    const dispose = renderTracePanel(container);
+    const log = walk(container).find(
+      (node) => node.getAttribute?.("role") === "log",
+    );
+
+    sources[0].dispatchEvent(new Event("open"));
+    dispatchTrace(sources[0], {
+      kind: "exchange",
+      id: 1,
+      at: "2026-08-06T12:00:00.000Z",
+      exchange: {
+        status: 200,
+        durationMs: 3,
+        mcpMethod: "tools/call",
+        capabilityId: "support.classify",
+        requestBody:
+          '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"support.classify","arguments":{"ticketId":"T-1"}}}',
+        responseBody: "{}",
+      },
+    });
+    dispatchTrace(sources[0], {
+      kind: "exchange",
+      id: 2,
+      at: "2026-08-06T12:00:01.000Z",
+      exchange: {
+        status: 200,
+        durationMs: 2,
+        mcpMethod: "tools/list",
+        requestBody: "{}",
+        responseBody: "{}",
+      },
+    });
+    await vi.advanceTimersByTimeAsync(100);
+
+    const buttons = walk(log).filter(
+      (node) => node.getAttribute?.("class") === "trace-open-playground",
+    );
+    expect(buttons).toHaveLength(1);
+    click(buttons[0]);
+
+    expect(storage.getItem("invokta-devtools:prefill:support.classify")).toBe(
+      '{"ticketId":"T-1"}',
+    );
+    expect(locationStub.hash).toBe("#capabilities/support.classify");
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].type).toBe("invokta:select-capability");
+    expect(dispatched[0].detail).toEqual({ id: "support.classify" });
+
+    dispose();
+    expect(sources[0].closed).toBe(true);
+  });
+
+  it("clears the server buffer best-effort and links the ndjson export", async () => {
+    vi.useFakeTimers();
+    const sources = installTraceEnvironment();
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    installGlobal("fetch", fetchMock);
+
+    const { renderTracePanel } = await import("../src/ui/trace.js");
+    const container = new FakeElement("main");
+    const dispose = renderTracePanel(container);
+    const exportLink = walk(container).find(
+      (node) =>
+        node.getAttribute?.("class") === "trace-toolbar-button trace-export",
+    );
+    expect(exportLink.tagName).toBe("A");
+    expect(exportLink.getAttribute("href")).toBe("/api/trace/export");
+    expect(exportLink.getAttribute("download")).toBe("invokta-trace.ndjson");
+    expect(exportLink.textContent).toBe("Export");
+
+    const [, clearView] = byClass(container, "trace-toolbar-button");
+    click(clearView);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("/api/trace/clear", {
+      method: "POST",
+    });
+
+    fetchMock.mockRejectedValueOnce(new Error("server down"));
+    click(clearView);
+    await vi.advanceTimersByTimeAsync(0);
+    const log = walk(container).find(
+      (node) => node.getAttribute?.("role") === "log",
+    );
+    expect(log.childElementCount).toBe(0);
 
     dispose();
     expect(sources[0].closed).toBe(true);

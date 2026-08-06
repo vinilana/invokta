@@ -1,5 +1,15 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  test: {},
+  test: {
+    coverage: {
+      thresholds: {
+        "packages/devtools/**": {
+          statements: 60,
+          branches: 55,
+          functions: 65,
+        },
+      },
+    },
+  },
 });

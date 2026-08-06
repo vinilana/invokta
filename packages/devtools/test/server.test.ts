@@ -328,6 +328,38 @@ describe("startServe", () => {
     expect(text).toContain('"capabilityId":"fixture.echo"');
   });
 
+  it("exports the trace as ndjson and clears it", async () => {
+    const call = await callTool({ authorization: `Bearer ${token}` });
+    await call.arrayBuffer();
+
+    const exported = await fetch(`${base}/api/trace/export`);
+    expect(exported.status).toBe(200);
+    expect(exported.headers.get("content-type")).toContain(
+      "application/x-ndjson",
+    );
+    const lines = (await exported.text()).trim().split("\n");
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(JSON.parse(line)).toHaveProperty("kind");
+    }
+
+    const wrongMethod = await fetch(`${base}/api/trace/clear`);
+    expect(wrongMethod.status).toBe(405);
+
+    const foreignOrigin = await fetch(`${base}/api/trace/clear`, {
+      method: "POST",
+      headers: { origin: "http://attacker.example" },
+    });
+    expect(foreignOrigin.status).toBe(403);
+
+    const cleared = await fetch(`${base}/api/trace/clear`, { method: "POST" });
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toEqual({ cleared: true });
+
+    const after = await fetch(`${base}/api/trace/export`);
+    expect(await after.text()).toBe("");
+  });
+
   it("responds 404 on unknown routes and 405 on wrong methods", async () => {
     const unknown = await fetch(`${base}/unknown`);
     expect(unknown.status).toBe(404);
@@ -366,6 +398,57 @@ describe("startServe preflight", () => {
   });
 });
 
+describe("startServe trace capacity", () => {
+  it("bounds the retained trace entries through traceCapacity", async () => {
+    const result = await startOnAvailablePort((port) =>
+      startServe({
+        engine: buildEngine(),
+        cwd: repositoryRoot,
+        composedCapabilitiesExport: false,
+        port,
+        uiRoot,
+        traceCapacity: 3,
+      }),
+    );
+    if (result.kind !== "started") throw new Error("serve was refused");
+    const base = `http://127.0.0.1:${String(result.handles.devtoolsAddress.port)}`;
+    try {
+      const issued = await fetch(`${base}/api/principals`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ principal: { id: "capacity-tester" } }),
+      });
+      const { token } = (await issued.json()) as { token: string };
+
+      for (let index = 0; index < 3; index += 1) {
+        const response = await fetch(`${base}/mcp`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+            authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: index + 1,
+            method: "tools/call",
+            params: { name: "fixture.echo", arguments: { message: "hi" } },
+          }),
+        });
+        await response.arrayBuffer();
+      }
+
+      const exported = await fetch(`${base}/api/trace/export`);
+      expect(exported.status).toBe(200);
+      // Each call appends an invocation and an exchange entry; the buffer
+      // keeps only the newest three.
+      expect((await exported.text()).trim().split("\n")).toHaveLength(3);
+    } finally {
+      await result.handles.close();
+    }
+  });
+});
+
 describe("invokta-devtools serve", () => {
   beforeAll(() => {
     execFileSync(
@@ -381,7 +464,7 @@ describe("invokta-devtools serve", () => {
     );
   });
 
-  it("prints one ready line, serves, and shuts down cleanly on SIGTERM", async () => {
+  it("prints the startup block, serves, and shuts down cleanly on SIGTERM", async () => {
     const port = await freePort();
     const child = spawn(
       process.execPath,
@@ -405,7 +488,7 @@ describe("invokta-devtools serve", () => {
       stderr += chunk;
     });
 
-    const readyLine = `Invokta devtools listening on http://127.0.0.1:${String(port)}/\n`;
+    const readyLine = `ui: http://127.0.0.1:${String(port)}/\n`;
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(
         () => reject(new Error(`serve never became ready: ${stderr}`)),
@@ -432,6 +515,8 @@ describe("invokta-devtools serve", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(stdout).toBe(readyLine);
+    expect(stdout).toBe(
+      `engine: name="fixture-engine" version="0.1.0" capabilities=2\n${readyLine}watch: off\nCtrl+C to stop\n`,
+    );
   }, 20_000);
 });

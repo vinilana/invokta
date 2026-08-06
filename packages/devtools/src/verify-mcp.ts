@@ -6,11 +6,11 @@ import {
   type McpClientTarget,
 } from "@invokta/mcp";
 
-const initializationDeadlineMs = 15_000;
-const catalogDeadlineMs = 15_000;
-const maximumCatalogPages = 100;
-const maximumCatalogTools = 2_000;
-const maximumCatalogBytes = 10_485_760;
+const defaultInitializationDeadlineMs = 15_000;
+const defaultCatalogDeadlineMs = 15_000;
+const defaultMaxCatalogPages = 100;
+const defaultMaxTools = 2_000;
+const defaultMaxCatalogBytes = 10_485_760;
 
 const verificationErrorMessages = {
   INVALID_TARGET: "The MCP target is invalid.",
@@ -23,27 +23,26 @@ const verificationErrorMessages = {
   CANCELLED: "The MCP verification was cancelled.",
 } as const satisfies Readonly<Record<McpClientErrorCode, string>>;
 
-type VerificationErrorCode = McpClientErrorCode;
+/** The verification stage a failure is attributed to, if any. */
+export type VerifyFailureStage = "initialize" | "catalog" | null;
 
-export interface McpVerificationIo {
-  readonly writeStdout: (text: string) => void | Promise<void>;
-  readonly writeStderr: (text: string) => void | Promise<void>;
+/**
+ * Machine-readable failure context. It never carries secrets, environment
+ * values, or protocol payloads — only user-supplied identifiers and the
+ * configured limits.
+ */
+export type VerifyFailureDetails = Readonly<Record<string, string | number>>;
+
+export interface VerifyFailure {
+  readonly ok: false;
+  readonly code: McpClientErrorCode;
+  readonly stage: VerifyFailureStage;
+  readonly message: string;
+  readonly details?: VerifyFailureDetails;
 }
 
-export type McpClientConnector = (
-  target: McpClientTarget,
-  options?: McpClientOperationOptions,
-) => Promise<McpClientConnection>;
-
-export interface RunMcpVerificationOptions {
-  readonly target: McpClientTarget;
-  readonly io?: Partial<McpVerificationIo>;
-  /** Test and embedding seam. Defaults to the public `@invokta/mcp` facade. */
-  readonly connect?: McpClientConnector;
-  readonly signal?: AbortSignal;
-}
-
-interface VerificationSuccess {
+export interface VerifySuccess {
+  readonly ok: true;
   readonly status: "ok";
   readonly transport: "stdio" | "http";
   readonly server: {
@@ -55,44 +54,71 @@ interface VerificationSuccess {
   readonly toolCount: number;
 }
 
-interface VerificationFailure {
-  readonly status: "error";
-  readonly code: VerificationErrorCode;
+export type VerifyRunResult = VerifySuccess | VerifyFailure;
+
+export type McpClientConnector = (
+  target: McpClientTarget,
+  options?: McpClientOperationOptions,
+) => Promise<McpClientConnection>;
+
+export interface RunMcpVerificationOptions {
+  readonly target: McpClientTarget;
+  /** Test and embedding seam. Defaults to the public `@invokta/mcp` facade. */
+  readonly connect?: McpClientConnector;
+  readonly signal?: AbortSignal;
+  readonly initializationDeadlineMs?: number;
+  readonly catalogDeadlineMs?: number;
+  readonly maxCatalogPages?: number;
+  readonly maxTools?: number;
+  readonly maxCatalogBytes?: number;
+}
+
+interface VerificationLimits {
+  readonly initializationDeadlineMs: number;
+  readonly catalogDeadlineMs: number;
+  readonly maxCatalogPages: number;
+  readonly maxTools: number;
+  readonly maxCatalogBytes: number;
 }
 
 class LocalVerificationError extends Error {
-  readonly code: VerificationErrorCode;
+  readonly code: McpClientErrorCode;
+  readonly stage: VerifyFailureStage;
+  readonly details: VerifyFailureDetails | undefined;
 
-  constructor(code: VerificationErrorCode) {
-    super(verificationErrorMessages[code]);
+  constructor(
+    code: McpClientErrorCode,
+    context?: {
+      readonly stage?: VerifyFailureStage;
+      readonly message?: string;
+      readonly details?: VerifyFailureDetails;
+    },
+  ) {
+    super(context?.message ?? verificationErrorMessages[code]);
     this.code = code;
+    this.stage = context?.stage ?? null;
+    this.details = context?.details;
   }
 }
 
-function resolveIo(overrides: Partial<McpVerificationIo> | undefined) {
+function resolveLimits(options: RunMcpVerificationOptions): VerificationLimits {
   return {
-    writeStdout:
-      overrides?.writeStdout ??
-      ((text: string) => {
-        process.stdout.write(text);
-      }),
-    writeStderr:
-      overrides?.writeStderr ??
-      ((text: string) => {
-        process.stderr.write(text);
-      }),
-  } satisfies McpVerificationIo;
+    initializationDeadlineMs:
+      options.initializationDeadlineMs ?? defaultInitializationDeadlineMs,
+    catalogDeadlineMs: options.catalogDeadlineMs ?? defaultCatalogDeadlineMs,
+    maxCatalogPages: options.maxCatalogPages ?? defaultMaxCatalogPages,
+    maxTools: options.maxTools ?? defaultMaxTools,
+    maxCatalogBytes: options.maxCatalogBytes ?? defaultMaxCatalogBytes,
+  };
 }
 
-function isVerificationErrorCode(
-  value: unknown,
-): value is VerificationErrorCode {
+function isVerificationErrorCode(value: unknown): value is McpClientErrorCode {
   return (
     typeof value === "string" && Object.hasOwn(verificationErrorMessages, value)
   );
 }
 
-function readSafeErrorCode(error: unknown): VerificationErrorCode {
+function readSafeErrorCode(error: unknown): McpClientErrorCode {
   if (
     (typeof error !== "object" || error === null) &&
     typeof error !== "function"
@@ -114,12 +140,49 @@ function readSafeErrorCode(error: unknown): VerificationErrorCode {
   return "CONNECTION_FAILED";
 }
 
-function asFailure(error: unknown): VerificationFailure {
-  return { status: "error", code: readSafeErrorCode(error) };
+function asFailure(
+  error: unknown,
+  stage: VerifyFailureStage,
+  target: McpClientTarget,
+): VerifyFailure {
+  if (error instanceof LocalVerificationError) {
+    return {
+      ok: false,
+      code: error.code,
+      stage: error.stage,
+      message: error.message,
+      ...(error.details === undefined ? {} : { details: error.details }),
+    };
+  }
+  const code = readSafeErrorCode(error);
+  if (code === "SPAWN_FAILED" && target.transport === "stdio") {
+    return {
+      ok: false,
+      code,
+      stage,
+      message: `The MCP server process could not start: the executable "${target.command}" failed to spawn.`,
+      details: { executable: target.command },
+    };
+  }
+  return {
+    ok: false,
+    code,
+    stage,
+    message: verificationErrorMessages[code],
+  };
+}
+
+function limitExceeded(limit: string, value: number) {
+  return {
+    stage: "catalog" as const,
+    message: `The MCP verification limit was exceeded: ${limit} (${String(value)}).`,
+    details: { limit, value },
+  };
 }
 
 async function withDeadline<T>(
   deadlineMs: number,
+  stage: "initialize" | "catalog",
   callerSignal: AbortSignal | undefined,
   operation: (signal: AbortSignal) => Promise<T>,
   onLateValue?: (value: T) => void,
@@ -134,11 +197,17 @@ async function withDeadline<T>(
     rejectBoundary = reject;
   });
   const timeout = setTimeout(() => {
-    rejectBoundary(new LocalVerificationError("TIMEOUT"));
+    rejectBoundary(
+      new LocalVerificationError("TIMEOUT", {
+        stage,
+        message: `The MCP ${stage === "initialize" ? "initialization" : "catalog"} deadline of ${String(deadlineMs)} ms expired.`,
+        details: { stage, deadlineMs },
+      }),
+    );
     controller.abort();
   }, deadlineMs);
   const cancel = (): void => {
-    rejectBoundary(new LocalVerificationError("CANCELLED"));
+    rejectBoundary(new LocalVerificationError("CANCELLED", { stage }));
     controller.abort();
   };
   callerSignal?.addEventListener("abort", cancel, { once: true });
@@ -170,17 +239,17 @@ function serializedToolBytes(tool: unknown): number {
   try {
     serialized = JSON.stringify(tool);
   } catch {
-    throw new LocalVerificationError("PROTOCOL_ERROR");
+    throw new LocalVerificationError("PROTOCOL_ERROR", { stage: "catalog" });
   }
   if (serialized === undefined) {
-    throw new LocalVerificationError("PROTOCOL_ERROR");
+    throw new LocalVerificationError("PROTOCOL_ERROR", { stage: "catalog" });
   }
   return Buffer.byteLength(serialized, "utf8");
 }
 
 function readToolName(tool: unknown): string {
   if (typeof tool !== "object" || tool === null || Array.isArray(tool)) {
-    throw new LocalVerificationError("PROTOCOL_ERROR");
+    throw new LocalVerificationError("PROTOCOL_ERROR", { stage: "catalog" });
   }
   try {
     const descriptor = Object.getOwnPropertyDescriptor(tool, "name");
@@ -190,18 +259,19 @@ function readToolName(tool: unknown): string {
       typeof descriptor.value !== "string" ||
       descriptor.value.length === 0
     ) {
-      throw new LocalVerificationError("PROTOCOL_ERROR");
+      throw new LocalVerificationError("PROTOCOL_ERROR", { stage: "catalog" });
     }
     return descriptor.value;
   } catch (error) {
     if (error instanceof LocalVerificationError) throw error;
-    throw new LocalVerificationError("PROTOCOL_ERROR");
+    throw new LocalVerificationError("PROTOCOL_ERROR", { stage: "catalog" });
   }
 }
 
 async function collectCatalog(
   connection: McpClientConnection,
   signal: AbortSignal,
+  limits: VerificationLimits,
 ): Promise<{ readonly pageCount: number; readonly toolCount: number }> {
   let cursor: string | undefined;
   let hasNextPage = true;
@@ -215,26 +285,37 @@ async function collectCatalog(
   while (hasNextPage) {
     const page = await connection.listTools(cursor, { signal });
     pageCount += 1;
-    if (pageCount > maximumCatalogPages) {
-      throw new LocalVerificationError("LIMIT_EXCEEDED");
+    if (pageCount > limits.maxCatalogPages) {
+      throw new LocalVerificationError(
+        "LIMIT_EXCEEDED",
+        limitExceeded("maxCatalogPages", limits.maxCatalogPages),
+      );
     }
     if (!Array.isArray(page.tools)) {
-      throw new LocalVerificationError("PROTOCOL_ERROR");
+      throw new LocalVerificationError("PROTOCOL_ERROR", { stage: "catalog" });
     }
 
     for (const tool of page.tools) {
       toolCount += 1;
-      if (toolCount > maximumCatalogTools) {
-        throw new LocalVerificationError("LIMIT_EXCEEDED");
+      if (toolCount > limits.maxTools) {
+        throw new LocalVerificationError(
+          "LIMIT_EXCEEDED",
+          limitExceeded("maxTools", limits.maxTools),
+        );
       }
       const toolName = readToolName(tool);
       if (toolNames.has(toolName)) {
-        throw new LocalVerificationError("PROTOCOL_ERROR");
+        throw new LocalVerificationError("PROTOCOL_ERROR", {
+          stage: "catalog",
+        });
       }
       toolNames.add(toolName);
       catalogBytes += serializedToolBytes(tool) + (toolCount === 1 ? 0 : 1);
-      if (catalogBytes > maximumCatalogBytes) {
-        throw new LocalVerificationError("LIMIT_EXCEEDED");
+      if (catalogBytes > limits.maxCatalogBytes) {
+        throw new LocalVerificationError(
+          "LIMIT_EXCEEDED",
+          limitExceeded("maxCatalogBytes", limits.maxCatalogBytes),
+        );
       }
     }
 
@@ -244,13 +325,16 @@ async function collectCatalog(
       continue;
     }
     if (typeof nextCursor !== "string") {
-      throw new LocalVerificationError("PROTOCOL_ERROR");
+      throw new LocalVerificationError("PROTOCOL_ERROR", { stage: "catalog" });
     }
-    if (pageCount === maximumCatalogPages) {
-      throw new LocalVerificationError("LIMIT_EXCEEDED");
+    if (pageCount === limits.maxCatalogPages) {
+      throw new LocalVerificationError(
+        "LIMIT_EXCEEDED",
+        limitExceeded("maxCatalogPages", limits.maxCatalogPages),
+      );
     }
     if (cursorHistory.has(nextCursor)) {
-      throw new LocalVerificationError("PROTOCOL_ERROR");
+      throw new LocalVerificationError("PROTOCOL_ERROR", { stage: "catalog" });
     }
     cursorHistory.add(nextCursor);
     cursor = nextCursor;
@@ -259,28 +343,43 @@ async function collectCatalog(
   return { pageCount, toolCount };
 }
 
-async function executeVerification(
+/**
+ * Initializes one explicit MCP target and validates its complete tool catalog.
+ * The runner never calls a tool, closes an obtained connection before it
+ * returns a successful result, and never writes to stdout or stderr — the
+ * caller renders the returned result.
+ */
+export async function runMcpVerification(
   options: RunMcpVerificationOptions,
-): Promise<VerificationSuccess | VerificationFailure> {
+): Promise<VerifyRunResult> {
+  const limits = resolveLimits(options);
   let connection: McpClientConnection | undefined;
-  let result: VerificationSuccess | VerificationFailure;
+  let result: VerifyRunResult;
+  let stage: VerifyFailureStage = null;
 
   try {
     const connect = options.connect ?? connectMcpClient;
+    stage = "initialize";
     connection = await withDeadline(
-      initializationDeadlineMs,
+      limits.initializationDeadlineMs,
+      "initialize",
       options.signal,
       (signal) => connect(options.target, { signal }),
       (lateConnection) => {
         void lateConnection.close().catch(() => undefined);
       },
     );
+    stage = "catalog";
     const catalog = await withDeadline(
-      catalogDeadlineMs,
+      limits.catalogDeadlineMs,
+      "catalog",
       options.signal,
-      (signal) => collectCatalog(connection as McpClientConnection, signal),
+      (signal) =>
+        collectCatalog(connection as McpClientConnection, signal, limits),
     );
+    stage = null;
     result = {
+      ok: true,
       status: "ok",
       transport: options.target.transport,
       server: {
@@ -292,58 +391,53 @@ async function executeVerification(
       toolCount: catalog.toolCount,
     };
   } catch (error) {
-    result = asFailure(error);
+    result = asFailure(error, stage, options.target);
   }
 
   if (connection !== undefined) {
     try {
       await connection.close();
     } catch {
-      if (result.status === "ok") {
-        result = { status: "error", code: "CONNECTION_FAILED" };
+      if (result.ok) {
+        result = {
+          ok: false,
+          code: "CONNECTION_FAILED",
+          stage: null,
+          message: verificationErrorMessages.CONNECTION_FAILED,
+        };
       }
     }
   }
   return result;
 }
 
-async function writeFailure(
-  io: McpVerificationIo,
-  failure: VerificationFailure,
-): Promise<void> {
-  try {
-    await io.writeStderr(
-      `invokta-devtools verify: ${failure.code}: ${verificationErrorMessages[failure.code]}\n`,
-    );
-  } catch {
-    // A gone diagnostic destination cannot change the selected exit code.
-  }
+export interface RenderedMcpVerification {
+  readonly exitCode: 0 | 1 | 2;
+  readonly stdout?: string;
+  readonly stderr?: string;
 }
 
 /**
- * Initializes one explicit MCP target and validates its complete tool catalog.
- * The runner never calls a tool and closes an obtained connection before it
- * writes a successful result.
+ * Renders a verification result for a terminal: the legacy success JSON line
+ * on stdout (without the `ok` discriminant, so existing stdout consumers keep
+ * working) or a single diagnostic line on stderr, plus the exit code the CLI
+ * should use.
  */
-export async function runMcpVerification(
-  options: RunMcpVerificationOptions,
-): Promise<0 | 1 | 2> {
-  const io = resolveIo(options.io);
-  const result = await executeVerification(options);
-  if (result.status !== "ok") {
-    await writeFailure(io, result);
-    return result.code === "INVALID_TARGET" ? 2 : 1;
+export function renderMcpVerificationResult(
+  result: VerifyRunResult,
+): RenderedMcpVerification {
+  if (result.ok) {
+    const legacySuccess = {
+      status: result.status,
+      transport: result.transport,
+      server: result.server,
+      pageCount: result.pageCount,
+      toolCount: result.toolCount,
+    };
+    return { exitCode: 0, stdout: `${JSON.stringify(legacySuccess)}\n` };
   }
-
-  try {
-    await io.writeStdout(`${JSON.stringify(result)}\n`);
-    return 0;
-  } catch {
-    const failure = {
-      status: "error",
-      code: "CONNECTION_FAILED",
-    } as const;
-    await writeFailure(io, failure);
-    return 1;
-  }
+  return {
+    exitCode: result.code === "INVALID_TARGET" ? 2 : 1,
+    stderr: `invokta-devtools verify: ${result.code}: ${result.message}\n`,
+  };
 }

@@ -375,12 +375,12 @@ describe("verify environment resolution", () => {
     expect(invalidOptionsExit).toBe(2);
     expect(stdout).toEqual([]);
     expect(stderr).toEqual([
-      "invokta-devtools verify: INVALID_TARGET: The verify command arguments are invalid.\n",
+      "invokta-devtools verify: INVALID_TARGET: The --arg, --cwd, and --env options are valid only with --stdio.\n",
     ]);
     expect(stderr.join("")).not.toContain("target-url-canary");
   });
 
-  it("returns a secret-free exit 2 when a named environment value is absent", async () => {
+  it("names the absent environment value in the exit 2 diagnostic", async () => {
     const sourceName = "INVOKTA_TEST_MISSING_VERIFY_ENV_59B3B45D";
     const previous = process.env[sourceName];
     delete process.env[sourceName];
@@ -403,13 +403,255 @@ describe("verify environment resolution", () => {
 
       expect(exitCode).toBe(2);
       expect(stderr).toEqual([
-        "invokta-devtools verify: ENVIRONMENT_VALUE_MISSING: A required environment value is missing.\n",
+        `invokta-devtools verify: ENVIRONMENT_VALUE_MISSING: "${sourceName}" is not set.\n`,
       ]);
-      expect(stderr.join("")).not.toContain(sourceName);
       expect(stderr.join("")).not.toContain("descriptor-command-canary");
     } finally {
       if (previous === undefined) delete process.env[sourceName];
       else process.env[sourceName] = previous;
     }
+  });
+});
+
+describe("invokta-devtools help and version", () => {
+  it("parses --help/-h and --version/-v as dedicated commands", () => {
+    expect(parseDevtoolsCommand(["--help"])).toEqual({ command: "help" });
+    expect(parseDevtoolsCommand(["-h"])).toEqual({ command: "help" });
+    expect(parseDevtoolsCommand(["--version"])).toEqual({
+      command: "version",
+    });
+    expect(parseDevtoolsCommand(["-v"])).toEqual({ command: "version" });
+  });
+
+  it("prints the usage to stdout and exits 0 for --help", async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exitCode = await runDevtoolsCli({
+      argv: ["--help"],
+      io: {
+        writeStdout: (text) => {
+          stdout.push(text);
+        },
+        writeStderr: (text) => {
+          stderr.push(text);
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join("")).toContain("Usage:");
+    expect(stdout.join("")).toContain("invokta-devtools verify");
+  });
+
+  it("prints the package version to stdout and exits 0 for --version", async () => {
+    const stdout: string[] = [];
+    const exitCode = await runDevtoolsCli({
+      argv: ["--version"],
+      io: {
+        writeStdout: (text) => {
+          stdout.push(text);
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout.join("")).toMatch(/^invokta-devtools \d+\.\d+\.\d+\n$/);
+  });
+});
+
+describe("invokta-devtools verify limit and format flags", () => {
+  it("parses --timeout-ms, --max-tools, and --json for both transports", () => {
+    expect(
+      parseDevtoolsCommand([
+        "verify",
+        "--stdio",
+        "node",
+        "--timeout-ms",
+        "5000",
+        "--max-tools",
+        "25",
+        "--json",
+      ]),
+    ).toEqual({
+      command: "verify",
+      timeoutMs: 5000,
+      maxTools: 25,
+      json: true,
+      target: {
+        transport: "stdio",
+        command: "node",
+        args: [],
+        environment: [],
+      },
+    });
+    expect(
+      parseDevtoolsCommand([
+        "verify",
+        "--http",
+        "https://example.com/mcp",
+        "--timeout-ms",
+        "2500",
+        "--max-tools",
+        "10",
+        "--json",
+      ]),
+    ).toEqual({
+      command: "verify",
+      timeoutMs: 2500,
+      maxTools: 10,
+      json: true,
+      target: {
+        transport: "http",
+        url: "https://example.com/mcp",
+        authentication: { type: "none" },
+      },
+    });
+  });
+
+  it.each([
+    [["verify", "--stdio", "node", "--timeout-ms", "0"], "positive integer"],
+    [["verify", "--stdio", "node", "--timeout-ms", "1.5"], "positive integer"],
+    [["verify", "--stdio", "node", "--max-tools", "many"], "positive integer"],
+    [
+      ["verify", "--stdio", "node", "--max-tools", "1", "--max-tools", "2"],
+      "at most once",
+    ],
+    [
+      ["verify", "--stdio", "node", "--timeout-ms", "1", "--timeout-ms", "2"],
+      "at most once",
+    ],
+    [["verify", "--stdio", "node", "--json", "--json"], "at most once"],
+  ] as const)("rejects invalid limit flags %#", (argv, message) => {
+    expect(() => parseDevtoolsCommand(argv)).toThrow(message);
+  });
+});
+
+describe("invokta-devtools doctor --json parsing", () => {
+  it("parses --json as an additive doctor flag", () => {
+    expect(
+      parseDevtoolsCommand(["doctor", "./dist/engine.js", "--json"]),
+    ).toEqual({
+      command: "doctor",
+      moduleSpecifier: "./dist/engine.js",
+      exportName: "engine",
+      json: true,
+    });
+    expect(parseDevtoolsCommand(["doctor", "./dist/engine.js"])).toEqual({
+      command: "doctor",
+      moduleSpecifier: "./dist/engine.js",
+      exportName: "engine",
+    });
+  });
+
+  it("rejects a repeated --json", () => {
+    expect(() =>
+      parseDevtoolsCommand(["doctor", "./dist/engine.js", "--json", "--json"]),
+    ).toThrow("at most once");
+  });
+});
+
+describe("invokta-devtools serve watch and trace flags", () => {
+  it("parses repeatable watch filters and the trace capacity", () => {
+    expect(
+      parseDevtoolsCommand([
+        "serve",
+        "./dist/engine.js",
+        "--watch",
+        "--build",
+        "yarn build",
+        "--watch-include",
+        "src",
+        "--watch-include",
+        "shared",
+        "--watch-ignore",
+        "*.test.ts",
+        "--trace-capacity",
+        "50",
+      ]),
+    ).toEqual({
+      command: "serve",
+      moduleSpecifier: "./dist/engine.js",
+      exportName: "engine",
+      buildCommand: "yarn build",
+      watchInclude: ["src", "shared"],
+      watchIgnore: ["*.test.ts"],
+      traceCapacity: 50,
+    });
+  });
+
+  it.each([
+    [
+      ["serve", "./dist/engine.js", "--watch-include", "src"],
+      "require --watch",
+    ],
+    [
+      [
+        "serve",
+        "./dist/engine.js",
+        "--watch",
+        "--build",
+        "yarn build",
+        "--watch-ignore",
+      ],
+      "requires a value",
+    ],
+    [
+      ["serve", "./dist/engine.js", "--trace-capacity", "0"],
+      "positive integer",
+    ],
+    [
+      [
+        "serve",
+        "./dist/engine.js",
+        "--trace-capacity",
+        "1",
+        "--trace-capacity",
+        "2",
+      ],
+      "at most once",
+    ],
+  ] as const)("rejects invalid serve flags %#", (argv, message) => {
+    expect(() => parseDevtoolsCommand(argv)).toThrow(message);
+  });
+});
+
+describe("verify environment naming", () => {
+  it("names the missing source value for stdio, bearer, and headers", () => {
+    const stdio = parseDevtoolsCommand([
+      "verify",
+      "--stdio",
+      "node",
+      "--env",
+      "CHILD=STDIO_SOURCE",
+    ]);
+    const bearer = parseDevtoolsCommand([
+      "verify",
+      "--http",
+      "https://example.com/mcp",
+      "--auth",
+      "bearer",
+      "--bearer-env",
+      "BEARER_SOURCE",
+    ]);
+    const headers = parseDevtoolsCommand([
+      "verify",
+      "--http",
+      "https://example.com/mcp",
+      "--auth",
+      "headers",
+      "--header-env",
+      "X-Key=HEADER_SOURCE",
+    ]);
+
+    expect(() =>
+      resolveVerifyTargetEnvironment(stdio, () => undefined),
+    ).toThrow('ENVIRONMENT_VALUE_MISSING: "STDIO_SOURCE" is not set.');
+    expect(() =>
+      resolveVerifyTargetEnvironment(bearer, () => undefined),
+    ).toThrow('ENVIRONMENT_VALUE_MISSING: "BEARER_SOURCE" is not set.');
+    expect(() =>
+      resolveVerifyTargetEnvironment(headers, () => undefined),
+    ).toThrow('ENVIRONMENT_VALUE_MISSING: "HEADER_SOURCE" is not set.');
   });
 });

@@ -25,6 +25,7 @@ export const ATTACHED_SESSION_LIMITS = Object.freeze({
   catalogPages: 100,
   catalogTools: 2_000,
   activityRecords: 500,
+  retainedActivityRecords: 50,
   oauthAuthorizationTimeoutMs: 300_000,
 });
 
@@ -118,6 +119,11 @@ export type AttachedSessionState =
           readonly message: string;
         };
       };
+      /**
+       * The newest activity records of the last disconnected slot, retained
+       * so the interface can show what happened before a failure.
+       */
+      readonly activity?: readonly AttachedActivityRecord[];
     }
   | { readonly state: "busy" }
   | {
@@ -207,6 +213,11 @@ interface LastValidationFailure {
   readonly owner: string;
   readonly code: AttachedSessionErrorCode;
   readonly message: string;
+}
+
+interface RetainedActivity {
+  readonly owner: string;
+  readonly records: readonly AttachedActivityRecord[];
 }
 
 const deadlineReason = Object.freeze({ type: "attached-deadline" });
@@ -617,6 +628,7 @@ export function createAttachedSessionController(
   const clock = options.clock ?? defaultClock;
   let active: ActiveSlot | undefined;
   let lastValidationFailure: LastValidationFailure | undefined;
+  let retainedActivity: RetainedActivity | undefined;
 
   const closeClientOnce = (slot: ActiveSlot): Promise<void> => {
     slot.closeClientPromise ??= (async () => {
@@ -639,6 +651,13 @@ export function createAttachedSessionController(
 
   const clearSlot = (slot: ActiveSlot): void => {
     if (slot.oauthExpiry !== undefined) clock.cancel(slot.oauthExpiry);
+    // The newest records survive the slot so the idle state can still show
+    // what happened before a disconnect or a failure.
+    const records = slot.activity
+      .entries()
+      .slice(-ATTACHED_SESSION_LIMITS.retainedActivityRecords);
+    retainedActivity =
+      records.length === 0 ? undefined : { owner: slot.owner, records };
     slot.catalog = Object.freeze([]);
     slot.toolNames = new Set();
     slot.connectionSummary = undefined;
@@ -770,6 +789,7 @@ export function createAttachedSessionController(
       throw attachedError("INVALID_TARGET");
     }
     lastValidationFailure = undefined;
+    retainedActivity = undefined;
     const slot: ActiveSlot = {
       owner,
       transport: "http",
@@ -953,6 +973,7 @@ export function createAttachedSessionController(
     if (active !== undefined) throw attachedError("TARGET_BUSY");
     const transport = targetTransport(target);
     lastValidationFailure = undefined;
+    retainedActivity = undefined;
     const slot: ActiveSlot = {
       owner,
       transport,
@@ -1129,9 +1150,14 @@ export function createAttachedSessionController(
                 }),
               })
             : undefined;
+        const activity =
+          retainedActivity?.owner === owner
+            ? retainedActivity.records
+            : undefined;
         return Object.freeze({
           state: "idle" as const,
           ...(validation === undefined ? {} : { validation }),
+          ...(activity === undefined ? {} : { activity }),
         });
       }
       if (slot.owner !== owner)
@@ -1167,7 +1193,7 @@ export function createAttachedSessionController(
     activity: (owner) => {
       const slot = active;
       if (slot === undefined) {
-        if (lastValidationFailure?.owner === owner) return Object.freeze([]);
+        if (retainedActivity?.owner === owner) return retainedActivity.records;
         return Object.freeze([]);
       }
       if (slot.owner !== owner) throw attachedError("TARGET_BUSY");
@@ -1183,9 +1209,12 @@ export function createAttachedSessionController(
       const slot = active;
       if (slot === undefined) {
         lastValidationFailure = undefined;
+        retainedActivity = undefined;
         return;
       }
       await beginClose(slot);
+      // Controller shutdown drops the retained snapshot with the slot.
+      retainedActivity = undefined;
     },
   };
 }

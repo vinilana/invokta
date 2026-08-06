@@ -6,7 +6,12 @@ import type { McpHttpAuthenticationRequest } from "@invokta/mcp";
 export interface DevPrincipal {
   /** Stable management key; safe to list and reference from the interface. */
   readonly key: string;
-  /** Opaque bearer credential; returned only when it is minted. */
+  /**
+   * Opaque bearer credential. `issue` and `rotate` return it only when it is
+   * minted; `list` also carries it so the in-process watch-mode mirror can
+   * forward the token table to the engine-host child. The HTTP interface
+   * strips it from list responses.
+   */
   readonly token: string;
   readonly principal: Principal;
 }

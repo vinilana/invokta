@@ -624,4 +624,114 @@ describe("principals panel", () => {
     expect(heading.focused).toBe(true);
     expect(walk(container)).toContain(panelStatus);
   });
+
+  it("fills the create form from attribute presets", async () => {
+    installBrowser(async () => jsonResponse([]));
+
+    const { renderPrincipalsPanel } = await import("../src/ui/principals.js");
+    const container = new FakeElement("main");
+    renderPrincipalsPanel(container);
+    await waitFor(() => expect(container.textContent).toContain("Quick fill:"));
+
+    const idInput = walk(container).find(
+      (node) => node.getAttribute?.("id") === "new-principal-id",
+    );
+    const attributesInput = walk(container).find(
+      (node) => node.getAttribute?.("id") === "new-principal-attributes",
+    );
+    const presets = walk(container).filter(
+      (node) => node.getAttribute?.("class") === "principal-preset",
+    );
+    expect(presets.map((button) => button.textContent)).toEqual([
+      "Admin",
+      "Reviewer",
+      "Anonymous",
+    ]);
+
+    presets[0].dispatchEvent(new Event("click"));
+    expect(idInput.value).toBe("admin");
+    expect(JSON.parse(attributesInput.value)).toEqual({ role: "admin" });
+    expect(idInput.focused).toBe(true);
+
+    presets[2].dispatchEvent(new Event("click"));
+    expect(idInput.value).toBe("anonymous");
+    expect(attributesInput.value).toBe("");
+  });
+
+  it("duplicates an identity into the create form without copying tokens", async () => {
+    installBrowser(async () =>
+      jsonResponse([
+        {
+          key: "p1",
+          principal: { id: "local-dev", attributes: { role: "admin" } },
+        },
+      ]),
+    );
+
+    const { renderPrincipalsPanel } = await import("../src/ui/principals.js");
+    const container = new FakeElement("main");
+    renderPrincipalsPanel(container);
+    await waitFor(() => expect(container.textContent).toContain("Duplicate"));
+
+    const row = walk(container).find(
+      (node) => node.getAttribute?.("aria-label") === "Test identity local-dev",
+    );
+    const duplicate = walk(row).find(
+      (node) => node.tagName === "BUTTON" && node.textContent === "Duplicate",
+    );
+    duplicate.dispatchEvent(new Event("click"));
+
+    const createSection = walk(container).find((node) =>
+      node.getAttribute?.("class")?.includes("principal-create"),
+    );
+    const idInput = walk(container).find(
+      (node) => node.getAttribute?.("id") === "new-principal-id",
+    );
+    const attributesInput = walk(container).find(
+      (node) => node.getAttribute?.("id") === "new-principal-attributes",
+    );
+    expect(createSection.getAttribute("open")).toBe("");
+    expect(idInput.value).toBe("local-dev-copy");
+    expect(JSON.parse(attributesInput.value)).toEqual({ role: "admin" });
+    expect(idInput.focused).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces the server error message when creation fails", async () => {
+    installBrowser(async (_path, options = {}) => {
+      if (options.method === "POST") {
+        return jsonResponse({ error: "duplicate" }, 409);
+      }
+      return jsonResponse([]);
+    });
+
+    const { renderPrincipalsPanel } = await import("../src/ui/principals.js");
+    const container = new FakeElement("main");
+    renderPrincipalsPanel(container);
+    await waitFor(() =>
+      expect(container.textContent).toContain("Add identity"),
+    );
+
+    const idInput = walk(container).find(
+      (node) => node.getAttribute?.("id") === "new-principal-id",
+    );
+    idInput.value = "local-dev";
+    const create = walk(container).find(
+      (node) =>
+        node.tagName === "BUTTON" && node.textContent === "Add identity",
+    );
+    create.dispatchEvent(new Event("click"));
+
+    const feedback = walk(container).find(
+      (node) => node.getAttribute?.("id") === "new-principal-feedback",
+    );
+    await waitFor(() => expect(feedback.getAttribute("role")).toBe("alert"));
+    expect(feedback.textContent).not.toBe("");
+    // The api error message is surfaced, not the old fixed fallback.
+    expect(feedback.textContent).not.toBe(
+      "The test identity could not be added. Try again.",
+    );
+    expect(create.disabled).toBe(false);
+    expect(create.textContent).toBe("Add identity");
+  });
 });

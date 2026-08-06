@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const originalDescriptors = new Map(
-  ["document", "fetch", "sessionStorage"].map((name) => [
+  ["document", "fetch", "navigator", "sessionStorage"].map((name) => [
     name,
     Object.getOwnPropertyDescriptor(globalThis, name),
   ]),
@@ -137,11 +137,16 @@ class FakeElement extends FakeNode {
   }
 }
 
+class FakeDocument extends EventTarget {
+  body = new FakeElement("body");
+
+  createElement(tagName) {
+    return new FakeElement(tagName);
+  }
+}
+
 function installDocument() {
-  installGlobal("document", {
-    body: new FakeElement("body"),
-    createElement: (tagName) => new FakeElement(tagName),
-  });
+  installGlobal("document", new FakeDocument());
 }
 
 function walk(element) {
@@ -190,6 +195,7 @@ const classify = {
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.resetModules();
   for (const [name, descriptor] of originalDescriptors) {
     if (descriptor === undefined) delete globalThis[name];
@@ -455,9 +461,11 @@ describe("capability discovery", () => {
     expect(count.textContent).toBe("1 of 2 capabilities");
     expect(first.hidden).toBe(true);
     expect(second.hidden).toBe(false);
-    expect(second.getAttribute("aria-selected")).toBe("true");
+    // The filter no longer hijacks the open detail: first stays selected.
+    expect(first.getAttribute("aria-selected")).toBe("true");
+    expect(second.getAttribute("aria-selected")).toBe("false");
     expect(container.textContent).toContain(
-      "Produces a concise overview for an account.",
+      "Classifies a support ticket by urgency.",
     );
 
     search.value = "does-not-exist";
@@ -467,7 +475,7 @@ describe("capability discovery", () => {
     expect(second.hidden).toBe(true);
     expect(filterEmpty.hidden).toBe(false);
     expect(filterEmpty.textContent).toContain("No capabilities match");
-    expect(second.getAttribute("aria-selected")).toBe("true");
+    expect(first.getAttribute("aria-selected")).toBe("true");
     const detail = elements.find(
       (node) =>
         node instanceof FakeElement &&
@@ -482,26 +490,123 @@ describe("capability discovery", () => {
     search.dispatchEvent(new Event("input"));
     expect(count.textContent).toBe("2 of 2 capabilities");
     expect(first.hidden).toBe(false);
-    expect(second.getAttribute("aria-selected")).toBe("true");
+    expect(first.getAttribute("aria-selected")).toBe("true");
     expect(
       walk(detail).find(
         (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
       ).value,
     ).toBe('{"account":"preserved"}');
+
+    second.dispatchEvent(new Event("click"));
+    expect(second.getAttribute("aria-selected")).toBe("true");
+    expect(container.textContent).toContain(
+      "Produces a concise overview for an account.",
+    );
 
     search.value = "CLASSIFY TICKET";
     search.dispatchEvent(new Event("input"));
     expect(count.textContent).toBe("1 of 2 capabilities");
-    expect(first.getAttribute("aria-selected")).toBe("true");
-
-    search.value = "concise overview";
-    search.dispatchEvent(new Event("input"));
+    expect(second.hidden).toBe(true);
+    // The selected capability stays open even though the filter hides it.
     expect(second.getAttribute("aria-selected")).toBe("true");
-    expect(
-      walk(detail).find(
-        (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
-      ).value,
-    ).toBe('{"account":"preserved"}');
+    expect(container.textContent).toContain(
+      "Produces a concise overview for an account.",
+    );
+  });
+
+  it("offers a retry when the catalog fails to load", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    let calls = 0;
+    installGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) return jsonResponse({ error: "internal_error" }, 500);
+        return jsonResponse([classify]);
+      }),
+    );
+
+    const { renderCapabilitiesPanel } = await import(
+      "../src/ui/capabilities.js"
+    );
+    const container = new FakeElement("main");
+    renderCapabilitiesPanel(container);
+
+    await waitFor(() =>
+      expect(container.textContent).toContain("Couldn’t load capabilities."),
+    );
+    const retry = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-retry"),
+    );
+    expect(retry).toBeDefined();
+
+    retry.dispatchEvent(new Event("click"));
+    await waitFor(() =>
+      expect(container.textContent).toContain("Classify ticket"),
+    );
+    expect(calls).toBe(2);
+  });
+
+  it("selects a capability handed over through invokta:select-capability", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    installGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse([
+          classify,
+          {
+            ...classify,
+            id: "support.summarize-ticket",
+            title: "Summarize ticket",
+            description: "Summarizes a support ticket.",
+          },
+        ]),
+      ),
+    );
+
+    const { renderCapabilitiesPanel } = await import(
+      "../src/ui/capabilities.js"
+    );
+    const container = new FakeElement("main");
+    const dispose = renderCapabilitiesPanel(container);
+
+    await waitFor(() =>
+      expect(container.textContent).toContain("2 of 2 capabilities"),
+    );
+    const detail = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-pane"),
+    );
+    expect(detail.textContent).toContain("Classifies a support ticket");
+
+    const handoff = new Event("invokta:select-capability");
+    Object.defineProperty(handoff, "detail", {
+      value: { id: "support.summarize-ticket" },
+    });
+    document.dispatchEvent(handoff);
+
+    const second = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-choice") &&
+        node.textContent.includes("support.summarize-ticket"),
+    );
+    expect(second.getAttribute("aria-selected")).toBe("true");
+    expect(detail.textContent).toContain("Summarizes a support ticket.");
+
+    dispose();
+    // After dispose the handoff listener is gone.
+    const ignored = new Event("invokta:select-capability");
+    Object.defineProperty(ignored, "detail", {
+      value: { id: "support.classify-ticket" },
+    });
+    document.dispatchEvent(ignored);
+    expect(second.getAttribute("aria-selected")).toBe("true");
   });
 });
 
@@ -574,6 +679,10 @@ describe("capability invocation", () => {
     expect(fetch).not.toHaveBeenCalled();
     expect(editor.getAttribute("aria-invalid")).toBe("true");
     expect(feedback.textContent).toContain("valid JSON");
+    // The SyntaxError detail (position info) follows the generic guidance.
+    expect(feedback.textContent).toMatch(
+      /Enter valid JSON before invoking\. .+/,
+    );
 
     editor.value = '{"ticketId":"T-123"}';
     format.dispatchEvent(new Event("click"));
@@ -621,6 +730,7 @@ describe("capability invocation", () => {
       copyButtons.map((button) => button.getAttribute("aria-label")),
     ).toEqual([
       "Copy arguments",
+      "Copy curl command",
       "Copy capability result",
       "Copy raw MCP request",
       "Copy raw MCP response",
@@ -685,5 +795,387 @@ describe("capability invocation", () => {
     expect(panel.textContent).toContain("Result · engine error");
     expect(result.textContent).toContain('"FORBIDDEN"');
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("copies the exact request as a curl command", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    const writeText = vi.fn(async () => undefined);
+    installGlobal("navigator", { clipboard: { writeText } });
+    installGlobal("fetch", vi.fn());
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const editor = walk(panel).find(
+      (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+    );
+    const curl = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("aria-label") === "Copy curl command",
+    );
+    expect(curl).toBeDefined();
+
+    editor.value = '{"ticketId":"T-9"}';
+    curl.dispatchEvent(new Event("click"));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const command = writeText.mock.calls[0][0];
+    expect(command).toContain("curl -X POST /mcp");
+    expect(command).toContain('-H "content-type: application/json"');
+    expect(command).toContain(
+      '-H "accept: application/json, text/event-stream"',
+    );
+    expect(command).not.toContain("authorization");
+    expect(command).toContain('"method": "tools/call"');
+    expect(command).toContain('"name": "support.classify-ticket"');
+    expect(command).toContain('"ticketId": "T-9"');
+  });
+
+  it("includes the authorization header in the curl command when a token is active", async () => {
+    installDocument();
+    const storage = new MemoryStorage();
+    storage.setItem(
+      "invokta-devtools.tokens",
+      JSON.stringify({ p1: "tok-123" }),
+    );
+    storage.setItem("invokta-devtools.active", "p1");
+    installGlobal("sessionStorage", storage);
+    const writeText = vi.fn(async () => undefined);
+    installGlobal("navigator", { clipboard: { writeText } });
+    installGlobal("fetch", vi.fn());
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const curl = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("aria-label") === "Copy curl command",
+    );
+
+    curl.dispatchEvent(new Event("click"));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0][0]).toContain(
+      '-H "authorization: Bearer tok-123"',
+    );
+  });
+
+  it("checks required fields, primitive types, and enums before invoking", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    const fetch = vi.fn();
+    installGlobal("fetch", fetch);
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel({
+      ...classify,
+      inputSchema: {
+        type: "object",
+        properties: {
+          ticketId: { type: "string" },
+          priority: { type: "integer" },
+          urgency: { type: "string", enum: ["low", "high"] },
+        },
+        required: ["ticketId"],
+      },
+    });
+    const elements = walk(panel);
+    const editor = elements.find(
+      (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+    );
+    const invoke = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Invoke capability",
+    );
+    const feedback = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("feedback"),
+    );
+
+    editor.value = "{}";
+    invoke.dispatchEvent(new Event("click"));
+    expect(feedback.textContent).toBe('"ticketId" is required.');
+
+    editor.value = '{"ticketId":42}';
+    invoke.dispatchEvent(new Event("click"));
+    expect(feedback.textContent).toBe('"ticketId" must be a string.');
+
+    editor.value = '{"ticketId":"T-1","priority":"high"}';
+    invoke.dispatchEvent(new Event("click"));
+    expect(feedback.textContent).toBe('"priority" must be an integer.');
+
+    editor.value = '{"ticketId":"T-1","urgency":"medium"}';
+    invoke.dispatchEvent(new Event("click"));
+    expect(feedback.textContent).toBe(
+      '"urgency" must be one of the allowed values.',
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(editor.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("cancels a pending invocation", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    installGlobal(
+      "fetch",
+      vi.fn(
+        (_path, options) =>
+          new Promise((_resolve, reject) => {
+            options.signal.addEventListener("abort", () => {
+              reject(
+                new DOMException("The operation was aborted.", "AbortError"),
+              );
+            });
+          }),
+      ),
+    );
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const elements = walk(panel);
+    const invoke = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Invoke capability",
+    );
+    const cancel = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("invoke-cancel"),
+    );
+    const feedback = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("feedback"),
+    );
+    expect(cancel.hidden).toBe(true);
+
+    invoke.dispatchEvent(new Event("click"));
+    expect(cancel.hidden).toBe(false);
+    expect(invoke.getAttribute("aria-disabled")).toBe("true");
+
+    cancel.dispatchEvent(new Event("click"));
+    await waitFor(() =>
+      expect(feedback.textContent).toContain("Invocation cancelled."),
+    );
+    expect(panel.textContent).toContain("Result · cancelled");
+    expect(cancel.hidden).toBe(true);
+    expect(invoke.getAttribute("aria-disabled")).toBe("false");
+  });
+
+  it("times out a stuck invocation using the announced timeout plus slack", async () => {
+    vi.useFakeTimers();
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    installGlobal(
+      "fetch",
+      vi.fn(
+        (_path, options) =>
+          new Promise((_resolve, reject) => {
+            options.signal.addEventListener("abort", () => {
+              reject(
+                new DOMException("The operation was aborted.", "AbortError"),
+              );
+            });
+          }),
+      ),
+    );
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    // classify announces timeoutMs: 2_000, so the client gives up at 4 s.
+    const panel = renderInvokePanel(classify);
+    const elements = walk(panel);
+    const invoke = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Invoke capability",
+    );
+    const feedback = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("feedback"),
+    );
+
+    invoke.dispatchEvent(new Event("click"));
+    await vi.advanceTimersByTimeAsync(4_000);
+    await Promise.resolve();
+
+    expect(feedback.textContent).toBe(
+      "No response within 4 s — the capability may be stuck.",
+    );
+    expect(panel.textContent).toContain("Result · timeout");
+    expect(invoke.getAttribute("aria-disabled")).toBe("false");
+  });
+
+  it("persists the editor draft per capability and restores it", async () => {
+    installDocument();
+    const storage = new MemoryStorage();
+    installGlobal("sessionStorage", storage);
+    installGlobal("fetch", vi.fn());
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const first = renderInvokePanel(classify);
+    const firstEditor = walk(first).find(
+      (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+    );
+    firstEditor.value = '{"ticketId":"draft-1"}';
+    firstEditor.dispatchEvent(new Event("input"));
+    expect(
+      storage.getItem("invokta-devtools:draft:support.classify-ticket"),
+    ).toBe('{"ticketId":"draft-1"}');
+
+    const second = renderInvokePanel(classify);
+    const elements = walk(second);
+    const secondEditor = elements.find(
+      (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+    );
+    expect(secondEditor.value).toBe('{"ticketId":"draft-1"}');
+
+    // Reset example reseeds the editor and clears the persisted draft.
+    const reset = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Reset example",
+    );
+    reset.dispatchEvent(new Event("click"));
+    expect(
+      storage.getItem("invokta-devtools:draft:support.classify-ticket"),
+    ).toBeNull();
+    expect(secondEditor.value).toContain('"ticketId": ""');
+  });
+
+  it("prefers a prefill handoff over the persisted draft and consumes it", async () => {
+    installDocument();
+    const storage = new MemoryStorage();
+    storage.setItem(
+      "invokta-devtools:draft:support.classify-ticket",
+      '{"ticketId":"draft"}',
+    );
+    storage.setItem(
+      "invokta-devtools:prefill:support.classify-ticket",
+      '{"ticketId":"from-trace"}',
+    );
+    installGlobal("sessionStorage", storage);
+    installGlobal("fetch", vi.fn());
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const editor = walk(panel).find(
+      (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+    );
+
+    expect(editor.value).toBe('{"ticketId":"from-trace"}');
+    expect(
+      storage.getItem("invokta-devtools:prefill:support.classify-ticket"),
+    ).toBeNull();
+    expect(
+      storage.getItem("invokta-devtools:draft:support.classify-ticket"),
+    ).toBe('{"ticketId":"draft"}');
+  });
+
+  it("keeps the HTTP status out of the copied raw response", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    const writeText = vi.fn(async () => undefined);
+    installGlobal("navigator", { clipboard: { writeText } });
+    const body = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      result: { structuredContent: { ok: true } },
+    });
+    installGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const elements = walk(panel);
+    const invoke = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Invoke capability",
+    );
+
+    invoke.dispatchEvent(new Event("click"));
+    await waitFor(() =>
+      expect(panel.textContent).toContain("Result · success"),
+    );
+
+    const rawResponse = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("aria-label") === "Raw MCP response body",
+    );
+    // The status is still shown, but outside the copyable body.
+    expect(panel.textContent).toContain("HTTP 200");
+    expect(rawResponse.textContent).toBe(body);
+
+    const copy = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("aria-label") === "Copy raw MCP response",
+    );
+    copy.dispatchEvent(new Event("click"));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0][0]).toBe(body);
+  });
+});
+
+describe("schema view", () => {
+  it("renders nested object properties, array items, and oneOf branches", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    installGlobal("fetch", vi.fn());
+
+    const { renderSchemaView } = await import("../src/ui/schema-view.js");
+    const view = renderSchemaView("Input", {
+      type: "object",
+      properties: {
+        ticket: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            channel: {
+              oneOf: [
+                { type: "string", title: "Named channel" },
+                { type: "integer" },
+              ],
+            },
+          },
+          required: ["id"],
+        },
+        tags: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { label: { type: "string" } },
+          },
+        },
+      },
+      required: ["ticket"],
+    });
+
+    expect(view.textContent).toContain("ticketobjectrequired");
+    expect(view.textContent).toContain("idstringrequired");
+    expect(view.textContent).toContain("One of");
+    expect(view.textContent).toContain("Named channel");
+    expect(view.textContent).toContain("Option 2");
+    expect(view.textContent).toContain("Each item");
+    expect(view.textContent).toContain("labelstringoptional");
+    const nested = walk(view).filter(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("schema-nested"),
+    );
+    expect(nested.length).toBeGreaterThan(0);
   });
 });

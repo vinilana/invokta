@@ -19,6 +19,14 @@ export interface StartWatchOptions {
   readonly enginePort?: number;
   readonly principals: PrincipalStore;
   readonly trace: TraceStore;
+  /** Paths to watch, resolved against `cwd`. Defaults to `cwd` itself. */
+  readonly include?: string[];
+  /**
+   * Extra ignore patterns: an entry matches a whole path segment, or a
+   * simple suffix glob such as `*.log`. `dist`, `.data`, and `*.log` are
+   * always ignored on top of node_modules, dotfiles, and the built module.
+   */
+  readonly ignore?: string[];
   /** Receives non-protocol child stderr and build diagnostics. */
   readonly onDiagnostic?: (text: string) => void;
 }
@@ -58,6 +66,7 @@ type ChildStart =
 const protocolPrefix = "@invokta-devtools ";
 const debounceMs = 300;
 const killTimeoutMs = 3000;
+const noticeDetailLineLimit = 40;
 
 function hostEntryPath(): string {
   const sibling = fileURLToPath(new URL("./host-entry.js", import.meta.url));
@@ -92,15 +101,22 @@ function killChild(child: ChildProcess): Promise<void> {
 export async function startWatchMode(
   options: StartWatchOptions,
 ): Promise<StartWatchResult> {
-  const ignore = (() => {
-    const moduleDirectory = relative(
-      options.cwd,
-      dirname(resolve(options.cwd, options.moduleSpecifier)),
-    );
-    return moduleDirectory === "" || moduleDirectory.startsWith("..")
-      ? undefined
-      : `${moduleDirectory}${sep}`;
+  const modulePath = resolve(options.cwd, options.moduleSpecifier);
+  const moduleDirectory = dirname(modulePath);
+  // Build-output siblings are only ignored when the module directory is a
+  // proper subdirectory of the cwd; at the cwd root that would ignore
+  // everything, and outside the cwd the prefix can never match. The built
+  // module file itself is always ignored, which covers both edge cases.
+  const moduleDirectoryInsideCwd = (() => {
+    const relativeDirectory = relative(options.cwd, moduleDirectory);
+    return relativeDirectory !== "" && !relativeDirectory.startsWith("..");
   })();
+  const ignorePatterns = ["dist", ".data", "*.log", ...(options.ignore ?? [])];
+  const watchRoots = (
+    options.include === undefined || options.include.length === 0
+      ? [options.cwd]
+      : options.include
+  ).map((includePath) => resolve(options.cwd, includePath));
 
   let child: ChildProcess | undefined;
   let snapshot: ChildSnapshot | undefined;
@@ -150,9 +166,22 @@ export async function startWatchMode(
           options.allowedOrigin,
           String(options.enginePort ?? 0),
         ],
-        { cwd: options.cwd, stdio: ["pipe", "ignore", "pipe"] },
+        { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"] },
       );
       child = spawned;
+
+      // Child stdout carries no protocol; forward it like non-protocol
+      // stderr so engine logging stays visible in the terminal.
+      let stdoutBuffered = "";
+      spawned.stdout.setEncoding("utf8");
+      spawned.stdout.on("data", (chunk: string) => {
+        stdoutBuffered += chunk;
+        const lines = stdoutBuffered.split("\n");
+        stdoutBuffered = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line !== "") diagnostic(`${line}\n`);
+        }
+      });
 
       let buffered = "";
       spawned.stderr.setEncoding("utf8");
@@ -209,7 +238,10 @@ export async function startWatchMode(
       sendPrincipals();
     });
 
-  const runBuild = (): Promise<boolean> =>
+  const runBuild = (): Promise<{
+    readonly ok: boolean;
+    readonly output: string;
+  }> =>
     new Promise((resolvePromise) => {
       const build = spawn(options.buildCommand, [], {
         cwd: options.cwd,
@@ -227,12 +259,23 @@ export async function startWatchMode(
       });
       build.once("exit", (code) => {
         if (code !== 0) diagnostic(output);
-        resolvePromise(code === 0);
+        resolvePromise({ ok: code === 0, output });
       });
       build.once("error", () => {
-        resolvePromise(false);
+        resolvePromise({ ok: false, output });
       });
     });
+
+  // Notices carry an optional `detail` rendered by the trace UI; the store
+  // signature lands with the trace-store change, so call through a local
+  // view of that contract.
+  const appendNotice = options.trace.appendNotice as (
+    notice: string,
+    detail?: string,
+  ) => unknown;
+
+  const buildDetail = (output: string): string =>
+    output.split("\n").slice(0, noticeDetailLineLimit).join("\n").trimEnd();
 
   const runCycle = async (): Promise<void> => {
     if (cycleRunning || closed) {
@@ -242,10 +285,13 @@ export async function startWatchMode(
     cycleRunning = true;
     do {
       dirty = false;
+      diagnostic("change detected, rebuilding…\n");
+      const cycleStartedAt = Date.now();
       const built = await runBuild();
       if (closed) break;
-      if (!built) {
-        options.trace.appendNotice("build-failed");
+      if (!built.ok) {
+        appendNotice("build-failed", buildDetail(built.output));
+        diagnostic("build failed, keeping previous engine\n");
         continue;
       }
       const previous = child;
@@ -253,9 +299,13 @@ export async function startWatchMode(
       if (closed) break;
       const started = await startChild();
       if (started.kind === "ready") {
-        options.trace.appendNotice("engine-restarted");
+        const elapsed = ((Date.now() - cycleStartedAt) / 1000).toFixed(1);
+        appendNotice("engine-restarted", `${elapsed}s`);
+        diagnostic(
+          `rebuild ok (${elapsed}s), engine restarted on port ${String(started.snapshot.port)}\n`,
+        );
       } else {
-        options.trace.appendNotice("engine-start-failed");
+        appendNotice("engine-start-failed");
         diagnostic(
           "invokta-devtools: the rebuilt engine could not start; waiting for the next change.\n",
         );
@@ -284,10 +334,9 @@ export async function startWatchMode(
     return initial;
   }
 
-  const watcher = watchDirectory(
-    options.cwd,
-    { recursive: true },
-    (_event, filename) => {
+  const handleWatchEvent =
+    (root: string) =>
+    (_event: string, filename: string | null): void => {
       if (filename === null) {
         schedule();
         return;
@@ -300,12 +349,37 @@ export async function startWatchMode(
       ) {
         return;
       }
-      if (ignore !== undefined && `${filename}${sep}`.startsWith(ignore)) {
+      if (
+        ignorePatterns.some((pattern) =>
+          pattern.startsWith("*")
+            ? filename.endsWith(pattern.slice(1))
+            : segments.includes(pattern),
+        )
+      ) {
+        return;
+      }
+      const changedPath = resolve(root, filename);
+      if (changedPath === modulePath) return;
+      if (
+        moduleDirectoryInsideCwd &&
+        changedPath.startsWith(`${moduleDirectory}${sep}`)
+      ) {
         return;
       }
       schedule();
-    },
-  );
+    };
+
+  const watchers = watchRoots
+    .filter((root) => {
+      if (existsSync(root)) return true;
+      diagnostic(
+        `invokta-devtools: watch path does not exist, skipping: ${root}\n`,
+      );
+      return false;
+    })
+    .map((root) =>
+      watchDirectory(root, { recursive: true }, handleWatchEvent(root)),
+    );
 
   return {
     kind: "started",
@@ -320,7 +394,7 @@ export async function startWatchMode(
       close: async () => {
         closed = true;
         if (debounceTimer !== undefined) clearTimeout(debounceTimer);
-        watcher.close();
+        for (const watcher of watchers) watcher.close();
         unsubscribePrincipals();
         if (child !== undefined) await killChild(child);
       },

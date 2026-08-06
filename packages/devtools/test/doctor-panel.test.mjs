@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const originalDescriptors = new Map(
-  ["document", "fetch"].map((name) => [
-    name,
-    Object.getOwnPropertyDescriptor(globalThis, name),
-  ]),
+  ["document", "fetch", "EventSource", "location", "CustomEvent"].map(
+    (name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)],
+  ),
 );
 
 function installGlobal(name, value) {
@@ -130,14 +129,14 @@ function jsonResponse(body, status = 200) {
   });
 }
 
-async function waitFor(assertion) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+async function waitFor(assertion, attempts = 20) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       assertion();
       return;
     } catch (error) {
-      if (attempt === 19) throw error;
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+      if (attempt === attempts - 1) throw error;
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
     }
   }
 }
@@ -433,5 +432,159 @@ describe("doctor panel", () => {
     expect(alert.getAttribute("aria-atomic")).toBe("true");
 
     dispose();
+  });
+
+  it("renders hints, a copy-command action, and a playground jump", async () => {
+    installDocument();
+    const dispatched = [];
+    const locationStub = { hash: "" };
+    globalThis.document.dispatchEvent = (event) => {
+      dispatched.push(event);
+      return true;
+    };
+    installGlobal("location", locationStub);
+    installGlobal(
+      "CustomEvent",
+      class FakeCustomEvent extends Event {
+        constructor(type, init) {
+          super(type);
+          this.detail = init?.detail;
+        }
+      },
+    );
+    installGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          engineName: "fixture-engine",
+          engineVersion: "1.2.3",
+          capabilityCount: 1,
+          findings: [
+            {
+              code: "SCHEMA_UNREADABLE",
+              capabilityId: "fixture.broken",
+              schema: "Input",
+              hint: "Re-run the build to regenerate the schema.",
+            },
+          ],
+          notes: [{ code: "COMPOSITION_CHECK_AVAILABLE" }],
+        }),
+      ),
+    );
+
+    const { renderDoctorPanel } = await import("../src/ui/doctor-panel.js");
+    const container = new FakeElement("main");
+    const dispose = renderDoctorPanel(container);
+
+    await waitFor(() =>
+      expect(container.textContent).toContain("Issues found"),
+    );
+    const finding = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("diagnostic-item--finding"),
+    );
+    const hint = walk(finding).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("diagnostic-hint"),
+    );
+    expect(hint.textContent).toBe("Re-run the build to regenerate the schema.");
+
+    const note = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("diagnostic-item--note"),
+    );
+    const copy = walk(note).find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("copy-button"),
+    );
+    expect(copy).toBeDefined();
+    expect(copy.getAttribute("aria-label")).toBe("Copy command");
+
+    const playground = walk(finding).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("diagnostic-playground"),
+    );
+    expect(playground.textContent).toBe("Open in Playground");
+    playground.click();
+    expect(locationStub.hash).toBe("#capabilities/fixture.broken");
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].type).toBe("invokta:select-capability");
+    expect(dispatched[0].detail).toEqual({ id: "fixture.broken" });
+
+    dispose();
+  });
+
+  it("re-checks after an engine restart notice on the event stream", async () => {
+    installDocument();
+    const sources = [];
+    class FakeEventSource extends EventTarget {
+      closed = false;
+
+      constructor(url) {
+        super();
+        this.url = url;
+        sources.push(this);
+      }
+
+      close() {
+        this.closed = true;
+      }
+    }
+    installGlobal("EventSource", FakeEventSource);
+    let resolveRecheck;
+    const recheckPending = new Promise((resolve) => {
+      resolveRecheck = resolve;
+    });
+    const report = {
+      engineName: "fixture-engine",
+      engineVersion: "1.2.3",
+      capabilityCount: 0,
+      findings: [],
+      notes: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => jsonResponse(report))
+      .mockImplementationOnce(async () => {
+        await recheckPending;
+        return jsonResponse(report);
+      });
+    installGlobal("fetch", fetchMock);
+
+    const { renderDoctorPanel } = await import("../src/ui/doctor-panel.js");
+    const container = new FakeElement("main");
+    const dispose = renderDoctorPanel(container);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(sources).toHaveLength(1);
+    expect(sources[0].url).toBe("/api/events");
+
+    const restart = new Event("trace");
+    Object.defineProperty(restart, "data", {
+      value: JSON.stringify({
+        kind: "notice",
+        id: 9,
+        at: "2026-08-06T12:00:00.000Z",
+        notice: "engine-restarted",
+      }),
+    });
+    sources[0].dispatchEvent(restart);
+    sources[0].dispatchEvent(restart);
+
+    await waitFor(
+      () =>
+        expect(container.textContent).toContain("Re-checking after restart…"),
+      60,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    resolveRecheck();
+    await waitFor(() => expect(container.textContent).toContain("Healthy"));
+
+    dispose();
+    expect(sources[0].closed).toBe(true);
   });
 });

@@ -63,6 +63,36 @@ describe("exampleFromSchema", () => {
     ).toBe(false);
   });
 
+  it("seeds realistic strings for known formats", () => {
+    expect(exampleFromSchema({ type: "string", format: "email" })).toBe(
+      "user@example.com",
+    );
+    expect(exampleFromSchema({ type: "string", format: "date-time" })).toBe(
+      "2024-01-01T00:00:00.000Z",
+    );
+    expect(exampleFromSchema({ type: "string", format: "uri" })).toBe(
+      "https://example.com",
+    );
+    expect(exampleFromSchema({ type: "string", format: "hostname" })).toBe("");
+  });
+
+  it("honors minimum, minLength, and minItems with minimal valid values", () => {
+    expect(exampleFromSchema({ type: "string", minLength: 3 })).toBe("xxx");
+    expect(exampleFromSchema({ type: "number", minimum: 5 })).toBe(5);
+    expect(exampleFromSchema({ type: "integer", minimum: 2.5 })).toBe(3);
+    expect(
+      exampleFromSchema({
+        type: "array",
+        minItems: 2,
+        items: { type: "string" },
+      }),
+    ).toEqual(["", ""]);
+    expect(exampleFromSchema({ type: "array", minItems: 2 })).toEqual([
+      null,
+      null,
+    ]);
+  });
+
   it("returns null for unusable input", () => {
     expect(exampleFromSchema(undefined)).toBeNull();
     expect(exampleFromSchema("not-a-schema")).toBeNull();

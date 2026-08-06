@@ -36,7 +36,9 @@
   },
   "scripts": {
     "build": "tsc -b --pretty false",
-    "prepack": "npm run --silent build"
+    "prepack": "npm run --silent build",
+    "test": "yarn --cwd ../.. test packages/devtools",
+    "test:run": "yarn --cwd ../.. test:run packages/devtools"
   },
   "dependencies": {
     "@invokta/core": "0.3.0",

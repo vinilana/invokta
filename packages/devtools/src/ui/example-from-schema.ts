@@ -10,6 +10,19 @@ type SchemaRecord = Readonly<Record<string, unknown>>;
 
 const maxDepth = 8;
 
+/** Recognized `format` values seed realistic strings instead of empty ones. */
+const formatSeeds: Readonly<Record<string, string>> = {
+  email: "user@example.com",
+  "date-time": "2024-01-01T00:00:00.000Z",
+  uri: "https://example.com",
+};
+
+function positiveInt(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : 0;
+}
+
 function asSchema(value: unknown): SchemaRecord | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return undefined;
@@ -95,11 +108,28 @@ function build(
     return example;
   }
   if (type === "array") {
+    const minItems = positiveInt(schema.minItems);
+    if (schema.items === undefined) {
+      return Array.from({ length: minItems }, () => null);
+    }
     const item = build(asSchema(schema.items), root, depth + 1, seenRefs);
-    return schema.items === undefined ? [] : [item];
+    return Array.from({ length: Math.max(1, minItems) }, () => item);
   }
-  if (type === "string") return "";
-  if (type === "number" || type === "integer") return 0;
+  if (type === "string") {
+    const format = schema.format;
+    if (typeof format === "string") {
+      const seed = formatSeeds[format];
+      if (seed !== undefined) return seed;
+    }
+    return "x".repeat(positiveInt(schema.minLength));
+  }
+  if (type === "number" || type === "integer") {
+    const minimum = schema.minimum;
+    if (typeof minimum === "number" && Number.isFinite(minimum)) {
+      return type === "integer" ? Math.ceil(minimum) : minimum;
+    }
+    return 0;
+  }
   if (type === "boolean") return false;
   if (type === "null") return null;
   return null;

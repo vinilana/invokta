@@ -23,6 +23,10 @@ export type TraceEntry =
       readonly exchange: ExchangeCapture;
       readonly requestTruncated: boolean;
       readonly responseTruncated: boolean;
+      /** Request body length in characters before truncation, when truncated. */
+      readonly requestOriginalSize?: number;
+      /** Response body length in characters before truncation, when truncated. */
+      readonly responseOriginalSize?: number;
     }
   | {
       readonly kind: "notice";
@@ -36,6 +40,10 @@ export interface TraceStore {
   appendExchange(capture: ExchangeCapture): TraceEntry;
   appendNotice(notice: string): TraceEntry;
   entries(): ReadonlyArray<TraceEntry>;
+  /** Drops every buffered entry; later appends keep their monotonic ids. */
+  clear(): void;
+  /** Serializes the buffered entries as newline-delimited JSON. */
+  toNdjson(): string;
   subscribe(listener: (entry: TraceEntry) => void): () => void;
 }
 
@@ -112,10 +120,23 @@ export function createTraceStore(
         },
         requestTruncated,
         responseTruncated,
+        ...(requestTruncated
+          ? { requestOriginalSize: capture.requestBody.length }
+          : {}),
+        ...(responseTruncated
+          ? { responseOriginalSize: capture.responseBody.length }
+          : {}),
       });
     },
     appendNotice: (notice) => append({ kind: "notice", ...stamp(), notice }),
     entries: () => [...buffered],
+    clear: () => {
+      buffered.length = 0;
+    },
+    toNdjson: () =>
+      buffered.length === 0
+        ? ""
+        : `${buffered.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {

@@ -68,6 +68,52 @@ describe("createTraceStore", () => {
     expect(entry.responseTruncated).toBe(false);
   });
 
+  it("records the original character count of truncated bodies only", () => {
+    const store = createTraceStore({ maxCapturedBodyLength: 4 });
+    const entry = store.appendExchange({
+      status: 200,
+      durationMs: 1,
+      requestBody: "123456789",
+      responseBody: "ok",
+    });
+
+    expect(entry.kind).toBe("exchange");
+    if (entry.kind !== "exchange") return;
+    expect(entry.requestOriginalSize).toBe(9);
+    expect(entry.responseOriginalSize).toBeUndefined();
+  });
+
+  it("clears buffered entries while keeping ids monotonic", () => {
+    const store = createTraceStore();
+    store.appendInvocation(record(1));
+    store.appendNotice("engine-restarted");
+
+    store.clear();
+
+    expect(store.entries()).toEqual([]);
+    expect(store.toNdjson()).toBe("");
+    expect(store.appendInvocation(record(2)).id).toBe(3);
+  });
+
+  it("exports the buffered entries as newline-delimited JSON", () => {
+    const store = createTraceStore();
+    store.appendNotice("engine-restarted");
+    store.appendInvocation(record(1));
+
+    const ndjson = store.toNdjson();
+    expect(ndjson.endsWith("\n")).toBe(true);
+    const lines = ndjson.trim().split("\n");
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0] as string)).toMatchObject({
+      kind: "notice",
+      notice: "engine-restarted",
+    });
+    expect(JSON.parse(lines[1] as string)).toMatchObject({
+      kind: "invocation",
+      invocation: { capabilityId: "fixture.echo" },
+    });
+  });
+
   it("notifies subscribers and isolates their failures", () => {
     const store = createTraceStore();
     const seen: number[] = [];

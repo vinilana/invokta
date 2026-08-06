@@ -22,12 +22,13 @@ import {
 } from "vitest";
 import { z } from "zod";
 
+import type { DevtoolsIo } from "../src/run-devtools-cli.js";
 import { runDevtoolsCli } from "../src/run-devtools-cli.js";
-import type {
-  McpClientConnector,
-  McpVerificationIo,
+import type { McpClientConnector } from "../src/verify-mcp.js";
+import {
+  renderMcpVerificationResult,
+  runMcpVerification,
 } from "../src/verify-mcp.js";
-import { runMcpVerification } from "../src/verify-mcp.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const stdioFixturePath = fileURLToPath(
@@ -39,7 +40,7 @@ const httpServers: McpHttpServerHandle[] = [];
 interface OutputHarness {
   readonly stdout: string[];
   readonly stderr: string[];
-  readonly io: McpVerificationIo;
+  readonly io: DevtoolsIo;
 }
 
 interface AuditRecord {
@@ -195,10 +196,9 @@ afterAll(() => {
 describe.sequential("real MCP verification integration", () => {
   it("runMcpVerification traverses the real stdio catalog without a tool call and completes the public close lifecycle", async () => {
     const auditPath = await createAuditFile();
-    const output = createOutputHarness();
     let closeCount = 0;
 
-    const exitCode = await runMcpVerification({
+    const result = await runMcpVerification({
       target: {
         transport: "stdio",
         command: process.execPath,
@@ -206,18 +206,29 @@ describe.sequential("real MCP verification integration", () => {
         cwd: repositoryRoot,
         env: { VERIFY_MCP_AUDIT_FILE: auditPath },
       },
-      io: output.io,
       connect: observingConnector(() => {
         closeCount += 1;
       }),
     });
 
-    expect(exitCode).toBe(0);
+    expect(result).toEqual({
+      ok: true,
+      status: "ok",
+      transport: "stdio",
+      server: {
+        name: "verify-integration-stdio",
+        version: "1.0.0",
+        protocolVersion: "2025-11-25",
+      },
+      pageCount: 1,
+      toolCount: 1,
+    });
     expect(closeCount).toBe(1);
-    expect(output.stderr).toEqual([]);
-    expect(output.stdout).toEqual([
-      '{"status":"ok","transport":"stdio","server":{"name":"verify-integration-stdio","version":"1.0.0","protocolVersion":"2025-11-25"},"pageCount":1,"toolCount":1}\n',
-    ]);
+    expect(renderMcpVerificationResult(result)).toEqual({
+      exitCode: 0,
+      stdout:
+        '{"status":"ok","transport":"stdio","server":{"name":"verify-integration-stdio","version":"1.0.0","protocolVersion":"2025-11-25"},"pageCount":1,"toolCount":1}\n',
+    });
     expectReadOnlyProtocol(await readAudit(auditPath));
   });
 
@@ -254,18 +265,27 @@ describe.sequential("real MCP verification integration", () => {
   it("runMcpVerification validates the real HTTP endpoint and closes the facade connection", async () => {
     const fixture = await startHttpFixture();
     const methods = observeHttpProtocol();
-    const output = createOutputHarness();
     let closeCount = 0;
 
-    const exitCode = await runMcpVerification({
+    const result = await runMcpVerification({
       target: { transport: "http", url: fixture.url },
-      io: output.io,
       connect: observingConnector(() => {
         closeCount += 1;
       }),
     });
 
-    expect(exitCode).toBe(0);
+    expect(result).toEqual({
+      ok: true,
+      status: "ok",
+      transport: "http",
+      server: {
+        name: "verify-integration-http",
+        version: "2.0.0",
+        protocolVersion: "2025-11-25",
+      },
+      pageCount: 1,
+      toolCount: 1,
+    });
     expect(closeCount).toBe(1);
     expect(toolInvocations).toBe(0);
     expect(methods).toEqual([
@@ -274,10 +294,11 @@ describe.sequential("real MCP verification integration", () => {
       "tools/list",
     ]);
     expect(methods).not.toContain("tools/call");
-    expect(output.stderr).toEqual([]);
-    expect(output.stdout).toEqual([
-      '{"status":"ok","transport":"http","server":{"name":"verify-integration-http","version":"2.0.0","protocolVersion":"2025-11-25"},"pageCount":1,"toolCount":1}\n',
-    ]);
+    expect(renderMcpVerificationResult(result)).toEqual({
+      exitCode: 0,
+      stdout:
+        '{"status":"ok","transport":"http","server":{"name":"verify-integration-http","version":"2.0.0","protocolVersion":"2025-11-25"},"pageCount":1,"toolCount":1}\n',
+    });
 
     await expect(fixture.server.close()).resolves.toBeUndefined();
     const serverIndex = httpServers.indexOf(fixture.server);

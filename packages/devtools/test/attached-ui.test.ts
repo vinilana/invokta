@@ -12,8 +12,9 @@ import {
   filterAttachedTools,
   nextRovingIndex,
   parseToolArguments,
-  seedArguments,
+  retainedActivityOf,
   type SecretControl,
+  seedArguments,
 } from "../src/ui/attached-app.js";
 
 const uiDirectory = fileURLToPath(new URL("../src/ui/", import.meta.url));
@@ -381,6 +382,44 @@ describe("attached workbench route adapter", () => {
 describe("attached workbench interface contract", () => {
   it("exposes exactly the attached primary tabs", () => {
     expect(attachedPrimaryTabs).toEqual(["Tools", "Activity", "Connection"]);
+  });
+
+  it("reads retained idle activity defensively from either field spelling", () => {
+    const record = {
+      sequence: 1,
+      operation: "tools/call",
+      startedAt: "2026-08-06T12:00:00.000Z",
+      durationMs: 4,
+      outcome: "success",
+      toolName: "fixture.echo",
+    } as const;
+
+    expect(retainedActivityOf({ state: "idle" })).toEqual([]);
+    expect(retainedActivityOf({ state: "busy" })).toEqual([]);
+    expect(
+      retainedActivityOf({ state: "idle", recentActivity: [record] }),
+    ).toEqual([record]);
+    expect(
+      retainedActivityOf({
+        state: "idle",
+        activity: [record],
+      } as never),
+    ).toEqual([record]);
+    expect(
+      retainedActivityOf({ state: "idle", recentActivity: "nope" } as never),
+    ).toEqual([]);
+  });
+
+  it("reloads and polls activity, and recaps the disconnected session", () => {
+    const app = readFileSync(`${uiDirectory}/attached-app.ts`, "utf8");
+
+    // Entering the Activity tab always re-reads instead of trusting the cache.
+    expect(app).toContain("startActivityPolling");
+    expect(app).toContain("stopActivityPolling");
+    expect(app).toContain("await loadActivity();");
+    // A disconnected slot's retained operations surface in the idle recap.
+    expect(app).toContain("Last session activity");
+    expect(app).toContain("retainedActivityOf(targetState)");
   });
 
   it("keeps target data out of browser storage and ships responsive focus styles", () => {
