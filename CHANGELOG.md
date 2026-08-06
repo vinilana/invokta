@@ -33,8 +33,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   build; modules are never reloaded in process. The contract is recorded in
   `docs/specs/engine-devtools-dev-server.md`.
 - Generated engine starters now include `@invokta/devtools` as a development
-  dependency and a `dev` script that builds the project and serves it with
-  the devtools in watch mode.
+  dependency, explicit `devtools` and `devtools:doctor` scripts for interactive
+  development and read-only diagnostics, and a compatible `dev` alias.
 
 - Added ten authentication examples under `examples/auth-*` — a
   provider-neutral JWT bearer engine plus Supabase, Clerk, Auth0, AWS Cognito,

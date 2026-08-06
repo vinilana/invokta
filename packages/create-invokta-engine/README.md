@@ -73,6 +73,11 @@ tsconfig.json
 tsconfig.test.json
 ```
 
+Every profile also installs `@invokta/devtools` as a development dependency
+and exposes `devtools` for the build-and-watch interface plus
+`devtools:doctor` for read-only project diagnostics. The existing `dev` script
+remains a compatible alias for `devtools`.
+
 CLI adds `src/cli.ts` and `@invokta/cli`. MCP local adds
 `invokta.mcp.json`, `src/mcp-stdio.ts`, `@invokta/mcp`,
 `@invokta/installer`, and its stdio/install/uninstall scripts. MCP HTTP adds

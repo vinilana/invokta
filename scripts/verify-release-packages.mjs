@@ -857,6 +857,8 @@ try {
         "deploy:package",
         "deploy:probe",
         "dev",
+        "devtools",
+        "devtools:doctor",
         "direct",
         "mcp:http",
         "mcp:install",
@@ -887,6 +889,8 @@ try {
         "build",
         "check",
         "dev",
+        "devtools",
+        "devtools:doctor",
         "direct",
         "mcp:install",
         "mcp:stdio",
@@ -913,6 +917,8 @@ try {
         "deploy:package",
         "deploy:probe",
         "dev",
+        "devtools",
+        "devtools:doctor",
         "direct",
         "mcp:http",
         "test",
@@ -931,7 +937,17 @@ try {
       entries: [...commonCreatorEntries, "src/cli.ts"],
       dependencies: ["@invokta/cli", "@invokta/core"],
       devDependencies: ["@invokta/devtools"],
-      scripts: ["build", "check", "cli", "dev", "direct", "test", "typecheck"],
+      scripts: [
+        "build",
+        "check",
+        "cli",
+        "dev",
+        "devtools",
+        "devtools:doctor",
+        "direct",
+        "test",
+        "typecheck",
+      ],
       cli: true,
       mcpStdio: false,
       mcpHttp: false,
@@ -1050,10 +1066,17 @@ try {
       }
     }
 
-    const generatedDependencyTarballs = [
+    const generatedPackageNames = new Set([
       ...profileCase.dependencies,
       ...profileCase.devDependencies,
-    ].map((name) => tarballsByName.get(name));
+    ]);
+    // Devtools loads its public MCP dependency at runtime. Install the matching
+    // local artifact so this pre-release smoke validates one coherent release
+    // set instead of resolving an older published package for focused profiles.
+    generatedPackageNames.add("@invokta/mcp");
+    const generatedDependencyTarballs = [...generatedPackageNames].map((name) =>
+      tarballsByName.get(name),
+    );
     if (generatedDependencyTarballs.some((tarball) => tarball === undefined)) {
       throw new Error(
         `${profileCase.profile} generated consumer tarballs are incomplete`,
@@ -1072,6 +1095,9 @@ try {
       { cwd: projectDirectory },
     );
     run("npm", ["run", "--silent", "check"], { cwd: projectDirectory });
+    run("npm", ["run", "--silent", "devtools:doctor"], {
+      cwd: projectDirectory,
+    });
 
     const directResult = run(
       "npm",
