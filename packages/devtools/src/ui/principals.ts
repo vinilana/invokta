@@ -120,6 +120,7 @@ export async function ensureActiveToken(): Promise<void> {
 
 export function renderPrincipalsPanel(container: HTMLElement): () => void {
   let active = true;
+  const tokenGuidanceId = "principal-token-guidance";
 
   const render = async (): Promise<void> => {
     let principals: readonly PrincipalInfo[];
@@ -139,38 +140,79 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
     if (!active) return;
     clear(container);
 
-    const rows = principals.map((entry: PrincipalInfo) => {
+    const rows = principals.map((entry: PrincipalInfo, index) => {
       const hasToken = tokens[entry.key] !== undefined;
       const isActive = entry.key === activeKey;
-      const mint = el("button", { type: "button" }, [
-        hasToken ? "Mint new token" : "Mint token",
-      ]);
-      mint.addEventListener("click", () => {
-        mint.disabled = true;
-        void api
-          .rotatePrincipal(entry.key)
-          .then((issued) => {
-            if (!active) return;
-            storeToken(issued.key, issued.token);
-            setActivePrincipal(issued.key);
-            void render();
-          })
-          .catch(() => {
-            if (!active) return;
-            mint.disabled = false;
-            mint.textContent = "Try again";
-          });
-      });
-      const activate = el("button", { type: "button" }, [
-        hasToken ? "Use" : "Mint and use",
-      ]);
-      activate.addEventListener("click", () => {
-        if (hasToken) {
+      const statusId = `principal-action-status-${String(index)}`;
+      const actionStatus = el(
+        "p",
+        {
+          id: statusId,
+          class: "principal-status",
+          role: "status",
+          "aria-live": "polite",
+          "aria-atomic": "true",
+        },
+        [],
+      );
+      const actionButtons: HTMLButtonElement[] = [];
+      const setActionStatus = (
+        message: string,
+        kind: "neutral" | "error" = "neutral",
+      ): void => {
+        actionStatus.setAttribute(
+          "class",
+          kind === "error"
+            ? "principal-status feedback"
+            : "principal-status hint",
+        );
+        actionStatus.setAttribute(
+          "role",
+          kind === "error" ? "alert" : "status",
+        );
+        actionStatus.textContent = message;
+      };
+      const setActionsDisabled = (disabled: boolean): void => {
+        for (const button of actionButtons) button.disabled = disabled;
+      };
+
+      if (hasToken && !isActive) {
+        const activate = el(
+          "button",
+          {
+            type: "button",
+            "aria-label": `Use ${entry.principal.id} for invocations`,
+          },
+          ["Use"],
+        );
+        activate.addEventListener("click", () => {
           setActivePrincipal(entry.key);
           void render();
-          return;
-        }
-        activate.disabled = true;
+        });
+        actionButtons.push(activate);
+      }
+
+      const tokenActionLabel = hasToken ? "Replace token" : "Mint & use";
+      const tokenAction = el(
+        "button",
+        {
+          type: "button",
+          class: hasToken ? "credential-action" : "",
+          "aria-label": `${hasToken ? "Replace token" : "Mint token and use"} for ${entry.principal.id}`,
+          "aria-describedby": hasToken
+            ? `${tokenGuidanceId} ${statusId}`
+            : statusId,
+        },
+        [tokenActionLabel],
+      );
+      tokenAction.addEventListener("click", () => {
+        setActionsDisabled(true);
+        tokenAction.textContent = hasToken ? "Replacing…" : "Minting…";
+        setActionStatus(
+          hasToken
+            ? "Replacing the token and selecting this principal…"
+            : "Minting a token and selecting this principal…",
+        );
         void api
           .rotatePrincipal(entry.key)
           .then((issued) => {
@@ -181,13 +223,65 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           })
           .catch(() => {
             if (!active) return;
-            activate.disabled = false;
-            activate.textContent = "Try again";
+            setActionsDisabled(false);
+            tokenAction.textContent = tokenActionLabel;
+            setActionStatus(
+              hasToken
+                ? "The token could not be replaced. The existing token is still valid."
+                : "A token could not be minted. Try again.",
+              "error",
+            );
           });
       });
-      const remove = el("button", { type: "button" }, ["Delete"]);
+      actionButtons.push(tokenAction);
+
+      let confirmingDelete = false;
+      const remove = el(
+        "button",
+        {
+          type: "button",
+          class: "danger",
+          "aria-label": `Delete principal ${entry.principal.id}`,
+          "aria-controls": statusId,
+          "aria-expanded": "false",
+        },
+        ["Delete…"],
+      );
+      const cancelDelete = el(
+        "button",
+        { type: "button", "aria-label": "Cancel principal deletion" },
+        ["Cancel"],
+      );
+      cancelDelete.hidden = true;
+      const resetDelete = (): void => {
+        confirmingDelete = false;
+        remove.textContent = "Delete…";
+        remove.setAttribute(
+          "aria-label",
+          `Delete principal ${entry.principal.id}`,
+        );
+        remove.setAttribute("aria-expanded", "false");
+        cancelDelete.hidden = true;
+      };
       remove.addEventListener("click", () => {
-        remove.disabled = true;
+        if (!confirmingDelete) {
+          confirmingDelete = true;
+          remove.textContent = "Confirm delete";
+          remove.setAttribute(
+            "aria-label",
+            `Confirm deletion of principal ${entry.principal.id}`,
+          );
+          remove.setAttribute("aria-expanded", "true");
+          cancelDelete.hidden = false;
+          setActionStatus(
+            `Delete “${entry.principal.id}”? Its token will stop working immediately.`,
+          );
+          return;
+        }
+
+        setActionsDisabled(true);
+        remove.textContent = "Deleting…";
+        setActionStatus(`Deleting principal “${entry.principal.id}”…`);
         void api
           .removePrincipal(entry.key)
           .then(() => {
@@ -198,24 +292,53 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           })
           .catch(() => {
             if (!active) return;
-            remove.disabled = false;
-            remove.textContent = "Try again";
+            setActionsDisabled(false);
+            resetDelete();
+            setActionStatus(
+              `Principal “${entry.principal.id}” could not be deleted. Try again.`,
+              "error",
+            );
           });
       });
-      return el("div", { class: `principal-row${isActive ? " active" : ""}` }, [
-        el("div", { class: "principal-summary" }, [
-          el("strong", {}, [entry.principal.id]),
-          el("code", {}, [entry.key]),
-          isActive ? el("span", { class: "badge ok" }, ["active"]) : null,
-          hasToken ? null : el("span", { class: "badge warn" }, ["no token"]),
-        ]),
-        entry.principal.attributes === undefined
-          ? null
-          : el("pre", { class: "attributes" }, [
-              pretty(entry.principal.attributes),
+      cancelDelete.addEventListener("click", () => {
+        resetDelete();
+        setActionStatus("");
+      });
+      actionButtons.push(remove, cancelDelete);
+
+      return el(
+        "div",
+        {
+          class: `principal-row${isActive ? " active" : ""}`,
+          role: "group",
+          "aria-label": `Principal ${entry.principal.id}`,
+        },
+        [
+          el("div", { class: "principal-summary" }, [
+            el("strong", {}, [entry.principal.id]),
+            el("span", { class: "hint" }, [
+              "Key ",
+              el("code", {}, [entry.key]),
             ]),
-        el("div", { class: "principal-actions" }, [activate, mint, remove]),
-      ]);
+            el("span", { class: `badge${isActive ? " ok" : ""}` }, [
+              isActive ? "Active" : "Inactive",
+            ]),
+            el("span", { class: `badge ${hasToken ? "ok" : "warn"}` }, [
+              hasToken ? "Token ready" : "No token",
+            ]),
+          ]),
+          entry.principal.attributes === undefined
+            ? null
+            : el("details", { class: "principal-attributes" }, [
+                el("summary", {}, ["Attributes"]),
+                el("pre", { class: "attributes" }, [
+                  pretty(entry.principal.attributes),
+                ]),
+              ]),
+          el("div", { class: "principal-actions" }, actionButtons),
+          actionStatus,
+        ],
+      );
     });
 
     const idInputId = "new-principal-id";
@@ -223,21 +346,45 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
     const idInput = el("input", {
       id: idInputId,
       type: "text",
-      placeholder: "principal id",
+      placeholder: "local-dev",
       autocomplete: "off",
+      spellcheck: "false",
     });
     const attributesInput = el("textarea", {
       id: attributesInputId,
       rows: "3",
-      placeholder: '{"role":"reviewer"} (optional attributes JSON)',
+      placeholder: '{"role":"reviewer"}',
+      spellcheck: "false",
     });
-    const feedback = el("p", { class: "feedback", role: "alert" }, []);
+    const feedback = el(
+      "p",
+      {
+        class: "principal-status",
+        role: "status",
+        "aria-live": "polite",
+        "aria-atomic": "true",
+      },
+      [],
+    );
+    const setCreateFeedback = (
+      message: string,
+      kind: "neutral" | "error" = "neutral",
+    ): void => {
+      feedback.setAttribute(
+        "class",
+        kind === "error"
+          ? "principal-status feedback"
+          : "principal-status hint",
+      );
+      feedback.setAttribute("role", kind === "error" ? "alert" : "status");
+      feedback.textContent = message;
+    };
     const create = el("button", { type: "button" }, ["Create principal"]);
     create.addEventListener("click", () => {
-      feedback.textContent = "";
+      setCreateFeedback("");
       const id = idInput.value.trim();
       if (id === "") {
-        feedback.textContent = "A principal id is required.";
+        setCreateFeedback("A principal ID is required.", "error");
         return;
       }
       let attributes: Readonly<Record<string, unknown>> | undefined;
@@ -250,17 +397,20 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
             parsed === null ||
             Array.isArray(parsed)
           ) {
-            feedback.textContent = "The attributes must be a JSON object.";
+            setCreateFeedback("Attributes must be a JSON object.", "error");
             return;
           }
           attributes = parsed as Readonly<Record<string, unknown>>;
         } catch {
-          feedback.textContent = "The attributes must be a JSON object.";
+          setCreateFeedback("Attributes must be a JSON object.", "error");
           return;
         }
       }
       create.disabled = true;
       create.textContent = "Creating…";
+      setCreateFeedback(
+        `Creating “${id}”, minting its token, and making it active…`,
+      );
       void api
         .createPrincipal({
           id,
@@ -276,22 +426,37 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           if (!active) return;
           create.disabled = false;
           create.textContent = "Create principal";
-          feedback.textContent = "The principal could not be created.";
+          setCreateFeedback(
+            "The principal could not be created. Try again.",
+            "error",
+          );
         });
     });
 
     container.append(
       el("h2", {}, ["Development principals"]),
-      el("p", { class: "hint" }, [
-        "Invocations authenticate with the active principal's bearer token. ",
-        "Tokens live in this browser session only; mint a new one at any time.",
+      el("p", { id: tokenGuidanceId, class: "hint" }, [
+        "The active principal authenticates invocations. The development server ",
+        "keeps principals and tokens in memory; minted bearer tokens are also ",
+        "kept in this browser session. Token values are not displayed here. ",
+        "Replacing a token revokes the previous token immediately.",
       ]),
+      ...(principals.length === 0
+        ? [
+            el("p", { class: "empty" }, [
+              "No development principals. Add one to authenticate invocations.",
+            ]),
+          ]
+        : []),
       ...rows,
-      el("div", { class: "principal-create" }, [
-        el("h3", {}, ["New principal"]),
+      el("details", { class: "principal-create" }, [
+        el("summary", {}, ["Add principal"]),
+        el("p", { class: "hint" }, [
+          "Creating a principal also mints its token and makes it active.",
+        ]),
         el("label", { for: idInputId }, ["Principal ID"]),
         idInput,
-        el("label", { for: attributesInputId }, ["Attributes (optional)"]),
+        el("label", { for: attributesInputId }, ["Attributes JSON (optional)"]),
         attributesInput,
         create,
         feedback,

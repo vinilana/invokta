@@ -94,6 +94,7 @@ describe("shipped interface bundle", () => {
       "mcp-response.js",
       "principals.js",
       "styles.js",
+      "theme.js",
       "trace.js",
     ]) {
       expect(
@@ -109,6 +110,11 @@ describe("shipped interface bundle", () => {
     expect(response.status).toBe(200);
     const page = await response.text();
     expect(page).toContain("<title>Invokta devtools</title>");
+    expect(page).toContain('<html lang="en" data-theme="dark">');
+    expect(page).toContain('localStorage.getItem("starlight-theme")');
+    expect(page.indexOf("starlight-theme")).toBeLessThan(
+      page.indexOf('src="/assets/app.js"'),
+    );
     expect(page).toContain('src="/assets/app.js"');
   });
 

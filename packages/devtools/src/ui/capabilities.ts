@@ -2,20 +2,36 @@ import { api, type CapabilityInfo } from "./api.js";
 import { clear, el, pretty } from "./dom.js";
 import { renderInvokePanel } from "./invoke-panel.js";
 
+function capabilityChoiceLabel(capability: CapabilityInfo): string {
+  const title = capability.title?.trim();
+  if (title === undefined || title === "" || title === capability.id) {
+    return capability.id;
+  }
+  return `${title} · ${capability.id}`;
+}
+
 function renderDetail(capability: CapabilityInfo): HTMLElement {
-  const annotations = capability.annotations;
+  const annotations = Object.entries(capability.annotations ?? {})
+    .filter(([, enabled]) => enabled === true)
+    .map(([name]) => name);
   return el("div", { class: "capability-detail" }, [
-    el("h2", {}, [capability.title ?? capability.id]),
-    el("code", { class: "capability-id" }, [capability.id]),
-    el("p", {}, [capability.description]),
-    annotations === undefined
+    el("p", { class: "eyebrow" }, ["[ capability / detail ]"]),
+    el("div", { class: "capability-heading" }, [
+      el("h2", {}, [capability.title ?? capability.id]),
+      el("code", { class: "capability-id" }, [capability.id]),
+    ]),
+    el("p", { class: "capability-description" }, [capability.description]),
+    annotations.length === 0
       ? null
       : el(
           "p",
-          { class: "annotations" },
-          Object.entries(annotations)
-            .filter(([, enabled]) => enabled === true)
-            .map(([name]) => el("span", { class: "badge" }, [name])),
+          { class: "annotations", "aria-label": "Capability annotations" },
+          [
+            "Annotations: ",
+            ...annotations.map((name) =>
+              el("span", { class: "badge" }, [name]),
+            ),
+          ],
         ),
     capability.timeoutMs === undefined
       ? null
@@ -39,7 +55,7 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
   clear(container);
   container.append(
     el("h2", {}, ["Capabilities"]),
-    el("p", { class: "hint", role: "status" }, ["Loading capabilities…"]),
+    el("p", { class: "hint", role: "status" }, ["Loading capability catalog…"]),
   );
 
   void api
@@ -50,14 +66,23 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
       if (capabilities.length === 0) {
         container.append(
           el("h2", {}, ["Capabilities"]),
-          el("p", { class: "empty" }, [
-            "The engine publishes no capabilities.",
+          el("p", { class: "empty", role: "status" }, [
+            "No capabilities published. Add a capability to this engine to inspect its contract and invoke it here.",
           ]),
         );
         return;
       }
 
-      const detail = el("div", { class: "capability-pane" }, []);
+      const detailId = "capability-detail";
+      const detail = el(
+        "section",
+        {
+          id: detailId,
+          class: "capability-pane",
+          role: "region",
+        },
+        [],
+      );
       const buttons: HTMLButtonElement[] = [];
       const select = (
         capability: CapabilityInfo,
@@ -66,8 +91,9 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
         for (const other of buttons) {
           const selected = other === button;
           other.classList.toggle("selected", selected);
-          other.setAttribute("aria-current", selected ? "true" : "false");
+          other.setAttribute("aria-pressed", selected ? "true" : "false");
         }
+        detail.setAttribute("aria-labelledby", button.getAttribute("id") ?? "");
         clear(detail);
         detail.append(renderDetail(capability));
       };
@@ -75,8 +101,19 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
       const list = el(
         "nav",
         { class: "capability-list", "aria-label": "Engine capabilities" },
-        capabilities.map((capability) => {
-          const button = el("button", { type: "button" }, [capability.id]);
+        capabilities.map((capability, index) => {
+          const label = capabilityChoiceLabel(capability);
+          const button = el(
+            "button",
+            {
+              id: `capability-choice-${String(index + 1)}`,
+              type: "button",
+              "aria-controls": detailId,
+              "aria-pressed": "false",
+              title: `${label}\n${capability.description}`,
+            },
+            [label],
+          );
           buttons.push(button);
           button.addEventListener("click", () => {
             select(capability, button);
@@ -85,8 +122,15 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
         }),
       );
 
+      const sidebar = el("aside", { class: "capability-sidebar" }, [
+        el("p", { class: "eyebrow" }, ["[ engine / capabilities ]"]),
+        el("p", { class: "hint" }, [
+          `${String(capabilities.length)} published ${capabilities.length === 1 ? "capability" : "capabilities"}. Select one to inspect its contract and invoke it locally.`,
+        ]),
+        list,
+      ]);
       container.append(
-        el("div", { class: "capabilities-layout" }, [list, detail]),
+        el("div", { class: "capabilities-layout" }, [sidebar, detail]),
       );
       const first = capabilities[0];
       const firstButton = buttons[0];
@@ -100,7 +144,7 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
       container.append(
         el("h2", {}, ["Capabilities"]),
         el("p", { class: "feedback", role: "alert" }, [
-          "Capabilities could not be loaded. Check that the dev server is still running.",
+          "Capabilities could not be loaded. Confirm the dev server is running, then reload this view.",
         ]),
       );
     });

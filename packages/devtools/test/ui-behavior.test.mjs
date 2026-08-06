@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const originalDescriptors = new Map(
-  ["document", "EventSource", "fetch", "sessionStorage"].map((name) => [
-    name,
-    Object.getOwnPropertyDescriptor(globalThis, name),
-  ]),
+  [
+    "document",
+    "EventSource",
+    "fetch",
+    "localStorage",
+    "matchMedia",
+    "sessionStorage",
+  ].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]),
 );
 
 function installGlobal(name, value) {
@@ -91,6 +95,9 @@ class FakeElement extends FakeNode {
   classList = new FakeClassList();
   hidden = false;
   disabled = false;
+  dataset = {};
+  focused = false;
+  scrolledIntoView = false;
   value = "";
 
   constructor(tagName) {
@@ -105,6 +112,14 @@ class FakeElement extends FakeNode {
 
   getAttribute(name) {
     return this.#attributes.get(name) ?? null;
+  }
+
+  focus() {
+    this.focused = true;
+  }
+
+  scrollIntoView() {
+    this.scrolledIntoView = true;
   }
 
   append(...children) {
@@ -243,11 +258,14 @@ describe("principal browser session", () => {
 describe("application tabs", () => {
   it("closes the trace stream when the user leaves the Trace tab", async () => {
     const document = {
+      documentElement: new FakeElement("html"),
       head: new FakeElement("head"),
       body: new FakeElement("body"),
       createElement: (tagName) => new FakeElement(tagName),
     };
     const storage = new MemoryStorage();
+    const themeStorage = new MemoryStorage();
+    themeStorage.setItem("starlight-theme", "light");
     const sources = [];
     class FakeEventSource extends EventTarget {
       closed = false;
@@ -263,6 +281,12 @@ describe("application tabs", () => {
       }
     }
     installGlobal("document", document);
+    installGlobal("localStorage", themeStorage);
+    installGlobal("matchMedia", () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
     installGlobal("sessionStorage", storage);
     installGlobal("EventSource", FakeEventSource);
     installGlobal(
@@ -285,6 +309,24 @@ describe("application tabs", () => {
     );
 
     await import("../src/ui/app.js");
+    const shell = walk(document.body).find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("app-shell"),
+    );
+    const brand = walk(document.body).find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("brand-lockup"),
+    );
+    const themeGroup = walk(document.body).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("aria-label") === "Color theme",
+    );
+    expect(shell).toBeDefined();
+    expect(brand.textContent).toContain("invokta");
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(themeGroup.getAttribute("role")).toBe("radiogroup");
+
     const buttons = walk(document.body).filter(
       (node) => node instanceof FakeElement && node.tagName === "BUTTON",
     );
@@ -292,6 +334,12 @@ describe("application tabs", () => {
       (button) => button.textContent === "Capabilities",
     );
     const trace = buttons.find((button) => button.textContent === "Trace");
+    const darkTheme = buttons.find(
+      (button) => button.getAttribute("aria-label") === "Dark",
+    );
+    const lightTheme = buttons.find(
+      (button) => button.getAttribute("aria-label") === "Light",
+    );
     await waitFor(() =>
       expect(capabilities.classList.contains("selected")).toBe(true),
     );
@@ -304,10 +352,24 @@ describe("application tabs", () => {
     );
     expect(tabs.getAttribute("role")).toBe("tablist");
     expect(capabilities.getAttribute("role")).toBe("tab");
+    expect(lightTheme.getAttribute("aria-checked")).toBe("true");
 
-    trace.dispatchEvent(new Event("click"));
+    darkTheme.dispatchEvent(new Event("click"));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(themeStorage.getItem("starlight-theme")).toBe("dark");
+    expect(darkTheme.getAttribute("aria-checked")).toBe("true");
+    expect(lightTheme.getAttribute("aria-checked")).toBe("false");
+
+    const nextTab = new Event("keydown");
+    Object.defineProperties(nextTab, {
+      key: { value: "ArrowRight" },
+      target: { value: capabilities },
+    });
+    tabs.dispatchEvent(nextTab);
     expect(sources).toHaveLength(1);
     expect(trace.getAttribute("aria-selected")).toBe("true");
+    expect(trace.focused).toBe(true);
+    expect(trace.scrolledIntoView).toBe(true);
     expect(capabilities.getAttribute("aria-selected")).toBe("false");
     capabilities.dispatchEvent(new Event("click"));
 

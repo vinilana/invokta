@@ -56,11 +56,23 @@ const apiBodyLimitBytes = 64 * 1024;
 const mcpBodyLimitBytes = 1024 * 1024;
 
 const appShellPage = `<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Invokta devtools</title>
+<style>
+html { background: #09090b; color-scheme: dark; }
+html[data-theme="light"] { background: #fff; color-scheme: light; }
+</style>
+<script>
+try {
+  const choice = localStorage.getItem("starlight-theme");
+  const light = choice === "light" ||
+    (choice === "auto" && matchMedia("(prefers-color-scheme: light)").matches);
+  if (light) document.documentElement.dataset.theme = "light";
+} catch {}
+</script>
 </head>
 <body>
 <noscript>The Invokta devtools interface requires JavaScript.</noscript>

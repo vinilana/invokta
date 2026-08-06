@@ -18,6 +18,8 @@ interface TraceEntryView {
     readonly requestBody: string;
     readonly responseBody: string;
   };
+  readonly requestTruncated?: boolean;
+  readonly responseTruncated?: boolean;
   readonly notice?: string;
 }
 
@@ -25,53 +27,117 @@ const maximumVisibleEntries = 500;
 
 function timeOf(entry: TraceEntryView): string {
   const index = entry.at.indexOf("T");
-  return index === -1 ? entry.at : entry.at.slice(index + 1).replace("Z", "");
+  return index === -1 ? entry.at : entry.at.slice(index + 1);
+}
+
+function timestamp(entry: TraceEntryView): HTMLTimeElement {
+  return el(
+    "time",
+    {
+      class: "time",
+      datetime: entry.at,
+      title: entry.at,
+      "aria-label": `Recorded at ${entry.at}`,
+    },
+    [timeOf(entry)],
+  );
+}
+
+function duration(durationMs: number): HTMLSpanElement {
+  const value = durationMs.toFixed(1);
+  return el(
+    "span",
+    {
+      class: "duration",
+      "aria-label": `Duration ${value} milliseconds`,
+    },
+    [`${value} ms`],
+  );
+}
+
+function httpStatusTone(status: number): "ok" | "error" | "warn" {
+  if (status >= 200 && status < 300) return "ok";
+  if (status >= 400) return "error";
+  return "warn";
+}
+
+function exchangeBody(
+  label: string,
+  body: string,
+  truncated: boolean,
+): readonly [HTMLHeadingElement, HTMLPreElement] {
+  const heading = el(
+    "h3",
+    { class: "field-label" },
+    truncated
+      ? [`${label} — `, el("span", { class: "badge warn" }, ["truncated"])]
+      : [label],
+  );
+  const content = el(
+    "pre",
+    {
+      class: "raw",
+      role: "region",
+      "aria-label": label,
+      tabindex: "0",
+    },
+    [body],
+  );
+  return [heading, content];
 }
 
 function renderEntry(entry: TraceEntryView): HTMLElement {
   if (entry.kind === "invocation" && entry.invocation !== undefined) {
     const invocation = entry.invocation;
+    const outcome =
+      invocation.outcome === "completed"
+        ? "completed"
+        : invocation.errorCode === undefined
+          ? "failed"
+          : `failed · ${invocation.errorCode}`;
     return el("div", { class: "trace-row invocation" }, [
-      el("span", { class: "time" }, [timeOf(entry)]),
+      timestamp(entry),
       el(
         "span",
         {
           class: `badge ${invocation.outcome === "completed" ? "ok" : "error"}`,
         },
-        [
-          invocation.outcome === "completed"
-            ? "completed"
-            : (invocation.errorCode ?? "failed"),
-        ],
+        [outcome],
       ),
       el("code", {}, [invocation.capabilityId]),
-      el("span", { class: "duration" }, [
-        `${invocation.durationMs.toFixed(1)} ms`,
-      ]),
+      duration(invocation.durationMs),
     ]);
   }
   if (entry.kind === "exchange" && entry.exchange !== undefined) {
     const exchange = entry.exchange;
     return el("details", { class: "trace-row exchange" }, [
-      el("summary", {}, [
-        el("span", { class: "time" }, [timeOf(entry)]),
-        el("span", { class: "badge" }, [`HTTP ${String(exchange.status)}`]),
+      el("summary", { title: "Show raw request and response bodies" }, [
+        timestamp(entry),
+        el("span", { class: `badge ${httpStatusTone(exchange.status)}` }, [
+          `HTTP ${String(exchange.status)}`,
+        ]),
         el("code", {}, [
-          exchange.capabilityId ?? exchange.mcpMethod ?? "exchange",
+          exchange.capabilityId ?? exchange.mcpMethod ?? "MCP exchange",
         ]),
-        el("span", { class: "duration" }, [
-          `${exchange.durationMs.toFixed(1)} ms`,
-        ]),
+        duration(exchange.durationMs),
       ]),
-      el("h4", {}, ["Request"]),
-      el("pre", { class: "raw" }, [exchange.requestBody]),
-      el("h4", {}, ["Response"]),
-      el("pre", { class: "raw" }, [exchange.responseBody]),
+      ...exchangeBody(
+        "Request body",
+        exchange.requestBody,
+        entry.requestTruncated === true,
+      ),
+      ...exchangeBody(
+        "Response body",
+        exchange.responseBody,
+        entry.responseTruncated === true,
+      ),
     ]);
   }
+  const notice = (entry.notice ?? "notice").replaceAll("-", " ");
   return el("div", { class: "trace-row notice" }, [
-    el("span", { class: "time" }, [timeOf(entry)]),
-    el("span", { class: "badge warn" }, [entry.notice ?? "notice"]),
+    timestamp(entry),
+    el("span", { class: "badge warn" }, ["lifecycle"]),
+    el("span", {}, [notice]),
   ]);
 }
 
@@ -81,21 +147,42 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
  * session buffer on connect.
  */
 export function renderTracePanel(container: HTMLElement): () => void {
-  const list = el("div", { class: "trace-list" }, []);
-  const status = el("p", { class: "hint", role: "status" }, [
-    "Connecting to /api/events…",
-  ]);
-  container.append(el("h2", {}, ["Trace"]), status, list);
+  const heading = el("h2", { id: "trace-heading" }, ["Trace"]);
+  const status = el(
+    "p",
+    {
+      id: "trace-status",
+      class: "hint",
+      role: "status",
+      "aria-atomic": "true",
+    },
+    ["Connecting to live trace…"],
+  );
+  const list = el(
+    "div",
+    {
+      class: "trace-list",
+      role: "log",
+      "aria-labelledby": "trace-heading",
+      "aria-describedby": "trace-status",
+      "aria-live": "polite",
+      "aria-relevant": "additions",
+      "aria-busy": "true",
+    },
+    [],
+  );
+  container.append(heading, status, list);
 
   const visibleKeys: string[] = [];
   const seen = new Set<string>();
   const source = new EventSource("/api/events");
   source.addEventListener("open", () => {
-    status.textContent =
-      "Live. Invocations from every MCP client of this dev server appear here.";
+    status.textContent = "Live · all MCP clients · newest first.";
+    list.setAttribute("aria-busy", "false");
   });
   source.addEventListener("error", () => {
-    status.textContent = "Reconnecting to /api/events…";
+    status.textContent = "Connection lost · reconnecting…";
+    list.setAttribute("aria-busy", "true");
   });
   source.addEventListener("trace", (event) => {
     try {

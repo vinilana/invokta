@@ -10,7 +10,9 @@ import { getActiveToken } from "./principals.js";
  * exactly what any MCP client would exchange with the engine.
  */
 export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
-  const editorId = `input-${capability.id.replaceAll(/[^A-Za-z0-9_-]/g, "-")}`;
+  const safeId = capability.id.replaceAll(/[^A-Za-z0-9_-]/g, "-");
+  const editorId = `input-${safeId}`;
+  const feedbackId = `input-feedback-${safeId}`;
   const editor = el(
     "textarea",
     {
@@ -18,48 +20,122 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
       rows: "10",
       class: "editor",
       spellcheck: "false",
+      "aria-describedby": feedbackId,
+      "aria-invalid": "false",
     },
     [pretty(exampleFromSchema(capability.inputSchema))],
   );
-  const feedback = el("p", { class: "feedback", role: "alert" }, []);
-  const resultView = el("pre", { class: "result", "aria-live": "polite" }, []);
-  const rawRequest = el("pre", { class: "raw" }, []);
-  const rawResponse = el("pre", { class: "raw" }, []);
+  const feedback = el(
+    "p",
+    {
+      id: feedbackId,
+      class: "feedback",
+      "aria-live": "polite",
+      "aria-atomic": "true",
+    },
+    [],
+  );
+  const resultView = el(
+    "pre",
+    {
+      class: "result",
+      role: "status",
+      "aria-label": "Invocation response",
+      "aria-live": "polite",
+      "aria-atomic": "true",
+      "aria-busy": "false",
+    },
+    ["No response yet. Send an MCP request to inspect structured output."],
+  );
+  const resultState = el("span", {}, ["Response · not sent"]);
+
+  const windowBar = (label: string | HTMLElement): HTMLElement =>
+    el("div", { class: "code-window-bar" }, [
+      el("span", { class: "window-dots", "aria-hidden": "true" }, [
+        el("span", {}, []),
+        el("span", {}, []),
+        el("span", {}, []),
+      ]),
+      typeof label === "string" ? el("span", {}, [label]) : label,
+    ]);
+
+  const rawRequest = el(
+    "pre",
+    { class: "raw", "aria-label": "Raw MCP request body" },
+    [],
+  );
+  const rawResponse = el(
+    "pre",
+    { class: "raw", "aria-label": "Raw MCP response body" },
+    [],
+  );
   const rawSection = el("details", {}, [
-    el("summary", {}, ["Raw MCP exchange"]),
-    el("h4", {}, ["Request body (POST /mcp)"]),
+    el("summary", {}, ["MCP exchange (request and response)"]),
+    el("h4", {}, ["Request · POST /mcp"]),
     rawRequest,
-    el("h4", {}, ["Response body"]),
+    el("h4", {}, ["Response"]),
     rawResponse,
   ]);
   rawSection.hidden = true;
 
+  const showResponse = (
+    state: string,
+    content: string,
+    isError = false,
+  ): void => {
+    resultState.textContent = `Response · ${state}`;
+    resultView.textContent = content;
+    resultView.classList.toggle("error", isError);
+  };
+
   const reset = el("button", { type: "button" }, ["Reset example"]);
   reset.addEventListener("click", () => {
     editor.value = pretty(exampleFromSchema(capability.inputSchema));
+    editor.setAttribute("aria-invalid", "false");
     feedback.textContent = "";
-    resultView.textContent = "";
-    resultView.classList.remove("error");
+    showResponse(
+      "not sent",
+      "No response yet. Send an MCP request to inspect structured output.",
+    );
     rawRequest.textContent = "";
     rawResponse.textContent = "";
     rawSection.hidden = true;
   });
 
-  const invoke = el("button", { type: "button", class: "primary" }, ["Invoke"]);
+  editor.addEventListener("input", () => {
+    if (editor.getAttribute("aria-invalid") === "true") {
+      editor.setAttribute("aria-invalid", "false");
+      feedback.textContent = "";
+    }
+  });
+
+  const invoke = el("button", { type: "button", class: "primary" }, [
+    "Send MCP request",
+  ]);
   invoke.addEventListener("click", () => {
     feedback.textContent = "";
-    resultView.textContent = "";
-    resultView.classList.remove("error");
+    editor.setAttribute("aria-invalid", "false");
+    rawRequest.textContent = "";
+    rawResponse.textContent = "";
     rawSection.hidden = true;
     let args: unknown;
     try {
       args = JSON.parse(editor.value);
     } catch {
-      feedback.textContent = "The input is not valid JSON.";
+      editor.setAttribute("aria-invalid", "true");
+      feedback.textContent =
+        "Input error: The request arguments are not valid JSON.";
+      showResponse(
+        "not sent",
+        "Request not sent because the input is invalid.",
+      );
       return;
     }
     invoke.disabled = true;
-    invoke.textContent = "Invoking…";
+    reset.disabled = true;
+    invoke.textContent = "Sending…";
+    resultView.setAttribute("aria-busy", "true");
+    showResponse("pending", `Waiting for ${capability.id}…`);
     void callTool(capability.id, args, getActiveToken())
       .then((exchange) => {
         rawSection.hidden = false;
@@ -67,15 +143,21 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
         rawResponse.textContent = `HTTP ${String(exchange.status)}\n${exchange.responseBody}`;
         if (exchange.status === 401) {
           feedback.textContent =
-            "401 unauthorized — select a principal with a minted token.";
-          resultView.classList.add("error");
-          resultView.textContent = exchange.responseBody;
+            "Authentication failed (HTTP 401). Select a principal with a minted token and send the request again.";
+          showResponse(
+            "HTTP 401",
+            exchange.responseBody || "The MCP endpoint returned no body.",
+            true,
+          );
           return;
         }
         if (exchange.status < 200 || exchange.status >= 300) {
-          feedback.textContent = `The MCP request failed with HTTP ${String(exchange.status)}.`;
-          resultView.classList.add("error");
-          resultView.textContent = exchange.responseBody;
+          feedback.textContent = `MCP request failed (HTTP ${String(exchange.status)}). Inspect the exchange for details.`;
+          showResponse(
+            `HTTP ${String(exchange.status)}`,
+            exchange.responseBody || "The MCP endpoint returned no body.",
+            true,
+          );
           return;
         }
         const parsed = parseMcpResponse(
@@ -89,51 +171,88 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
                 readonly structuredContent?: unknown;
                 readonly content?: ReadonlyArray<{ readonly text?: string }>;
               };
+              readonly error?: unknown;
             }
           | undefined;
         const result = message?.result;
         if (result === undefined) {
-          feedback.textContent = "The MCP response could not be interpreted.";
-          resultView.classList.add("error");
-          resultView.textContent = exchange.responseBody;
+          if (message?.error !== undefined) {
+            feedback.textContent =
+              "MCP returned a protocol error. Inspect the exchange for details.";
+            showResponse("protocol error", pretty(message.error), true);
+            return;
+          }
+          feedback.textContent =
+            "The MCP response could not be parsed. Inspect the exchange for details.";
+          showResponse(
+            "unreadable",
+            exchange.responseBody || "The MCP endpoint returned no body.",
+            true,
+          );
           return;
         }
         if (result.isError === true) {
-          feedback.textContent = "The invocation failed with an engine error.";
-          resultView.textContent = pretty(
-            ((): unknown => {
-              const text = result.content?.[0]?.text;
-              if (typeof text !== "string") return result;
-              try {
-                return JSON.parse(text);
-              } catch {
-                return text;
-              }
-            })(),
+          feedback.textContent = "The capability returned an engine error.";
+          showResponse(
+            "engine error",
+            pretty(
+              ((): unknown => {
+                const text = result.content?.[0]?.text;
+                if (typeof text !== "string") return result;
+                try {
+                  return JSON.parse(text);
+                } catch {
+                  return text;
+                }
+              })(),
+            ),
+            true,
           );
-          resultView.classList.add("error");
           return;
         }
-        resultView.classList.remove("error");
-        resultView.textContent = pretty(result.structuredContent);
+        let output = result.structuredContent;
+        if (output === undefined) {
+          const text = result.content?.[0]?.text;
+          if (typeof text === "string") {
+            try {
+              output = JSON.parse(text);
+            } catch {
+              output = text;
+            }
+          } else {
+            output = result;
+          }
+        }
+        showResponse("success", pretty(output));
       })
       .catch(() => {
-        feedback.textContent = "The dev server could not be reached.";
+        feedback.textContent =
+          "MCP endpoint unreachable. Confirm the dev server is running and try again.";
+        showResponse("no response", "No response received.", true);
       })
       .finally(() => {
+        resultView.setAttribute("aria-busy", "false");
         invoke.disabled = false;
-        invoke.textContent = "Invoke";
+        reset.disabled = false;
+        invoke.textContent = "Send MCP request";
       });
   });
 
   return el("div", { class: "invoke-panel" }, [
-    el("h3", {}, ["Invoke"]),
-    el("label", { for: editorId }, ["JSON input"]),
-    editor,
+    el("h3", {}, ["Test invocation"]),
+    el("p", { class: "hint" }, [
+      "Edit the generated arguments, then send a real MCP tools/call request through the engine's invoke path.",
+    ]),
+    el("label", { for: editorId, class: "field-label" }, [
+      "Request arguments (JSON)",
+    ]),
+    el("div", { class: "code-window" }, [windowBar("MCP arguments"), editor]),
     el("div", { class: "invoke-actions" }, [invoke, reset]),
     feedback,
-    el("h4", {}, ["Result"]),
-    resultView,
+    el("div", { class: "code-window result-window" }, [
+      windowBar(resultState),
+      resultView,
+    ]),
     rawSection,
   ]);
 }
