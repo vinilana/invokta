@@ -168,9 +168,12 @@ invokta-devtools verify: <ERROR_CODE>: <safe message>.
 | `1` | Spawn, connection, authentication, protocol, timeout, cancellation, or limit failure |
 | `2` | Invalid usage, target descriptor, option combination, or required environment value |
 
-Verification always closes the client and reaps a spawned child before it
-resolves. A cleanup failure after an otherwise successful verification exits
-`1`. It sends only `initialize`, the required `notifications/initialized`, and
+Verification always requests client closure and waits for the public
+`McpClientConnection.close()` promise before it resolves. A closure failure
+after an otherwise successful verification exits `1`. For stdio, this is the
+official SDK transport's public close semantic; verification does not add a
+process supervisor or promise exact operating-system process-reap timing. It
+sends only `initialize`, the required `notifications/initialized`, and
 sequential `tools/list` requests. It does not send `tools/call`, retry a
 request, or fall back to another transport.
 
@@ -199,10 +202,17 @@ is never interpreted as MCP, captured, rendered, copied to standard output, or
 retained. Spawn and premature-exit diagnostics use only the stable generic
 error codes below. Empty configured credential values are rejected.
 
-Disconnect closes the protocol transport, closes child stdin, and reaps the
-owned child. If the process does not exit within five seconds, devtools
-force-terminates only that owned process. Closure is idempotent. No arbitrary
-process ID supplied by the user is accepted.
+The client configures the official stdio transport with a conservative
+10,485,760-byte read buffer. Crossing that SDK buffer boundary is normalized as
+`LIMIT_EXCEEDED` and closes the client. This is a defensive MCP input-buffer
+ceiling, not a bound on operating-system pipe buffering or total child-process
+memory.
+
+Disconnect calls the idempotent public client close operation and waits for its
+promise. That operation delegates stdio shutdown to the official SDK transport.
+Invokta does not promise a particular signal, grace period, descendant-process
+cleanup, forced termination, or exact operating-system process-reap timing. No
+arbitrary process ID supplied by the user is accepted.
 
 ### Streamable HTTP target
 
@@ -345,8 +355,11 @@ before asynchronous work. Objects returned to callers contain no SDK instance
 or mutable SDK-owned value.
 
 The facade enforces the 10 MiB per-message and response boundary for both
-transports. Devtools owns the higher-level deadlines, catalog aggregation,
-single-target rule, and Activity buffer.
+transports and configures the official stdio transport's conservative read
+buffer at the same 10 MiB boundary. Devtools owns the higher-level deadlines,
+catalog aggregation, single-target rule, and Activity buffer. Public closure
+delegates to the SDK transport and makes no stronger stdio child-lifecycle
+guarantee than the SDK's public `close` operation.
 
 ## Client and devtools errors
 
@@ -383,8 +396,9 @@ diagnostics or Activity.
 
 For the local browser API, invalid descriptors return 400, failed CSRF or origin
 checks return 403, state conflicts return 409, request or MCP size limits return
-413, target authentication and connection failures return 502, and deadlines
-return 504. Error bodies contain only `{ "code": string, "message": string }`.
+413, target authentication and connection failures return 502, an unavailable
+browser-session slot returns 503, and deadlines return 504. Error bodies contain
+only `{ "code": string, "message": string }`.
 
 ## Connection lifecycle
 
@@ -427,7 +441,8 @@ Byte, page, and tool boundaries are inclusive: exactly the configured boundary
 is accepted, and the next unit crosses the limit. An unsettled operation times
 out when its deadline reaches exactly 15,000 or 60,000 milliseconds; it must
 settle before that instant. Activity is a ring buffer: the 501st record drops
-the oldest record instead of failing the current operation.
+the oldest record instead of failing the current operation. Activity tool names
+longer than 256 Unicode code points are truncated to the first 256 code points.
 
 | Surface | Limit |
 | --- | ---: |
@@ -440,6 +455,8 @@ the oldest record instead of failing the current operation.
 | Catalog pages | 100 |
 | Catalog tools | 2,000 |
 | Activity metadata records | 500 |
+| Activity tool-name display | 256 Unicode code points |
+| Browser sessions retained in process memory | 128 |
 
 Catalog pages are requested one at a time using exactly the previous page's
 `nextCursor`. A missing cursor ends traversal. An empty cursor is a valid cursor
@@ -459,7 +476,8 @@ operation (`initialize`, `tools/list`, `tools/call`, or `disconnect`), start
 time, duration, outcome, and optional safe error code or tool name. It contains
 no URL, command, argument, working directory, header, environment data, request
 arguments, response body, protocol body, SDK error, or target credential. A
-server-provided tool name is length-bounded before Activity renders it.
+server-provided tool name is truncated to its first 256 Unicode code points
+before Activity stores or renders it; truncation never splits a surrogate pair.
 
 ## Workbench interface and local API
 
@@ -528,6 +546,14 @@ The successful mutation response carries the replacement token only in its
 value. The CSRF token is a local anti-forgery value, not a target credential,
 and is never written to browser storage.
 
+The process retains at most 128 browser sessions in insertion order. Before
+creating a 129th session it evicts the oldest-created session that does not own
+the active target; the connecting, connected, or closing target owner is never
+selected. An evicted cookie and CSRF token immediately stop authorizing local
+API access, and a later `GET /api/session` creates a fresh session. If no session
+is safely evictable, creation fails with HTTP 503 and
+`SESSION_LIMIT_EXCEEDED`. Sessions and their ordering are never persisted.
+
 The interface emits no `Access-Control-*` header and applies this minimum
 Content Security Policy to HTML:
 
@@ -559,7 +585,8 @@ may expose an SDK module or type. The core MUST NOT depend on the client facade.
 The facade MUST validate and snapshot exactly one structured stdio or HTTP
 target before I/O. Stdio MUST use `shell: false`; HTTP MUST enforce canonical
 secure URL, header, redirect, and TLS rules. Closure MUST be idempotent and
-settle active operations.
+settle active operations through the SDK's public transport close operation.
+The contract MUST NOT claim a stronger stdio child-reap or signaling guarantee.
 
 ### AE-MCP-CLIENT-03: Bounded protocol operations
 
@@ -609,14 +636,17 @@ Initialization, catalog collection, manual calls, messages, responses, pages,
 tools, and Activity MUST enforce the exact limits above. Reaching a deadline or
 crossing a byte, page, or tool limit MUST fail closed without retry and release
 the affected connection. Activity MUST drop its oldest record before adding a
-record beyond capacity.
+record beyond capacity and MUST truncate stored tool names to 256 Unicode code
+points without splitting a surrogate pair.
 
 ### AE-DEVTOOLS-ATTACH-07: Loopback browser isolation
 
 The workbench MUST bind only loopback, validate exact Host and Origin, require a
 session-bound CSRF cookie and header for every mutation, emit no CORS headers,
 apply the specified CSP and security headers, and prevent one browser session
-from controlling another session's target.
+from controlling another session's target. It MUST retain at most 128
+process-memory browser sessions and evict only the oldest-created session that
+does not own the active target when capacity is needed.
 
 ### AE-DEVTOOLS-ATTACH-08: Compact mode-specific interface
 
@@ -639,15 +669,15 @@ configuration writes.
 | AC-MCP-CLIENT-01 | MCP-CLIENT-01 | Public API type tests import the facade without an SDK dependency and prove no emitted declaration references `@modelcontextprotocol/sdk`. |
 | AC-MCP-CLIENT-02 | MCP-CLIENT-02 | A fixture stdio process receives the exact command arguments, only the safe default environment allowlist plus explicit overlay, and `shell: false`; invalid descriptors fail before spawn. |
 | AC-MCP-CLIENT-03 | MCP-CLIENT-02 | HTTP boundary tests reject credentials, query, fragment, non-loopback HTTP, redirects, duplicate or forbidden headers, and CR/LF before protocol dispatch while accepting HTTPS and literal loopback HTTP. |
-| AC-MCP-CLIENT-04 | MCP-CLIENT-03 | Official client/server fixtures cover initialize, one-page and multi-page tool lists, empty cursors, manual tool success, `isError`, cancellation, and idempotent close over both transports. |
+| AC-MCP-CLIENT-04 | MCP-CLIENT-02, MCP-CLIENT-03 | Official client/server fixtures cover initialize, one-page and multi-page tool lists, empty cursors, manual tool success, `isError`, cancellation, idempotent public close over both transports, and the conservative 10 MiB stdio SDK read buffer without asserting private child-process signals or reap timing. |
 | AC-ATTACH-01 | DEVTOOLS-ATTACH-01 | Instrumented seams prove bare and `open` startup perform no module load, workspace read, outbound request, spawn, discovery, or credential lookup before Connect. |
 | AC-ATTACH-02 | DEVTOOLS-ATTACH-02 | Existing ADR 0020 doctor, serve, authenticated invocation, principal, trace, and watch suites pass unchanged; attached route tests expose none of those claims. |
 | AC-ATTACH-03 | DEVTOOLS-ATTACH-03 | Stdio and HTTP verification fixtures observe initialize and every `tools/list` cursor, observe zero `tools/call` requests, and assert exact stdout, stderr, cleanup, and `0/1/2` exits. |
 | AC-ATTACH-04 | DEVTOOLS-ATTACH-04 | Lifecycle tests cover idle, connecting, connected, failure cleanup, disconnect, shutdown, a rejected second target, a rejected concurrent call, and no implicit retry. |
 | AC-ATTACH-05 | DEVTOOLS-ATTACH-05 | Canary secrets supplied through every CLI and UI credential surface are absent from stdout, stderr, errors, API responses, browser storage, Activity, traces, and snapshots after disconnect. |
-| AC-ATTACH-06 | DEVTOOLS-ATTACH-06 | Fake clocks prove unresolved initialization and catalog work fail at 15,000 ms and an unresolved call fails at 60,000 ms. Byte and count fixtures accept exactly 10 MiB, 100 pages, 2,000 tools, and 500 Activity records; they reject the first byte, page, or tool beyond its boundary and prove the 501st Activity record drops the oldest. |
+| AC-ATTACH-06 | DEVTOOLS-ATTACH-06 | Fake clocks prove unresolved initialization and catalog work fail at 15,000 ms and an unresolved call fails at 60,000 ms. Byte and count fixtures accept exactly 10 MiB, 100 pages, 2,000 tools, and 500 Activity records; they reject the first byte, page, or tool beyond its boundary, prove the 501st Activity record drops the oldest, and prove Activity truncates at 256 Unicode code points without splitting a surrogate pair. |
 | AC-ATTACH-07 | DEVTOOLS-ATTACH-06 | Pagination tests reject repeated cursors, duplicate tool names, oversized aggregate catalogs, invalid JSON values, and an oversized call result while closing the target. |
-| AC-ATTACH-08 | DEVTOOLS-ATTACH-07 | Raw HTTP tests cover missing, duplicate, malformed, and foreign Host/Origin, missing or stale cookie/CSRF pairs, cross-session control, no CORS headers, CSP, body limits, and strict JSON UTF-8. |
+| AC-ATTACH-08 | DEVTOOLS-ATTACH-07 | Raw HTTP tests cover missing, duplicate, malformed, and foreign Host/Origin, missing or stale cookie/CSRF pairs, cross-session control, no CORS headers, CSP, body limits, strict JSON UTF-8, the 128-session cap, eviction of the oldest non-owning session, and preservation of the active target owner. |
 | AC-ATTACH-09 | DEVTOOLS-ATTACH-08 | Browser behavior and accessibility tests prove compact Tools/Activity/Connection navigation, explicit masked auth, keyboard operation, readable focus, no bracket labels, and no workspace-only controls. |
 | AC-ATTACH-10 | DEVTOOLS-ATTACH-09 | Import-graph, filesystem, network, and process-spawn spies prove there is no discovery, configuration import, persistence, OAuth, resource or prompt request, eval, release gate, or project/client write. |
 | AC-ATTACH-11 | MCP-CLIENT-01..03, DEVTOOLS-ATTACH-01..09 | Typecheck, lint, formatting, unit and integration tests, build, coverage, packed-tarball inspection, and isolated consumer smoke tests pass for both packages. |

@@ -196,7 +196,7 @@ describe("invokta-devtools doctor", () => {
       ["doctor", fixture("named-export.js")],
       ["doctor", fixture("load-failure.js")],
       ["doctor", fixture("missing-file.js")],
-      [],
+      ["unknown"],
       ["doctor"],
       ["doctor", fixture("valid-engine.js"), "--verbose"],
     ];
@@ -231,16 +231,6 @@ describe("invokta-devtools doctor", () => {
 });
 
 describe("runDevtoolsCli usage errors", () => {
-  it("rejects a missing command", async () => {
-    const run = runCli();
-
-    await expect(run.exitCode).resolves.toBe(2);
-    expect(run.stderr.join("")).toContain("A command is required.");
-    expect(run.stderr.join("")).toContain(
-      "invokta-devtools doctor <esm-module> [--export <name>]",
-    );
-  });
-
   it("rejects an unknown command", async () => {
     const run = runCli("inspect", fixture("valid-engine.js"));
 

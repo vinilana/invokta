@@ -70,6 +70,12 @@ tool listing, manual tool calls, cancellation, and closure. Its public API uses
 only Invokta-owned structural types, JSON values, and platform types; official
 SDK classes and types remain private to the package.
 
+The stdio client configures the official SDK with a conservative 10 MiB read
+buffer and maps a buffer overflow to the bounded client error contract. Closing
+a stdio connection delegates to the SDK's public transport close operation. The
+facade does not promise a kill signal, grace period, descendant-process cleanup,
+or exact operating-system process-reap timing beyond that public SDK semantic.
+
 The attached mode permits one connected target and one explicit tool call at a
 time. Initialization and complete catalog collection each have a 15-second
 deadline. A manual tool call has a 60-second deadline. Each MCP message, call
@@ -77,8 +83,11 @@ response, and complete catalog is limited to 10 MiB. Catalog traversal is
 limited to 100 pages and 2,000 tools, and Activity retains at most 500 metadata
 records. Crossing a message, response, catalog, page, or tool limit fails
 closed; equality with a byte or count limit is accepted. Activity drops its
-oldest record when a new record would cross its capacity. There is no automatic
-retry.
+oldest record when a new record would cross its capacity and truncates a
+displayed tool name to 256 Unicode code points. The interface retains at most
+128 browser sessions in process memory; creating another evicts the
+oldest-created session that does not own the active target. There is no
+automatic retry.
 
 Connection-mutating browser requests require the exact loopback `Host`, the
 exact interface `Origin`, and a process-memory CSRF token bound to the browser

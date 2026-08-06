@@ -39,6 +39,55 @@ function resolvedTheme(choice: ThemeChoice): ResolvedTheme {
   return choice === "auto" ? systemTheme() : choice;
 }
 
+function writeThemeChoice(choice: ThemeChoice): void {
+  try {
+    localStorage.setItem(themeStorageKey, choice);
+  } catch {
+    // The in-memory preference still applies when storage is unavailable.
+  }
+}
+
+export function createCompactThemeToggle(): HTMLButtonElement {
+  let selected = readThemeChoice();
+  const icon = el("span", {
+    class: `theme-icon theme-icon--${selected}`,
+    "aria-hidden": "true",
+  });
+  const button = el("button", { type: "button", class: "theme-compact" }, [
+    icon,
+  ]);
+
+  const paint = (): void => {
+    const label =
+      choices.find(({ value }) => value === selected)?.label ?? "Dark";
+    document.documentElement.dataset.theme = resolvedTheme(selected);
+    button.setAttribute(
+      "aria-label",
+      `Color theme: ${label}. Activate to switch.`,
+    );
+    button.setAttribute("title", `Color theme: ${label}`);
+    icon.setAttribute("class", `theme-icon theme-icon--${selected}`);
+  };
+
+  button.addEventListener("click", () => {
+    const current = choices.findIndex(({ value }) => value === selected);
+    selected = choices.at((current + 1) % choices.length)?.value ?? "dark";
+    writeThemeChoice(selected);
+    paint();
+  });
+
+  try {
+    matchMedia(systemThemeQuery).addEventListener("change", () => {
+      if (selected === "auto") paint();
+    });
+  } catch {
+    // Older browsers keep the last resolved theme.
+  }
+
+  paint();
+  return button;
+}
+
 /**
  * Mirrors the Invokta site theme choices and storage key. The preference is
  * reused on repeat visits to this origin; localStorage does not cross origins.
@@ -58,11 +107,7 @@ export function createThemeToggle(): HTMLElement {
 
   const select = (choice: ThemeChoice, focus = false): void => {
     selected = choice;
-    try {
-      localStorage.setItem(themeStorageKey, choice);
-    } catch {
-      // The in-memory preference still applies when storage is unavailable.
-    }
+    writeThemeChoice(choice);
     paint();
     if (focus) buttons.get(choice)?.focus();
   };

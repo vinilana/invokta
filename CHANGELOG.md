@@ -9,6 +9,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- `@invokta/devtools` now opens an idle, workspace-independent MCP workbench
+  that can attach to one explicit stdio command or Streamable HTTP endpoint.
+  The compact interface supports catalog inspection, one deliberate tool call,
+  bounded Activity metadata, and ephemeral none, bearer, or custom-header HTTP
+  authentication. The new `verify` command performs read-only initialization
+  and complete `tools/list` validation for local installation checks and remote
+  homologation without invoking a tool.
+- `@invokta/mcp` now exposes a bounded, plain-type client facade over the
+  official SDK for stdio and Streamable HTTP connections. SDK types, transport
+  details, credentials, and protocol errors remain contained inside the MCP
+  package boundary.
 - Added `@invokta/devtools`, the tenth package (ADR 0020): a development-time
   dev server and doctor for one built engine. `invokta-devtools doctor` runs
   read-only checks with deterministic stderr diagnostics, and
@@ -41,6 +52,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   MCP clients without the project checkout. The starter adds `src/bin.ts`, a
   package `bin` entry, a packed `files` list, and `@invokta/installer` as a
   runtime dependency.
+
+### Changed
+
+- Running `invokta-devtools` without arguments now starts the idle MCP
+  workbench instead of returning an invalid-usage error. Existing `doctor` and
+  `serve` invocations retain their workspace-aware behavior.
 
 ## [0.3.0] - 2026-08-01
 
