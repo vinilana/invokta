@@ -1,6 +1,8 @@
+import { timingSafeEqual } from "node:crypto";
 import { types as nodeTypes } from "node:util";
 
 import {
+  beginMcpOAuthAuthorization,
   connectMcpClient,
   type McpClientConnection,
   type McpClientErrorCode,
@@ -10,6 +12,9 @@ import {
   type McpClientToolPage,
   type McpClientToolResult,
   type McpJsonValue,
+  type McpOAuthAuthorization,
+  type McpOAuthAuthorizationOptions,
+  type McpOAuthClientTarget,
 } from "@invokta/mcp";
 
 export const ATTACHED_SESSION_LIMITS = Object.freeze({
@@ -20,6 +25,7 @@ export const ATTACHED_SESSION_LIMITS = Object.freeze({
   catalogPages: 100,
   catalogTools: 2_000,
   activityRecords: 500,
+  oauthAuthorizationTimeoutMs: 300_000,
 });
 
 export type AttachedSessionErrorCode =
@@ -119,6 +125,10 @@ export type AttachedSessionState =
       readonly transport: "stdio" | "http";
     }
   | {
+      readonly state: "authorizing";
+      readonly transport: "http";
+    }
+  | {
       readonly state: "connected";
       readonly connection: AttachedConnectionSummary;
     }
@@ -134,14 +144,26 @@ export interface AttachedSessionClock {
 }
 
 type ConnectClient = typeof connectMcpClient;
+type BeginOAuthAuthorization = typeof beginMcpOAuthAuthorization;
 
 export interface CreateAttachedSessionControllerOptions {
   readonly connectClient?: ConnectClient;
+  readonly beginOAuthAuthorization?: BeginOAuthAuthorization;
   readonly clock?: AttachedSessionClock;
 }
 
 export interface AttachedSessionController {
   connect(owner: string, target: unknown): Promise<AttachedConnectionSummary>;
+  beginOAuth(
+    owner: string,
+    target: McpOAuthClientTarget,
+    options: Omit<McpOAuthAuthorizationOptions, "signal">,
+  ): Promise<{ readonly authorizationUrl: string }>;
+  completeOAuth(
+    state: string,
+    authorizationCode: string,
+  ): Promise<AttachedConnectionSummary>;
+  rejectOAuth(state: string): Promise<void>;
   state(owner: string): AttachedSessionState;
   tools(owner: string): readonly McpClientTool[];
   call(
@@ -166,8 +188,11 @@ interface ActiveSlot {
   readonly owner: string;
   readonly transport: "stdio" | "http";
   readonly activity: ActivityStore;
-  state: "connecting" | "connected" | "closing";
+  state: "connecting" | "authorizing" | "connected" | "closing";
   connection: McpClientConnection | undefined;
+  oauthAuthorization: McpOAuthAuthorization | undefined;
+  oauthState: string | undefined;
+  oauthExpiry: unknown | undefined;
   connectionSummary: AttachedConnectionSummary | undefined;
   catalog: readonly McpClientTool[];
   toolNames: ReadonlySet<string>;
@@ -570,10 +595,25 @@ function closeLateConnection(connection: McpClientConnection): void {
   void connection.close().catch(() => undefined);
 }
 
+function closeLateAuthorization(authorization: McpOAuthAuthorization): void {
+  void authorization.close().catch(() => undefined);
+}
+
+function equalOAuthState(actual: string, expected: string): boolean {
+  const actualBytes = Buffer.from(actual, "utf8");
+  const expectedBytes = Buffer.from(expected, "utf8");
+  return (
+    actualBytes.length === expectedBytes.length &&
+    timingSafeEqual(actualBytes, expectedBytes)
+  );
+}
+
 export function createAttachedSessionController(
   options: CreateAttachedSessionControllerOptions = {},
 ): AttachedSessionController {
   const connectClient = options.connectClient ?? connectMcpClient;
+  const beginOAuthAuthorization =
+    options.beginOAuthAuthorization ?? beginMcpOAuthAuthorization;
   const clock = options.clock ?? defaultClock;
   let active: ActiveSlot | undefined;
   let lastValidationFailure: LastValidationFailure | undefined;
@@ -581,13 +621,24 @@ export function createAttachedSessionController(
   const closeClientOnce = (slot: ActiveSlot): Promise<void> => {
     slot.closeClientPromise ??= (async () => {
       const connection = slot.connection;
+      const authorization = slot.oauthAuthorization;
       slot.connection = undefined;
-      if (connection !== undefined) await connection.close();
+      slot.oauthAuthorization = undefined;
+      const results = await Promise.allSettled([
+        connection?.close() ?? Promise.resolve(),
+        authorization?.close() ?? Promise.resolve(),
+      ]);
+      const failure = results.find(
+        (result): result is PromiseRejectedResult =>
+          result.status === "rejected",
+      );
+      if (failure !== undefined) throw failure.reason;
     })();
     return slot.closeClientPromise;
   };
 
   const clearSlot = (slot: ActiveSlot): void => {
+    if (slot.oauthExpiry !== undefined) clock.cancel(slot.oauthExpiry);
     slot.catalog = Object.freeze([]);
     slot.toolNames = new Set();
     slot.connectionSummary = undefined;
@@ -595,6 +646,8 @@ export function createAttachedSessionController(
     slot.operationAbort = undefined;
     slot.callAbort = undefined;
     slot.callActive = false;
+    slot.oauthState = undefined;
+    slot.oauthExpiry = undefined;
     if (active === slot) active = undefined;
   };
 
@@ -707,6 +760,192 @@ export function createAttachedSessionController(
     }
   };
 
+  const beginOAuth = async (
+    owner: string,
+    target: McpOAuthClientTarget,
+    oauthOptions: Omit<McpOAuthAuthorizationOptions, "signal">,
+  ): Promise<{ readonly authorizationUrl: string }> => {
+    if (active !== undefined) throw attachedError("TARGET_BUSY");
+    if (targetTransport(target) !== "http") {
+      throw attachedError("INVALID_TARGET");
+    }
+    lastValidationFailure = undefined;
+    const slot: ActiveSlot = {
+      owner,
+      transport: "http",
+      activity: createActivityStore(),
+      state: "connecting",
+      connection: undefined,
+      oauthAuthorization: undefined,
+      oauthState: undefined,
+      oauthExpiry: undefined,
+      connectionSummary: undefined,
+      catalog: Object.freeze([]),
+      toolNames: new Set(),
+      operationAbort: undefined,
+      callAbort: undefined,
+      callActive: false,
+    };
+    active = slot;
+    const controller = new AbortController();
+    slot.operationAbort = controller;
+    try {
+      const authorization = await runWithDeadline(
+        clock,
+        ATTACHED_SESSION_LIMITS.initializationTimeoutMs,
+        controller,
+        (signal) =>
+          beginOAuthAuthorization(target, { ...oauthOptions, signal }),
+        closeLateAuthorization,
+      );
+      if (active !== slot || slot.state !== "connecting") {
+        closeLateAuthorization(authorization);
+        throw attachedError("CANCELLED");
+      }
+      slot.oauthAuthorization = authorization;
+      slot.oauthState = oauthOptions.state;
+      slot.operationAbort = undefined;
+      slot.state = "authorizing";
+      slot.oauthExpiry = clock.schedule(() => {
+        if (active !== slot || slot.state !== "authorizing") return;
+        const failure = attachedError("TIMEOUT");
+        slot.state = "closing";
+        slot.oauthState = undefined;
+        void closeClientOnce(slot)
+          .catch(() => undefined)
+          .finally(() => {
+            clearSlot(slot);
+            lastValidationFailure = retainValidationFailure(owner, failure);
+          });
+      }, ATTACHED_SESSION_LIMITS.oauthAuthorizationTimeoutMs);
+      return Object.freeze({
+        authorizationUrl: authorization.authorizationUrl,
+      });
+    } catch (cause) {
+      const failure = normalizeFailure(
+        cause,
+        "AUTHENTICATION_FAILED",
+        controller.signal,
+      );
+      await failConnection(slot, failure);
+      throw failure;
+    }
+  };
+
+  const completeOAuth = async (
+    state: string,
+    authorizationCode: string,
+  ): Promise<AttachedConnectionSummary> => {
+    const slot = active;
+    if (slot === undefined || slot.state !== "authorizing") {
+      throw attachedError("NOT_CONNECTED");
+    }
+    if (
+      typeof state !== "string" ||
+      slot.oauthState === undefined ||
+      !equalOAuthState(state, slot.oauthState)
+    ) {
+      throw attachedError("AUTHENTICATION_FAILED");
+    }
+    const authorization = slot.oauthAuthorization;
+    if (authorization === undefined) throw attachedError("NOT_CONNECTED");
+    slot.oauthState = undefined;
+    if (slot.oauthExpiry !== undefined) clock.cancel(slot.oauthExpiry);
+    slot.oauthExpiry = undefined;
+    const initializeStarted = clock.now();
+    const initializeAbort = new AbortController();
+    slot.operationAbort = initializeAbort;
+    let initializeRecorded = false;
+    try {
+      const connection = await runWithDeadline(
+        clock,
+        ATTACHED_SESSION_LIMITS.initializationTimeoutMs,
+        initializeAbort,
+        (signal) => authorization.finish(authorizationCode, { signal }),
+        closeLateConnection,
+      );
+      if (active !== slot || slot.state !== "authorizing") {
+        closeLateConnection(connection);
+        throw attachedError("CANCELLED");
+      }
+      slot.connection = connection;
+      const serverInfo = snapshotServerInfo(connection.server);
+      appendActivity(slot, clock, "initialize", initializeStarted, "success");
+      initializeRecorded = true;
+
+      const catalogAbort = new AbortController();
+      slot.operationAbort = catalogAbort;
+      const catalog = await runWithDeadline(
+        clock,
+        ATTACHED_SESSION_LIMITS.catalogTimeoutMs,
+        catalogAbort,
+        (signal) => collectCatalog(slot, signal),
+      );
+      if (active !== slot || slot.state !== "authorizing") {
+        throw attachedError("CANCELLED");
+      }
+
+      slot.operationAbort = undefined;
+      slot.catalog = catalog.tools;
+      const summary: AttachedConnectionSummary = Object.freeze({
+        transport: "http" as const,
+        server: Object.freeze({
+          name: serverInfo.name,
+          version: serverInfo.version,
+          protocolVersion: serverInfo.protocolVersion,
+        }),
+        validation: Object.freeze({ status: "ok" as const }),
+        pageCount: catalog.pageCount,
+        toolCount: catalog.tools.length,
+      });
+      slot.connectionSummary = summary;
+      slot.state = "connected";
+      return summary;
+    } catch (cause) {
+      const failure = normalizeFailure(
+        cause,
+        slot.connection === undefined
+          ? "AUTHENTICATION_FAILED"
+          : "PROTOCOL_ERROR",
+        slot.operationAbort?.signal,
+      );
+      if (!initializeRecorded) {
+        appendActivity(slot, clock, "initialize", initializeStarted, "error", {
+          errorCode: failure.code,
+        });
+      }
+      await failConnection(slot, failure);
+      throw failure;
+    }
+  };
+
+  const rejectOAuth = async (state: string): Promise<void> => {
+    const slot = active;
+    if (slot === undefined || slot.state !== "authorizing") {
+      throw attachedError("NOT_CONNECTED");
+    }
+    if (
+      typeof state !== "string" ||
+      slot.oauthState === undefined ||
+      !equalOAuthState(state, slot.oauthState)
+    ) {
+      throw attachedError("AUTHENTICATION_FAILED");
+    }
+
+    const failure = attachedError("AUTHENTICATION_FAILED");
+    slot.oauthState = undefined;
+    if (slot.oauthExpiry !== undefined) clock.cancel(slot.oauthExpiry);
+    slot.oauthExpiry = undefined;
+    slot.state = "closing";
+    try {
+      await closeClientOnce(slot);
+    } catch {
+      // The provider rejection remains the public result.
+    }
+    clearSlot(slot);
+    lastValidationFailure = retainValidationFailure(slot.owner, failure);
+  };
+
   const connect = async (
     owner: string,
     target: unknown,
@@ -720,6 +959,9 @@ export function createAttachedSessionController(
       activity: createActivityStore(),
       state: "connecting",
       connection: undefined,
+      oauthAuthorization: undefined,
+      oauthState: undefined,
+      oauthExpiry: undefined,
       connectionSummary: undefined,
       catalog: Object.freeze([]),
       toolNames: new Set(),
@@ -871,6 +1113,9 @@ export function createAttachedSessionController(
 
   return {
     connect,
+    beginOAuth,
+    completeOAuth,
+    rejectOAuth,
     state: (owner) => {
       const slot = active;
       if (slot === undefined) {
@@ -895,6 +1140,12 @@ export function createAttachedSessionController(
         return Object.freeze({
           state: "connecting" as const,
           transport: slot.transport,
+        });
+      }
+      if (slot.state === "authorizing") {
+        return Object.freeze({
+          state: "authorizing" as const,
+          transport: "http" as const,
         });
       }
       if (slot.state === "closing") {

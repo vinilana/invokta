@@ -12,10 +12,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `@invokta/devtools` now opens an idle, workspace-independent MCP workbench
   that can attach to one explicit stdio command or Streamable HTTP endpoint.
   The compact interface supports catalog inspection, one deliberate tool call,
-  bounded Activity metadata, and ephemeral none, bearer, or custom-header HTTP
-  authentication. The new `verify` command performs read-only initialization
-  and complete `tools/list` validation for local installation checks and remote
-  homologation without invoking a tool.
+  bounded Activity metadata, and ephemeral none, bearer, OAuth Authorization
+  Code with PKCE, or custom-header HTTP authentication. OAuth is interactive
+  and UI-only; its credentials and protocol state remain in process memory.
+  The new `verify` command performs read-only initialization and complete
+  `tools/list` validation for local installation checks and remote homologation
+  without invoking a tool.
 - `@invokta/mcp` now exposes a bounded, plain-type client facade over the
   official SDK for stdio and Streamable HTTP connections. SDK types, transport
   details, credentials, and protocol errors remain contained inside the MCP

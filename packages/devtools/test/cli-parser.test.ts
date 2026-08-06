@@ -176,6 +176,10 @@ describe("invokta-devtools verify HTTP parsing", () => {
       "requires --bearer-env",
     ],
     [
+      ["verify", "--http", "https://example.com/mcp", "--auth", "oauth"],
+      "must be none, bearer, or headers",
+    ],
+    [
       [
         "verify",
         "--http",

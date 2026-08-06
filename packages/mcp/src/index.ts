@@ -7,6 +7,7 @@ import { serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 
 export {
+  beginMcpOAuthAuthorization,
   connectMcpClient,
   type McpClientConnection,
   McpClientError,
@@ -18,6 +19,9 @@ export {
   type McpClientToolPage,
   type McpClientToolResult,
   type McpJsonValue,
+  type McpOAuthAuthorization,
+  type McpOAuthAuthorizationOptions,
+  type McpOAuthClientTarget,
 } from "./client.js";
 
 export {

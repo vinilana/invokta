@@ -43,7 +43,7 @@ persistence, configuration field, or operational limit:
 | `AE-INSTALL-01..05` | Packed creator smoke tests install a built local engine; target transactions cover confirmation, idempotency, drift, locks, rollback, management, remote descriptors, and secret-free diagnostics without process or network access |
 | `AE-CREATE-PROFILE-01..12` | Terminal and non-terminal harnesses cover bounded prompting and confirmation; golden and packed tests cover all four exact profiles, public deploy-owned HTTP bytes, adapter omission, filesystem races, installation order, and direct/CLI/MCP equivalence |
 | `AE-DEVTOOLS-01..08` | Doctor fixtures cover exit codes and stack-free diagnostics; a real MCP HTTP host proves single-path execution, fail-closed bearer authentication, origin isolation without CORS headers, bounded tracing, and watch by child-process replacement |
-| `AE-DEVTOOLS-ATTACH-01..09` | Inert-startup spies, stdio and HTTP fixtures, hostile local requests, canary secrets, fake clocks, boundary payloads, accessibility tests, and packed consumers prove explicit read-only verification and bounded manual homologation |
+| `AE-DEVTOOLS-ATTACH-01..10` | Inert-startup spies, stdio and HTTP fixtures, hostile local requests, canary secrets, fake clocks, boundary payloads, OAuth callback and cleanup fixtures, accessibility tests, and packed consumers prove explicit read-only verification and bounded manual homologation |
 | `AE-SCOPE-01..04`, `AE-LIMIT-01..06` | Manifest and API review prove package roles and the absence of deferred abstractions |
 
 Supporting packages require focused contract tests for their own authority:

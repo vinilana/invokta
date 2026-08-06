@@ -120,6 +120,7 @@ body.attached-mode {
 }
 
 .att-shell button:focus-visible,
+.att-shell a:focus-visible,
 .att-shell input:focus-visible,
 .att-shell textarea:focus-visible,
 .att-shell [role="tab"]:focus-visible,
@@ -519,6 +520,9 @@ body.attached-mode {
 }
 
 .att-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 2.1rem;
   padding: 0.36rem 0.72rem;
   border: 1px solid var(--att-line-strong);
@@ -527,6 +531,7 @@ body.attached-mode {
   color: var(--att-fg);
   font-size: 0.75rem;
   font-weight: 620;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -720,6 +725,24 @@ body.attached-mode {
   overflow: auto;
 }
 
+.att-oauth {
+  width: min(100%, 34rem);
+  height: auto;
+  margin-inline: auto;
+  padding: 1rem;
+}
+
+.att-oauth h2 { margin-bottom: 0.4rem; }
+
+.att-oauth-status {
+  margin: 0.8rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--att-line);
+  border-radius: 0.375rem;
+  background: var(--att-surface);
+  color: var(--att-body);
+}
+
 .att-activity-table {
   width: 100%;
   border-collapse: collapse;
@@ -851,6 +874,20 @@ body.attached-mode {
 
   .att-tabs button { padding-inline: 0.5rem; }
   .att-theme-slot-compact { margin-left: auto; }
+
+  .att-auth-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    overflow: visible;
+    border-radius: 0.5rem;
+  }
+
+  .att-auth-options button {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

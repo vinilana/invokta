@@ -14,6 +14,12 @@ const target = {
   url: "https://mcp.example.test/mcp",
   authentication: { type: "bearer", token: "target-canary-secret" },
 } as const;
+const oauthTarget = {
+  transport: "http",
+  url: "https://mcp.example.test/mcp",
+  authentication: { type: "oauth" },
+} as const;
+const oauthState = "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF";
 
 const server = {
   name: "fixture-server",
@@ -105,6 +111,201 @@ describe("createAttachedSessionController", () => {
     expect(retained).not.toBe(failure);
     expect(Object.hasOwn(retained, "cause")).toBe(false);
     expect(JSON.stringify(retained)).not.toContain("sensitive upstream detail");
+  });
+
+  it("owns an OAuth authorization and completes it into the normal catalog", async () => {
+    const client = connection(async () => ({ tools: [tool("fixture.oauth")] }));
+    const authorization = {
+      authorizationUrl:
+        "https://identity.example.test/authorize?state=opaque-state",
+      finish: vi.fn(async () => client),
+      close: vi.fn(async () => undefined),
+    };
+    const beginOAuthAuthorization = vi.fn(async () => authorization);
+    const controller = createAttachedSessionController({
+      beginOAuthAuthorization: beginOAuthAuthorization as never,
+    });
+
+    await expect(
+      controller.beginOAuth(owner, oauthTarget, {
+        redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+        state: oauthState,
+      }),
+    ).resolves.toEqual({ authorizationUrl: authorization.authorizationUrl });
+    expect(controller.state(owner)).toEqual({
+      state: "authorizing",
+      transport: "http",
+    });
+    expect(controller.state(otherOwner)).toEqual({ state: "busy" });
+
+    await expect(
+      controller.completeOAuth(oauthState, "one-time-code"),
+    ).resolves.toMatchObject({
+      transport: "http",
+      pageCount: 1,
+      toolCount: 1,
+    });
+    expect(authorization.finish).toHaveBeenCalledWith(
+      "one-time-code",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(controller.state(owner).state).toBe("connected");
+    expect(controller.tools(owner).map(({ name }) => name)).toEqual([
+      "fixture.oauth",
+    ]);
+
+    await expectCode(
+      controller.completeOAuth(oauthState, "replayed-code"),
+      "NOT_CONNECTED",
+    );
+  });
+
+  it("rejects the wrong OAuth state and cancels authorization without exposing it", async () => {
+    const authorization = {
+      authorizationUrl:
+        "https://identity.example.test/authorize?state=opaque-state",
+      finish: vi.fn(),
+      close: vi.fn(async () => undefined),
+    };
+    const controller = createAttachedSessionController({
+      beginOAuthAuthorization: vi.fn(async () => authorization) as never,
+    });
+    await controller.beginOAuth(owner, oauthTarget, {
+      redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+      state: oauthState,
+    });
+
+    await expectCode(
+      controller.completeOAuth(`${oauthState.slice(0, -1)}X`, "code"),
+      "AUTHENTICATION_FAILED",
+    );
+    expect(authorization.finish).not.toHaveBeenCalled();
+    expect(controller.state(owner).state).toBe("authorizing");
+
+    await expectCode(
+      controller.rejectOAuth(`${oauthState.slice(0, -1)}X`),
+      "AUTHENTICATION_FAILED",
+    );
+    expect(controller.state(owner).state).toBe("authorizing");
+
+    await controller.rejectOAuth(oauthState);
+    expect(authorization.close).toHaveBeenCalledOnce();
+    expect(controller.state(owner)).toMatchObject({
+      state: "idle",
+      validation: {
+        status: "error",
+        error: { code: "AUTHENTICATION_FAILED" },
+      },
+    });
+    expect(JSON.stringify(controller.state(owner))).not.toContain(oauthState);
+  });
+
+  it("expires an unfinished OAuth authorization at exactly five minutes", async () => {
+    vi.useFakeTimers();
+    const authorization = {
+      authorizationUrl:
+        "https://identity.example.test/authorize?state=opaque-state",
+      finish: vi.fn(),
+      close: vi.fn(async () => undefined),
+    };
+    const controller = createAttachedSessionController({
+      beginOAuthAuthorization: vi.fn(async () => authorization) as never,
+    });
+    await controller.beginOAuth(owner, oauthTarget, {
+      redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+      state: oauthState,
+    });
+
+    await vi.advanceTimersByTimeAsync(
+      ATTACHED_SESSION_LIMITS.oauthAuthorizationTimeoutMs - 1,
+    );
+    expect(controller.state(owner).state).toBe("authorizing");
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(authorization.close).toHaveBeenCalledOnce();
+    expect(controller.state(owner)).toMatchObject({
+      state: "idle",
+      validation: { status: "error", error: { code: "TIMEOUT" } },
+    });
+  });
+
+  it("bounds OAuth preparation and closes a late authorization handle", async () => {
+    vi.useFakeTimers();
+    const pending = deferred<{
+      authorizationUrl: string;
+      finish: ReturnType<typeof vi.fn>;
+      close: ReturnType<typeof vi.fn>;
+    }>();
+    const controller = createAttachedSessionController({
+      beginOAuthAuthorization: vi.fn(() => pending.promise) as never,
+    });
+    const beginning = controller.beginOAuth(owner, oauthTarget, {
+      redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+      state: oauthState,
+    });
+    const timedOut = expect(beginning).rejects.toMatchObject({
+      code: "TIMEOUT",
+    });
+
+    await vi.advanceTimersByTimeAsync(
+      ATTACHED_SESSION_LIMITS.initializationTimeoutMs - 1,
+    );
+    expect(controller.state(owner).state).toBe("connecting");
+    await vi.advanceTimersByTimeAsync(1);
+    await timedOut;
+
+    const lateAuthorization = {
+      authorizationUrl:
+        "https://identity.example.test/authorize?state=opaque-state",
+      finish: vi.fn(),
+      close: vi.fn(async () => undefined),
+    };
+    pending.resolve(lateAuthorization);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lateAuthorization.close).toHaveBeenCalledOnce();
+    expect(controller.state(owner)).toMatchObject({
+      state: "idle",
+      validation: { status: "error", error: { code: "TIMEOUT" } },
+    });
+  });
+
+  it("bounds OAuth token exchange and closes a late connection", async () => {
+    vi.useFakeTimers();
+    const pendingConnection = deferred<ReturnType<typeof connection>>();
+    const authorization = {
+      authorizationUrl:
+        "https://identity.example.test/authorize?state=opaque-state",
+      finish: vi.fn(() => pendingConnection.promise),
+      close: vi.fn(async () => undefined),
+    };
+    const controller = createAttachedSessionController({
+      beginOAuthAuthorization: vi.fn(async () => authorization) as never,
+    });
+    await controller.beginOAuth(owner, oauthTarget, {
+      redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+      state: oauthState,
+    });
+    const completion = controller.completeOAuth(oauthState, "one-time-code");
+    const timedOut = expect(completion).rejects.toMatchObject({
+      code: "TIMEOUT",
+    });
+
+    await vi.advanceTimersByTimeAsync(
+      ATTACHED_SESSION_LIMITS.initializationTimeoutMs - 1,
+    );
+    expect(controller.state(owner).state).toBe("authorizing");
+    await vi.advanceTimersByTimeAsync(1);
+    await timedOut;
+    expect(authorization.close).toHaveBeenCalledOnce();
+
+    const lateConnection = connection(async () => ({ tools: [] }));
+    pendingConnection.resolve(lateConnection);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lateConnection.close).toHaveBeenCalledOnce();
+    expect(controller.state(owner)).toMatchObject({
+      state: "idle",
+      validation: { status: "error", error: { code: "TIMEOUT" } },
+    });
   });
 
   it("atomically owns one target and exposes only busy state to another owner", async () => {

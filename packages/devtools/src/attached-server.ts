@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net";
 import { join, normalize, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import type { McpJsonValue } from "@invokta/mcp";
+import type { McpJsonValue, McpOAuthClientTarget } from "@invokta/mcp";
 
 import {
   type AttachedSessionController,
@@ -44,6 +44,8 @@ const host = "127.0.0.1";
 const defaultPort = 4100;
 const connectionBodyLimitBytes = 1024 * 1024;
 const callBodyLimitBytes = 10 * 1024 * 1024;
+const oauthCallbackTargetLimitBytes = 8_192;
+const oauthAuthorizationCodeLimitCodePoints = 4_096;
 const maximumBrowserSessions = 128;
 const sessionCookieName = "invokta_devtools_session";
 const csrfHeaderName = "x-invokta-csrf";
@@ -74,6 +76,18 @@ const attachedShellPage = `<!doctype html>
 </body>
 </html>
 `;
+
+const oauthCallbackPages = Object.freeze({
+  success: `<!doctype html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorization complete</title><link rel="stylesheet" href="/assets/attached.css"></head>
+<body class="attached-mode"><main class="att-frame att-main"><section class="att-card att-view att-oauth"><p class="att-kicker">OAuth</p><h1>Authorization complete</h1><p class="att-hint">Return to Invokta devtools. You can close this tab.</p></section></main></body></html>`,
+  rejected: `<!doctype html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorization not completed</title><link rel="stylesheet" href="/assets/attached.css"></head>
+<body class="attached-mode"><main class="att-frame att-main"><section class="att-card att-view att-oauth"><p class="att-kicker">OAuth</p><h1>Authorization was not completed</h1><p class="att-hint">Return to Invokta devtools to try again.</p></section></main></body></html>`,
+  failed: `<!doctype html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorization failed</title><link rel="stylesheet" href="/assets/attached.css"></head>
+<body class="attached-mode"><main class="att-frame att-main"><section class="att-card att-view att-oauth"><p class="att-kicker">OAuth</p><h1>Authorization failed</h1><p class="att-hint">Return to Invokta devtools to review the connection.</p></section></main></body></html>`,
+});
 
 const staticContentTypes: Readonly<Record<string, string>> = {
   ".css": "text/css; charset=utf-8",
@@ -119,6 +133,33 @@ function sendError(
   message: string,
 ): void {
   sendJson(response, status, { code, message });
+}
+
+function sendOAuthCallbackPage(
+  response: ServerResponse,
+  status: number,
+  page: keyof typeof oauthCallbackPages,
+): void {
+  response.writeHead(status, {
+    ...securityHeaders(),
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  response.end(oauthCallbackPages[page]);
+}
+
+type OAuthCallbackOutcome = "success" | "rejected" | "invalid" | "error";
+
+function sendOAuthCallbackRedirect(
+  response: ServerResponse,
+  outcome: OAuthCallbackOutcome,
+): void {
+  response.writeHead(303, {
+    ...securityHeaders(),
+    location: `/oauth/result/${outcome}`,
+    "cache-control": "no-store",
+  });
+  response.end();
 }
 
 function sendErrorBeforeBodyConsumption(
@@ -573,6 +614,28 @@ export async function startAttachedDevtoolsServer(
       return;
     }
     try {
+      const authentication = isRecord(body.authentication)
+        ? body.authentication
+        : undefined;
+      if (authentication?.type === "oauth") {
+        const state = randomBytes(32).toString("base64url");
+        const authorization = await controller.beginOAuth(
+          owner.id,
+          body as unknown as McpOAuthClientTarget,
+          {
+            redirectUrl: `${ownOrigin}/oauth/callback`,
+            state,
+          },
+        );
+        const csrf = rotateCsrf(owner.session);
+        sendJson(
+          response,
+          202,
+          { state: "authorizing", ...authorization },
+          { "x-invokta-csrf": csrf },
+        );
+        return;
+      }
       const summary = await controller.connect(owner.id, body);
       const csrf = rotateCsrf(owner.session);
       sendJson(
@@ -583,6 +646,74 @@ export async function startAttachedDevtoolsServer(
       );
     } catch (error) {
       safeControllerError(response, error);
+    }
+  };
+
+  const handleOAuthCallback = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    url: URL,
+  ): Promise<void> => {
+    if (request.method !== "GET") {
+      sendOAuthCallbackRedirect(response, "invalid");
+      return;
+    }
+    const states = url.searchParams.getAll("state");
+    const codes = url.searchParams.getAll("code");
+    const errors = url.searchParams.getAll("error");
+    const state = states[0];
+    const hasOneResult =
+      (codes.length === 1 && errors.length === 0) ||
+      (codes.length === 0 && errors.length === 1);
+    if (
+      states.length !== 1 ||
+      state === undefined ||
+      !/^[A-Za-z0-9_-]{43}$/u.test(state)
+    ) {
+      sendOAuthCallbackRedirect(response, "invalid");
+      return;
+    }
+
+    const rejectCallback = async (
+      outcome: "invalid" | "rejected" = "invalid",
+    ): Promise<void> => {
+      try {
+        await controller.rejectOAuth(state);
+      } catch {
+        sendOAuthCallbackRedirect(response, "error");
+        return;
+      }
+      sendOAuthCallbackRedirect(response, outcome);
+    };
+    if (!hasOneResult) {
+      await rejectCallback();
+      return;
+    }
+
+    const error = errors[0];
+    if (error !== undefined) {
+      if (error.length === 0 || Array.from(error).length > 256) {
+        await rejectCallback();
+        return;
+      }
+      await rejectCallback("rejected");
+      return;
+    }
+
+    const code = codes[0];
+    if (
+      code === undefined ||
+      code.length === 0 ||
+      Array.from(code).length > oauthAuthorizationCodeLimitCodePoints
+    ) {
+      await rejectCallback();
+      return;
+    }
+    try {
+      await controller.completeOAuth(state, code);
+      sendOAuthCallbackRedirect(response, "success");
+    } catch {
+      sendOAuthCallbackRedirect(response, "error");
     }
   };
 
@@ -682,8 +813,82 @@ export async function startAttachedDevtoolsServer(
       return;
     }
     const method = request.method ?? "GET";
-    const url = new URL(request.url ?? "/", ownOrigin);
+    const rawTarget = request.url ?? "/";
+    if (
+      (method === "POST" || method === "DELETE") &&
+      oneRawHeader(request, "origin") !== ownOrigin
+    ) {
+      sendErrorBeforeBodyConsumption(
+        request,
+        response,
+        403,
+        "FORBIDDEN",
+        "The request origin is not allowed.",
+      );
+      return;
+    }
+    const isCanonicalOAuthCallback =
+      rawTarget === "/oauth/callback" ||
+      rawTarget.startsWith("/oauth/callback?");
+    if (
+      isCanonicalOAuthCallback &&
+      Buffer.byteLength(rawTarget) > oauthCallbackTargetLimitBytes
+    ) {
+      sendOAuthCallbackRedirect(response, "invalid");
+      return;
+    }
+    let url: URL;
+    try {
+      url = new URL(rawTarget, ownOrigin);
+    } catch {
+      sendError(
+        response,
+        400,
+        "INVALID_REQUEST",
+        "The request URL is invalid.",
+      );
+      return;
+    }
     const path = url.pathname;
+
+    if (path === "/oauth/callback") {
+      if (
+        !isCanonicalOAuthCallback ||
+        url.origin !== ownOrigin ||
+        url.hash !== ""
+      ) {
+        sendOAuthCallbackRedirect(response, "invalid");
+        return;
+      }
+      await handleOAuthCallback(request, response, url);
+      return;
+    }
+    if (
+      url.origin !== ownOrigin ||
+      url.search !== "" ||
+      url.hash !== "" ||
+      rawTarget !== path
+    ) {
+      sendError(
+        response,
+        400,
+        "INVALID_REQUEST",
+        "The request URL is not canonical.",
+      );
+      return;
+    }
+    const oauthResult = (
+      [
+        ["success", 200, "success"],
+        ["rejected", 400, "rejected"],
+        ["invalid", 400, "failed"],
+        ["error", 502, "failed"],
+      ] as const
+    ).find(([outcome]) => rawTarget === `/oauth/result/${outcome}`);
+    if (oauthResult !== undefined && method === "GET") {
+      sendOAuthCallbackPage(response, oauthResult[1], oauthResult[2]);
+      return;
+    }
 
     if (path === "/api/session" && method === "GET") {
       await handleSession(request, response);

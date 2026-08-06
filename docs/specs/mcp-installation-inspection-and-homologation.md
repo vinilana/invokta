@@ -1,6 +1,6 @@
 # MCP installation inspection and homologation specification
 
-Status: Accepted by ADR 0021
+Status: Accepted by ADR 0021 and extended by ADR 0022
 
 Contract review verdict: **APPROVED**
 
@@ -23,7 +23,7 @@ about `engine.invoke` or its implementation.
 `@invokta/mcp` encapsulates the approved official SDK behind a new plain-type
 client facade. Devtools does not import SDK packages or expose SDK values.
 
-The durable decision is recorded in ADR 0021.
+The durable decisions are recorded in ADR 0021 and ADR 0022.
 
 ## Problem
 
@@ -47,7 +47,7 @@ unknown and must not be inferred.
 - Start the devtools workbench without a module path or workspace load.
 - Validate an explicit local stdio installation descriptor.
 - Validate an explicit Streamable HTTP endpoint with no authentication, a
-  bearer token, or custom request headers.
+  bearer token, custom request headers, or an interactive ephemeral OAuth flow.
 - Exercise only initialization and tool discovery during automated
   verification.
 - Let a person make a single deliberate tool call from the workbench.
@@ -65,8 +65,8 @@ unknown and must not be inferred.
 - Connecting more than one target or running more than one call concurrently.
 - Automatic invocation, retry, replay, load testing, scheduling, or monitoring.
 - Evals, judges, scoring, release gates, certification, or deployment approval.
-- OAuth flows, token refresh, browser login, client registration, or secret
-  management.
+- OAuth device flow, client credentials, private client secrets, provider-
+  specific login, persistent login, or general secret management.
 - MCP resources, prompts, sampling, elicitation, tasks, roots, stateful product
   sessions, or server-to-client requests.
 - Editing a target, installation, client configuration, or project.
@@ -125,7 +125,9 @@ Environment values are read only after all arguments validate. Header names are
 case-insensitively unique and must be valid HTTP field names. A missing source
 environment value, an empty bearer value, or a header value containing CR or LF
 is invalid usage. Literal credential values are never accepted in command-line
-arguments.
+arguments. OAuth is intentionally unavailable to `verify`; it requires the
+interactive workbench callback and cannot be selected by a CLI authentication
+value.
 
 Unknown commands, unknown options, extra positionals, invalid combinations,
 missing values, and duplicate singular options are invalid usage. The existing
@@ -248,12 +250,63 @@ Authentication has exactly one form:
 - `none` adds no credential header;
 - `bearer` adds exactly one `Authorization: Bearer <value>` header; or
 - `headers` adds a case-insensitively unique set of explicit header fields,
-  including a custom `Authorization` scheme when needed.
+  including a custom `Authorization` scheme when needed; or
+- `oauth` begins the interactive Authorization Code with PKCE lifecycle below.
 
 The target rejects duplicate header names, CR or LF in values, and a bearer
 value containing HTTP whitespace at either end. Header and bearer values are
 captured into connection-owned memory, never returned by inspection APIs, and
 cleared when the connection closes.
+
+### Interactive OAuth target
+
+OAuth is a workbench-only authentication type for an HTTP target. Selecting it
+adds no token, client secret, authorization-server URL, or provider-specific
+field to the connection form. Connect uses the MCP resource URL to perform the
+official RFC 9728 and authorization-server discovery flow. The client uses the
+exact bound `http://127.0.0.1:<port>/oauth/callback` URL, identifies itself as a
+public client, requests Authorization Code with PKCE, and registers through the
+dynamic client registration endpoint advertised by the authorization server.
+The current workbench OAuth mode therefore requires that endpoint; it does not
+accept a preconfigured client identifier or client secret.
+
+The OAuth client facade returns a validated authorization URL only to the
+owning browser response. That URL must use HTTPS. When the selected MCP
+resource itself uses the literal-loopback HTTP development exception, the
+authorization server may also use literal `127.0.0.1` or `[::1]` HTTP. A remote
+HTTPS resource cannot downgrade discovery, registration, authorization, or
+token exchange to loopback HTTP. The authorization URL must not contain
+credentials or a fragment and is limited to 8,192 encoded bytes. Browser
+navigation to it is explicit and top-level; devtools never proxies or frames
+its content.
+
+Protected-resource, authorization-server, registration, authorization, and
+token endpoints must use the exact origin of the explicit resource.
+Cross-origin endpoints are rejected before a request or browser navigation.
+Redirects are still rejected, the metadata issuer must exactly equal the
+selected authorization-server identifier, and platform DNS, certificate, and
+hostname validation remains enabled. Terminal protected-resource discovery
+failures are latched and must not enter the SDK's legacy authorization-server
+fallback.
+
+Every attempt uses a 256-bit random base64url state bound to the active target
+slot. OAuth preparation has a 15-second deadline. The authorization URL remains
+usable for at most 300,000 milliseconds. The callback request target is limited
+to 8,192 bytes and requires exactly one matching state plus either one nonempty
+authorization code of at most 4,096 Unicode code points or one OAuth error. A
+state is single-use whether the callback succeeds or fails.
+
+Token exchange and MCP initialization share a 15-second completion deadline.
+Successful initialization then receives the existing separate 15-second full
+catalog deadline. The provider retains tokens, client registration information,
+discovery state, state, and PKCE verifier only in target-owned process memory.
+The material is cleared on success-to-disconnect, denial, malformed callback,
+timeout, cancellation, connection failure, or process shutdown.
+
+The initial MCP request may be repeated once after the user explicitly
+authorizes. Once connected, an HTTP 401 or 403 closes the connection as
+`AUTHENTICATION_FAILED`; devtools does not automatically refresh, up-scope, or
+replay a tool call. Reauthorization requires another explicit Connect action.
 
 ## Plain MCP client facade
 
@@ -338,6 +391,32 @@ export function connectMcpClient(
   target: McpClientTarget,
   options?: McpClientOperationOptions,
 ): Promise<McpClientConnection>;
+
+export interface McpOAuthClientTarget {
+  readonly transport: "http";
+  readonly url: string;
+  readonly authentication: { readonly type: "oauth" };
+}
+
+export interface McpOAuthAuthorizationOptions {
+  readonly redirectUrl: string;
+  readonly state: string;
+  readonly signal?: AbortSignal;
+}
+
+export interface McpOAuthAuthorization {
+  readonly authorizationUrl: string;
+  finish(
+    authorizationCode: string,
+    options?: McpClientOperationOptions,
+  ): Promise<McpClientConnection>;
+  close(): Promise<void>;
+}
+
+export function beginMcpOAuthAuthorization(
+  target: McpOAuthClientTarget,
+  options: McpOAuthAuthorizationOptions,
+): Promise<McpOAuthAuthorization>;
 ```
 
 `connectMcpClient` validates and snapshots its target, creates one transport,
@@ -360,6 +439,12 @@ buffer at the same 10 MiB boundary. Devtools owns the higher-level deadlines,
 catalog aggregation, single-target rule, and Activity buffer. Public closure
 delegates to the SDK transport and makes no stronger stdio child-lifecycle
 guarantee than the SDK's public `close` operation.
+
+`beginMcpOAuthAuthorization` uses only the approved SDK OAuth implementation.
+It snapshots its target, redirect URL, state, dynamic registration result,
+discovery state, verifier, and tokens. `finish` is single-use, and `close` is
+idempotent before or after completion. No public value exposes an SDK type,
+token, registration response, discovery document, or verifier.
 
 ## Client and devtools errors
 
@@ -406,6 +491,7 @@ The workbench has one process-wide target slot and these observable states:
 
 ```text
 idle -> connecting -> connected -> closing -> idle
+                 -> authorizing -> connected
                     -> idle (sanitized connection failure)
 ```
 
@@ -422,6 +508,13 @@ paginated catalog has a separate 15-second deadline. Failure closes all target
 resources and returns to idle while retaining only the sanitized validation
 outcome. Success exposes the server identity and catalog without exposing the
 target descriptor or credentials.
+
+For OAuth, Connect first claims the same target slot and returns
+`authorizing` plus the authorization URL after bounded discovery and
+registration. The owning browser polls sanitized session state while the user
+completes authorization. A successful callback performs token exchange,
+initialization, and catalog validation before exposing `connected`. The owner
+may cancel while authorizing; another browser observes only `busy`.
 
 Disconnect cancels an active call, closes the client, clears the catalog and
 credential memory, clears Activity, and returns to idle. Process shutdown does
@@ -447,6 +540,12 @@ longer than 256 Unicode code points are truncated to the first 256 code points.
 | Surface | Limit |
 | --- | ---: |
 | Initialization deadline | 15 seconds |
+| OAuth preparation deadline | 15 seconds |
+| OAuth user authorization deadline | 5 minutes |
+| OAuth completion and initialization deadline | 15 seconds |
+| OAuth authorization URL | 8,192 encoded bytes |
+| OAuth callback request target | 8,192 bytes |
+| OAuth authorization code | 4,096 Unicode code points |
 | Complete catalog deadline | 15 seconds |
 | Manual call deadline | 60 seconds |
 | One encoded MCP message | 10,485,760 bytes |
@@ -490,11 +589,11 @@ reduce scanability in dense tool views.
 The idle view leads with Connection and presents mutually exclusive `stdio` and
 `HTTP` forms. The stdio form uses separate command, repeatable argument,
 working-directory, and environment rows; it never accepts a shell command
-string. The HTTP form uses a URL field and explicit None, Bearer, or Custom
-headers authentication. Secret inputs use password controls and accessible
-labels that identify their purpose without including their values. After a
-connection response, the browser clears each value and replaces the field with
-a masked configured state.
+string. The HTTP form uses a URL field and explicit None, Bearer, OAuth, or
+Custom headers authentication. Secret inputs use password controls and
+accessible labels that identify their purpose without including their values.
+After a connection response, the browser clears each value and replaces the
+field with a masked configured state.
 
 The attached navigation contains exactly these primary views:
 
@@ -517,6 +616,8 @@ The loopback interface provides these local routes:
 | `GET /api/session` | Session-bound CSRF token and sanitized target state |
 | `POST /api/connection` | Validate and connect one explicit target |
 | `DELETE /api/connection` | Close the session-owned target and clear its data |
+| `GET /oauth/callback` | Consume one state-bound OAuth result and redirect to a clean result URL |
+| `GET /oauth/result/*` | Show a static, query-free OAuth outcome |
 | `GET /api/tools` | Plain catalog for the connected owning session |
 | `POST /api/tools/call` | Perform one explicit call and return its current result |
 | `GET /api/activity` | Return bounded metadata for the owning session |
@@ -548,8 +649,8 @@ and is never written to browser storage.
 
 The process retains at most 128 browser sessions in insertion order. Before
 creating a 129th session it evicts the oldest-created session that does not own
-the active target; the connecting, connected, or closing target owner is never
-selected. An evicted cookie and CSRF token immediately stop authorizing local
+the active target; the connecting, authorizing, connected, or closing target
+owner is never selected. An evicted cookie and CSRF token immediately stop authorizing local
 API access, and a later `GET /api/session` creates a fresh session. If no session
 is safely evictable, creation fails with HTTP 503 and
 `SESSION_LIMIT_EXCEEDED`. Sessions and their ordering are never persisted.
@@ -571,6 +672,20 @@ Connection descriptor bodies are limited to 1 MiB; tool-call API bodies use the
 10 MiB MCP message limit. Requests crossing the applicable limit are rejected
 before a target operation. Local API bodies require exact JSON content type and
 strict UTF-8. Validation snapshots the descriptor before any asynchronous work.
+
+The OAuth callback route is the only local route that accepts a query. It still
+requires the exact bound Host and security headers, emits no CORS header, and
+never reflects its query. It does not require the browser-session cookie because
+the external redirect may omit a `SameSite=Strict` cookie. Its 256-bit,
+single-use state is the callback authority. The callback response contains no
+authorization code, state, token, provider error text, or target URL. A callback
+with exactly one valid state consumes the attempt even when its code or error
+fields are malformed. An oversized request target or an ambiguous state does
+not select an attempt. Only the canonical origin-form `/oauth/callback` target
+with an optional query is routed; absolute-form and normalized path aliases are
+rejected. After processing, the server redirects to a static `/oauth/result/*`
+path so callback material does not remain in the visible address or result page
+URL.
 
 ## Requirements
 
@@ -658,9 +773,19 @@ without revealing values, and omit workspace-only surfaces.
 ### AE-DEVTOOLS-ATTACH-09: Closed homologation scope
 
 Attached inspection MUST NOT implement persistence, configuration import,
-discovery, multiple targets, OAuth, resources, prompts, automatic calls,
-retries, evals, judging, certification, release gating, or project and client
-configuration writes.
+target discovery, multiple targets, OAuth grants other than the ADR 0022
+ephemeral Authorization Code with PKCE flow, resources, prompts, automatic
+calls, connected tool-call retries, evals, judging, certification, release
+gating, or project and client configuration writes.
+
+### AE-DEVTOOLS-ATTACH-10: Ephemeral OAuth authorization
+
+OAuth MUST be initiated by the owning browser for one explicit HTTP target and
+implemented by the isolated official SDK. State, callback, discovery, token
+exchange, deadlines, cleanup, non-persistence, and no-replay behavior MUST
+follow this specification. OAuth MUST NOT be accepted by `verify` or expose a
+client secret, token, verifier, code, registration response, or discovery
+document through a public surface.
 
 ## Acceptance matrix
 
@@ -679,15 +804,17 @@ configuration writes.
 | AC-ATTACH-07 | DEVTOOLS-ATTACH-06 | Pagination tests reject repeated cursors, duplicate tool names, oversized aggregate catalogs, invalid JSON values, and an oversized call result while closing the target. |
 | AC-ATTACH-08 | DEVTOOLS-ATTACH-07 | Raw HTTP tests cover missing, duplicate, malformed, and foreign Host/Origin, missing or stale cookie/CSRF pairs, cross-session control, no CORS headers, CSP, body limits, strict JSON UTF-8, the 128-session cap, eviction of the oldest non-owning session, and preservation of the active target owner. |
 | AC-ATTACH-09 | DEVTOOLS-ATTACH-08 | Browser behavior and accessibility tests prove compact Tools/Activity/Connection navigation, explicit masked auth, keyboard operation, readable focus, no bracket labels, and no workspace-only controls. |
-| AC-ATTACH-10 | DEVTOOLS-ATTACH-09 | Import-graph, filesystem, network, and process-spawn spies prove there is no discovery, configuration import, persistence, OAuth, resource or prompt request, eval, release gate, or project/client write. |
-| AC-ATTACH-11 | MCP-CLIENT-01..03, DEVTOOLS-ATTACH-01..09 | Typecheck, lint, formatting, unit and integration tests, build, coverage, packed-tarball inspection, and isolated consumer smoke tests pass for both packages. |
+| AC-ATTACH-10 | DEVTOOLS-ATTACH-09 | Import-graph, filesystem, network, and process-spawn spies prove there is no target discovery, configuration import, persistence, unsupported OAuth grant, resource or prompt request, eval, release gate, or project/client write. |
+| AC-ATTACH-11 | DEVTOOLS-ATTACH-10 | Official OAuth and fake-clock fixtures cover discovery, dynamic registration, exact issuer and same-origin endpoint validation, PKCE state, callback success, denial and clean result redirects, 15-second preparation/completion and 5-minute user deadlines, single use, inclusive URL/request/code bounds, terminal protected-resource discovery failures without legacy fallback, cancellation and late-result cleanup, one-attempt token/registration errors, no secret output or storage, and no post-connect refresh or tool-call replay. |
+| AC-ATTACH-12 | MCP-CLIENT-01..03, DEVTOOLS-ATTACH-01..10 | Typecheck, lint, formatting, unit and integration tests, build, coverage, packed-tarball inspection, and isolated consumer smoke tests pass for both packages. |
 
 ## Compatibility and migration
 
 `doctor <module>` and `serve <module>` remain source- and behavior-compatible.
-The `@invokta/mcp` server APIs and existing imports remain compatible; the
-client facade is additive and does not alter the server adapter path to
-`engine.invoke`.
+The `@invokta/mcp` server APIs and existing imports remain compatible; both the
+client facade and its OAuth authorization handle are additive and do not alter
+the server adapter path to `engine.invoke`. Existing none, bearer, header,
+stdio, `verify`, doctor, and serve invocations retain their meaning.
 
 Bare `invokta-devtools` previously produced invalid usage because a command was
 required. It now starts the idle workbench. This intentional command-line
@@ -707,5 +834,5 @@ or mutate any external MCP client configuration file.
 The specification defines the complete public surface, compatibility decision,
 security boundary, success and failure behavior, lifecycle, deadlines, byte and
 count limits, scope exclusions, and executable acceptance evidence required by
-ADR 0021. Implementation remains subject to RED, GREEN, REFACTOR and one
+ADRs 0021 and 0022. Implementation remains subject to RED, GREEN, REFACTOR and one
 validated cohesive commit per deliverable.

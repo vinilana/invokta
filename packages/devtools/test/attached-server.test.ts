@@ -138,12 +138,23 @@ function chunkedMutationRequest(
 
 function createController(): AttachedServerController & {
   readonly connect: ReturnType<typeof vi.fn>;
+  readonly beginOAuth: ReturnType<typeof vi.fn>;
+  readonly completeOAuth: ReturnType<typeof vi.fn>;
+  readonly rejectOAuth: ReturnType<typeof vi.fn>;
   readonly disconnect: ReturnType<typeof vi.fn>;
   readonly close: ReturnType<typeof vi.fn>;
 } {
   const owners = new Set<string>();
+  let pendingOAuth:
+    | { readonly owner: string; readonly state: string }
+    | undefined;
   return {
     state(owner) {
+      if (pendingOAuth !== undefined) {
+        return pendingOAuth.owner === owner
+          ? { state: "authorizing", transport: "http" }
+          : { state: "busy" };
+      }
       return owners.has(owner)
         ? { state: "connected", connection }
         : { state: "idle" };
@@ -151,6 +162,28 @@ function createController(): AttachedServerController & {
     connect: vi.fn(async (owner: string) => {
       owners.add(owner);
       return connection;
+    }),
+    beginOAuth: vi.fn(
+      async (
+        owner: string,
+        _target: unknown,
+        options: { readonly state: string },
+      ) => {
+        pendingOAuth = { owner, state: options.state };
+        return {
+          authorizationUrl: `https://identity.example.test/authorize?state=${options.state}`,
+        };
+      },
+    ),
+    completeOAuth: vi.fn(async (state: string) => {
+      if (pendingOAuth?.state !== state) throw new Error("wrong state");
+      owners.add(pendingOAuth.owner);
+      pendingOAuth = undefined;
+      return connection;
+    }),
+    rejectOAuth: vi.fn(async (state: string) => {
+      if (pendingOAuth?.state !== state) throw new Error("wrong state");
+      pendingOAuth = undefined;
     }),
     tools(owner) {
       if (!owners.has(owner)) throw new Error("not connected");
@@ -180,9 +213,11 @@ function createController(): AttachedServerController & {
     },
     disconnect: vi.fn(async (owner: string) => {
       owners.delete(owner);
+      if (pendingOAuth?.owner === owner) pendingOAuth = undefined;
     }),
     close: vi.fn(async () => {
       owners.clear();
+      pendingOAuth = undefined;
     }),
   };
 }
@@ -613,6 +648,227 @@ describe("attached devtools server", () => {
     expect(await disconnected.json()).toEqual({ state: "idle" });
     expect(disconnected.headers.get("x-invokta-csrf")).not.toBe(nextCsrf);
     expect(controller.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts OAuth and completes its one-time callback without exposing secrets", async () => {
+    const controller = createController();
+    const server = await startOnAvailablePort((port) =>
+      startAttachedDevtoolsServer({ port, controller }),
+    );
+    servers.push(server);
+    const base = `http://127.0.0.1:${String(server.address().port)}`;
+    const session = await fetch(`${base}/api/session`);
+    const cookie = cookiePair(session);
+    const csrf = ((await session.json()) as { csrfToken: string }).csrfToken;
+    const target = {
+      transport: "http",
+      url: "https://mcp.example.test/rpc",
+      authentication: { type: "oauth" },
+    };
+
+    const started = await fetch(`${base}/api/connection`, {
+      method: "POST",
+      headers: mutationHeaders(base, cookie, csrf),
+      body: JSON.stringify(target),
+    });
+    expect(started.status).toBe(202);
+    const startedBody = (await started.json()) as {
+      readonly state: string;
+      readonly authorizationUrl: string;
+    };
+    expect(startedBody.state).toBe("authorizing");
+    expect(startedBody.authorizationUrl).toMatch(
+      /^https:\/\/identity\.example\.test\/authorize\?state=[A-Za-z0-9_-]{43}$/u,
+    );
+    expect(controller.connect).not.toHaveBeenCalled();
+    expect(controller.beginOAuth).toHaveBeenCalledWith(
+      expect.any(String),
+      target,
+      {
+        redirectUrl: `${base}/oauth/callback`,
+        state: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/u),
+      },
+    );
+    const oauthState = new URL(startedBody.authorizationUrl).searchParams.get(
+      "state",
+    ) as string;
+    const authorizationCode = "x".repeat(4_096);
+    const callbackPrefix = `/oauth/callback?state=${oauthState}&code=${authorizationCode}&padding=`;
+    const callbackTarget = `${callbackPrefix}${"p".repeat(
+      8_192 - Buffer.byteLength(callbackPrefix),
+    )}`;
+    expect(Buffer.byteLength(callbackTarget)).toBe(8_192);
+    const callbackResponse = await rawHttpRequest(server, [
+      [
+        `GET ${callbackTarget} HTTP/1.1`,
+        `Host: 127.0.0.1:${String(server.address().port)}`,
+        "Connection: close",
+        "",
+        "",
+      ].join("\r\n"),
+    ]);
+    expect(callbackResponse.status).toBe(303);
+    expect(callbackResponse.headers.get("location")).toBe(
+      "/oauth/result/success",
+    );
+
+    const callback = await fetch(`${base}/oauth/result/success`);
+    expect(callback.status).toBe(200);
+    expect(callback.url).toBe(`${base}/oauth/result/success`);
+    expect(callback.headers.get("content-security-policy")).toContain(
+      "default-src 'none'",
+    );
+    expect(callback.headers.get("access-control-allow-origin")).toBeNull();
+    const callbackText = await callback.text();
+    expect(callbackText).toContain("Authorization complete");
+    expect(callbackText).not.toContain(authorizationCode);
+    expect(callbackText).not.toContain(oauthState);
+    expect(controller.completeOAuth).toHaveBeenCalledWith(
+      oauthState,
+      authorizationCode,
+    );
+
+    const resumed = await fetch(`${base}/api/session`, {
+      headers: { cookie },
+    });
+    expect(await resumed.json()).toMatchObject({ state: "connected" });
+  });
+
+  it("consumes OAuth provider rejection and rejects ambiguous callbacks", async () => {
+    const controller = createController();
+    const server = await startOnAvailablePort((port) =>
+      startAttachedDevtoolsServer({ port, controller }),
+    );
+    servers.push(server);
+    const base = `http://127.0.0.1:${String(server.address().port)}`;
+    const session = await fetch(`${base}/api/session`);
+    const cookie = cookiePair(session);
+    const csrf = ((await session.json()) as { csrfToken: string }).csrfToken;
+    const started = await fetch(`${base}/api/connection`, {
+      method: "POST",
+      headers: mutationHeaders(base, cookie, csrf),
+      body: JSON.stringify({
+        transport: "http",
+        url: "https://mcp.example.test/rpc",
+        authentication: { type: "oauth" },
+      }),
+    });
+    const authorizationUrl = (
+      (await started.json()) as { readonly authorizationUrl: string }
+    ).authorizationUrl;
+    const state = new URL(authorizationUrl).searchParams.get("state") as string;
+    const providerError = "access_denied_canary";
+
+    const oversizedTarget = await rawHttpRequest(server, [
+      [
+        `GET /oauth/callback?state=${state}&code=${"x".repeat(8_192)} HTTP/1.1`,
+        `Host: 127.0.0.1:${String(server.address().port)}`,
+        "Connection: close",
+        "",
+        "",
+      ].join("\r\n"),
+    ]);
+    expect(oversizedTarget.status).toBe(303);
+    expect(oversizedTarget.headers.get("location")).toBe(
+      "/oauth/result/invalid",
+    );
+
+    for (const callbackTarget of [
+      `/x/../oauth/callback?state=${state}&code=alias-code`,
+      `${base}/oauth/callback?state=${state}&code=absolute-code`,
+      `/oauth/callback?state=${state}&code=fragment-code#fragment`,
+    ]) {
+      const aliased = await rawHttpRequest(server, [
+        [
+          `GET ${callbackTarget} HTTP/1.1`,
+          `Host: 127.0.0.1:${String(server.address().port)}`,
+          "Connection: close",
+          "",
+          "",
+        ].join("\r\n"),
+      ]);
+      expect(aliased.status).toBe(303);
+      expect(aliased.headers.get("location")).toBe("/oauth/result/invalid");
+    }
+    expect(controller.completeOAuth).not.toHaveBeenCalled();
+    expect(controller.rejectOAuth).not.toHaveBeenCalled();
+
+    const queriedApi = await fetch(`${base}/api/session?unexpected=true`);
+    expect(queriedApi.status).toBe(400);
+    await expect(queriedApi.json()).resolves.toMatchObject({
+      code: "INVALID_REQUEST",
+    });
+
+    const normalizedApi = await rawHttpRequest(server, [
+      [
+        "GET /api/x/../session HTTP/1.1",
+        `Host: 127.0.0.1:${String(server.address().port)}`,
+        "Connection: close",
+        "",
+        "",
+      ].join("\r\n"),
+    ]);
+    expect(normalizedApi.status).toBe(400);
+
+    const foreignMutation = await fetch(
+      `${base}/oauth/callback?state=${state}&error=access_denied`,
+      { method: "POST", headers: { origin: "https://attacker.example" } },
+    );
+    expect(foreignMutation.status).toBe(403);
+
+    const ambiguous = await fetch(
+      `${base}/oauth/callback?state=${state}&state=${state}&code=code`,
+    );
+    expect(ambiguous.status).toBe(400);
+    expect(ambiguous.url).toBe(`${base}/oauth/result/invalid`);
+    expect(controller.completeOAuth).not.toHaveBeenCalled();
+    expect(controller.rejectOAuth).not.toHaveBeenCalled();
+
+    const rejected = await fetch(
+      `${base}/oauth/callback?state=${state}&error=${providerError}`,
+    );
+    expect(rejected.status).toBe(400);
+    expect(rejected.url).toBe(`${base}/oauth/result/rejected`);
+    const rejectedText = await rejected.text();
+    expect(rejectedText).toContain("Authorization was not completed");
+    expect(rejectedText).not.toContain(providerError);
+    expect(rejectedText).not.toContain(state);
+    expect(controller.rejectOAuth).toHaveBeenCalledWith(state);
+
+    const replay = await fetch(
+      `${base}/oauth/callback?state=${state}&code=replayed-code`,
+    );
+    expect(replay.status).toBe(502);
+    expect(replay.url).toBe(`${base}/oauth/result/error`);
+    expect(controller.completeOAuth).toHaveBeenCalledOnce();
+
+    const nextCsrf = started.headers.get("x-invokta-csrf");
+    const restarted = await fetch(`${base}/api/connection`, {
+      method: "POST",
+      headers: mutationHeaders(base, cookie, nextCsrf as string),
+      body: JSON.stringify({
+        transport: "http",
+        url: "https://mcp.example.test/rpc",
+        authentication: { type: "oauth" },
+      }),
+    });
+    const restartedUrl = (
+      (await restarted.json()) as { readonly authorizationUrl: string }
+    ).authorizationUrl;
+    const restartedState = new URL(restartedUrl).searchParams.get(
+      "state",
+    ) as string;
+    const oversizedCode = await fetch(
+      `${base}/oauth/callback?state=${restartedState}&code=${"x".repeat(4_097)}`,
+    );
+    expect(oversizedCode.status).toBe(400);
+    expect(oversizedCode.url).toBe(`${base}/oauth/result/invalid`);
+    expect(controller.rejectOAuth).toHaveBeenCalledWith(restartedState);
+
+    const malformedReplay = await fetch(
+      `${base}/oauth/callback?state=${restartedState}&code=late-code`,
+    );
+    expect(malformedReplay.status).toBe(502);
   });
 
   it("keeps connected data private to the browser session that owns it", async () => {

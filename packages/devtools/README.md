@@ -32,6 +32,20 @@ Open the printed loopback URL. Connect either a structured stdio command or a
 Streamable HTTP URL from the Connection view. The attached UI provides Tools,
 Activity, and Connection validation.
 
+For an HTTP server that uses OAuth, select **OAuth**, then **Connect**. Continue
+through the provider in the new tab and return to the workbench after the
+loopback callback completes. Invokta uses Authorization Code with PKCE, the
+server's advertised MCP OAuth metadata, and its advertised dynamic client
+registration endpoint. It does not accept a preconfigured client ID or client
+secret. OAuth endpoints must remain on the MCP resource's exact origin; a
+cross-origin identity provider is rejected. Tokens, PKCE material, client
+registration data, and discovery documents remain in process memory and are
+cleared on disconnect or process exit.
+
+OAuth is intentionally interactive and UI-only. The `verify` command supports
+none, bearer, and custom-header authentication so it remains deterministic for
+automation and homologation pipelines.
+
 ### Verify a local stdio installation
 
 This verifies the built `hello-engine` example through the same executable and
@@ -151,4 +165,6 @@ and chartered by [ADR 0020](../../docs/adr/0020-engine-devtools-dev-server.md).
 Installed-target inspection is specified in the
 [MCP installation inspection and homologation specification](../../docs/specs/mcp-installation-inspection-and-homologation.md)
 and chartered by
-[ADR 0021](../../docs/adr/0021-mcp-installation-inspection-and-homologation.md).
+[ADR 0021](../../docs/adr/0021-mcp-installation-inspection-and-homologation.md),
+with interactive OAuth accepted by
+[ADR 0022](../../docs/adr/0022-ephemeral-oauth-for-installed-mcp-inspection.md).

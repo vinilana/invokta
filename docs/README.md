@@ -32,8 +32,9 @@ decision is accepted and the implementation evidence is complete.
 - [Engine devtools dev server](./specs/engine-devtools-dev-server.md),
   accepted by [ADR 0020](./adr/0020-engine-devtools-dev-server.md)
 - [MCP installation inspection and homologation](./specs/mcp-installation-inspection-and-homologation.md),
-  accepted by
-  [ADR 0021](./adr/0021-mcp-installation-inspection-and-homologation.md)
+  accepted by [ADR 0021](./adr/0021-mcp-installation-inspection-and-homologation.md)
+  and extended with ephemeral OAuth by
+  [ADR 0022](./adr/0022-ephemeral-oauth-for-installed-mcp-inspection.md)
 
 ## Guides and examples
 

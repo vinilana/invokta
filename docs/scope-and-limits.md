@@ -78,10 +78,12 @@ requests.
 
 **AE-LIMIT-06 — Installed MCP inspection.** Devtools may initialize, list tools
 from, and manually call one explicitly configured stdio or Streamable HTTP MCP
-target. It does not discover or import installations, persist connections or
-credentials, connect multiple targets, invoke automatically, retry, evaluate,
-judge, certify, or gate a release. Workspace-only Doctor, principals, watch,
-core events, and `engine.invoke` trace claims do not apply to an attached
+target. For an interactive HTTP target it may complete one ephemeral OAuth
+Authorization Code with PKCE flow through the isolated official SDK. It does
+not discover or import installations, persist connections or credentials,
+connect multiple targets, invoke automatically, retry a connected tool call,
+evaluate, judge, certify, or gate a release. Workspace-only Doctor, principals,
+watch, core events, and `engine.invoke` trace claims do not apply to an attached
 external target.
 
 ## Evolution triggers

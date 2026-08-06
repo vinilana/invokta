@@ -38,7 +38,18 @@ describe("attached workbench target drafts", () => {
     });
   });
 
-  it("builds none, bearer, and custom-header HTTP authentication", () => {
+  it("builds none, bearer, OAuth, and custom-header HTTP authentication", () => {
+    expect(
+      buildHttpTarget({
+        url: "https://mcp.example.test/mcp",
+        authentication: { type: "oauth" },
+      }),
+    ).toEqual({
+      transport: "http",
+      url: "https://mcp.example.test/mcp",
+      authentication: { type: "oauth" },
+    });
+
     expect(
       buildHttpTarget({
         url: "https://mcp.example.test/mcp",
@@ -358,6 +369,13 @@ describe("attached workbench interface contract", () => {
     expect(app).not.toMatch(/\bstyle\s*:|style=/);
     expect(app).toContain('href: "/assets/attached.css"');
     expect(app).toContain('type: "password"');
+    expect(app).toContain('["oauth", "OAuth"]');
+    expect(app).toContain("Complete OAuth authorization");
+    expect(app).toContain("Continue authorization");
+    expect(app).toContain("Authorization provider");
+    expect(app).toContain("Waiting for the OAuth callback");
+    expect(app).toContain("Retry status");
+    expect(app).toContain("cancel and connect again");
     expect(app).toContain('role: "listbox"');
     expect(app).toContain('role: "option"');
     expect(app).toContain('"aria-errormessage"');
@@ -365,6 +383,8 @@ describe("attached workbench interface contract", () => {
     expect(styles).toContain(":focus-visible");
     expect(styles).toMatch(/@media \(max-width:/);
     expect(styles).toContain("@media (max-width: 22rem)");
+    expect(styles).toContain(".att-auth-options");
+    expect(styles).toContain("grid-template-columns: repeat(2");
     expect(styles).toContain(".att-theme-slot-compact { display: flex; }");
     expect(styles).not.toMatch(/font-size: 0\.(?:6\d|7[0-4])rem/);
     expect(styles).toContain("prefers-reduced-motion");

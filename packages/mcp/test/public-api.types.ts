@@ -2,6 +2,7 @@ import type { Engine, Principal } from "@invokta/core";
 import { expectTypeOf } from "vitest";
 
 import {
+  beginMcpOAuthAuthorization,
   connectMcpClient,
   type McpClientConnection,
   McpClientError,
@@ -14,6 +15,9 @@ import {
   type McpHttpAuthenticationRequest,
   type McpHttpServerHandle,
   type McpJsonValue,
+  type McpOAuthAuthorization,
+  type McpOAuthAuthorizationOptions,
+  type McpOAuthClientTarget,
   type ServeMcpHttpOptions,
   type ServeMcpStdioOptions,
   serveMcpHttp,
@@ -38,6 +42,26 @@ expectTypeOf(connectMcpClient(stdioTarget)).toEqualTypeOf<
 expectTypeOf(
   connectMcpClient(httpTarget, { signal: new AbortController().signal }),
 ).toEqualTypeOf<Promise<McpClientConnection>>();
+
+const oauthTarget = {
+  transport: "http",
+  url: "https://mcp.example.com/mcp",
+  authentication: { type: "oauth" },
+} as const satisfies McpOAuthClientTarget;
+const oauthOptions: McpOAuthAuthorizationOptions = {
+  redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+  state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+};
+expectTypeOf(
+  beginMcpOAuthAuthorization(oauthTarget, oauthOptions),
+).toEqualTypeOf<Promise<McpOAuthAuthorization>>();
+
+declare const oauthAuthorization: McpOAuthAuthorization;
+expectTypeOf(oauthAuthorization.authorizationUrl).toEqualTypeOf<string>();
+expectTypeOf(oauthAuthorization.finish("authorization-code")).toEqualTypeOf<
+  Promise<McpClientConnection>
+>();
+expectTypeOf(oauthAuthorization.close()).toEqualTypeOf<Promise<void>>();
 
 declare const connection: McpClientConnection;
 expectTypeOf(connection.server).toEqualTypeOf<McpClientServerInfo>();

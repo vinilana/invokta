@@ -23,6 +23,7 @@ export type AttachedTarget =
       readonly authentication:
         | { readonly type: "none" }
         | { readonly type: "bearer"; readonly token: string }
+        | { readonly type: "oauth" }
         | {
             readonly type: "headers";
             readonly headers: Readonly<Record<string, string>>;
@@ -52,7 +53,18 @@ export interface AttachedConnectionSummary {
 }
 
 export type AttachedConnectionState =
-  | { readonly state: "idle" | "busy" | "connecting" | "closing" }
+  | {
+      readonly state: "idle";
+      readonly validation?: {
+        readonly status: "error";
+        readonly error: { readonly code: string; readonly message: string };
+      };
+    }
+  | { readonly state: "busy" | "connecting" | "closing" }
+  | {
+      readonly state: "authorizing";
+      readonly authorizationUrl?: string;
+    }
   | {
       readonly state: "connected";
       readonly connection?: AttachedConnectionSummary;
@@ -99,6 +111,7 @@ export type HttpTargetDraft = {
   readonly authentication:
     | { readonly type: "none" }
     | { readonly type: "bearer"; readonly token: string }
+    | { readonly type: "oauth" }
     | {
         readonly type: "headers";
         readonly headers: readonly Readonly<{
@@ -287,6 +300,14 @@ export function buildHttpTarget(draft: HttpTargetDraft): AttachedTarget {
       transport: "http",
       url,
       authentication: { type: "bearer", token },
+    };
+  }
+
+  if (draft.authentication.type === "oauth") {
+    return {
+      transport: "http",
+      url,
+      authentication: { type: "oauth" },
     };
   }
 
@@ -582,7 +603,9 @@ function statusPill(state: AttachedConnectionState): HTMLElement {
           ? "Target busy"
           : state.state === "connecting"
             ? "Connecting"
-            : "Closing";
+            : state.state === "authorizing"
+              ? "Authorizing"
+              : "Closing";
   const tone =
     state.state === "connected"
       ? "success"
@@ -608,6 +631,7 @@ export function mountAttachedApp(
   root: HTMLElement,
   api: AttachedApi = createRouteAttachedApi(),
 ): AttachedAppHandle {
+  type EditablePair = SecretControl & { name: string };
   const ownerDocument = root.ownerDocument;
   ownerDocument.body.classList.add("attached-mode");
   if (
@@ -637,6 +661,25 @@ export function mountAttachedApp(
   let activityError = "";
   let connectionError = "";
   let secretConfigured = false;
+  let oauthAuthorizationUrl: string | undefined;
+  let oauthFlowActive = false;
+  let authorizationPollingPaused = false;
+  let authorizationPollFailures = 0;
+  let authorizationPoll: ReturnType<typeof setTimeout> | undefined;
+  let authorizationPollGeneration = 0;
+  const stdioDraft: {
+    command: string;
+    args: string[];
+    cwd: string;
+    environment: EditablePair[];
+  } = { command: "", args: [], cwd: "", environment: [] };
+  const bearerSecret: SecretControl = { value: "", placeholder: "" };
+  const httpDraft: {
+    url: string;
+    authentication: "none" | "bearer" | "oauth" | "headers";
+    headers: EditablePair[];
+  } = { url: "", authentication: "none", headers: [] };
+  let transport: "stdio" | "http" = "stdio";
   const fullThemeToggle = createThemeToggle();
   const compactThemeToggle = createCompactThemeToggle();
   const argumentDrafts = new Map<string, string>();
@@ -655,6 +698,104 @@ export function mountAttachedApp(
     } else {
       renderUnavailableState();
     }
+  };
+
+  const stopAuthorizationPolling = (): void => {
+    authorizationPollGeneration += 1;
+    if (authorizationPoll !== undefined) clearTimeout(authorizationPoll);
+    authorizationPoll = undefined;
+  };
+
+  const startAuthorizationPolling = (): void => {
+    stopAuthorizationPolling();
+    authorizationPollingPaused = false;
+    authorizationPollFailures = 0;
+    const generation = authorizationPollGeneration;
+    const poll = (delayMs = 750): void => {
+      authorizationPoll = setTimeout(() => {
+        void api
+          .session()
+          .then((session) => {
+            if (destroyed || generation !== authorizationPollGeneration) return;
+            if (session.state === "authorizing") {
+              targetState = { state: "authorizing" };
+            } else if (oauthFlowActive && session.state === "connecting") {
+              targetState = { state: "authorizing" };
+            } else {
+              targetState =
+                session.state === "connected"
+                  ? {
+                      state: "connected",
+                      ...(session.connection === undefined
+                        ? {}
+                        : { connection: session.connection }),
+                    }
+                  : session.state === "idle"
+                    ? {
+                        state: "idle",
+                        ...(session.validation === undefined
+                          ? {}
+                          : { validation: session.validation }),
+                      }
+                    : { state: session.state };
+            }
+            if (targetState.state === "authorizing") {
+              authorizationPollFailures = 0;
+              connectionError = "";
+              poll();
+              return;
+            }
+            oauthAuthorizationUrl = undefined;
+            oauthFlowActive = false;
+            authorizationPollingPaused = false;
+            authorizationPollFailures = 0;
+            stopAuthorizationPolling();
+            connectionError =
+              targetState.state === "idle"
+                ? (targetState.validation?.error.message ?? "")
+                : "";
+            render();
+            if (
+              targetState.state === "idle" &&
+              targetState.validation !== undefined
+            ) {
+              root
+                .querySelector<HTMLInputElement>('input[name="url"]')
+                ?.focus();
+            }
+            if (
+              targetState.state === "connected" &&
+              targetState.connection !== undefined
+            ) {
+              secretConfigured = true;
+              void loadTools();
+            }
+          })
+          .catch(() => {
+            if (destroyed || generation !== authorizationPollGeneration) return;
+            authorizationPollFailures += 1;
+            if (authorizationPollFailures < 3) {
+              poll(750 * 2 ** authorizationPollFailures);
+              return;
+            }
+            const focusedAction = (
+              ownerDocument.activeElement as HTMLElement | null
+            )?.dataset.attOauthAction;
+            authorizationPollingPaused = true;
+            connectionError =
+              "Status checks paused after repeated local request failures.";
+            render();
+            if (focusedAction !== undefined) {
+              root
+                .querySelector<HTMLElement>(
+                  `[data-att-oauth-action="${focusedAction}"]`,
+                )
+                ?.focus();
+            }
+          });
+      }, delayMs);
+    };
+    poll();
   };
 
   const createTabs = (): HTMLElement => {
@@ -766,21 +907,6 @@ export function mountAttachedApp(
   };
 
   function renderIdle(): void {
-    type EditablePair = SecretControl & { name: string };
-    const stdioDraft: {
-      command: string;
-      args: string[];
-      cwd: string;
-      environment: EditablePair[];
-    } = { command: "", args: [], cwd: "", environment: [] };
-    const bearerSecret: SecretControl = { value: "", placeholder: "" };
-    const httpDraft: {
-      url: string;
-      authentication: "none" | "bearer" | "headers";
-      headers: EditablePair[];
-    } = { url: "", authentication: "none", headers: [] };
-    let transport: "stdio" | "http" = "stdio";
-
     const intro = el("section", { class: "att-idle-intro" }, [
       el("p", { class: "att-kicker" }, ["Connection"]),
       el("h2", {}, ["Attach one MCP server"]),
@@ -807,6 +933,7 @@ export function mountAttachedApp(
         role: "alert",
         "aria-live": "assertive",
       });
+      feedback.textContent = connectionError;
       const registerValidationField = (
         field: TargetDraftField,
         input: HTMLInputElement,
@@ -1116,6 +1243,7 @@ export function mountAttachedApp(
         const authenticationOptions = [
           ["none", "None"],
           ["bearer", "Bearer"],
+          ["oauth", "OAuth"],
           ["headers", "Custom headers"],
         ] as const;
         const selectAuthentication = (
@@ -1152,7 +1280,7 @@ export function mountAttachedApp(
         const authChoices = el(
           "div",
           {
-            class: "att-segmented",
+            class: "att-segmented att-auth-options",
             role: "radiogroup",
             "aria-label": "HTTP authentication",
           },
@@ -1193,6 +1321,12 @@ export function mountAttachedApp(
           });
           registerValidationField("bearer", bearer.input);
           form.append(bearer.field);
+        } else if (httpDraft.authentication === "oauth") {
+          form.append(
+            el("div", { class: "att-callout" }, [
+              "After Connect, open the provider authorization page. OAuth material stays in process memory and is cleared when the attempt ends.",
+            ]),
+          );
         } else if (httpDraft.authentication === "headers") {
           const headerHost = el("div", {}, []);
           if (httpDraft.headers.length === 0) {
@@ -1253,6 +1387,12 @@ export function mountAttachedApp(
               },
             });
             secretControls = [...httpDraft.headers];
+          } else if (httpDraft.authentication === "oauth") {
+            target = buildHttpTarget({
+              url: httpDraft.url,
+              authentication: { type: "oauth" },
+            });
+            secretControls = [];
           } else {
             target = buildHttpTarget({
               url: httpDraft.url,
@@ -1287,9 +1427,21 @@ export function mountAttachedApp(
         ])
           .then((state) => {
             targetState = state;
-            secretConfigured = carriesSecrets;
+            secretConfigured =
+              carriesSecrets || httpDraft.authentication === "oauth";
             connectionError = "";
+            oauthAuthorizationUrl =
+              state.state === "authorizing"
+                ? state.authorizationUrl
+                : undefined;
+            oauthFlowActive = state.state === "authorizing";
             render();
+            if (targetState.state === "authorizing") {
+              startAuthorizationPolling();
+              root
+                .querySelector<HTMLElement>("[data-att-oauth-heading]")
+                ?.focus();
+            }
             if (
               targetState.state === "connected" &&
               targetState.connection !== undefined
@@ -1311,6 +1463,124 @@ export function mountAttachedApp(
   }
 
   function renderUnavailableState(): void {
+    if (targetState.state === "authorizing") {
+      const cancel = el(
+        "button",
+        { type: "button", class: "att-button danger" },
+        ["Cancel"],
+      );
+      const feedback = el("p", {
+        class: "att-feedback",
+        role: "alert",
+        "aria-live": "assertive",
+      });
+      feedback.textContent = connectionError;
+      cancel.addEventListener("click", () => {
+        cancel.disabled = true;
+        cancel.textContent = "Cancelling…";
+        stopAuthorizationPolling();
+        void api
+          .disconnect()
+          .then((state) => {
+            targetState = state;
+            oauthAuthorizationUrl = undefined;
+            oauthFlowActive = false;
+            authorizationPollingPaused = false;
+            secretConfigured = false;
+            connectionError = "";
+            render();
+            root.querySelector<HTMLInputElement>('input[name="url"]')?.focus();
+          })
+          .catch((error: unknown) => {
+            cancel.disabled = false;
+            cancel.textContent = "Cancel";
+            connectionError = errorMessage(error);
+            feedback.textContent = connectionError;
+            startAuthorizationPolling();
+            root
+              .querySelector<HTMLButtonElement>("[data-att-oauth-cancel]")
+              ?.focus();
+          });
+      });
+      const actions: Node[] = [];
+      if (oauthAuthorizationUrl !== undefined) {
+        const continueAuthorization = el(
+          "a",
+          {
+            class: "att-button primary",
+            href: oauthAuthorizationUrl,
+            target: "_blank",
+            rel: "noopener noreferrer",
+          },
+          ["Continue authorization"],
+        );
+        continueAuthorization.dataset.attOauthAction = "continue";
+        actions.push(continueAuthorization);
+      }
+      if (authorizationPollingPaused) {
+        const retryStatus = el(
+          "button",
+          { type: "button", class: "att-button" },
+          ["Retry status"],
+        );
+        retryStatus.dataset.attOauthAction = "retry";
+        retryStatus.addEventListener("click", () => {
+          connectionError = "";
+          startAuthorizationPolling();
+          render();
+          root
+            .querySelector<HTMLButtonElement>("[data-att-oauth-cancel]")
+            ?.focus();
+        });
+        actions.push(retryStatus);
+      }
+      actions.push(cancel);
+      const heading = el(
+        "h2",
+        { tabindex: "-1", "data-att-oauth-heading": "true" },
+        ["Complete OAuth authorization"],
+      );
+      const authorizationOrigin =
+        oauthAuthorizationUrl === undefined
+          ? undefined
+          : new URL(oauthAuthorizationUrl).origin;
+      cancel.dataset.attOauthCancel = "true";
+      cancel.dataset.attOauthAction = "cancel";
+      shell(
+        el("section", { class: "att-card att-view att-oauth" }, [
+          el("p", { class: "att-kicker" }, ["Connection"]),
+          heading,
+          el("p", { class: "att-hint" }, [
+            oauthAuthorizationUrl === undefined
+              ? "The authorization link is not available after refresh. If the provider tab is unavailable, cancel and connect again."
+              : "Continue in the provider tab, then return here.",
+          ]),
+          authorizationOrigin === undefined
+            ? null
+            : el("p", { class: "att-hint" }, [
+                "Authorization provider ",
+                el("code", {}, [authorizationOrigin]),
+              ]),
+          el(
+            "p",
+            {
+              class: "att-oauth-status",
+              role: "status",
+              "aria-live": "polite",
+            },
+            [
+              authorizationPollingPaused
+                ? "Status polling is paused."
+                : "Waiting for the OAuth callback…",
+            ],
+          ),
+          el("div", { class: "att-actions" }, actions),
+          feedback,
+        ]),
+        false,
+      );
+      return;
+    }
     const label =
       targetState.state === "connecting"
         ? "A connection is being established."
@@ -1787,8 +2057,25 @@ export function mountAttachedApp(
                 ? {}
                 : { connection: session.connection }),
             }
-          : { state: session.state };
+          : session.state === "idle"
+            ? {
+                state: "idle",
+                ...(session.validation === undefined
+                  ? {}
+                  : { validation: session.validation }),
+              }
+            : { state: session.state };
+      connectionError =
+        targetState.state === "idle"
+          ? (targetState.validation?.error.message ?? "")
+          : "";
+      oauthFlowActive = targetState.state === "authorizing";
+      authorizationPollingPaused = false;
       render();
+      if (targetState.state === "authorizing") {
+        startAuthorizationPolling();
+        root.querySelector<HTMLElement>("[data-att-oauth-heading]")?.focus();
+      }
       if (
         targetState.state === "connected" &&
         targetState.connection !== undefined
@@ -1806,6 +2093,10 @@ export function mountAttachedApp(
   return {
     destroy() {
       destroyed = true;
+      stopAuthorizationPolling();
+      oauthAuthorizationUrl = undefined;
+      oauthFlowActive = false;
+      authorizationPollingPaused = false;
       root.replaceChildren();
       ownerDocument.body.classList.remove("attached-mode");
     },

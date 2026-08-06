@@ -1,8 +1,20 @@
 import { types as nodeTypes } from "node:util";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import {
+  extractResourceMetadataUrl,
+  type OAuthClientProvider,
+  type OAuthDiscoveryState,
+  UnauthorizedError,
+} from "@modelcontextprotocol/sdk/client/auth.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  type OAuthClientInformationMixed,
+  type OAuthClientMetadata,
+  OAuthProtectedResourceMetadataSchema,
+  type OAuthTokens,
+} from "@modelcontextprotocol/sdk/shared/auth.js";
 import type {
   Transport,
   TransportSendOptions,
@@ -86,6 +98,27 @@ export interface McpClientConnection {
   close(): Promise<void>;
 }
 
+export interface McpOAuthClientTarget {
+  readonly transport: "http";
+  readonly url: string;
+  readonly authentication: { readonly type: "oauth" };
+}
+
+export interface McpOAuthAuthorizationOptions {
+  readonly redirectUrl: string;
+  readonly state: string;
+  readonly signal?: AbortSignal;
+}
+
+export interface McpOAuthAuthorization {
+  readonly authorizationUrl: string;
+  finish(
+    authorizationCode: string,
+    options?: McpClientOperationOptions,
+  ): Promise<McpClientConnection>;
+  close(): Promise<void>;
+}
+
 export type McpClientErrorCode =
   | "INVALID_TARGET"
   | "SPAWN_FAILED"
@@ -139,6 +172,10 @@ const CLIENT_VERSION = "0.3.0";
 const HTTP_HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const HTTP_WHITESPACE_AT_START_OR_END = /^(?:[\t ])|(?:[\t ])$/;
+const OAUTH_STATE = /^[A-Za-z0-9_-]{43}$/;
+const OAUTH_CALLBACK_PATH = "/oauth/callback";
+const MAX_OAUTH_AUTHORIZATION_URL_BYTES = 8_192;
+const MAX_OAUTH_CODE_POINTS = 4_096;
 const textEncoder = new TextEncoder();
 
 const ERROR_MESSAGES = {
@@ -170,6 +207,12 @@ interface HttpTargetSnapshot {
   readonly transport: "http";
   readonly url: URL;
   readonly credentials: Record<string, string>;
+}
+
+interface OAuthAuthorizationSnapshot {
+  readonly redirectUrl: URL;
+  readonly state: string;
+  readonly signal?: AbortSignal;
 }
 
 type TargetSnapshot = StdioTargetSnapshot | HttpTargetSnapshot;
@@ -344,6 +387,148 @@ function parseCanonicalHttpUrl(value: unknown): URL | undefined {
   const serialized = url.href;
   if (serialized !== value && serialized !== `${value}/`) return undefined;
   return url;
+}
+
+function isSecureOrLoopbackUrl(url: URL): boolean {
+  return (
+    url.protocol === "https:" ||
+    (url.protocol === "http:" &&
+      (url.hostname === "127.0.0.1" || url.hostname === "[::1]"))
+  );
+}
+
+function isAllowedOAuthEndpoint(resourceUrl: URL, candidate: URL): boolean {
+  return (
+    isSecureOrLoopbackUrl(candidate) && candidate.origin === resourceUrl.origin
+  );
+}
+
+function parseOAuthCallbackUrl(value: unknown): URL | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (
+    url.protocol !== "http:" ||
+    (url.hostname !== "127.0.0.1" && url.hostname !== "[::1]") ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.pathname !== OAUTH_CALLBACK_PATH ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    url.href !== value
+  ) {
+    return undefined;
+  }
+  return url;
+}
+
+function snapshotOAuthTarget(target: McpOAuthClientTarget): HttpTargetSnapshot {
+  try {
+    const record = dataProperties(target);
+    if (
+      record === undefined ||
+      !hasExactlyKeys(record, ["transport", "url", "authentication"]) ||
+      record.transport !== "http"
+    ) {
+      throw new ClientBoundaryFailure("INVALID_TARGET");
+    }
+    const authentication = dataProperties(record.authentication);
+    const url = parseCanonicalHttpUrl(record.url);
+    if (
+      authentication === undefined ||
+      !hasExactlyKeys(authentication, ["type"]) ||
+      authentication.type !== "oauth" ||
+      url === undefined
+    ) {
+      throw new ClientBoundaryFailure("INVALID_TARGET");
+    }
+    return { transport: "http", url, credentials: createDataRecord() };
+  } catch (cause) {
+    if (cause instanceof ClientBoundaryFailure) {
+      throw clientError(cause.code, cause);
+    }
+    throw clientError("INVALID_TARGET", cause);
+  }
+}
+
+function snapshotOAuthAuthorizationOptions(
+  options: McpOAuthAuthorizationOptions,
+): OAuthAuthorizationSnapshot {
+  try {
+    const record = dataProperties(options);
+    if (
+      record === undefined ||
+      !hasExactlyKeys(record, ["redirectUrl", "state"], ["signal"]) ||
+      typeof record.state !== "string" ||
+      !OAUTH_STATE.test(record.state)
+    ) {
+      throw new ClientBoundaryFailure("INVALID_TARGET");
+    }
+    const redirectUrl = parseOAuthCallbackUrl(record.redirectUrl);
+    if (redirectUrl === undefined) {
+      throw new ClientBoundaryFailure("INVALID_TARGET");
+    }
+    const signal = snapshotAbortSignal(
+      record.signal === undefined
+        ? undefined
+        : ({ signal: record.signal } as McpClientOperationOptions),
+      "INVALID_TARGET",
+    );
+    return {
+      redirectUrl,
+      state: record.state,
+      ...(signal === undefined ? {} : { signal }),
+    };
+  } catch (cause) {
+    if (cause instanceof McpClientError) throw cause;
+    if (cause instanceof ClientBoundaryFailure) {
+      throw clientError(cause.code, cause);
+    }
+    throw clientError("INVALID_TARGET", cause);
+  }
+}
+
+function snapshotAuthorizationCode(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw clientError("AUTHENTICATION_FAILED");
+  }
+  let codePoints = 0;
+  for (const _codePoint of value) {
+    codePoints += 1;
+    if (codePoints > MAX_OAUTH_CODE_POINTS) {
+      throw clientError("AUTHENTICATION_FAILED");
+    }
+  }
+  return value;
+}
+
+function serializeAuthorizationUrl(
+  value: URL,
+  expectedState: string,
+  resourceUrl: URL,
+): string {
+  if (
+    !isAllowedOAuthEndpoint(resourceUrl, value) ||
+    value.username !== "" ||
+    value.password !== "" ||
+    value.hash !== "" ||
+    value.searchParams.getAll("state").length !== 1 ||
+    value.searchParams.get("state") !== expectedState
+  ) {
+    throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+  }
+  const serialized = value.href;
+  if (
+    textEncoder.encode(serialized).byteLength >
+    MAX_OAUTH_AUTHORIZATION_URL_BYTES
+  ) {
+    throw new ClientBoundaryFailure("LIMIT_EXCEEDED");
+  }
+  return serialized;
 }
 
 function isForbiddenCustomHeader(name: string): boolean {
@@ -628,7 +813,15 @@ function checkMessageSize(value: unknown, stdio: boolean): void {
   }
 }
 
-function boundedResponseBody(response: Response): Response {
+function boundedResponseBody(
+  response: Response,
+  onFailure?: (failure: ClientBoundaryFailure) => void,
+): Response {
+  const fail = (code: "LIMIT_EXCEEDED" | "PROTOCOL_ERROR") => {
+    const failure = new ClientBoundaryFailure(code);
+    onFailure?.(failure);
+    return failure;
+  };
   const declaredLength = response.headers.get("content-length");
   if (
     declaredLength !== null &&
@@ -636,7 +829,7 @@ function boundedResponseBody(response: Response): Response {
     Number(declaredLength) > MAX_MESSAGE_BYTES
   ) {
     void response.body?.cancel();
-    throw new ClientBoundaryFailure("LIMIT_EXCEEDED");
+    throw fail("LIMIT_EXCEEDED");
   }
   if (response.body === null) return response;
   let received = 0;
@@ -646,13 +839,13 @@ function boundedResponseBody(response: Response): Response {
       transform(chunk, controller) {
         received += chunk.byteLength;
         if (received > MAX_MESSAGE_BYTES) {
-          controller.error(new ClientBoundaryFailure("LIMIT_EXCEEDED"));
+          controller.error(fail("LIMIT_EXCEEDED"));
           return;
         }
         try {
           utf8Decoder.decode(chunk, { stream: true });
         } catch {
-          controller.error(new ClientBoundaryFailure("PROTOCOL_ERROR"));
+          controller.error(fail("PROTOCOL_ERROR"));
           return;
         }
         controller.enqueue(chunk);
@@ -661,7 +854,7 @@ function boundedResponseBody(response: Response): Response {
         try {
           utf8Decoder.decode();
         } catch {
-          throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+          throw fail("PROTOCOL_ERROR");
         }
       },
     }),
@@ -671,6 +864,249 @@ function boundedResponseBody(response: Response): Response {
     status: response.status,
     statusText: response.statusText,
   });
+}
+
+class EphemeralOAuthProvider implements OAuthClientProvider {
+  private readonly metadata: OAuthClientMetadata;
+  private readonly defaultResourceMetadataUrls: ReadonlySet<string>;
+  private readonly pathAwareResourceMetadataUrl: string;
+  private readonly rootResourceMetadataUrl: string;
+  private advertisedResourceMetadataUrl: string | undefined;
+  private client: OAuthClientInformationMixed | undefined;
+  private tokenSet: OAuthTokens | undefined;
+  private verifier: string | undefined;
+  private discovery: OAuthDiscoveryState | undefined;
+  private authorizationUrl: URL | undefined;
+  private terminalFailure: ClientBoundaryFailure | undefined;
+  private retainedState: string;
+  private writable = true;
+
+  constructor(
+    private readonly callbackUrl: URL,
+    private readonly resourceUrl: URL,
+    readonly lifecycleSignal: AbortSignal,
+    state: string,
+  ) {
+    this.retainedState = state;
+    const resourcePath = resourceUrl.pathname.endsWith("/")
+      ? resourceUrl.pathname.slice(0, -1)
+      : resourceUrl.pathname;
+    this.pathAwareResourceMetadataUrl = new URL(
+      `/.well-known/oauth-protected-resource${resourcePath}`,
+      resourceUrl.origin,
+    ).href;
+    this.rootResourceMetadataUrl = new URL(
+      "/.well-known/oauth-protected-resource",
+      resourceUrl.origin,
+    ).href;
+    this.defaultResourceMetadataUrls = new Set([
+      this.pathAwareResourceMetadataUrl,
+      this.rootResourceMetadataUrl,
+    ]);
+    this.metadata = Object.freeze({
+      redirect_uris: [callbackUrl.href],
+      token_endpoint_auth_method: "none",
+      grant_types: ["authorization_code"],
+      response_types: ["code"],
+      client_name: "Invokta devtools",
+      software_id: "invokta-devtools",
+      software_version: CLIENT_VERSION,
+    });
+  }
+
+  get redirectUrl(): string {
+    return this.callbackUrl.href;
+  }
+
+  get clientMetadata(): OAuthClientMetadata {
+    return this.metadata;
+  }
+
+  state(): string {
+    this.assertWritable();
+    return this.retainedState;
+  }
+
+  clientInformation(): OAuthClientInformationMixed | undefined {
+    this.assertWritable();
+    return this.client;
+  }
+
+  saveClientInformation(value: OAuthClientInformationMixed): void {
+    this.assertWritable();
+    if (typeof value.client_id !== "string" || value.client_id.length === 0) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    this.client = Object.freeze({ client_id: value.client_id });
+  }
+
+  tokens(): OAuthTokens | undefined {
+    this.assertWritable();
+    return this.tokenSet;
+  }
+
+  saveTokens(value: OAuthTokens): void {
+    this.assertWritable();
+    if (
+      typeof value.access_token !== "string" ||
+      value.access_token.length === 0 ||
+      typeof value.token_type !== "string" ||
+      value.token_type.length === 0
+    ) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    this.tokenSet = Object.freeze({
+      access_token: value.access_token,
+      token_type: value.token_type,
+      ...(typeof value.expires_in === "number"
+        ? { expires_in: value.expires_in }
+        : {}),
+      ...(typeof value.scope === "string" ? { scope: value.scope } : {}),
+    });
+  }
+
+  redirectToAuthorization(value: URL): void {
+    this.assertWritable();
+    this.authorizationUrl = new URL(value.href);
+  }
+
+  saveCodeVerifier(value: string): void {
+    this.assertWritable();
+    if (typeof value !== "string" || value.length === 0) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    this.verifier = value;
+  }
+
+  codeVerifier(): string {
+    this.assertWritable();
+    if (this.verifier === undefined) {
+      throw new ClientBoundaryFailure("AUTHENTICATION_FAILED");
+    }
+    return this.verifier;
+  }
+
+  saveDiscoveryState(value: OAuthDiscoveryState): void {
+    this.assertWritable();
+    let authorizationServerUrl: URL;
+    try {
+      authorizationServerUrl = new URL(value.authorizationServerUrl);
+    } catch {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    if (
+      value.resourceMetadata === undefined ||
+      !isAllowedOAuthEndpoint(this.resourceUrl, authorizationServerUrl) ||
+      authorizationServerUrl.username !== "" ||
+      authorizationServerUrl.password !== "" ||
+      authorizationServerUrl.hash !== "" ||
+      (value.authorizationServerMetadata !== undefined &&
+        value.authorizationServerMetadata.issuer !==
+          value.authorizationServerUrl)
+    ) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    this.discovery = structuredClone(value);
+  }
+
+  discoveryState(): OAuthDiscoveryState | undefined {
+    this.assertWritable();
+    return this.discovery === undefined
+      ? undefined
+      : structuredClone(this.discovery);
+  }
+
+  hasTokens(): boolean {
+    return this.tokenSet !== undefined;
+  }
+
+  rememberResourceMetadataUrl(response: Response): void {
+    const url = extractResourceMetadataUrl(response);
+    this.advertisedResourceMetadataUrl = url?.href;
+  }
+
+  isResourceMetadataUrl(url: URL): boolean {
+    return (
+      url.href === this.advertisedResourceMetadataUrl ||
+      this.defaultResourceMetadataUrls.has(url.href)
+    );
+  }
+
+  allowsResourceMetadataNotFound(url: URL): boolean {
+    return (
+      this.advertisedResourceMetadataUrl === undefined &&
+      this.pathAwareResourceMetadataUrl !== this.rootResourceMetadataUrl &&
+      url.href === this.pathAwareResourceMetadataUrl
+    );
+  }
+
+  validateResourceMetadata(value: unknown): void {
+    const parsed = OAuthProtectedResourceMetadataSchema.safeParse(value);
+    const authorizationServer = parsed.success
+      ? parsed.data.authorization_servers?.[0]
+      : undefined;
+    let authorizationServerUrl: URL | undefined;
+    try {
+      authorizationServerUrl =
+        authorizationServer === undefined
+          ? undefined
+          : new URL(authorizationServer);
+    } catch {
+      authorizationServerUrl = undefined;
+    }
+    if (
+      !parsed.success ||
+      parsed.data.resource !== this.resourceUrl.href ||
+      authorizationServerUrl === undefined ||
+      !isAllowedOAuthEndpoint(this.resourceUrl, authorizationServerUrl) ||
+      authorizationServerUrl.username !== "" ||
+      authorizationServerUrl.password !== "" ||
+      authorizationServerUrl.hash !== ""
+    ) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+  }
+
+  latchTerminalFailure(failure: ClientBoundaryFailure): void {
+    this.terminalFailure ??= failure;
+  }
+
+  getTerminalFailure(): ClientBoundaryFailure | undefined {
+    return this.terminalFailure;
+  }
+
+  throwIfTerminalFailure(): void {
+    if (this.terminalFailure !== undefined) throw this.terminalFailure;
+  }
+
+  takeAuthorizationUrl(): URL | undefined {
+    this.assertWritable();
+    const value = this.authorizationUrl;
+    this.authorizationUrl = undefined;
+    return value;
+  }
+
+  clear(): void {
+    this.writable = false;
+    this.client = undefined;
+    this.tokenSet = undefined;
+    this.verifier = undefined;
+    this.discovery = undefined;
+    this.authorizationUrl = undefined;
+    this.advertisedResourceMetadataUrl = undefined;
+    this.retainedState = "";
+  }
+
+  invalidateCredentials(): never {
+    this.clear();
+    throw new ClientBoundaryFailure("AUTHENTICATION_FAILED");
+  }
+
+  private assertWritable(): void {
+    if (!this.writable || this.lifecycleSignal.aborted) {
+      throw new ClientBoundaryFailure("CANCELLED");
+    }
+  }
 }
 
 function createSecureFetch(credentials: Record<string, string>) {
@@ -713,6 +1149,152 @@ function createSecureFetch(credentials: Record<string, string>) {
     } catch (cause) {
       if (cause instanceof ClientBoundaryFailure) throw cause;
       throw new ClientBoundaryFailure("CONNECTION_FAILED");
+    }
+  };
+}
+
+function createSecureOAuthFetch(
+  resourceUrl: URL,
+  provider: EphemeralOAuthProvider,
+) {
+  return async (
+    value: string | URL,
+    init: RequestInit = {},
+  ): Promise<Response> => {
+    let effectiveSignal: AbortSignal | undefined;
+    try {
+      provider.throwIfTerminalFailure();
+      const url = new URL(value);
+      if (
+        !isAllowedOAuthEndpoint(resourceUrl, url) ||
+        url.username !== "" ||
+        url.password !== "" ||
+        url.hash !== ""
+      ) {
+        throw new ClientBoundaryFailure("CONNECTION_FAILED");
+      }
+      const method = init.method ?? "GET";
+      if (method === "GET" && url.href === resourceUrl.href) {
+        return new Response(null, {
+          status: 405,
+          statusText: "Method Not Allowed",
+        });
+      }
+      if (method !== "GET" && method !== "POST" && method !== "DELETE") {
+        throw new ClientBoundaryFailure("CONNECTION_FAILED");
+      }
+      if (init.body !== undefined && init.body !== null) {
+        const body =
+          typeof init.body === "string"
+            ? init.body
+            : init.body instanceof URLSearchParams
+              ? init.body.toString()
+              : undefined;
+        if (
+          body === undefined ||
+          textEncoder.encode(body).byteLength > MAX_MESSAGE_BYTES
+        ) {
+          throw new ClientBoundaryFailure(
+            body === undefined ? "PROTOCOL_ERROR" : "LIMIT_EXCEEDED",
+          );
+        }
+      }
+      const suppliedSignal = init.signal ?? undefined;
+      effectiveSignal =
+        suppliedSignal === undefined
+          ? provider.lifecycleSignal
+          : AbortSignal.any([suppliedSignal, provider.lifecycleSignal]);
+      if (effectiveSignal.aborted) throw new ClientBoundaryFailure("CANCELLED");
+      const response = await fetch(url, {
+        ...init,
+        signal: effectiveSignal,
+        redirect: "manual",
+      });
+      if (
+        method === "POST" &&
+        url.href === resourceUrl.href &&
+        response.status === 401 &&
+        !provider.hasTokens()
+      ) {
+        provider.rememberResourceMetadataUrl(response);
+      }
+      if (response.status >= 300 && response.status < 400) {
+        await response.body?.cancel();
+        throw new ClientBoundaryFailure("CONNECTION_FAILED");
+      }
+      if (
+        method === "GET" &&
+        provider.isResourceMetadataUrl(url) &&
+        !response.ok &&
+        !(
+          response.status === 404 &&
+          provider.allowsResourceMetadataNotFound(url)
+        )
+      ) {
+        await response.body?.cancel();
+        throw new ClientBoundaryFailure(
+          response.status === 401 || response.status === 403
+            ? "AUTHENTICATION_FAILED"
+            : "CONNECTION_FAILED",
+        );
+      }
+      if (
+        (response.status === 401 || response.status === 403) &&
+        provider.hasTokens()
+      ) {
+        await response.body?.cancel();
+        throw new ClientBoundaryFailure("AUTHENTICATION_FAILED");
+      }
+      if (response.status === 403) {
+        await response.body?.cancel();
+        throw new ClientBoundaryFailure("AUTHENTICATION_FAILED");
+      }
+      if (
+        response.status >= 500 ||
+        (method === "GET" &&
+          (response.status === 401 || response.status === 403))
+      ) {
+        await response.body?.cancel();
+        throw new ClientBoundaryFailure(
+          response.status === 401 || response.status === 403
+            ? "AUTHENTICATION_FAILED"
+            : "CONNECTION_FAILED",
+        );
+      }
+      const bounded = boundedResponseBody(response, (failure) => {
+        provider.latchTerminalFailure(failure);
+      });
+      if (
+        method === "GET" &&
+        response.ok &&
+        provider.isResourceMetadataUrl(url)
+      ) {
+        const body = await bounded.text();
+        let metadata: unknown;
+        try {
+          metadata = JSON.parse(body);
+        } catch {
+          throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+        }
+        provider.validateResourceMetadata(metadata);
+        return new Response(body, {
+          headers: bounded.headers,
+          status: bounded.status,
+          statusText: bounded.statusText,
+        });
+      }
+      return bounded;
+    } catch (cause) {
+      const failure =
+        cause instanceof ClientBoundaryFailure
+          ? cause
+          : new ClientBoundaryFailure(
+              effectiveSignal?.aborted === true
+                ? "CANCELLED"
+                : "CONNECTION_FAILED",
+            );
+      provider.latchTerminalFailure(failure);
+      throw failure;
     }
   };
 }
@@ -825,6 +1407,9 @@ function normalizeFailure(
 ): McpClientError {
   if (cause instanceof McpClientError) return cause;
   if (signal?.aborted) return clientError("CANCELLED", cause);
+  if (cause instanceof UnauthorizedError) {
+    return clientError("AUTHENTICATION_FAILED", cause);
+  }
   if (state.failure !== undefined)
     return clientError(state.failure.code, cause);
   if (cause instanceof ClientBoundaryFailure)
@@ -885,12 +1470,12 @@ function mapTool(value: unknown): McpClientTool {
   };
 }
 
-export async function connectMcpClient(
-  target: McpClientTarget,
-  options?: McpClientOperationOptions,
+async function connectSnapshot(
+  snapshot: TargetSnapshot,
+  signal: AbortSignal | undefined,
+  oauthProvider?: EphemeralOAuthProvider,
+  onClose?: () => void,
 ): Promise<McpClientConnection> {
-  const snapshot = snapshotTarget(target);
-  const signal = snapshotAbortSignal(options, "INVALID_TARGET");
   const state: ConnectionState = { closing: false, connected: false };
   const client = new Client(
     { name: CLIENT_NAME, version: CLIENT_VERSION },
@@ -907,7 +1492,13 @@ export async function connectMcpClient(
           maxBufferSize: MAX_MESSAGE_BYTES,
         })
       : new StreamableHTTPClientTransport(snapshot.url, {
-          fetch: createSecureFetch(snapshot.credentials),
+          fetch:
+            oauthProvider === undefined
+              ? createSecureFetch(snapshot.credentials)
+              : createSecureOAuthFetch(snapshot.url, oauthProvider),
+          ...(oauthProvider === undefined
+            ? {}
+            : { authProvider: oauthProvider }),
           reconnectionOptions: {
             initialReconnectionDelay: 1,
             maxReconnectionDelay: 1,
@@ -937,6 +1528,7 @@ export async function connectMcpClient(
         clearRecord(
           snapshot.transport === "stdio" ? snapshot.env : snapshot.credentials,
         );
+        onClose?.();
       }
     })();
     return closePromise;
@@ -947,6 +1539,7 @@ export async function connectMcpClient(
       transport,
       signal === undefined ? undefined : { signal },
     );
+    oauthProvider?.throwIfTerminalFailure();
     const version = client.getServerVersion();
     const protocolVersion = transport.protocolVersion;
     const capabilities = snapshotJsonRecord(
@@ -980,11 +1573,22 @@ export async function connectMcpClient(
       );
       if (state.closing) throw clientError("CANCELLED");
       try {
-        return await operation(operationSignal);
+        const result = await operation(operationSignal);
+        oauthProvider?.throwIfTerminalFailure();
+        return result;
       } catch (cause) {
-        const failure = normalizeFailure(cause, state, operationSignal, false);
-        if (failure.code === "LIMIT_EXCEEDED")
+        const failure = normalizeFailure(
+          oauthProvider?.getTerminalFailure() ?? cause,
+          state,
+          operationSignal,
+          false,
+        );
+        if (
+          failure.code === "LIMIT_EXCEEDED" ||
+          failure.code === "AUTHENTICATION_FAILED"
+        ) {
           await close().catch(() => undefined);
+        }
         throw failure;
       }
     };
@@ -1050,7 +1654,7 @@ export async function connectMcpClient(
     };
   } catch (cause) {
     const failure = normalizeFailure(
-      cause,
+      oauthProvider?.getTerminalFailure() ?? cause,
       state,
       signal,
       snapshot.transport === "stdio",
@@ -1058,4 +1662,212 @@ export async function connectMcpClient(
     await close().catch(() => undefined);
     throw failure;
   }
+}
+
+export async function connectMcpClient(
+  target: McpClientTarget,
+  options?: McpClientOperationOptions,
+): Promise<McpClientConnection> {
+  const snapshot = snapshotTarget(target);
+  const signal = snapshotAbortSignal(options, "INVALID_TARGET");
+  return connectSnapshot(snapshot, signal);
+}
+
+async function awaitWithSignal<Value>(
+  pending: Promise<Value>,
+  signal: AbortSignal | undefined,
+  cancel: () => void,
+): Promise<Value> {
+  if (signal === undefined) return pending;
+  if (signal.aborted) {
+    cancel();
+    throw clientError("CANCELLED");
+  }
+  let rejectCancelled!: (error: McpClientError) => void;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    rejectCancelled = reject;
+  });
+  const onAbort = (): void => {
+    cancel();
+    rejectCancelled(clientError("CANCELLED"));
+  };
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    return await Promise.race([pending, cancelled]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
+export async function beginMcpOAuthAuthorization(
+  target: McpOAuthClientTarget,
+  options: McpOAuthAuthorizationOptions,
+): Promise<McpOAuthAuthorization> {
+  const snapshot = snapshotOAuthTarget(target);
+  const authorizationOptions = snapshotOAuthAuthorizationOptions(options);
+  const lifecycleAbort = new AbortController();
+  const abortLifecycle = (): void => {
+    if (!lifecycleAbort.signal.aborted) {
+      lifecycleAbort.abort(new ClientBoundaryFailure("CANCELLED"));
+    }
+  };
+  const provider = new EphemeralOAuthProvider(
+    authorizationOptions.redirectUrl,
+    snapshot.url,
+    lifecycleAbort.signal,
+    authorizationOptions.state,
+  );
+  const bootstrapState: ConnectionState = {
+    closing: false,
+    connected: false,
+  };
+  const bootstrapClient = new Client(
+    { name: CLIENT_NAME, version: CLIENT_VERSION },
+    { capabilities: {}, enforceStrictCapabilities: true },
+  );
+  const bootstrapInner = new StreamableHTTPClientTransport(snapshot.url, {
+    authProvider: provider,
+    fetch: createSecureOAuthFetch(snapshot.url, provider),
+    reconnectionOptions: {
+      initialReconnectionDelay: 1,
+      maxReconnectionDelay: 1,
+      reconnectionDelayGrowFactor: 1,
+      maxRetries: 0,
+    },
+  });
+  let bootstrapClosePromise: Promise<void> | undefined;
+  const closeBootstrap = (): Promise<void> => {
+    bootstrapClosePromise ??= bootstrapClient.close().catch(() => undefined);
+    return bootstrapClosePromise;
+  };
+
+  try {
+    await awaitWithSignal(
+      bootstrapClient.connect(
+        bootstrapInner as unknown as Transport,
+        authorizationOptions.signal === undefined
+          ? undefined
+          : { signal: authorizationOptions.signal },
+      ),
+      authorizationOptions.signal,
+      () => {
+        abortLifecycle();
+        void closeBootstrap();
+      },
+    );
+    provider.throwIfTerminalFailure();
+    await closeBootstrap();
+    provider.clear();
+    throw clientError("AUTHENTICATION_FAILED");
+  } catch (cause) {
+    const terminalFailure = provider.getTerminalFailure();
+    if (
+      !(cause instanceof UnauthorizedError) ||
+      terminalFailure !== undefined
+    ) {
+      await closeBootstrap();
+      provider.clear();
+      if (terminalFailure !== undefined) {
+        throw clientError(terminalFailure.code, terminalFailure);
+      }
+      if (cause instanceof McpClientError) throw cause;
+      throw normalizeFailure(
+        cause,
+        bootstrapState,
+        authorizationOptions.signal,
+        false,
+      );
+    }
+  }
+
+  let authorizationUrl: string;
+  try {
+    provider.throwIfTerminalFailure();
+    const captured = provider.takeAuthorizationUrl();
+    if (captured === undefined) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    authorizationUrl = serializeAuthorizationUrl(
+      captured,
+      authorizationOptions.state,
+      snapshot.url,
+    );
+  } catch (cause) {
+    await closeBootstrap();
+    provider.clear();
+    if (cause instanceof ClientBoundaryFailure) {
+      throw clientError(cause.code, cause);
+    }
+    throw clientError("PROTOCOL_ERROR", cause);
+  }
+
+  let consumed = false;
+  let closed = false;
+  let completedConnection: McpClientConnection | undefined;
+  let finishPromise: Promise<McpClientConnection> | undefined;
+  let closePromise: Promise<void> | undefined;
+  const close = (): Promise<void> => {
+    closePromise ??= (async () => {
+      closed = true;
+      abortLifecycle();
+      await Promise.allSettled([closeBootstrap(), finishPromise]);
+      await completedConnection?.close().catch(() => undefined);
+      provider.clear();
+    })();
+    return closePromise;
+  };
+
+  return Object.freeze({
+    authorizationUrl,
+    finish(
+      authorizationCode: string,
+      finishOptions?: McpClientOperationOptions,
+    ): Promise<McpClientConnection> {
+      if (closed || consumed) {
+        return Promise.reject(clientError("AUTHENTICATION_FAILED"));
+      }
+      consumed = true;
+      finishPromise = (async () => {
+        try {
+          const code = snapshotAuthorizationCode(authorizationCode);
+          const signal = snapshotAbortSignal(finishOptions, "INVALID_TARGET");
+          await awaitWithSignal(bootstrapInner.finishAuth(code), signal, () => {
+            abortLifecycle();
+            void closeBootstrap();
+          });
+          provider.throwIfTerminalFailure();
+          await closeBootstrap();
+          if (!provider.hasTokens()) {
+            throw new ClientBoundaryFailure("AUTHENTICATION_FAILED");
+          }
+          const connection = await connectSnapshot(
+            snapshot,
+            signal,
+            provider,
+            () => provider.clear(),
+          );
+          if (closed || lifecycleAbort.signal.aborted) {
+            await connection.close().catch(() => undefined);
+            throw new ClientBoundaryFailure("CANCELLED");
+          }
+          completedConnection = connection;
+          return connection;
+        } catch (cause) {
+          abortLifecycle();
+          await Promise.allSettled([
+            closeBootstrap(),
+            completedConnection?.close(),
+          ]);
+          provider.clear();
+          if (cause instanceof McpClientError) throw cause;
+          if (cause instanceof ClientBoundaryFailure) {
+            throw clientError(cause.code, cause);
+          }
+          throw clientError("AUTHENTICATION_FAILED", cause);
+        }
+      })();
+      return finishPromise;
+    },
+    close,
+  });
 }
