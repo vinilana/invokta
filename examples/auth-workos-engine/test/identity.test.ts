@@ -13,6 +13,7 @@ import { toPrincipal } from "../src/identity/principal.js";
 import {
   createWorkOsAccessTokenVerifier,
   WorkOsVerificationUnavailableError,
+  workOsAuthKitJwksUrl,
   workOsJwksUrl,
 } from "../src/identity/verifier.js";
 
@@ -41,20 +42,23 @@ interface TokenOptions {
   readonly subject?: string;
   readonly issuer?: string;
   readonly audience?: string;
-  readonly expiresIn?: string;
+  /** `null` mints a token without an `exp` claim. */
+  readonly expiresIn?: string | null;
   readonly claims?: Readonly<Record<string, unknown>>;
   readonly privateKey?: CryptoKey;
 }
 
 async function mintAccessToken(options: TokenOptions = {}): Promise<string> {
-  return new SignJWT({ ...options.claims })
+  const jwt = new SignJWT({ ...options.claims })
     .setProtectedHeader({ alg: "RS256", kid: keyId })
     .setSubject(options.subject ?? "user_01JTESTUSER")
     .setIssuer(options.issuer ?? issuer)
     .setAudience(options.audience ?? audience)
-    .setIssuedAt()
-    .setExpirationTime(options.expiresIn ?? "5m")
-    .sign(options.privateKey ?? signing.privateKey);
+    .setIssuedAt();
+  if (options.expiresIn !== null) {
+    jwt.setExpirationTime(options.expiresIn ?? "5m");
+  }
+  return jwt.sign(options.privateKey ?? signing.privateKey);
 }
 
 function createVerifier(overrides: { readonly keys?: JWTVerifyGetKey } = {}) {
@@ -80,6 +84,16 @@ describe("WorkOS JWKS URL", () => {
     expect(workOsJwksUrl(clientId, "https://auth.example.com").href).toBe(
       `https://auth.example.com/sso/jwks/${clientId}`,
     );
+  });
+
+  it("derives the AuthKit-domain OAuth JWKS endpoint", () => {
+    expect(workOsAuthKitJwksUrl("https://example-env.authkit.app").href).toBe(
+      "https://example-env.authkit.app/oauth2/jwks",
+    );
+    expect(() =>
+      workOsAuthKitJwksUrl("http://example-env.authkit.app"),
+    ).toThrow(/HTTPS/u);
+    expect(() => workOsAuthKitJwksUrl("not-a-url")).toThrow(/AuthKit/u);
   });
 
   it("rejects an empty client id", () => {
@@ -169,6 +183,59 @@ describe("WorkOS access token verifier", () => {
     await expect(
       createVerifier().verify(token, { signal: activeSignal() }),
     ).resolves.toBeNull();
+  });
+
+  it("returns null for a signed token without an expiry", async () => {
+    const token = await mintAccessToken({ expiresIn: null });
+
+    await expect(
+      createVerifier().verify(token, { signal: activeSignal() }),
+    ).resolves.toBeNull();
+  });
+
+  it("returns null for a token signed outside the algorithm allowlist", async () => {
+    // Pins algorithms: ["RS256"] — an HS256 token must never verify, even
+    // with otherwise perfect claims.
+    const { generateSecret } = await import("jose");
+    const secret = await generateSecret("HS256", { extractable: true });
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "HS256" })
+      .setSubject("user_01JTESTUSER")
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(secret);
+
+    await expect(
+      createVerifier().verify(token, { signal: activeSignal() }),
+    ).resolves.toBeNull();
+  });
+
+  it("throws when the key set is ambiguous for the token", async () => {
+    // Two same-algorithm keys without kid headers: jose cannot pick a
+    // candidate, which is the environment's key-publication problem, not
+    // proof against the credential — so it surfaces as unavailable, not null.
+    const ambiguous = createLocalJWKSet({
+      keys: [
+        { ...(await exportJWK(signing.publicKey)), alg: "RS256", use: "sig" },
+        { ...(await exportJWK(other.publicKey)), alg: "RS256", use: "sig" },
+      ],
+    });
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256" })
+      .setSubject("user_01JTESTUSER")
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(signing.privateKey);
+
+    await expect(
+      createVerifier({ keys: ambiguous }).verify(token, {
+        signal: activeSignal(),
+      }),
+    ).rejects.toBeInstanceOf(WorkOsVerificationUnavailableError);
   });
 
   it("returns null when no JWKS key matches the token", async () => {

@@ -12,8 +12,9 @@ import { engine } from "./engine.js";
 import { toPrincipal } from "./identity/principal.js";
 import {
   createWorkOsAccessTokenVerifier,
-  WORKOS_DEFAULT_ISSUER,
   type WorkOsAccessTokenVerifier,
+  type WorkOsVerifierOptions,
+  workOsAuthKitJwksUrl,
 } from "./identity/verifier.js";
 
 export interface WorkOsMcpHttpOptions {
@@ -23,7 +24,8 @@ export interface WorkOsMcpHttpOptions {
   readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
 }
 
-const bearerPattern = /^Bearer ([^\s]+)$/i;
+// RFC 9110 makes the authentication scheme case-insensitive.
+const bearerPattern = /^Bearer ([^\s]+)$/iu;
 
 function readBearerToken(request: McpHttpAuthenticationRequest): string | null {
   const authorization = request.headers.get("authorization");
@@ -75,37 +77,95 @@ function requireEnvironment(name: string): string {
   return value;
 }
 
+function readEnvironment(
+  env: Readonly<Record<string, string | undefined>>,
+  name: string,
+): string | undefined {
+  const value = env[name];
+  return value === undefined || value === "" ? undefined : value;
+}
+
+export interface WorkOsBoundaryConfiguration {
+  readonly verifier: WorkOsVerifierOptions;
+  readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
+}
+
+/**
+ * Resolves which WorkOS token flavor this deployment verifies.
+ *
+ * WorkOS issues two flavors with different issuers and key sets:
+ *
+ * - AuthKit **session** access tokens, the ones an application holding a
+ *   WorkOS session already has: `iss` is `https://api.workos.com/` (or the
+ *   custom auth domain), the JWKS is `sso/jwks/<clientId>`, and there is no
+ *   `aud` claim. This is the default flavor, selected when no MCP resource is
+ *   configured.
+ * - **MCP OAuth** tokens obtained through resource indicators: issuer,
+ *   authorization server, and JWKS all live on the environment's AuthKit
+ *   domain (`https://<environment>.authkit.app`, JWKS at `/oauth2/jwks`), and
+ *   `aud` is bound to the registered resource. Selected when
+ *   `WORKOS_MCP_RESOURCE` is set, which then requires `WORKOS_AUTHKIT_DOMAIN`
+ *   (or explicit `WORKOS_ISSUER` and `WORKOS_JWKS_URL` overrides) — the
+ *   session-flavor defaults would answer 401 to both flavors and advertise an
+ *   authorization server that serves no AS metadata.
+ */
+export function resolveWorkOsConfiguration(
+  env: Readonly<Record<string, string | undefined>>,
+): WorkOsBoundaryConfiguration {
+  const clientId = env.WORKOS_CLIENT_ID;
+  if (clientId === undefined || clientId === "") {
+    throw new Error("WORKOS_CLIENT_ID is required.");
+  }
+  const resource = readEnvironment(env, "WORKOS_MCP_RESOURCE");
+  const authKitDomain = readEnvironment(env, "WORKOS_AUTHKIT_DOMAIN");
+  const issuerOverride = readEnvironment(env, "WORKOS_ISSUER");
+  const jwksOverride = readEnvironment(env, "WORKOS_JWKS_URL");
+
+  if (resource === undefined) {
+    return {
+      verifier: {
+        clientId,
+        ...(issuerOverride === undefined ? {} : { issuer: issuerOverride }),
+        ...(jwksOverride === undefined ? {} : { jwksUrl: jwksOverride }),
+      },
+    };
+  }
+
+  const issuer = issuerOverride ?? authKitDomain;
+  const jwksUrl =
+    jwksOverride ??
+    (authKitDomain === undefined
+      ? undefined
+      : workOsAuthKitJwksUrl(authKitDomain).href);
+  if (issuer === undefined || jwksUrl === undefined) {
+    throw new Error(
+      "WORKOS_MCP_RESOURCE requires WORKOS_AUTHKIT_DOMAIN, or explicit WORKOS_ISSUER and WORKOS_JWKS_URL overrides.",
+    );
+  }
+
+  return {
+    verifier: { clientId, issuer, jwksUrl, audience: resource },
+    resourceMetadata: { resource, authorizationServers: [issuer] },
+  };
+}
+
 export async function main(): Promise<McpHttpServerHandle> {
   // The client id selects the WorkOS JWKS; no API key or client secret is
   // needed to verify an access token at this boundary.
-  const clientId = requireEnvironment("WORKOS_CLIENT_ID");
-  const issuer = process.env.WORKOS_ISSUER ?? WORKOS_DEFAULT_ISSUER;
-  const jwksUrl = process.env.WORKOS_JWKS_URL;
-  // The resource indicator registered in AuthKit. It is both the expected
-  // `aud` claim and the resource this server publishes for discovery.
-  const resource = process.env.WORKOS_MCP_RESOURCE;
+  requireEnvironment("WORKOS_CLIENT_ID");
+  const configuration = resolveWorkOsConfiguration(process.env);
   const configuredPort = process.env.PORT;
   const port = configuredPort === undefined ? 3000 : Number(configuredPort);
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     throw new Error("PORT must be an integer between 0 and 65535.");
   }
 
-  const resourceMetadata: McpHttpProtectedResourceMetadata | undefined =
-    resource === undefined || resource === ""
-      ? undefined
-      : { resource, authorizationServers: [issuer] };
-
   return startWorkOsMcpHttp({
-    verifier: createWorkOsAccessTokenVerifier({
-      clientId,
-      issuer,
-      ...(jwksUrl === undefined || jwksUrl === "" ? {} : { jwksUrl }),
-      ...(resource === undefined || resource === ""
-        ? {}
-        : { audience: resource }),
-    }),
+    verifier: createWorkOsAccessTokenVerifier(configuration.verifier),
     port,
-    ...(resourceMetadata === undefined ? {} : { resourceMetadata }),
+    ...(configuration.resourceMetadata === undefined
+      ? {}
+      : { resourceMetadata: configuration.resourceMetadata }),
   });
 }
 

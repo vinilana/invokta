@@ -18,6 +18,7 @@ import {
 } from "../src/identity/verifier.js";
 import {
   createWorkOsAuthenticate,
+  resolveWorkOsConfiguration,
   startWorkOsMcpHttp,
 } from "../src/mcp-http.js";
 
@@ -110,6 +111,15 @@ describe("WorkOS authentication hook", () => {
         permissions: ["widgets:read"],
       },
     });
+  });
+
+  it("accepts the authentication scheme case-insensitively", async () => {
+    // RFC 9110 makes the scheme token case-insensitive.
+    const token = await mintAccessToken({});
+
+    await expect(
+      authenticate(authenticationRequest({ authorization: `bearer ${token}` })),
+    ).resolves.toMatchObject({ id: "user_01JTESTUSER" });
   });
 
   it("returns null when the Authorization header is missing", async () => {
@@ -227,5 +237,70 @@ describe("WorkOS MCP HTTP boundary", () => {
 
     expect(response.status).toBe(500);
     expect(text).not.toContain("any.token");
+  });
+});
+
+describe("WorkOS boundary configuration", () => {
+  it("selects the session-token flavor when no MCP resource is set", () => {
+    const configuration = resolveWorkOsConfiguration({
+      WORKOS_CLIENT_ID: clientId,
+    });
+
+    expect(configuration).toEqual({ verifier: { clientId } });
+  });
+
+  it("derives the MCP OAuth flavor from the AuthKit domain", () => {
+    const configuration = resolveWorkOsConfiguration({
+      WORKOS_CLIENT_ID: clientId,
+      WORKOS_MCP_RESOURCE: "https://engine.example.com/mcp",
+      WORKOS_AUTHKIT_DOMAIN: "https://example-env.authkit.app",
+    });
+
+    expect(configuration).toEqual({
+      verifier: {
+        clientId,
+        issuer: "https://example-env.authkit.app",
+        jwksUrl: "https://example-env.authkit.app/oauth2/jwks",
+        audience: "https://engine.example.com/mcp",
+      },
+      resourceMetadata: {
+        resource: "https://engine.example.com/mcp",
+        authorizationServers: ["https://example-env.authkit.app"],
+      },
+    });
+  });
+
+  it("accepts explicit issuer and JWKS overrides for the OAuth flavor", () => {
+    const configuration = resolveWorkOsConfiguration({
+      WORKOS_CLIENT_ID: clientId,
+      WORKOS_MCP_RESOURCE: "https://engine.example.com/mcp",
+      WORKOS_ISSUER: "https://auth.example.com",
+      WORKOS_JWKS_URL: "https://auth.example.com/oauth2/jwks",
+    });
+
+    expect(configuration.verifier).toMatchObject({
+      issuer: "https://auth.example.com",
+      jwksUrl: "https://auth.example.com/oauth2/jwks",
+      audience: "https://engine.example.com/mcp",
+    });
+    expect(configuration.resourceMetadata).toEqual({
+      resource: "https://engine.example.com/mcp",
+      authorizationServers: ["https://auth.example.com"],
+    });
+  });
+
+  it("fails fast when the MCP resource has no issuer source", () => {
+    // Session-token defaults would answer 401 to both token flavors and
+    // advertise an authorization server that serves no AS metadata.
+    expect(() =>
+      resolveWorkOsConfiguration({
+        WORKOS_CLIENT_ID: clientId,
+        WORKOS_MCP_RESOURCE: "https://engine.example.com/mcp",
+      }),
+    ).toThrow(/WORKOS_AUTHKIT_DOMAIN/u);
+  });
+
+  it("fails fast without a client id", () => {
+    expect(() => resolveWorkOsConfiguration({})).toThrow(/WORKOS_CLIENT_ID/u);
   });
 });

@@ -30,16 +30,23 @@ Build the repository from its root, then start the MCP HTTP adapter:
 ```sh
 yarn build
 WORKOS_CLIENT_ID=client_... \
-WORKOS_MCP_RESOURCE=https://engine.example.com/mcp \
 PORT=3000 \
 yarn workspace @invokta/example-auth-workos mcp:http
 ```
 
+That starts the **session-token flavor**: it verifies the AuthKit access
+tokens your application already holds (`iss` `https://api.workos.com/`, JWKS
+`sso/jwks/<clientId>`, no `aud` claim). For the **MCP OAuth flavor** — tokens
+bound to this engine through a resource indicator, with Protected Resource
+Metadata published for discovery — also set `WORKOS_AUTHKIT_DOMAIN` and
+`WORKOS_MCP_RESOURCE`.
+
 | Variable | Required | Meaning |
 | --- | --- | --- |
-| `WORKOS_CLIENT_ID` | yes | Client id of the WorkOS environment; it selects the JWKS at `https://api.workos.com/sso/jwks/<clientId>` |
-| `WORKOS_MCP_RESOURCE` | no | Resource indicator registered in AuthKit; it is the expected `aud` claim and the published Protected Resource Metadata resource |
-| `WORKOS_ISSUER` | no | Expected `iss`; defaults to `https://api.workos.com/`, override it for a custom auth domain |
+| `WORKOS_CLIENT_ID` | yes | Client id of the WorkOS environment; it selects the session-token JWKS at `https://api.workos.com/sso/jwks/<clientId>` |
+| `WORKOS_MCP_RESOURCE` | no | Resource indicator registered in AuthKit; selects the MCP OAuth flavor, becomes the expected `aud` claim and the published Protected Resource Metadata resource. **Security consequence of leaving it unset:** session tokens carry no `aud`, so any valid AuthKit session token from the environment — including one minted for your main web app — authenticates here |
+| `WORKOS_AUTHKIT_DOMAIN` | with `WORKOS_MCP_RESOURCE` | The environment's AuthKit domain, `https://<environment>.authkit.app`; the MCP OAuth flavor derives `iss`, the `/oauth2/jwks` key set, and the advertised authorization server from it |
+| `WORKOS_ISSUER` | no | Expected `iss` override for a custom auth domain |
 | `WORKOS_JWKS_URL` | no | Full JWKS URL override for a custom auth domain |
 | `PORT` | no | Listening port, defaults to `3000` |
 

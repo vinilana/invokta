@@ -144,11 +144,25 @@ approach — live in the [JWT bearer recipe](/recipes/auth/jwt-bearer/).
    });
    ```
 
-   When AuthKit acts as the authorization server for this engine, register the
-   engine's `/mcp` URL as a resource indicator in WorkOS, expect it as `aud`,
-   and publish the same value as `resourceMetadata.resource`. Without a
-   registered resource, AuthKit falls back to an environment-scoped audience
-   and audience validation would reject every token.
+   WorkOS issues two token flavors with different issuers and key sets, and
+   the composition root must pick one:
+
+   - **Session access tokens** — the ones an application holding a WorkOS
+     session already has. Their issuer is `https://api.workos.com/` (or the
+     custom auth domain), the JWKS is `sso/jwks/<clientId>`, and they carry
+     **no `aud` claim**, so audience validation would reject every one of
+     them. This is the example's default flavor.
+   - **MCP OAuth tokens** — obtained through OAuth resource indicators when
+     AuthKit acts as the authorization server for this engine. Register the
+     engine's `/mcp` URL as a resource in WorkOS; the issuer, authorization
+     server, and JWKS then all live on the environment's AuthKit domain
+     (`https://<environment>.authkit.app`, JWKS at `/oauth2/jwks`), `aud` is
+     bound to the registered resource and must be validated, and the same
+     value is published as `resourceMetadata.resource`. The example selects
+     this flavor when `WORKOS_MCP_RESOURCE` is set, and then requires
+     `WORKOS_AUTHKIT_DOMAIN` — with session-flavor defaults, both token
+     flavors would be answered 401 and discovery would advertise an
+     authorization server that serves no metadata.
 
 6. Let capabilities read the verified identity only
 
@@ -189,15 +203,13 @@ approach — live in the [JWT bearer recipe](/recipes/auth/jwt-bearer/).
 </Steps>
 
 <Aside type="note" title="SDK variant">
-  With `@workos-inc/node`, replace the JWKS URL helper with the SDK's own
-  accessor and keep the rest of the verifier unchanged:
+  WorkOS documents the session-token JWKS location directly, so no SDK call
+  is needed to resolve keys — `jose` against the documented URL is the whole
+  integration:
 
   ```ts
-  import { WorkOS } from "@workos-inc/node";
-
-  const workos = new WorkOS(process.env.WORKOS_API_KEY);
   const keys = createRemoteJWKSet(
-    new URL(workos.userManagement.getJwksUrl(process.env.WORKOS_CLIENT_ID)),
+    new URL(`https://api.workos.com/sso/jwks/${clientId}`),
   );
   ```
 
@@ -215,19 +227,22 @@ approach — live in the [JWT bearer recipe](/recipes/auth/jwt-bearer/).
 
 ## Run it
 
-Build the repository, then start the engine against your WorkOS environment:
+Build the repository, then start the engine in the session-token flavor —
+verifying the access tokens your application already holds:
 
 ```sh
 yarn build
 WORKOS_CLIENT_ID=client_... \
-WORKOS_MCP_RESOURCE=https://engine.example.com/mcp \
 PORT=3000 \
 yarn workspace @invokta/example-auth-workos mcp:http
 ```
 
 `WORKOS_CLIENT_ID` selects the JWKS and is the only required variable; no API
 key or client secret is needed to verify a token. `WORKOS_ISSUER` and
-`WORKOS_JWKS_URL` override the defaults for a custom auth domain.
+`WORKOS_JWKS_URL` override the defaults for a custom auth domain. Note what
+this flavor does **not** give you: session tokens carry no `aud`, so any
+valid session token from the environment — including one minted for your main
+web app — authenticates here.
 
 Call the engine with an AuthKit access token your application already holds:
 
@@ -242,6 +257,24 @@ curl -sS http://127.0.0.1:3000/mcp \
 The result echoes the verified identity, including `org_id`. Dropping the
 header answers HTTP 401 before `engine.invoke` runs.
 
+For the MCP OAuth flavor — tokens bound to this engine through a resource
+indicator, with Protected Resource Metadata published for OAuth-capable MCP
+clients — register the engine's URL as a resource in WorkOS and start with
+the environment's AuthKit domain:
+
+```sh
+WORKOS_CLIENT_ID=client_... \
+WORKOS_AUTHKIT_DOMAIN=https://your-environment.authkit.app \
+WORKOS_MCP_RESOURCE=https://engine.example.com/mcp \
+PORT=3000 \
+yarn workspace @invokta/example-auth-workos mcp:http
+```
+
+The verifier then expects the AuthKit domain as `iss`, resolves keys from its
+`/oauth2/jwks` document, validates `aud` against the registered resource, and
+the engine refuses to start if `WORKOS_MCP_RESOURCE` is set without an issuer
+source.
+
 ## Verify it
 
 ```sh
@@ -250,8 +283,11 @@ yarn workspace @invokta/example-auth-workos test
 
 The tests mint RS256 tokens in the AuthKit claim shape from a locally
 generated key pair and assert that a valid token yields the expected principal,
-that every invalid class resolves to `null`, that an unavailable JWKS rejects
-instead, and that no token material reaches the principal.
+that every invalid class — including a token without an expiry and one signed
+outside the algorithm allowlist — resolves to `null`, that an unavailable
+JWKS or an ambiguous key set rejects instead, that both composition-root
+flavors and the fail-fast case wire the expected issuer, JWKS, audience, and
+resource metadata, and that no token material reaches the principal.
 
 Read the complete
 [`auth-workos-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-workos-engine)

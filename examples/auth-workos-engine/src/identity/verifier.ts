@@ -87,6 +87,26 @@ export function workOsJwksUrl(
   return new URL(`sso/jwks/${encodeURIComponent(clientId)}`, base);
 }
 
+/**
+ * The OAuth JWKS the environment's AuthKit domain serves for MCP OAuth
+ * tokens: `https://<environment>.authkit.app/oauth2/jwks`. These tokens are a
+ * different flavor from AuthKit session tokens — their issuer is the AuthKit
+ * domain itself and their `aud` is bound to the registered resource — so they
+ * are signed by a different key set than {@link workOsJwksUrl} serves.
+ */
+export function workOsAuthKitJwksUrl(authKitDomain: string): URL {
+  let url: URL;
+  try {
+    url = new URL(authKitDomain);
+  } catch {
+    throw new Error("The AuthKit domain is not a valid URL.");
+  }
+  if (url.protocol !== "https:") {
+    throw new Error("The AuthKit domain must use HTTPS.");
+  }
+  return new URL(`${url.origin}/oauth2/jwks`);
+}
+
 /** A claim value the engine keeps only when it has the documented shape. */
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
@@ -125,6 +145,11 @@ function readClaims(payload: JWTPayload): WorkOsAccessTokenClaims | null {
  * True for every failure that proves the credential itself is unusable. Any
  * other failure is treated as infrastructure, so an unknown fault can never be
  * reported to the caller as an authentication decision.
+ *
+ * `JWKSMultipleMatchingKeys` is deliberately absent: an ambiguous key set is
+ * the environment's key-publication problem, not evidence against the
+ * credential, so it surfaces as an infrastructure failure (500) instead of
+ * silently rejecting legitimate tokens during a kid-less key rotation.
  */
 function isInvalidCredential(error: unknown): boolean {
   return (
@@ -134,8 +159,7 @@ function isInvalidCredential(error: unknown): boolean {
     error instanceof errors.JWSInvalid ||
     error instanceof errors.JWSSignatureVerificationFailed ||
     error instanceof errors.JOSEAlgNotAllowed ||
-    error instanceof errors.JWKSNoMatchingKey ||
-    error instanceof errors.JWKSMultipleMatchingKeys
+    error instanceof errors.JWKSNoMatchingKey
   );
 }
 
@@ -194,6 +218,11 @@ export function createWorkOsAccessTokenVerifier(
             issuer,
             algorithms,
             clockTolerance,
+            // Both WorkOS token flavors always mint these; a signed token
+            // missing exp must not become a permanent credential. aud is
+            // enforced through the audience option: session tokens carry
+            // none, MCP OAuth tokens bind it to the registered resource.
+            requiredClaims: ["sub", "iss", "exp"],
             ...(options.audience === undefined
               ? {}
               : { audience: options.audience }),
