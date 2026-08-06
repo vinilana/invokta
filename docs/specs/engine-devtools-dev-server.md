@@ -22,6 +22,12 @@ MCP request and response for each invocation, follow a live invocation trace,
 switch between test identities backed by development principals, and read the
 doctor report.
 
+All built-engine tabs use the same compact, bounded workbench surface. The
+Playground presents each top-level input and output field with its declared
+type, required state, description, and common constraints while keeping the
+complete JSON Schema available for inspection. This presentation does not
+convert, normalize, or replace the schema published by `engine.describe`.
+
 Capability execution happens exclusively through an unmodified `serveMcpHttp`
 instance, so every invocation traverses the single `engine.invoke` pipeline
 with source `mcp-http`. The devtools adds no runtime concept, no core hook, and

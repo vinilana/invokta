@@ -17,6 +17,7 @@ import {
   type AttachedSessionState,
   createAttachedSessionController,
 } from "./attached-session.js";
+import { faviconLink, faviconSvg } from "./favicon.js";
 import type { DevtoolsServerAddress } from "./server.js";
 
 export type { AttachedConnectionSummary } from "./attached-session.js";
@@ -68,6 +69,7 @@ const attachedShellPage = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Invokta MCP devtools</title>
+${faviconLink}
 <link rel="stylesheet" href="/assets/attached.css">
 </head>
 <body>
@@ -79,13 +81,13 @@ const attachedShellPage = `<!doctype html>
 
 const oauthCallbackPages = Object.freeze({
   success: `<!doctype html>
-<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorization complete</title><link rel="stylesheet" href="/assets/attached.css"></head>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorization complete</title>${faviconLink}<link rel="stylesheet" href="/assets/attached.css"></head>
 <body class="attached-mode"><main class="att-frame att-main"><section class="att-card att-view att-oauth"><p class="att-kicker">OAuth</p><h1>Authorization complete</h1><p class="att-hint">Return to Invokta devtools. You can close this tab.</p></section></main></body></html>`,
   rejected: `<!doctype html>
-<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorization not completed</title><link rel="stylesheet" href="/assets/attached.css"></head>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorization not completed</title>${faviconLink}<link rel="stylesheet" href="/assets/attached.css"></head>
 <body class="attached-mode"><main class="att-frame att-main"><section class="att-card att-view att-oauth"><p class="att-kicker">OAuth</p><h1>Authorization was not completed</h1><p class="att-hint">Return to Invokta devtools to try again.</p></section></main></body></html>`,
   failed: `<!doctype html>
-<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorization failed</title><link rel="stylesheet" href="/assets/attached.css"></head>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorization failed</title>${faviconLink}<link rel="stylesheet" href="/assets/attached.css"></head>
 <body class="attached-mode"><main class="att-frame att-main"><section class="att-card att-view att-oauth"><p class="att-kicker">OAuth</p><h1>Authorization failed</h1><p class="att-hint">Return to Invokta devtools to review the connection.</p></section></main></body></html>`,
 });
 
@@ -921,6 +923,15 @@ export async function startAttachedDevtoolsServer(
         "cache-control": "no-store",
       });
       response.end(attachedShellPage);
+      return;
+    }
+    if (path === "/assets/favicon.svg") {
+      response.writeHead(200, {
+        ...securityHeaders(),
+        "content-type": "image/svg+xml",
+        "cache-control": "no-store",
+      });
+      response.end(faviconSvg);
       return;
     }
     if (path.startsWith("/assets/")) {

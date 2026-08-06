@@ -108,6 +108,7 @@ function boot(): void {
         "div",
         {
           id: `panel-${name}`,
+          class: `workspace-panel workspace-panel--${name}`,
           role: "tabpanel",
           "aria-labelledby": `tab-${name}`,
           tabindex: "0",

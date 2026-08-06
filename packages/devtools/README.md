@@ -131,6 +131,12 @@ node packages/devtools/dist/cli.js serve \
 `<esm-module>` is resolved against the current working directory and must
 already be built to native ESM. `--export <name>` defaults to `engine`.
 
+The built-engine interface uses one compact workbench surface across
+Playground, Activity, Diagnostics, and Test identities. Playground summarizes
+top-level input and output fields for scanning and keeps each complete JSON
+Schema available under **Raw JSON Schema**. Invocations still use the
+schema-seeded JSON editor and the same MCP HTTP path to `engine.invoke`.
+
 ## invokta-devtools doctor
 
 ```text

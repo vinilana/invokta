@@ -1,6 +1,7 @@
 import { api, type CapabilityInfo } from "./api.js";
-import { clear, el, pretty } from "./dom.js";
+import { clear, el, type Child } from "./dom.js";
 import { renderInvokePanel } from "./invoke-panel.js";
+import { renderSchemaView } from "./schema-view.js";
 
 function capabilityTitle(capability: CapabilityInfo): string {
   const title = capability.title?.trim();
@@ -11,37 +12,35 @@ function renderDetail(capability: CapabilityInfo): HTMLElement {
   const annotations = Object.entries(capability.annotations ?? {})
     .filter(([, enabled]) => enabled === true)
     .map(([name]) => name);
+  const metadata: Child[] = annotations.map((name) =>
+    el("span", { class: "badge" }, [name]),
+  );
+  if (capability.timeoutMs !== undefined) {
+    metadata.push(
+      el("span", { class: "badge" }, [
+        `${new Intl.NumberFormat("en-US").format(capability.timeoutMs)} ms timeout`,
+      ]),
+    );
+  }
   return el("div", { class: "capability-detail" }, [
-    el("div", { class: "capability-heading" }, [
-      el("h2", {}, [capabilityTitle(capability)]),
-      el("code", { class: "capability-id" }, [capability.id]),
+    el("header", { class: "capability-overview" }, [
+      el("div", { class: "capability-heading" }, [
+        el("h2", {}, [capabilityTitle(capability)]),
+        el("code", { class: "capability-id" }, [capability.id]),
+      ]),
+      el("p", { class: "capability-description" }, [capability.description]),
+      metadata.length === 0
+        ? null
+        : el(
+            "div",
+            { class: "capability-meta", "aria-label": "Capability metadata" },
+            metadata,
+          ),
     ]),
-    el("p", { class: "capability-description" }, [capability.description]),
-    annotations.length === 0
-      ? null
-      : el(
-          "p",
-          { class: "annotations", "aria-label": "Capability annotations" },
-          [
-            "Annotations: ",
-            ...annotations.map((name) =>
-              el("span", { class: "badge" }, [name]),
-            ),
-          ],
-        ),
-    capability.timeoutMs === undefined
-      ? null
-      : el("p", { class: "hint" }, [
-          `Timeout: ${String(capability.timeoutMs)} ms`,
-        ]),
     renderInvokePanel(capability),
-    el("details", {}, [
-      el("summary", {}, ["Input schema"]),
-      el("pre", { class: "raw" }, [pretty(capability.inputSchema)]),
-    ]),
-    el("details", {}, [
-      el("summary", {}, ["Output schema"]),
-      el("pre", { class: "raw" }, [pretty(capability.outputSchema)]),
+    el("div", { class: "schema-grid" }, [
+      renderSchemaView("Input", capability.inputSchema),
+      renderSchemaView("Output", capability.outputSchema),
     ]),
   ]);
 }

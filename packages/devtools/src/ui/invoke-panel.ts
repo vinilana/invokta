@@ -19,7 +19,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     "textarea",
     {
       id: editorId,
-      rows: "8",
+      rows: "6",
       class: "editor",
       spellcheck: "false",
       "aria-describedby": feedbackId,
@@ -284,9 +284,9 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   ]);
 
   return el("div", { class: "invoke-panel" }, [
-    el("h3", {}, ["Invoke capability"]),
-    el("p", { class: "hint" }, [
-      "Edit the generated arguments, then send a tools/call request through engine.invoke.",
+    el("div", { class: "invoke-heading" }, [
+      el("h3", {}, ["Invoke"]),
+      el("code", { class: "invoke-route" }, ["tools/call → engine.invoke"]),
     ]),
     el("div", { class: "invoke-workspace" }, [requestPane, resultPane]),
     rawSection,

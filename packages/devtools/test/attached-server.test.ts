@@ -270,7 +270,22 @@ describe("attached devtools server", () => {
     expect(page.headers.get("referrer-policy")).toBe("no-referrer");
     const pageText = await page.text();
     expect(pageText).toContain('href="/assets/attached.css"');
+    expect(pageText).toContain(
+      '<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">',
+    );
     expect(pageText).toContain('src="/assets/attached-app.js"');
+
+    const favicon = await fetch(`${base}/assets/favicon.svg`);
+    expect(favicon.status).toBe(200);
+    expect(favicon.headers.get("content-type")).toBe("image/svg+xml");
+    expect(favicon.headers.get("cache-control")).toBe("no-store");
+    expect(favicon.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(favicon.headers.get("content-security-policy")).toBe(
+      page.headers.get("content-security-policy"),
+    );
+    expect(await favicon.text()).toMatch(
+      /^<svg[^>]+viewBox="0 0 32 32"[\s\S]+stroke="#3D50F5"[\s\S]+<\/svg>$/u,
+    );
 
     const session = await fetch(`${base}/api/session`);
     expect(session.status).toBe(200);
@@ -721,6 +736,9 @@ describe("attached devtools server", () => {
     expect(callback.headers.get("access-control-allow-origin")).toBeNull();
     const callbackText = await callback.text();
     expect(callbackText).toContain("Authorization complete");
+    expect(callbackText).toContain(
+      '<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">',
+    );
     expect(callbackText).not.toContain(authorizationCode);
     expect(callbackText).not.toContain(oauthState);
     expect(controller.completeOAuth).toHaveBeenCalledWith(

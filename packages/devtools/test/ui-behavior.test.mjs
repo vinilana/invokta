@@ -435,6 +435,10 @@ describe("application tabs", () => {
     expect(capabilitiesPanel.getAttribute("aria-labelledby")).toBe(
       capabilities.id,
     );
+    expect(capabilitiesPanel.classList.contains("workspace-panel")).toBe(true);
+    expect(
+      capabilitiesPanel.classList.contains("workspace-panel--capabilities"),
+    ).toBe(true);
     await waitFor(() =>
       expect(capabilitiesPanel.textContent).toContain(
         "No capabilities published",
@@ -465,6 +469,10 @@ describe("application tabs", () => {
       (node) =>
         node instanceof FakeElement &&
         node.getAttribute("id") === trace.getAttribute("aria-controls"),
+    );
+    expect(firstTracePanel.classList.contains("workspace-panel")).toBe(true);
+    expect(firstTracePanel.classList.contains("workspace-panel--trace")).toBe(
+      true,
     );
     capabilities.dispatchEvent(new Event("click"));
 

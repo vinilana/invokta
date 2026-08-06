@@ -57,23 +57,30 @@ function describeDiagnostic(
 function renderDiagnostic(
   kind: DiagnosticKind,
   diagnostic: Diagnostic,
+  index: number,
 ): HTMLLIElement {
   const code = readString(diagnostic, "code") ?? "UNKNOWN_DIAGNOSTIC";
   const isFinding = kind === "finding";
+  const codeId = `doctor-${kind}-${String(index)}-code`;
+  const messageId = `doctor-${kind}-${String(index)}-message`;
   return el(
     "li",
     {
       class: `diagnostic-item diagnostic-item--${kind}`,
+      "aria-labelledby": codeId,
+      "aria-describedby": messageId,
     },
     [
-      el("div", { class: "diagnostic-heading" }, [
-        el("span", { class: `badge ${isFinding ? "error" : "warn"}` }, [
-          isFinding ? "Finding" : "Note",
+      el("div", { class: "diagnostic-item-body" }, [
+        el("div", { class: "diagnostic-heading" }, [
+          el("span", { class: `badge ${isFinding ? "error" : "warn"}` }, [
+            isFinding ? "Finding" : "Note",
+          ]),
+          el("code", { class: "diagnostic-code", id: codeId }, [code]),
         ]),
-        el("code", { class: "diagnostic-code" }, [code]),
-      ]),
-      el("p", { class: "diagnostic-message" }, [
-        describeDiagnostic(kind, diagnostic),
+        el("p", { class: "diagnostic-message", id: messageId }, [
+          describeDiagnostic(kind, diagnostic),
+        ]),
       ]),
       el("details", { class: "diagnostic-details" }, [
         el("summary", {}, ["Raw details"]),
@@ -93,24 +100,37 @@ function renderDiagnosticSection(
   const title = isFinding ? "Findings" : "Notes";
   const id = `doctor-${isFinding ? "findings" : "notes"}-title`;
   const count = diagnostics.length;
-  return el("section", { class: "diagnostic-section", "aria-labelledby": id }, [
-    el("div", { class: "diagnostic-section-heading" }, [
-      el("h3", { id }, [title]),
-      el("span", { class: "badge" }, [String(count)]),
-    ]),
-    count === 0
-      ? el("p", { class: "empty doctor-empty" }, [
-          isFinding ? "No blocking findings." : "No notes.",
-        ])
-      : el(
-          "ol",
-          {
-            class: "diagnostic-list",
-            "aria-label": `Doctor ${isFinding ? "findings" : "notes"}`,
-          },
-          diagnostics.map((diagnostic) => renderDiagnostic(kind, diagnostic)),
-        ),
-  ]);
+  return el(
+    "section",
+    {
+      class: `diagnostic-section diagnostic-section--${kind}${
+        count === 0 ? " diagnostic-section--empty" : ""
+      }`,
+      "aria-labelledby": id,
+    },
+    [
+      el("div", { class: "diagnostic-section-heading" }, [
+        el("div", { class: "diagnostic-section-title-group" }, [
+          el("h3", { id }, [title]),
+          el("span", { class: "badge diagnostic-count" }, [String(count)]),
+        ]),
+      ]),
+      count === 0
+        ? el("p", { class: "empty doctor-empty" }, [
+            isFinding ? "No blocking findings." : "No notes.",
+          ])
+        : el(
+            "ol",
+            {
+              class: "diagnostic-list",
+              "aria-label": `Doctor ${isFinding ? "findings" : "notes"}`,
+            },
+            diagnostics.map((diagnostic, index) =>
+              renderDiagnostic(kind, diagnostic, index),
+            ),
+          ),
+    ],
+  );
 }
 
 function renderReport(report: DoctorInfo): HTMLElement {
@@ -129,34 +149,39 @@ function renderReport(report: DoctorInfo): HTMLElement {
         }`,
       },
       [
-        el("p", { class: "doctor-summary-copy" }, [
-          healthy
-            ? "No blocking issues found."
-            : "Resolve findings before serving the engine.",
+        el("div", { class: "doctor-summary-signal" }, [
+          el("p", { class: "doctor-summary-copy" }, [
+            healthy
+              ? "No blocking issues found."
+              : "Resolve findings before serving the engine.",
+          ]),
         ]),
         el("dl", { class: "doctor-stats", "aria-label": "Doctor summary" }, [
-          el("div", { class: "doctor-stat" }, [
+          el("div", { class: "doctor-stat doctor-stat--capabilities" }, [
             el("dt", {}, ["Capabilities"]),
             el("dd", {}, [capabilityCount]),
           ]),
-          el("div", { class: "doctor-stat" }, [
+          el("div", { class: "doctor-stat doctor-stat--findings" }, [
             el("dt", {}, ["Findings"]),
             el("dd", {}, [String(findingCount)]),
           ]),
-          el("div", { class: "doctor-stat" }, [
+          el("div", { class: "doctor-stat doctor-stat--notes" }, [
             el("dt", {}, ["Notes"]),
             el("dd", {}, [String(report.notes.length)]),
           ]),
         ]),
       ],
     ),
-    renderDiagnosticSection("finding", report.findings),
-    renderDiagnosticSection("note", report.notes),
+    el("div", { class: "doctor-sections" }, [
+      renderDiagnosticSection("finding", report.findings),
+      renderDiagnosticSection("note", report.notes),
+    ]),
   ]);
 }
 
 export function renderDoctorPanel(container: HTMLElement): () => void {
   let active = true;
+  let loading = false;
   clear(container);
   const engine = el("p", { class: "hint doctor-engine" }, []);
   const status = el(
@@ -169,27 +194,54 @@ export function renderDoctorPanel(container: HTMLElement): () => void {
     },
     ["Running checks…"],
   );
-  const reportContent = el("div", { class: "doctor-content" }, []);
-  container.append(
-    el(
-      "section",
-      { class: "doctor-panel", "aria-labelledby": "doctor-title" },
-      [
-        el("div", { class: "doctor-heading" }, [
-          el("div", { class: "doctor-title-group" }, [
-            el("h2", { id: "doctor-title" }, ["Doctor"]),
-            engine,
-          ]),
-          status,
-        ]),
-        reportContent,
-      ],
-    ),
+  const refresh = el(
+    "button",
+    {
+      class: "secondary doctor-refresh",
+      type: "button",
+      "aria-label": "Run doctor checks again",
+      "aria-controls": "doctor-report",
+    },
+    ["Run again"],
   );
+  refresh.disabled = true;
+  const reportContent = el(
+    "div",
+    { class: "doctor-content", id: "doctor-report" },
+    [],
+  );
+  const panel = el(
+    "section",
+    {
+      class: "doctor-panel",
+      "aria-labelledby": "doctor-title",
+      "aria-busy": "true",
+    },
+    [
+      el("div", { class: "doctor-heading" }, [
+        el("div", { class: "doctor-title-group" }, [
+          el("h2", { id: "doctor-title" }, ["Doctor"]),
+          engine,
+        ]),
+        el("div", { class: "doctor-actions" }, [status, refresh]),
+      ]),
+      reportContent,
+    ],
+  );
+  container.append(panel);
 
-  void api
-    .doctor()
-    .then((report) => {
+  const runChecks = async (): Promise<void> => {
+    if (!active || loading) return;
+    loading = true;
+    panel.setAttribute("aria-busy", "true");
+    refresh.disabled = true;
+    status.setAttribute("class", "doctor-state hint");
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    status.textContent = "Running checks…";
+
+    try {
+      const report = await api.doctor();
       if (!active) return;
       clear(reportContent);
       reportContent.append(renderReport(report));
@@ -200,8 +252,7 @@ export function renderDoctorPanel(container: HTMLElement): () => void {
         `doctor-state badge ${healthy ? "ok" : "error"}`,
       );
       status.textContent = healthy ? "Healthy" : "Issues found";
-    })
-    .catch(() => {
+    } catch {
       if (!active) return;
       clear(reportContent);
       engine.textContent = "";
@@ -210,9 +261,23 @@ export function renderDoctorPanel(container: HTMLElement): () => void {
       status.setAttribute("aria-live", "assertive");
       status.textContent =
         "Doctor checks could not be loaded. Check that the dev server is still running.";
-    });
+    } finally {
+      loading = false;
+      if (active) {
+        panel.setAttribute("aria-busy", "false");
+        refresh.disabled = false;
+      }
+    }
+  };
+
+  const handleRefresh = (): void => {
+    void runChecks();
+  };
+  refresh.addEventListener("click", handleRefresh);
+  void runChecks();
 
   return () => {
     active = false;
+    refresh.removeEventListener("click", handleRefresh);
   };
 }

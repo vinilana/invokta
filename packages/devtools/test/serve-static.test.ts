@@ -93,6 +93,7 @@ describe("shipped interface bundle", () => {
       "invoke-panel.js",
       "mcp-response.js",
       "principals.js",
+      "schema-view.js",
       "styles.js",
       "theme.js",
       "trace.js",
@@ -115,6 +116,9 @@ describe("shipped interface bundle", () => {
     expect(page.indexOf("starlight-theme")).toBeLessThan(
       page.indexOf('src="/assets/app.js"'),
     );
+    expect(page).toContain(
+      '<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">',
+    );
     expect(page).toContain('src="/assets/app.js"');
   });
 
@@ -126,5 +130,13 @@ describe("shipped interface bundle", () => {
 
     const styles = await fetch(`${base}/assets/styles.js`);
     expect(styles.status).toBe(200);
+
+    const favicon = await fetch(`${base}/assets/favicon.svg`);
+    expect(favicon.status).toBe(200);
+    expect(favicon.headers.get("content-type")).toBe("image/svg+xml");
+    expect(favicon.headers.get("cache-control")).toBe("no-store");
+    expect(await favicon.text()).toMatch(
+      /^<svg[^>]+viewBox="0 0 32 32"[\s\S]+stroke="#3D50F5"[\s\S]+<\/svg>$/u,
+    );
   });
 });

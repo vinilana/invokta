@@ -261,13 +261,18 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         actionButtons.push(activate);
       }
 
-      const tokenActionLabel = "Rotate token and use…";
+      const tokenActionLabel = hasToken
+        ? "Rotate token and use…"
+        : "Create session token and use…";
+      const tokenActionAriaLabel = hasToken
+        ? `Rotate token and use for ${entry.principal.id}`
+        : `Create session token and use for ${entry.principal.id}`;
       const tokenAction = el(
         "button",
         {
           type: "button",
           class: "credential-action",
-          "aria-label": `Rotate token and use for ${entry.principal.id}`,
+          "aria-label": tokenActionAriaLabel,
           "aria-describedby": `${tokenGuidanceId} ${statusId}`,
         },
         [tokenActionLabel],
@@ -295,10 +300,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
       const resetConfirmation = (): void => {
         confirmation = null;
         tokenAction.textContent = tokenActionLabel;
-        tokenAction.setAttribute(
-          "aria-label",
-          `Rotate token and use for ${entry.principal.id}`,
-        );
+        tokenAction.setAttribute("aria-label", tokenActionAriaLabel);
         remove.textContent = "Delete…";
         remove.setAttribute(
           "aria-label",
@@ -312,14 +314,25 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         confirmation = kind;
         cancelConfirmation.hidden = false;
         if (kind === "rotation") {
-          tokenAction.textContent = "Confirm rotation";
-          tokenAction.setAttribute(
-            "aria-label",
-            `Confirm token rotation for ${entry.principal.id}`,
-          );
-          setActionStatus(
-            `Rotate the token for “${entry.principal.id}”? The current token will stop working immediately.`,
-          );
+          if (hasToken) {
+            tokenAction.textContent = "Confirm rotation";
+            tokenAction.setAttribute(
+              "aria-label",
+              `Confirm token rotation for ${entry.principal.id}`,
+            );
+            setActionStatus(
+              `Rotate the token for “${entry.principal.id}”? The current token will stop working immediately.`,
+            );
+          } else {
+            tokenAction.textContent = "Confirm token creation";
+            tokenAction.setAttribute(
+              "aria-label",
+              `Confirm session token creation for ${entry.principal.id}`,
+            );
+            setActionStatus(
+              `Create a session token for “${entry.principal.id}” and use it for invocations?`,
+            );
+          }
           return;
         }
         remove.textContent = "Confirm delete";
@@ -331,13 +344,15 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           `Delete “${entry.principal.id}”? Its token will stop working immediately.`,
         );
       };
-      const rotateToken = (): void => {
+      const issueToken = (): void => {
         clearPanelStatus();
         resetConfirmation();
         setActionsDisabled(true);
-        tokenAction.textContent = "Rotating…";
+        tokenAction.textContent = hasToken ? "Rotating…" : "Creating…";
         setActionStatus(
-          "Rotating the token and making this test identity active…",
+          hasToken
+            ? "Rotating the token and selecting this test identity…"
+            : "Creating a token and selecting this test identity…",
         );
         void api
           .rotatePrincipal(entry.key)
@@ -346,7 +361,9 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
             rememberPrincipal(issued);
             storeToken(issued.key, issued.token);
             pendingCompletion = {
-              message: `Rotated the session token for “${entry.principal.id}” and made it active. The previous token was revoked.`,
+              message: hasToken
+                ? `Rotated the session token for “${entry.principal.id}” and made it active. The previous token was revoked.`
+                : `Created a session token for “${entry.principal.id}” and selected it for invocations.`,
               focus: { kind: "token-action", key: issued.key },
             };
             setActivePrincipal(issued.key);
@@ -357,7 +374,9 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
             setActionsDisabled(false);
             resetConfirmation();
             setActionStatus(
-              "The token could not be rotated. Any existing token remains valid.",
+              hasToken
+                ? "The token could not be rotated. The existing token remains valid."
+                : "The session token could not be created. No credential was added.",
               "error",
             );
           });
@@ -367,7 +386,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           beginConfirmation("rotation");
           return;
         }
-        rotateToken();
+        issueToken();
       });
       remove.addEventListener("click", () => {
         if (confirmation !== "deletion") {
@@ -414,20 +433,42 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           class: `principal-row${isActive ? " active" : ""}`,
           role: "group",
           "aria-label": `Test identity ${entry.principal.id}`,
+          "aria-describedby": `principal-invocation-state-${String(index)} principal-credential-state-${String(index)}`,
           tabindex: "-1",
         },
         [
-          el("div", { class: "principal-summary" }, [
-            el("strong", {}, [entry.principal.id]),
-            el("span", { class: "hint" }, [
-              "Key ",
-              el("code", {}, [entry.key]),
+          el("div", { class: "principal-row-main" }, [
+            el("div", { class: "principal-identity" }, [
+              el("span", { class: "principal-overline" }, ["Test identity"]),
+              el("strong", { class: "principal-name" }, [entry.principal.id]),
+              el("span", { class: "hint principal-key" }, [
+                "Internal key ",
+                el("code", {}, [entry.key]),
+              ]),
             ]),
-            el("span", { class: `badge${isActive ? " ok" : ""}` }, [
-              isActive ? "Active" : "Inactive",
-            ]),
-            el("span", { class: `badge ${hasToken ? "ok" : "warn"}` }, [
-              hasToken ? "Token in session" : "No session token",
+            el("div", { class: "principal-state-grid" }, [
+              el("div", { class: "principal-invocation-state" }, [
+                el("span", { class: "principal-state-label" }, ["Invocation"]),
+                el(
+                  "span",
+                  {
+                    id: `principal-invocation-state-${String(index)}`,
+                    class: `badge${isActive ? " ok" : ""}`,
+                  },
+                  [isActive ? "Selected" : "Not selected"],
+                ),
+              ]),
+              el("div", { class: "principal-credential-state" }, [
+                el("span", { class: "principal-state-label" }, ["Credential"]),
+                el(
+                  "span",
+                  {
+                    id: `principal-credential-state-${String(index)}`,
+                    class: `badge ${hasToken ? "ok" : "warn"}`,
+                  },
+                  [hasToken ? "Session token ready" : "Session token missing"],
+                ),
+              ]),
             ]),
           ]),
           entry.principal.attributes === undefined
@@ -438,7 +479,15 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
                   pretty(entry.principal.attributes),
                 ]),
               ]),
-          el("div", { class: "principal-actions" }, actionButtons),
+          el(
+            "div",
+            {
+              class: "principal-actions",
+              role: "group",
+              "aria-label": `Actions for ${entry.principal.id}`,
+            },
+            actionButtons,
+          ),
           actionStatus,
         ],
       );
@@ -582,34 +631,81 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
     });
 
     const heading = el("h2", { tabindex: "-1" }, ["Test identities"]);
-    const createSection = el("details", { class: "principal-create" }, [
-      el("summary", {}, ["Add identity"]),
-      el("p", { id: createHintId, class: "hint" }, [
-        "Adding a test identity also mints its token and makes it active.",
+    const identityCount = principals.length;
+    const countLabel = `${String(identityCount)} test ${
+      identityCount === 1 ? "identity" : "identities"
+    }`;
+    const header = el("header", { class: "principals-header" }, [
+      el("div", { class: "principals-heading" }, [
+        heading,
+        el("span", { class: "badge principals-count" }, [countLabel]),
       ]),
-      el("label", { for: idInputId }, ["Principal ID"]),
-      idInput,
-      el("label", { for: attributesInputId }, ["Attributes (JSON, optional)"]),
-      attributesInput,
-      create,
-      feedback,
+      el("p", { class: "hint principals-intro" }, [
+        "Choose the identity used to authenticate Playground invocations.",
+      ]),
     ]);
-    panelBody.append(
-      heading,
-      el("p", { id: tokenGuidanceId, class: "hint" }, [
-        "The selected test identity authenticates invocations as an Invokta Principal. ",
-        "The development server keeps test identities and tokens in memory; minted bearer tokens are also ",
-        "kept in this browser session. Token values are not displayed here. ",
-        "Rotating a token revokes the previous token immediately.",
+    const createSection = el("details", { class: "principal-create" }, [
+      el("summary", { class: "principal-create-summary" }, [
+        el("span", { class: "principal-create-heading" }, ["Add identity"]),
+        el("span", { class: "hint principal-create-outcome" }, [
+          "Mints a token and activates it",
+        ]),
       ]),
-      ...(principals.length === 0
-        ? [
-            el("p", { class: "empty" }, [
-              "No test identities yet. Add one to authenticate invocations.",
+      el("div", { class: "principal-create-body" }, [
+        el("p", { id: createHintId, class: "hint principal-create-hint" }, [
+          "Create an in-memory Principal for development and homologation. Its bearer token stays hidden in this browser session.",
+        ]),
+        el("div", { class: "principal-create-fields" }, [
+          el("div", { class: "principal-field" }, [
+            el("label", { for: idInputId }, ["Principal ID"]),
+            idInput,
+          ]),
+          el("div", { class: "principal-field" }, [
+            el("label", { for: attributesInputId }, [
+              "Attributes (JSON, optional)",
             ]),
-          ]
-        : []),
-      ...rows,
+            attributesInput,
+          ]),
+        ]),
+        el("div", { class: "principal-create-actions" }, [create]),
+        feedback,
+      ]),
+    ]);
+    const identitiesSection = el(
+      "section",
+      {
+        class: "principals-list-section",
+        "aria-labelledby": "principals-list-heading",
+      },
+      [
+        el("div", { class: "principals-section-heading" }, [
+          el("h3", { id: "principals-list-heading" }, ["Available identities"]),
+          el("span", { class: "hint" }, [
+            identityCount === 0
+              ? "No identities configured"
+              : `${String(identityCount)} configured`,
+          ]),
+        ]),
+        ...(principals.length === 0
+          ? [
+              el("p", { class: "empty principal-empty" }, [
+                "No test identities yet. Add one to authenticate invocations.",
+              ]),
+            ]
+          : [el("div", { class: "principals-list" }, rows)]),
+      ],
+    );
+    panelBody.append(
+      header,
+      el("div", { id: tokenGuidanceId, class: "principal-token-guidance" }, [
+        el("strong", { class: "principal-guidance-title" }, [
+          "Session credentials",
+        ]),
+        el("p", { class: "hint" }, [
+          "Token values are never displayed and remain in this browser session. Rotating a token revokes the previous token immediately.",
+        ]),
+      ]),
+      identitiesSection,
       createSection,
     );
 

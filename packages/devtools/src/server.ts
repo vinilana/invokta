@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import type { Principal } from "@invokta/core";
 
+import { faviconLink, faviconSvg } from "./favicon.js";
 import type { PrincipalStore } from "./principal-store.js";
 import type { TraceStore } from "./trace-store.js";
 
@@ -61,6 +62,7 @@ const appShellPage = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Invokta devtools</title>
+${faviconLink}
 <style>
 html { background: #09090b; color-scheme: dark; }
 html[data-theme="light"] { background: #fff; color-scheme: light; }
@@ -446,6 +448,14 @@ export async function startDevtoolsServer(
     }
     if (path === "/") {
       serveIndex(response);
+      return;
+    }
+    if (path === "/assets/favicon.svg") {
+      response.writeHead(200, {
+        "content-type": "image/svg+xml",
+        "cache-control": "no-store",
+      });
+      response.end(faviconSvg);
       return;
     }
     if (path.startsWith("/assets/")) {

@@ -306,7 +306,47 @@ describe("capability discovery", () => {
     expect(detail.getAttribute("aria-labelledby")).toBe(
       first.getAttribute("id"),
     );
-    expect(container.textContent).toContain("Annotations: readOnlyHint");
+    expect(container.textContent).not.toContain("Annotations:");
+    expect(container.textContent).toContain("readOnlyHint");
+    expect(container.textContent).not.toContain(
+      "Edit the generated arguments, then send a tools/call request through engine.invoke.",
+    );
+    expect(container.textContent).toContain("tools/call → engine.invoke");
+    const overview = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-overview"),
+    );
+    const capabilityMeta = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("aria-label") === "Capability metadata",
+    );
+    const schemaGrid = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("schema-grid"),
+    );
+    const schemaCards = elements.filter(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("schema-card"),
+    );
+    expect(overview).toBeDefined();
+    expect(capabilityMeta.textContent).toContain("readOnlyHint");
+    expect(capabilityMeta.textContent).toContain("2,000 ms timeout");
+    expect(schemaGrid).toBeDefined();
+    expect(schemaCards).toHaveLength(2);
+    expect(schemaCards[0].textContent).toContain("Input schema");
+    expect(schemaCards[0].textContent).toContain("ticketIdstringrequired");
+    expect(schemaCards[1].textContent).toContain("Output schema");
+    expect(schemaCards[1].textContent).toContain("urgencystringoptional");
+    expect(
+      elements.filter(
+        (node) =>
+          node instanceof FakeElement &&
+          node.tagName === "SUMMARY" &&
+          node.textContent === "Raw JSON Schema",
+      ),
+    ).toHaveLength(2);
 
     detail.scrollTop = 320;
     const arrowDown = new Event("keydown", { cancelable: true });

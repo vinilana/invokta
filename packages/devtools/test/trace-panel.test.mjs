@@ -157,6 +157,12 @@ describe("trace panel", () => {
     const dispose = renderTracePanel(container);
     const nodes = walk(container);
     const heading = nodes.find((node) => node.tagName === "H2");
+    const panel = nodes.find(
+      (node) => node.getAttribute?.("class") === "trace-panel",
+    );
+    const header = nodes.find(
+      (node) => node.getAttribute?.("class") === "trace-header",
+    );
     const status = nodes.find(
       (node) => node.getAttribute?.("role") === "status",
     );
@@ -164,16 +170,29 @@ describe("trace panel", () => {
     const warning = nodes.find(
       (node) => node.getAttribute?.("role") === "note",
     );
+    const feedHeading = nodes.find(
+      (node) => node.getAttribute?.("id") === "trace-feed-heading",
+    );
+    const count = nodes.find(
+      (node) => node.getAttribute?.("id") === "trace-count",
+    );
     const empty = nodes.find(
-      (node) => node.getAttribute?.("class") === "empty",
+      (node) => node.getAttribute?.("class") === "trace-empty",
     );
 
     expect(sources).toHaveLength(1);
     expect(sources[0].url).toBe("/api/events");
+    expect(panel).toBeDefined();
+    expect(header).toBeDefined();
     expect(heading.getAttribute("id")).toBe("trace-heading");
+    expect(heading.textContent).toBe("Activity");
     expect(status.getAttribute("id")).toBe("trace-status");
     expect(status.getAttribute("aria-atomic")).toBe("true");
-    expect(log.getAttribute("aria-labelledby")).toBe("trace-heading");
+    expect(status.getAttribute("class")).toContain("trace-state--connecting");
+    expect(feedHeading.textContent).toBe("Session activity");
+    expect(count.textContent).toBe("0 entries");
+    expect(count.getAttribute("aria-hidden")).toBe("true");
+    expect(log.getAttribute("aria-labelledby")).toBe("trace-feed-heading");
     expect(log.getAttribute("aria-describedby")).toBe(
       "trace-status trace-data-warning",
     );
@@ -184,14 +203,17 @@ describe("trace panel", () => {
       "Raw request and response bodies from all connected MCP clients",
     );
     expect(warning.getAttribute("id")).toBe("trace-data-warning");
+    expect(warning.getAttribute("class")).toBe("trace-safety-note");
     expect(warning.textContent).toContain("sensitive data");
-    expect(empty.textContent).toBe(
-      "No activity yet. Invoke a capability or connect an MCP client to start tracing.",
+    expect(empty.textContent).toContain("No activity yet");
+    expect(empty.textContent).toContain(
+      "Invoke a capability or connect an MCP client to start tracing.",
     );
     expect(empty.hidden).toBe(false);
 
     sources[0].dispatchEvent(new Event("open"));
     expect(status.textContent).toBe("Connected · loading recent activity…");
+    expect(status.getAttribute("class")).toContain("trace-state--connected");
     expect(log.getAttribute("aria-live")).toBe("off");
     expect(log.getAttribute("aria-busy")).toBe("true");
 
@@ -234,11 +256,27 @@ describe("trace panel", () => {
     expect(log.textContent).toContain("HTTP 503");
     expect(log.textContent).toContain("Request body — Truncated");
     expect(log.textContent).toContain("Engine restarted");
+    expect(count.textContent).toBe("3 entries");
+    expect(
+      walk(log).find((node) => node.textContent === "Invocation"),
+    ).toBeDefined();
+    expect(
+      walk(log).find((node) => node.textContent === "MCP exchange"),
+    ).toBeDefined();
+    expect(
+      walk(log).find((node) => node.textContent === "Lifecycle"),
+    ).toBeDefined();
+    expect(
+      walk(log).find(
+        (node) => node.getAttribute?.("class") === "trace-payload-grid",
+      ),
+    ).toBeDefined();
     expect(log.getAttribute("aria-live")).toBe("off");
     expect(log.getAttribute("aria-busy")).toBe("true");
 
     await vi.advanceTimersByTimeAsync(100);
     expect(status.textContent).toBe("Live · 3 entries loaded · newest first.");
+    expect(status.getAttribute("class")).toContain("trace-state--live");
     expect(log.getAttribute("aria-live")).toBe("polite");
     expect(log.getAttribute("aria-busy")).toBe("false");
     const times = walk(log).filter((node) => node.tagName === "TIME");
@@ -259,6 +297,7 @@ describe("trace panel", () => {
     expect(status.textContent).toBe(
       "Disconnected · retrying automatically; existing entries remain visible.",
     );
+    expect(status.getAttribute("class")).toContain("trace-state--disconnected");
     expect(log.getAttribute("aria-live")).toBe("off");
     expect(log.getAttribute("aria-busy")).toBe("true");
 

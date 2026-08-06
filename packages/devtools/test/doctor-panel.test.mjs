@@ -55,8 +55,10 @@ class FakeText extends FakeNode {
 
 class FakeElement extends FakeNode {
   #attributes = new Map();
+  #listeners = new Map();
   childNodes = [];
   classList = new FakeClassList();
+  disabled = false;
 
   constructor(tagName) {
     super();
@@ -77,6 +79,23 @@ class FakeElement extends FakeNode {
       const node = typeof child === "string" ? new FakeText(child) : child;
       node.parentNode = this;
       this.childNodes.push(node);
+    }
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.#listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.#listeners.set(type, listeners);
+  }
+
+  removeEventListener(type, listener) {
+    this.#listeners.get(type)?.delete(listener);
+  }
+
+  click() {
+    if (this.disabled) return;
+    for (const listener of this.#listeners.get("click") ?? []) {
+      listener({ currentTarget: this, preventDefault() {} });
     }
   }
 
@@ -156,12 +175,27 @@ describe("doctor panel", () => {
     const { renderDoctorPanel } = await import("../src/ui/doctor-panel.js");
     const container = new FakeElement("main");
     const dispose = renderDoctorPanel(container);
+    const panel = walk(container).find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("doctor-panel"),
+    );
     const loadingStatus = walk(container).find(
       (node) =>
         node instanceof FakeElement && node.getAttribute("role") === "status",
     );
+    const refresh = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("doctor-refresh"),
+    );
 
     expect(loadingStatus.textContent).toBe("Running checks…");
+    expect(panel.getAttribute("aria-busy")).toBe("true");
+    expect(refresh.tagName).toBe("BUTTON");
+    expect(refresh.getAttribute("type")).toBe("button");
+    expect(refresh.getAttribute("aria-label")).toBe("Run doctor checks again");
+    expect(refresh.textContent).toBe("Run again");
+    expect(refresh.disabled).toBe(true);
     await waitFor(() => expect(container.textContent).toContain("Healthy"));
     const status = walk(container).find(
       (node) =>
@@ -183,15 +217,39 @@ describe("doctor panel", () => {
         node.tagName === "H3" &&
         node.textContent === "Notes",
     );
+    const sections = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("doctor-sections"),
+    );
+    const findingsSection = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("diagnostic-section--finding"),
+    );
+    const notesSection = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("diagnostic-section--note"),
+    );
 
     expect(status).toBe(loadingStatus);
     expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(panel.getAttribute("aria-busy")).toBe("false");
+    expect(refresh.disabled).toBe(false);
     expect(summary.classList.contains("doctor-summary--healthy")).toBe(true);
     expect(summary.textContent).toContain("No blocking issues found.");
     expect(container.textContent).toContain("No blocking findings");
     expect(container.textContent).not.toContain("[ engine / diagnostics ]");
     expect(container.textContent).not.toContain("Advisory notes");
     expect(notesHeading).toBeDefined();
+    expect(sections).toBeDefined();
+    expect(findingsSection.getAttribute("aria-labelledby")).toBe(
+      "doctor-findings-title",
+    );
+    expect(notesSection.getAttribute("aria-labelledby")).toBe(
+      "doctor-notes-title",
+    );
     expect(note.textContent).toContain("MCP_MANIFEST_PRESENT");
     expect(note.textContent).toContain("invokta.mcp.json is present");
 
@@ -252,6 +310,21 @@ describe("doctor panel", () => {
     const details = walk(finding).find(
       (node) => node instanceof FakeElement && node.tagName === "DETAILS",
     );
+    const diagnosticBody = walk(finding).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("diagnostic-item-body"),
+    );
+    const code = walk(finding).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("diagnostic-code"),
+    );
+    const message = walk(finding).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("diagnostic-message"),
+    );
 
     expect(status).toBe(loadingStatus);
     expect(summary.classList.contains("doctor-summary--issues")).toBe(true);
@@ -262,7 +335,71 @@ describe("doctor panel", () => {
     expect(finding.textContent).toContain("DESCRIBE_FAILED");
     expect(finding.textContent).toContain("fixture.broken");
     expect(finding.textContent).toContain("Fixture describe failed.");
+    expect(diagnosticBody).toBeDefined();
+    expect(finding.getAttribute("aria-labelledby")).toBe(
+      code.getAttribute("id"),
+    );
+    expect(finding.getAttribute("aria-describedby")).toBe(
+      message.getAttribute("id"),
+    );
     expect(details.textContent).toContain("Raw details");
+
+    dispose();
+  });
+
+  it("can run the checks again without replacing the live status", async () => {
+    installDocument();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          engineName: "fixture-engine",
+          engineVersion: "1.2.3",
+          capabilityCount: 2,
+          findings: [],
+          notes: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          engineName: "fixture-engine",
+          engineVersion: "1.2.3",
+          capabilityCount: 2,
+          findings: [{ code: "TITLE_MISSING", capabilityId: "fixture.one" }],
+          notes: [],
+        }),
+      );
+    installGlobal("fetch", fetchMock);
+
+    const { renderDoctorPanel } = await import("../src/ui/doctor-panel.js");
+    const container = new FakeElement("main");
+    const dispose = renderDoctorPanel(container);
+    const panel = walk(container).find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("doctor-panel"),
+    );
+    const status = walk(container).find(
+      (node) =>
+        node instanceof FakeElement && node.getAttribute("role") === "status",
+    );
+    const refresh = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("doctor-refresh"),
+    );
+
+    await waitFor(() => expect(status.textContent).toBe("Healthy"));
+    refresh.click();
+
+    expect(panel.getAttribute("aria-busy")).toBe("true");
+    expect(refresh.disabled).toBe(true);
+    expect(status.textContent).toBe("Running checks…");
+    await waitFor(() => expect(status.textContent).toBe("Issues found"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(panel.getAttribute("aria-busy")).toBe("false");
+    expect(refresh.disabled).toBe(false);
+    expect(container.textContent).toContain("fixture.one");
 
     dispose();
   });

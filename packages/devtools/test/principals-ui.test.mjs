@@ -225,13 +225,14 @@ describe("principals panel", () => {
     renderPrincipalsPanel(container);
 
     await waitFor(() =>
-      expect(container.textContent).toContain("Token in session"),
+      expect(container.textContent).toContain("Session token ready"),
     );
-    expect(container.textContent).toContain("Active");
-    expect(container.textContent).toContain("Inactive");
-    expect(container.textContent).toContain("No session token");
+    expect(container.textContent).toContain("Selected");
+    expect(container.textContent).toContain("Not selected");
+    expect(container.textContent).toContain("Session token missing");
     expect(container.textContent).toContain("Act as");
     expect(container.textContent).toContain("Rotate token and use…");
+    expect(container.textContent).toContain("Create session token and use…");
     expect(container.textContent).toContain(
       "Rotating a token revokes the previous token immediately.",
     );
@@ -246,6 +247,74 @@ describe("principals panel", () => {
       (node) => node.getAttribute?.("aria-live") === "polite",
     );
     expect(status).toBeDefined();
+  });
+
+  it("separates identity, invocation, credential, and creation controls", async () => {
+    installBrowser(async () =>
+      jsonResponse([
+        { key: "p1", principal: { id: "local-dev" } },
+        { key: "p2", principal: { id: "reviewer" } },
+      ]),
+    );
+    sessionStorage.setItem(
+      "invokta-devtools.tokens",
+      JSON.stringify({ p1: "secret" }),
+    );
+    sessionStorage.setItem("invokta-devtools.active", "p1");
+
+    const { renderPrincipalsPanel } = await import("../src/ui/principals.js");
+    const container = new FakeElement("main");
+    renderPrincipalsPanel(container);
+
+    await waitFor(() =>
+      expect(container.textContent).toContain("2 test identities"),
+    );
+    const elements = walk(container);
+    const header = elements.find((node) =>
+      node.getAttribute?.("class")?.includes("principals-header"),
+    );
+    expect(header.textContent).toContain("Test identities");
+    expect(header.textContent).toContain("2 test identities");
+
+    const localRow = elements.find(
+      (node) => node.getAttribute?.("aria-label") === "Test identity local-dev",
+    );
+    const localElements = walk(localRow);
+    const identity = localElements.find((node) =>
+      node.getAttribute?.("class")?.includes("principal-identity"),
+    );
+    const invocationState = localElements.find((node) =>
+      node.getAttribute?.("class")?.includes("principal-invocation-state"),
+    );
+    const credentialState = localElements.find((node) =>
+      node.getAttribute?.("class")?.includes("principal-credential-state"),
+    );
+    const actions = localElements.find((node) =>
+      node.getAttribute?.("class")?.includes("principal-actions"),
+    );
+    expect(identity.textContent).toContain("local-dev");
+    expect(identity.textContent).toContain("Internal key p1");
+    expect(invocationState.textContent).toContain("Invocation");
+    expect(invocationState.textContent).toContain("Selected");
+    expect(credentialState.textContent).toContain("Credential");
+    expect(credentialState.textContent).toContain("Session token ready");
+    expect(localRow.getAttribute("aria-describedby")).toBe(
+      "principal-invocation-state-0 principal-credential-state-0",
+    );
+    expect(actions.getAttribute("aria-label")).toBe("Actions for local-dev");
+
+    const createSection = elements.find((node) =>
+      node.getAttribute?.("class")?.includes("principal-create"),
+    );
+    const createBody = walk(createSection).find((node) =>
+      node.getAttribute?.("class")?.includes("principal-create-body"),
+    );
+    expect(createSection.textContent).toContain("Add identity");
+    expect(createSection.textContent).toContain(
+      "Mints a token and activates it",
+    );
+    expect(createBody.textContent).toContain("Principal ID");
+    expect(createBody.textContent).toContain("Attributes (JSON, optional)");
   });
 
   it("requires an explicit confirmation before rotating an existing principal token", async () => {
@@ -415,26 +484,26 @@ describe("principals panel", () => {
     const container = new FakeElement("main");
     renderPrincipalsPanel(container);
     await waitFor(() =>
-      expect(container.textContent).toContain("Rotate token and use…"),
+      expect(container.textContent).toContain("Create session token and use…"),
     );
     const panelStatus = walk(container).find(
       (node) => node.getAttribute?.("id") === "principals-panel-status",
     );
-    const rotateWithoutSessionToken = walk(container).find(
+    const createSessionToken = walk(container).find(
       (node) =>
         node.tagName === "BUTTON" &&
-        node.textContent === "Rotate token and use…",
+        node.textContent === "Create session token and use…",
     );
-    rotateWithoutSessionToken.dispatchEvent(new Event("click"));
+    createSessionToken.dispatchEvent(new Event("click"));
     expect(panelStatus.textContent).toBe("");
     expect(container.textContent).toContain(
-      "The current token will stop working immediately.",
+      "Create a session token for “local-dev” and use it for invocations?",
     );
-    rotateWithoutSessionToken.dispatchEvent(new Event("click"));
+    createSessionToken.dispatchEvent(new Event("click"));
 
     await waitFor(() =>
       expect(panelStatus.textContent).toBe(
-        "Rotated the session token for “local-dev” and made it active. The previous token was revoked.",
+        "Created a session token for “local-dev” and selected it for invocations.",
       ),
     );
     let rotate = walk(container).find(
@@ -513,7 +582,10 @@ describe("principals panel", () => {
       (node) =>
         node.tagName === "BUTTON" && node.textContent === "Add identity",
     );
-    expect(refreshedCreate.parentNode.getAttribute("open")).toBe("");
+    const refreshedCreateSection = walk(container).find((node) =>
+      node.getAttribute?.("class")?.includes("principal-create"),
+    );
+    expect(refreshedCreateSection.getAttribute("open")).toBe("");
     expect(refreshedCreate.focused).toBe(true);
 
     const reviewerRow = walk(container).find(

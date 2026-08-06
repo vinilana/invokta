@@ -66,9 +66,9 @@ function exchangeBody(
   label: string,
   body: string,
   truncated: boolean,
-): readonly [HTMLHeadingElement, HTMLPreElement] {
+): HTMLElement {
   const heading = el(
-    "h3",
+    "h4",
     { class: "field-label" },
     truncated
       ? [`${label} — `, el("span", { class: "badge warn" }, ["Truncated"])]
@@ -84,7 +84,7 @@ function exchangeBody(
     },
     [body],
   );
-  return [heading, content];
+  return el("section", { class: "trace-payload" }, [heading, content]);
 }
 
 function sentenceCase(value: string): string {
@@ -96,6 +96,17 @@ function loadedStatus(count: number): string {
   return `Live · ${String(count)} ${count === 1 ? "entry" : "entries"} loaded · newest first.`;
 }
 
+function entryCount(count: number): string {
+  return `${String(count)} ${count === 1 ? "entry" : "entries"}`;
+}
+
+function entrySubject(kind: string, value: string): HTMLElement {
+  return el("span", { class: "trace-entry-subject" }, [
+    el("span", { class: "trace-entry-kind" }, [kind]),
+    el("code", {}, [value]),
+  ]);
+}
+
 function renderEntry(entry: TraceEntryView): HTMLElement {
   if (entry.kind === "invocation" && entry.invocation !== undefined) {
     const invocation = entry.invocation;
@@ -105,7 +116,7 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
         : invocation.errorCode === undefined
           ? "Failed"
           : `Failed · ${invocation.errorCode}`;
-    return el("div", { class: "trace-row invocation" }, [
+    return el("div", { class: "trace-row invocation trace-row--invocation" }, [
       timestamp(entry),
       el(
         "span",
@@ -114,40 +125,43 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
         },
         [outcome],
       ),
-      el("code", {}, [invocation.capabilityId]),
+      entrySubject("Invocation", invocation.capabilityId),
       duration(invocation.durationMs),
     ]);
   }
   if (entry.kind === "exchange" && entry.exchange !== undefined) {
     const exchange = entry.exchange;
-    return el("details", { class: "trace-row exchange" }, [
+    return el("details", { class: "trace-row exchange trace-row--exchange" }, [
       el("summary", { title: "Show raw request and response bodies" }, [
         timestamp(entry),
         el("span", { class: `badge ${httpStatusTone(exchange.status)}` }, [
           `HTTP ${String(exchange.status)}`,
         ]),
-        el("code", {}, [
-          exchange.capabilityId ?? exchange.mcpMethod ?? "MCP exchange",
-        ]),
+        entrySubject(
+          "MCP exchange",
+          exchange.capabilityId ?? exchange.mcpMethod ?? "Unknown method",
+        ),
         duration(exchange.durationMs),
       ]),
-      ...exchangeBody(
-        "Request body",
-        exchange.requestBody,
-        entry.requestTruncated === true,
-      ),
-      ...exchangeBody(
-        "Response body",
-        exchange.responseBody,
-        entry.responseTruncated === true,
-      ),
+      el("div", { class: "trace-payload-grid" }, [
+        exchangeBody(
+          "Request body",
+          exchange.requestBody,
+          entry.requestTruncated === true,
+        ),
+        exchangeBody(
+          "Response body",
+          exchange.responseBody,
+          entry.responseTruncated === true,
+        ),
+      ]),
     ]);
   }
   const notice = sentenceCase(entry.notice ?? "notice");
-  return el("div", { class: "trace-row notice" }, [
+  return el("div", { class: "trace-row notice trace-row--notice" }, [
     timestamp(entry),
     el("span", { class: "badge warn" }, ["Lifecycle"]),
-    el("span", {}, [notice]),
+    el("span", { class: "trace-entry-message" }, [notice]),
   ]);
 }
 
@@ -157,34 +171,47 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
  * session buffer on connect.
  */
 export function renderTracePanel(container: HTMLElement): () => void {
-  const heading = el("h2", { id: "trace-heading" }, ["Trace"]);
+  const heading = el("h2", { id: "trace-heading" }, ["Activity"]);
   const status = el(
     "p",
     {
       id: "trace-status",
-      class: "hint",
+      class: "trace-state trace-state--connecting",
       role: "status",
       "aria-atomic": "true",
     },
     ["Connecting to live trace…"],
   );
   const warning = el(
-    "p",
-    { id: "trace-data-warning", class: "hint", role: "note" },
+    "aside",
+    { id: "trace-data-warning", class: "trace-safety-note", role: "note" },
     [
       el("span", { class: "badge warn" }, ["Sensitive data"]),
-      " Raw request and response bodies from all connected MCP clients appear here and may contain sensitive data.",
+      el("div", { class: "trace-safety-copy" }, [
+        el("strong", {}, ["Raw payloads are visible in this session"]),
+        el("p", {}, [
+          "Raw request and response bodies from all connected MCP clients appear here and may contain sensitive data.",
+        ]),
+      ]),
     ],
   );
-  const empty = el("p", { class: "empty" }, [
-    "No activity yet. Invoke a capability or connect an MCP client to start tracing.",
+  const empty = el("div", { class: "trace-empty" }, [
+    el("p", { class: "trace-empty-title" }, ["No activity yet"]),
+    el("p", { class: "hint" }, [
+      "Invoke a capability or connect an MCP client to start tracing.",
+    ]),
   ]);
+  const count = el(
+    "span",
+    { id: "trace-count", class: "trace-count", "aria-hidden": "true" },
+    [entryCount(0)],
+  );
   const list = el(
     "div",
     {
       class: "trace-list",
       role: "log",
-      "aria-labelledby": "trace-heading",
+      "aria-labelledby": "trace-feed-heading",
       "aria-describedby": "trace-status trace-data-warning",
       "aria-live": "off",
       "aria-relevant": "additions",
@@ -192,7 +219,35 @@ export function renderTracePanel(container: HTMLElement): () => void {
     },
     [],
   );
-  container.append(heading, status, warning, empty, list);
+  const panel = el(
+    "section",
+    { class: "trace-panel", "aria-labelledby": "trace-heading" },
+    [
+      el("header", { class: "trace-header" }, [
+        el("div", { class: "trace-heading-group" }, [
+          heading,
+          el("p", { class: "trace-description" }, [
+            "Live engine and MCP traffic for this development session.",
+          ]),
+        ]),
+        status,
+      ]),
+      warning,
+      el(
+        "section",
+        { class: "trace-feed", "aria-labelledby": "trace-feed-heading" },
+        [
+          el("header", { class: "trace-feed-header" }, [
+            el("h3", { id: "trace-feed-heading" }, ["Session activity"]),
+            count,
+          ]),
+          empty,
+          list,
+        ],
+      ),
+    ],
+  );
+  container.append(panel);
 
   const visibleKeys: string[] = [];
   const seen = new Set<string>();
@@ -215,6 +270,7 @@ export function renderTracePanel(container: HTMLElement): () => void {
       replayPending = false;
       list.setAttribute("aria-busy", "false");
       list.setAttribute("aria-live", "polite");
+      status.setAttribute("class", "trace-state trace-state--live");
       status.textContent = loadedStatus(list.childElementCount);
     }, replaySettleDelayMs);
   };
@@ -225,6 +281,7 @@ export function renderTracePanel(container: HTMLElement): () => void {
     replayPending = true;
     list.setAttribute("aria-live", "off");
     list.setAttribute("aria-busy", "true");
+    status.setAttribute("class", "trace-state trace-state--connected");
     status.textContent = "Connected · loading recent activity…";
     scheduleReplaySettlement();
   });
@@ -234,6 +291,7 @@ export function renderTracePanel(container: HTMLElement): () => void {
     cancelReplaySettlement();
     list.setAttribute("aria-live", "off");
     list.setAttribute("aria-busy", "true");
+    status.setAttribute("class", "trace-state trace-state--disconnected");
     status.textContent =
       "Disconnected · retrying automatically; existing entries remain visible.";
   });
@@ -256,6 +314,7 @@ export function renderTracePanel(container: HTMLElement): () => void {
         const removed = visibleKeys.pop();
         if (removed !== undefined) seen.delete(removed);
       }
+      count.textContent = entryCount(list.childElementCount);
       scheduleReplaySettlement();
     } catch {
       // A malformed frame is dropped; the stream continues.
