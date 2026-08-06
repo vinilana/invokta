@@ -7,9 +7,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-06
+
 ### Added
 
-- `@invokta/devtools` now opens an idle, workspace-independent MCP workbench
+- Added `@invokta/devtools`, the tenth package (ADR 0021): a development-time
+  dev server and doctor for one built engine. `invokta-devtools doctor` runs
+  read-only checks with deterministic stderr diagnostics, and
+  `invokta-devtools serve` hosts the engine through the unmodified MCP HTTP
+  adapter behind minted development bearer tokens while serving a loopback
+  web interface with a capability browser, schema-seeded invocation editor,
+  raw MCP exchange view, live trace, and test-identity switcher. `--watch --build`
+  replaces the engine-host child process after each successful explicit
+  build; modules are never reloaded in process. The contract is recorded in
+  `docs/specs/engine-devtools-dev-server.md`.
+- `@invokta/devtools` also opens an idle, workspace-independent MCP workbench
   that can attach to one explicit stdio command or Streamable HTTP endpoint.
   The compact interface supports catalog inspection, one deliberate tool call,
   bounded Activity metadata, and ephemeral none, bearer, OAuth Authorization
@@ -22,20 +34,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   official SDK for stdio and Streamable HTTP connections. SDK types, transport
   details, credentials, and protocol errors remain contained inside the MCP
   package boundary.
-- Added `@invokta/devtools`, the tenth package (ADR 0021): a development-time
-  dev server and doctor for one built engine. `invokta-devtools doctor` runs
-  read-only checks with deterministic stderr diagnostics, and
-  `invokta-devtools serve` hosts the engine through the unmodified MCP HTTP
-  adapter behind minted development bearer tokens while serving a loopback
-  web interface with a capability browser, schema-seeded invocation editor,
-  raw MCP exchange view, live trace, and test-identity switcher. `--watch --build`
-  replaces the engine-host child process after each successful explicit
-  build; modules are never reloaded in process. The contract is recorded in
-  `docs/specs/engine-devtools-dev-server.md`.
 - Generated engine starters now include `@invokta/devtools` as a development
   dependency, explicit `devtools` and `devtools:doctor` scripts for interactive
   development and read-only diagnostics.
-
+- `create-invokta-engine` now accepts an explicit
+  `--example <name|github-url>` creation mode with an optional
+  `--example-path <subdir>` (ADR 0020). Short names resolve to the official
+  `vinilana/invokta` `examples/<name>` trees, and HTTPS `github.com`
+  repository and tree URLs
+  resolve any public template. The mode is mutually exclusive with `--profile`,
+  downloads only from `codeload.github.com` after confirmation or `--yes`,
+  rewrites the generated package name to the project directory, and preserves
+  the existing target safety, exclusive-write, rollback, and package-manager
+  boundaries. Profile creation without `--example` remains offline. The
+  contract is recorded in `docs/specs/github-example-import.md`.
 - Added ten authentication examples under `examples/auth-*` — a
   provider-neutral JWT bearer engine plus Supabase, Clerk, Auth0, AWS Cognito,
   Firebase Auth, Better Auth, Auth.js, WorkOS AuthKit, and hashed API-key
@@ -44,7 +56,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   locally generated keys. Twelve matching documentation recipes, including an
   MCP OAuth discovery walkthrough, ship under a new Authentication group; the
   scope is recorded in `docs/specs/auth-provider-examples-and-recipes.md`.
-
 - `@invokta/installer` now exposes the `@invokta/installer/engine` subpath with
   `runEngineInstallerCli`, so a distributed engine binary can run the existing
   engine-scoped install and removal sessions against its own package root
@@ -60,6 +71,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Running `invokta-devtools` without arguments now starts the idle MCP
   workbench instead of returning an invalid-usage error. Existing `doctor` and
   `serve` invocations retain their workspace-aware behavior.
+
+### Security
+
+- `create-invokta-engine --example` scans every downloaded archive header
+  before extraction and fails closed on absolute, drive-letter, UNC,
+  NUL-bearing, or parent-traversing paths and on any entry that is not a
+  regular file or directory, so symbolic links, hard links, and device entries
+  from a public archive can never reach the file system. Extraction stages into
+  a temporary directory, copies only regular files into the target, and rolls
+  back on failure.
 
 ## [0.3.0] - 2026-08-01
 
@@ -165,7 +186,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/vinilana/invokta/releases/tag/v0.4.0
 [0.3.0]: https://github.com/vinilana/invokta/releases/tag/v0.3.0
 [0.2.0]: https://github.com/vinilana/invokta/releases/tag/v0.2.0
 [0.1.0]: https://github.com/vinilana/invokta/releases/tag/v0.1.0

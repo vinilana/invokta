@@ -1,6 +1,6 @@
 {
   "name": "create-invokta-engine",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Create a standalone Invokta Action Engine.",
   "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",
@@ -33,7 +33,7 @@
     "prepack": "npm run --silent build"
   },
   "dependencies": {
-    "@invokta/deploy": "0.3.0",
+    "@invokta/deploy": "0.4.0",
     "tar": "7.5.22"
   }
 }

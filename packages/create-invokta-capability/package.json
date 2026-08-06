@@ -1,6 +1,6 @@
 {
   "name": "create-invokta-capability",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Create a standalone Invokta atomic capability package.",
   "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",

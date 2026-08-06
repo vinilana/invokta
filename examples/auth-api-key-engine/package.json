@@ -11,8 +11,8 @@
     "mcp:http": "node dist/mcp-http.js"
   },
   "dependencies": {
-    "@invokta/core": "0.3.0",
-    "@invokta/mcp": "0.3.0",
+    "@invokta/core": "0.4.0",
+    "@invokta/mcp": "0.4.0",
     "zod": "4.4.3"
   }
 }
