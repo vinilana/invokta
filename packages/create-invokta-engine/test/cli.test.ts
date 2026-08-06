@@ -753,17 +753,22 @@ describe("runCreateEngineCli", () => {
       "repo-main",
     ]);
     const archive = readFileSync(archivePath);
+    let apiCalls = 0;
+    let codeloadCalls = 0;
     const fetchImpl: ExampleFetch = async (input, init) => {
       const url = new URL(input);
+      expect(init?.redirect).toBe("error");
       if (url.pathname.includes("/contents/")) {
+        apiCalls += 1;
         return new Response(null, { status: 200 });
       }
       if (url.hostname === "codeload.github.com") {
-        expect(init?.redirect).toBe("error");
+        codeloadCalls += 1;
         return new Response(Readable.toWeb(Readable.from(archive)), {
           status: 200,
         });
       }
+      apiCalls += 1;
       return new Response(JSON.stringify({ default_branch: "main" }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -790,6 +795,8 @@ describe("runCreateEngineCli", () => {
 
     expect(exitCode).toBe(0);
     expect(terminal.readLine).toHaveBeenCalledOnce();
+    expect(apiCalls).toBe(1);
+    expect(codeloadCalls).toBe(1);
     expect(io.stderr).toEqual([
       'Create from GitHub example "acme/repo/templates/engine" in "my-engine" without installing dependencies? (y/N) ',
     ]);
@@ -805,7 +812,8 @@ describe("runCreateEngineCli", () => {
   it("cancels an example import before downloading the archive", async () => {
     const cwd = createWorkingDirectory();
     let codeloadCalls = 0;
-    const fetchImpl: ExampleFetch = async (input) => {
+    const fetchImpl: ExampleFetch = async (input, init) => {
+      expect(init?.redirect).toBe("error");
       const url = new URL(input);
       if (url.hostname === "codeload.github.com") {
         codeloadCalls += 1;

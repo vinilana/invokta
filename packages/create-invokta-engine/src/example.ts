@@ -18,7 +18,6 @@ import { CreatorError } from "./errors.js";
 import {
   assertCreatableStarterTarget,
   defaultScaffoldFileSystem,
-  type ScaffoldFileSystem,
 } from "./scaffold.js";
 
 export const exampleLimits = Object.freeze({
@@ -28,10 +27,21 @@ export const exampleLimits = Object.freeze({
   maxExamplePathScalars: 1_024,
   maxExamplePathSegments: 32,
   fetchTimeoutMs: 60_000,
+  /** Uncompressed retained bytes across extracted regular files. */
   maxArchiveBytes: 52_428_800,
+  /** Compressed download bytes from codeload.github.com. */
+  maxCompressedArchiveBytes: 52_428_800,
   maxExtractedFiles: 10_000,
   maxFileBytes: 5_242_880,
 });
+
+export type ExampleRuntimeLimits = Readonly<{
+  maxArchiveBytes: number;
+  maxCompressedArchiveBytes: number;
+  maxExtractedFiles: number;
+  maxFileBytes: number;
+  fetchTimeoutMs: number;
+}>;
 
 export const officialExampleSource = Object.freeze({
   owner: "vinilana",
@@ -42,6 +52,9 @@ export const officialExampleSource = Object.freeze({
 
 const shortNamePattern =
   /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)*$/u;
+const githubOwnerPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u;
+const githubRepositoryPattern = /^[A-Za-z0-9._-]{1,100}$/u;
+const githubBranchPattern = /^[^\0\n\r]+$/u;
 
 export interface ExampleRepoInfo {
   readonly owner: string;
@@ -63,10 +76,11 @@ export type ExampleFetch = (
 export interface CreateExampleProjectOptions {
   readonly cwd: string;
   readonly target: string;
-  readonly example: string;
-  readonly examplePath?: string;
+  /** Already-resolved example metadata; callers resolve exactly once. */
+  readonly example: ExampleRepoInfo;
   readonly fetch?: ExampleFetch;
-  readonly fileSystem?: ScaffoldFileSystem;
+  /** Optional limit overrides for focused tests. */
+  readonly limits?: Partial<ExampleRuntimeLimits>;
 }
 
 function countScalars(value: string): number {
@@ -129,6 +143,44 @@ function stripGitSuffix(repository: string): string {
   return repository.endsWith(".git") ? repository.slice(0, -4) : repository;
 }
 
+function decodeGithubSegment(segment: string): string | undefined {
+  let decoded = segment;
+  if (segment.includes("%")) {
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      return undefined;
+    }
+  }
+  if (
+    decoded === "" ||
+    decoded.includes("/") ||
+    decoded.includes("\\") ||
+    decoded.includes("\u0000") ||
+    decoded.includes("%")
+  ) {
+    return undefined;
+  }
+  return decoded;
+}
+
+function isValidGithubOwner(owner: string): boolean {
+  return githubOwnerPattern.test(owner);
+}
+
+function isValidGithubRepository(repository: string): boolean {
+  return githubRepositoryPattern.test(repository);
+}
+
+function isValidGithubBranch(branch: string): boolean {
+  return (
+    branch !== "" &&
+    !branch.includes("\u0000") &&
+    githubBranchPattern.test(branch) &&
+    !branch.split("/").some((segment) => segment === "" || segment === "..")
+  );
+}
+
 function officialShortLabel(filePath: string): string | undefined {
   const prefix = `${officialExampleSource.directory}/`;
   if (!filePath.startsWith(prefix)) return undefined;
@@ -151,10 +203,18 @@ function parseGithubUrl(
   if (url.hostname !== "github.com") return undefined;
   const segments = url.pathname.split("/").filter((segment) => segment !== "");
   if (segments.length < 2) return undefined;
-  const [owner, rawRepository, treeToken, ...rest] = segments;
-  if (owner === undefined || rawRepository === undefined) return undefined;
-  const repository = stripGitSuffix(rawRepository);
-  if (owner === "" || repository === "") return undefined;
+  const [rawOwner, rawRepository, treeToken, ...rest] = segments;
+  if (rawOwner === undefined || rawRepository === undefined) return undefined;
+  const owner = decodeGithubSegment(rawOwner);
+  const repository = decodeGithubSegment(stripGitSuffix(rawRepository));
+  if (
+    owner === undefined ||
+    repository === undefined ||
+    !isValidGithubOwner(owner) ||
+    !isValidGithubRepository(repository)
+  ) {
+    return undefined;
+  }
   const overridePath =
     examplePath === undefined ? undefined : normalizeExamplePath(examplePath);
 
@@ -169,11 +229,23 @@ function parseGithubUrl(
   }
 
   if (treeToken !== "tree" || rest.length === 0) return undefined;
-  const [branch, ...pathSegments] = rest;
-  if (branch === undefined || branch === "") return undefined;
-  const urlPath = pathSegments.join("/");
+  const [rawBranch, ...pathSegments] = rest;
+  if (rawBranch === undefined) return undefined;
+  const branch = decodeGithubSegment(rawBranch);
+  if (branch === undefined || !isValidGithubBranch(branch)) return undefined;
+  const urlPath = pathSegments
+    .map((segment) => decodeGithubSegment(segment))
+    .every((segment) => segment !== undefined)
+    ? pathSegments
+        .map((segment) => decodeGithubSegment(segment) as string)
+        .join("/")
+    : undefined;
+  if (urlPath === undefined && pathSegments.length > 0) return undefined;
   const filePath =
-    overridePath ?? (urlPath === "" ? "" : normalizeExamplePath(urlPath));
+    overridePath ??
+    (urlPath === undefined || urlPath === ""
+      ? ""
+      : normalizeExamplePath(urlPath));
   const shortLabel =
     owner === officialExampleSource.owner &&
     repository === officialExampleSource.repository
@@ -237,20 +309,34 @@ export function parseExampleReference(
   return parsed;
 }
 
+function resolveRuntimeLimits(
+  overrides: Partial<ExampleRuntimeLimits> | undefined,
+): ExampleRuntimeLimits {
+  return Object.freeze({
+    maxArchiveBytes:
+      overrides?.maxArchiveBytes ?? exampleLimits.maxArchiveBytes,
+    maxCompressedArchiveBytes:
+      overrides?.maxCompressedArchiveBytes ??
+      exampleLimits.maxCompressedArchiveBytes,
+    maxExtractedFiles:
+      overrides?.maxExtractedFiles ?? exampleLimits.maxExtractedFiles,
+    maxFileBytes: overrides?.maxFileBytes ?? exampleLimits.maxFileBytes,
+    fetchTimeoutMs: overrides?.fetchTimeoutMs ?? exampleLimits.fetchTimeoutMs,
+  });
+}
+
 async function fetchJson(
   fetchImpl: ExampleFetch,
   url: string,
+  timeoutMs: number,
 ): Promise<Readonly<Record<string, unknown>>> {
   const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    exampleLimits.fetchTimeoutMs,
-  );
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetchImpl(url, {
       method: "GET",
       signal: controller.signal,
-      redirect: "follow",
+      redirect: "error",
     });
     if (!response.ok) return unavailableExample();
     const payload: unknown = await response.json();
@@ -266,17 +352,18 @@ async function fetchJson(
   }
 }
 
-async function headOk(fetchImpl: ExampleFetch, url: string): Promise<boolean> {
+async function headOk(
+  fetchImpl: ExampleFetch,
+  url: string,
+  timeoutMs: number,
+): Promise<boolean> {
   const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    exampleLimits.fetchTimeoutMs,
-  );
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetchImpl(url, {
       method: "HEAD",
       signal: controller.signal,
-      redirect: "follow",
+      redirect: "error",
     });
     return response.ok;
   } catch {
@@ -291,27 +378,31 @@ export async function resolveExampleReference(
   example: string,
   examplePath: string | undefined,
   fetchImpl: ExampleFetch = fetch,
+  limits?: Partial<ExampleRuntimeLimits>,
 ): Promise<ExampleRepoInfo> {
+  const runtime = resolveRuntimeLimits(limits);
   const parsed = parseExampleReference(example, examplePath);
   let branch = parsed.branch;
   if (branch === "") {
     const info = await fetchJson(
       fetchImpl,
-      `https://api.github.com/repos/${parsed.owner}/${parsed.repository}`,
+      `https://api.github.com/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repository)}`,
+      runtime.fetchTimeoutMs,
     );
     const defaultBranch = info.default_branch;
     if (typeof defaultBranch !== "string" || defaultBranch === "") {
       return unavailableExample();
     }
+    if (!isValidGithubBranch(defaultBranch)) return unavailableExample();
     branch = defaultBranch;
   }
 
   const packagePath =
     parsed.filePath === "" ? "package.json" : `${parsed.filePath}/package.json`;
   const packageUrl =
-    `https://api.github.com/repos/${parsed.owner}/${parsed.repository}/contents/` +
+    `https://api.github.com/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repository)}/contents/` +
     `${packagePath.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(branch)}`;
-  const exists = await headOk(fetchImpl, packageUrl);
+  const exists = await headOk(fetchImpl, packageUrl, runtime.fetchTimeoutMs);
   if (!exists) return unavailableExample(["package.json"]);
 
   return Object.freeze({
@@ -345,6 +436,7 @@ async function downloadToFile(
   fetchImpl: ExampleFetch,
   url: string,
   destination: string,
+  limits: ExampleRuntimeLimits,
 ): Promise<void> {
   let requested: URL;
   try {
@@ -355,10 +447,7 @@ async function downloadToFile(
   if (requested.hostname !== "codeload.github.com") return unavailableExample();
 
   const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    exampleLimits.fetchTimeoutMs,
-  );
+  const timer = setTimeout(() => controller.abort(), limits.fetchTimeoutMs);
   try {
     const response = await fetchImpl(url, {
       method: "GET",
@@ -370,7 +459,7 @@ async function downloadToFile(
     const limiter = new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         total += chunk.byteLength;
-        if (total > exampleLimits.maxArchiveBytes) {
+        if (total > limits.maxCompressedArchiveBytes) {
           controller.error(new CreatorError("EXAMPLE_UNAVAILABLE"));
           return;
         }
@@ -401,7 +490,6 @@ async function listRegularFiles(root: string): Promise<string[]> {
       }
       if (!entry.isFile()) failedExample();
       files.push(absolute);
-      if (files.length > exampleLimits.maxExtractedFiles) failedExample();
     }
   }
   await walk(root);
@@ -409,10 +497,10 @@ async function listRegularFiles(root: string): Promise<string[]> {
 }
 
 async function rollbackCreated(
-  fileSystem: ScaffoldFileSystem,
   createdEntries: readonly string[],
   createdDirectories: readonly string[],
 ): Promise<boolean> {
+  const fileSystem = defaultScaffoldFileSystem;
   let failed = false;
   for (const path of [...createdEntries].reverse()) {
     try {
@@ -434,9 +522,9 @@ async function rollbackCreated(
 
 async function ensureDirectory(
   path: string,
-  fileSystem: ScaffoldFileSystem,
   createdDirectories: string[],
 ): Promise<void> {
+  const fileSystem = defaultScaffoldFileSystem;
   try {
     const status = await fileSystem.lstat(path);
     if (status.isSymbolicLink() || !status.isDirectory()) {
@@ -472,7 +560,6 @@ async function copyExtractedProject(options: {
   readonly cwd: string;
   readonly normalizedTarget: string;
   readonly projectName: string;
-  readonly fileSystem: ScaffoldFileSystem;
 }): Promise<readonly string[]> {
   const {
     stagingDirectory,
@@ -480,7 +567,6 @@ async function copyExtractedProject(options: {
     cwd,
     normalizedTarget,
     projectName,
-    fileSystem,
   } = options;
   const targetSegments =
     normalizedTarget === "." ? [] : normalizedTarget.split("/");
@@ -492,7 +578,7 @@ async function copyExtractedProject(options: {
     let current = cwd;
     for (const segment of targetSegments) {
       current = join(current, segment);
-      await ensureDirectory(current, fileSystem, createdDirectories);
+      await ensureDirectory(current, createdDirectories);
     }
 
     const absoluteFiles = await listRegularFiles(stagingDirectory);
@@ -510,10 +596,6 @@ async function copyExtractedProject(options: {
       ) {
         failedExample();
       }
-      const status = await stat(absolute);
-      if (status.size > exampleLimits.maxFileBytes) {
-        failedExample([relativePath]);
-      }
 
       let contents = await readFile(absolute);
       if (relativePath === "package.json") {
@@ -529,7 +611,7 @@ async function copyExtractedProject(options: {
         let nested = targetDirectory;
         for (const segment of parentRelative.split("/")) {
           nested = join(nested, segment);
-          await ensureDirectory(nested, fileSystem, createdDirectories);
+          await ensureDirectory(nested, createdDirectories);
         }
       }
       await writeFile(destination, contents, { flag: "wx" });
@@ -539,7 +621,6 @@ async function copyExtractedProject(options: {
     return Object.freeze(writtenRelative.sort());
   } catch (error) {
     const rolledBack = await rollbackCreated(
-      fileSystem,
       createdEntries,
       createdDirectories,
     );
@@ -557,16 +638,42 @@ async function copyExtractedProject(options: {
   }
 }
 
+function readEntryType(entry: unknown): string | undefined {
+  if (typeof entry !== "object" || entry === null) return undefined;
+  const type = (entry as { readonly type?: unknown }).type;
+  return typeof type === "string" ? type : undefined;
+}
+
+function readEntrySize(entry: unknown): number {
+  if (typeof entry !== "object" || entry === null) return 0;
+  const size = (entry as { readonly size?: unknown }).size;
+  return typeof size === "number" && Number.isFinite(size) ? size : 0;
+}
+
+function entryIsRegularFile(entry: unknown): boolean {
+  const type = readEntryType(entry);
+  return type === "File" || type === "0" || type === "" || type === undefined;
+}
+
 async function extractRepository(
   archivePath: string,
   stagingDirectory: string,
   info: ExampleRepoInfo,
+  limits: ExampleRuntimeLimits,
 ): Promise<void> {
   let rootPath: string | null = null;
+  let rejected = false;
+  let uncompressedBytes = 0;
+  let fileCount = 0;
   const prefix =
     info.filePath === ""
       ? []
       : info.filePath.split("/").filter((segment) => segment !== "");
+
+  const markRejected = (): void => {
+    rejected = true;
+  };
+
   try {
     await extractTar({
       file: archivePath,
@@ -574,6 +681,10 @@ async function extractRepository(
       strict: true,
       preservePaths: false,
       onentry(entry) {
+        if (rejected) {
+          entry.resume();
+          return;
+        }
         const posixPath = entry.path.split(sep).join(posix.sep);
         if (
           entry.type === "SymbolicLink" ||
@@ -581,24 +692,63 @@ async function extractRepository(
           posixPath.includes("\u0000") ||
           posixPath.split(posix.sep).some((segment) => segment === "..")
         ) {
+          markRejected();
           entry.resume();
-          throw new CreatorError("EXAMPLE_FAILED");
+          return;
         }
         if (rootPath === null) {
           rootPath = posixPath.split(posix.sep)[0] ?? null;
         }
       },
-      filter(path) {
+      filter(path, entry) {
+        if (rejected) return false;
         const posixPath = path.split(sep).join(posix.sep);
+        if (
+          posixPath.includes("\u0000") ||
+          posixPath.split(posix.sep).some((segment) => segment === "..")
+        ) {
+          markRejected();
+          return false;
+        }
+        const entryType = readEntryType(entry);
+        if (entryType === "SymbolicLink" || entryType === "Link") {
+          markRejected();
+          return false;
+        }
         if (rootPath === null) {
           rootPath = posixPath.split(posix.sep)[0] ?? null;
         }
         if (rootPath === null) return false;
-        if (prefix.length === 0) {
-          return posixPath === rootPath || posixPath.startsWith(`${rootPath}/`);
+
+        const inSubtree =
+          prefix.length === 0
+            ? posixPath === rootPath || posixPath.startsWith(`${rootPath}/`)
+            : (() => {
+                const wanted = `${rootPath}/${prefix.join("/")}`;
+                return (
+                  posixPath === wanted || posixPath.startsWith(`${wanted}/`)
+                );
+              })();
+        if (!inSubtree) return false;
+
+        if (entryIsRegularFile(entry)) {
+          const size = readEntrySize(entry);
+          if (size > limits.maxFileBytes) {
+            markRejected();
+            return false;
+          }
+          uncompressedBytes += size;
+          if (uncompressedBytes > limits.maxArchiveBytes) {
+            markRejected();
+            return false;
+          }
+          fileCount += 1;
+          if (fileCount > limits.maxExtractedFiles) {
+            markRejected();
+            return false;
+          }
         }
-        const wanted = `${rootPath}/${prefix.join("/")}`;
-        return posixPath === wanted || posixPath.startsWith(`${wanted}/`);
+        return true;
       },
       strip: prefix.length === 0 ? 1 : prefix.length + 1,
     });
@@ -606,6 +756,8 @@ async function extractRepository(
     if (error instanceof CreatorError) throw error;
     failedExample();
   }
+
+  if (rejected) failedExample();
 }
 
 export interface ExampleProject {
@@ -619,18 +771,15 @@ export interface ExampleProject {
 export async function createExampleProject(
   options: CreateExampleProjectOptions,
 ): Promise<ExampleProject> {
-  const fileSystem = options.fileSystem ?? defaultScaffoldFileSystem;
   const fetchImpl = options.fetch ?? fetch;
+  const limits = resolveRuntimeLimits(options.limits);
   const target = await assertCreatableStarterTarget(
     options.cwd,
     options.target,
-    fileSystem,
+    defaultScaffoldFileSystem,
   );
-  const info = await resolveExampleReference(
-    options.example,
-    options.examplePath,
-    fetchImpl,
-  );
+  const info = options.example;
+  if (!isValidGithubBranch(info.branch)) return unavailableExample();
 
   const stagingRoot = await mkdtemp(join(tmpdir(), "invokta-example-"));
   const archivePath = join(stagingRoot, "repository.tar.gz");
@@ -638,12 +787,17 @@ export async function createExampleProject(
   await mkdir(extractDirectory);
 
   try {
+    const branchPath = info.branch
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/");
     await downloadToFile(
       fetchImpl,
-      `https://codeload.github.com/${info.owner}/${info.repository}/tar.gz/${info.branch}`,
+      `https://codeload.github.com/${encodeURIComponent(info.owner)}/${encodeURIComponent(info.repository)}/tar.gz/${branchPath}`,
       archivePath,
+      limits,
     );
-    await extractRepository(archivePath, extractDirectory, info);
+    await extractRepository(archivePath, extractDirectory, info, limits);
 
     try {
       await stat(join(extractDirectory, "package.json"));
@@ -657,7 +811,6 @@ export async function createExampleProject(
       cwd: options.cwd,
       normalizedTarget: target.normalizedTarget,
       projectName: target.projectName,
-      fileSystem,
     });
 
     return Object.freeze({

@@ -133,6 +133,7 @@ download still require network access.
 | `--example-path` segments | 32 |
 | Fetch timeout | 60 seconds |
 | Uncompressed archive bytes retained | 52,428,800 (50 MiB) |
+| Compressed download bytes | 52,428,800 (50 MiB) |
 | Extracted regular files | 10,000 |
 | Single extracted file bytes | 5,242,880 (5 MiB) |
 

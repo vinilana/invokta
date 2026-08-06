@@ -469,10 +469,7 @@ export async function runCreateEngineCli(
       const project = await createExampleProject({
         cwd,
         target,
-        example: parsed.example,
-        ...(parsed.examplePath === undefined
-          ? {}
-          : { examplePath: parsed.examplePath }),
+        example: exampleInfo,
         ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
       });
       if (!parsed.noInstall) {
