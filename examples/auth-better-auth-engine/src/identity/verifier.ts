@@ -5,9 +5,11 @@ import { type BetterAuthClaims, readBetterAuthClaims } from "./principal.js";
 /**
  * Better Auth's JWT plugin mounts its JWKS document under the auth base path.
  * With the default base path `/api/auth` and the default `jwksPath` of
- * `/jwks`, the document is served at `<app base URL>/api/auth/jwks`.
+ * `/jwks`, the document is served at `<app base URL>/api/auth/jwks`. The path
+ * is relative on purpose: an app served under a proxy subpath keeps its
+ * prefix when the URL is resolved against the base.
  */
-export const betterAuthJwksPath = "/api/auth/jwks";
+export const betterAuthJwksPath = "api/auth/jwks";
 
 /** Better Auth signs with EdDSA over Ed25519 unless the app changes the algorithm. */
 const defaultAlgorithms = Object.freeze(["EdDSA"]);
@@ -18,10 +20,14 @@ const defaultJwksTimeoutMs = 5_000;
  * jose error codes that mean "this credential is not acceptable". Anything
  * else means the check could not be completed and must surface as an
  * infrastructure failure, not as a silent denial.
+ *
+ * `ERR_JWKS_MULTIPLE_MATCHING_KEYS` is deliberately absent: an ambiguous key
+ * set is the app's key-publication problem, not evidence against the
+ * credential, so it surfaces as an infrastructure failure (500) instead of
+ * silently rejecting legitimate tokens during a kid-less key rotation.
  */
 const invalidCredentialCodes: ReadonlySet<string> = new Set([
   "ERR_JOSE_ALG_NOT_ALLOWED",
-  "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
   "ERR_JWKS_NO_MATCHING_KEY",
   "ERR_JWS_INVALID",
   "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
@@ -75,7 +81,11 @@ export interface BetterAuthRemoteKeySetOptions {
   readonly timeoutMs?: number;
 }
 
-/** Builds the JWKS URL the JWT plugin serves for an app base URL. */
+/**
+ * Builds the JWKS URL the JWT plugin serves for an app base URL. The relative
+ * resolution preserves a proxy subpath: `https://host/portal` yields
+ * `https://host/portal/api/auth/jwks`, not `https://host/api/auth/jwks`.
+ */
 export function betterAuthJwksUrl(baseUrl: string): URL {
   return new URL(
     betterAuthJwksPath,
@@ -148,6 +158,9 @@ export function createBetterAuthJwtVerifier(
           issuer: options.issuer,
           audience: options.audience,
           algorithms,
+          // The JWT plugin always mints these; a signed token missing exp
+          // must not become a permanent credential.
+          requiredClaims: ["sub", "iss", "aud", "exp"],
           ...(options.clockToleranceSeconds === undefined
             ? {}
             : { clockTolerance: options.clockToleranceSeconds }),

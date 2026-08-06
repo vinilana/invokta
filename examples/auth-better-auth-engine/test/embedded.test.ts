@@ -71,6 +71,15 @@ describe("the embedded Better Auth session surface", () => {
     });
   });
 
+  it("cancels the invocation when the request signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      invokeWhoamiForSession(resolvedSession, { signal: controller.signal }),
+    ).rejects.toMatchObject({ code: "CANCELLED" });
+  });
+
   it("refuses an anonymous embedded invocation", async () => {
     await expect(invokeWhoamiForSession(null)).rejects.toMatchObject({
       code: "UNAUTHENTICATED",

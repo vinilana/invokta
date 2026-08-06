@@ -32,7 +32,8 @@ async function signToken(
   overrides: {
     readonly issuer?: string;
     readonly audience?: string;
-    readonly expiration?: string | number;
+    /** `null` mints a token without an `exp` claim. */
+    readonly expiration?: string | number | null;
     readonly key?: CryptoKey;
     readonly subject?: string | null;
   } = {},
@@ -41,8 +42,10 @@ async function signToken(
     .setProtectedHeader({ alg: "EdDSA", kid: keyId })
     .setIssuedAt()
     .setIssuer(overrides.issuer ?? issuer)
-    .setAudience(overrides.audience ?? audience)
-    .setExpirationTime(overrides.expiration ?? "15m");
+    .setAudience(overrides.audience ?? audience);
+  if (overrides.expiration !== null) {
+    builder.setExpirationTime(overrides.expiration ?? "15m");
+  }
   const subject =
     overrides.subject === undefined ? "user_01" : overrides.subject;
   if (subject !== null) builder.setSubject(subject);
@@ -77,6 +80,15 @@ describe("the Better Auth JWKS URL", () => {
     );
     expect(betterAuthJwksUrl("https://app.example.com/").href).toBe(
       "https://app.example.com/api/auth/jwks",
+    );
+  });
+
+  it("preserves a proxy subpath in the JWKS URL", () => {
+    expect(betterAuthJwksUrl("https://app.example.com/portal").href).toBe(
+      "https://app.example.com/portal/api/auth/jwks",
+    );
+    expect(betterAuthJwksUrl("https://app.example.com/portal/").href).toBe(
+      "https://app.example.com/portal/api/auth/jwks",
     );
   });
 });
@@ -162,6 +174,67 @@ describe("the Better Auth JWT verifier", () => {
     await expect(
       verifier.verify(token, { signal: activeSignal() }),
     ).resolves.toBeNull();
+  });
+
+  it("rejects a signed token without an expiry", async () => {
+    const token = await signToken({}, { expiration: null });
+
+    await expect(
+      verifier.verify(token, { signal: activeSignal() }),
+    ).resolves.toBeNull();
+  });
+
+  it("rejects a token signed outside the algorithm allowlist", async () => {
+    // Pins algorithms: ["EdDSA"] — an RS256 token must never verify, even
+    // with otherwise perfect claims and the advertised key id.
+    const rsa = await generateKeyPair("RS256", { extractable: true });
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: keyId })
+      .setIssuedAt()
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setSubject("user_01")
+      .setExpirationTime("15m")
+      .sign(rsa.privateKey);
+
+    await expect(
+      verifier.verify(token, { signal: activeSignal() }),
+    ).resolves.toBeNull();
+  });
+
+  it("reports an ambiguous key set as an infrastructure failure", async () => {
+    // Two same-algorithm keys without kid headers: jose cannot pick a
+    // candidate, which is the app's key-publication problem, not proof
+    // against the credential — so it surfaces as unavailable, not null.
+    const first = await generateKeyPair("EdDSA", {
+      crv: "Ed25519",
+      extractable: true,
+    });
+    const second = await generateKeyPair("EdDSA", {
+      crv: "Ed25519",
+      extractable: true,
+    });
+    const ambiguous = createLocalJWKSet({
+      keys: [
+        { ...(await exportJWK(first.publicKey)), alg: "EdDSA" },
+        { ...(await exportJWK(second.publicKey)), alg: "EdDSA" },
+      ],
+    });
+    const token = await new SignJWT({})
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuedAt()
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setSubject("user_01")
+      .setExpirationTime("15m")
+      .sign(first.privateKey);
+
+    await expect(
+      createBetterAuthJwtVerifier({ issuer, audience, keys: ambiguous }).verify(
+        token,
+        { signal: activeSignal() },
+      ),
+    ).rejects.toBeInstanceOf(IdentityVerificationUnavailableError);
   });
 
   it("reports a key-resolution outage as an infrastructure failure", async () => {

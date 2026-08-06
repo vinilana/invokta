@@ -61,18 +61,24 @@ specific to Better Auth.
    ```ts
    export async function invokeWhoamiForSession(
      resolved: BetterAuthResolvedSession | null,
+     options: { readonly signal?: AbortSignal } = {},
    ) {
      return engine.invoke(
        "identity.whoami",
        {},
-       { source: "direct", principal: principalFromSession(resolved) },
+       {
+         source: "direct",
+         principal: principalFromSession(resolved),
+         ...(options.signal === undefined ? {} : { signal: options.signal }),
+       },
      );
    }
    ```
 
    A `null` principal is not an error here. The capability declares
    `access: "authenticated"`, so the core reports `UNAUTHENTICATED` before
-   `run`.
+   `run`. Pass the incoming request's `AbortSignal` so a disconnected client
+   cancels the invocation instead of letting it run to its timeout.
 
 2. Enable the JWT plugin, when the engine is a separate service
 
@@ -115,9 +121,13 @@ specific to Better Auth.
 4. Verify the token with injectable key resolution
 
    ```ts
-   export const betterAuthJwksPath = "/api/auth/jwks";
+   export const betterAuthJwksPath = "api/auth/jwks";
 
-   /** Builds the JWKS URL the JWT plugin serves for an app base URL. */
+   /**
+    * Builds the JWKS URL the JWT plugin serves for an app base URL. The
+    * relative resolution preserves a proxy subpath: `https://host/portal`
+    * yields `https://host/portal/api/auth/jwks`.
+    */
    export function betterAuthJwksUrl(baseUrl: string): URL {
      return new URL(
        betterAuthJwksPath,
@@ -151,6 +161,7 @@ specific to Better Auth.
              issuer: options.issuer,
              audience: options.audience,
              algorithms,
+             requiredClaims: ["sub", "iss", "aud", "exp"],
              ...(options.clockToleranceSeconds === undefined
                ? {}
                : { clockTolerance: options.clockToleranceSeconds }),
@@ -177,7 +188,6 @@ specific to Better Auth.
    ```ts
    const invalidCredentialCodes: ReadonlySet<string> = new Set([
      "ERR_JOSE_ALG_NOT_ALLOWED",
-     "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
      "ERR_JWKS_NO_MATCHING_KEY",
      "ERR_JWS_INVALID",
      "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
@@ -186,6 +196,10 @@ specific to Better Auth.
      "ERR_JWT_INVALID",
    ]);
    ```
+
+   An ambiguous key set (`ERR_JWKS_MULTIPLE_MATCHING_KEYS`) is deliberately
+   not in the invalid set: it is the app's key-publication problem, and a 401
+   would silently reject legitimate tokens during a kid-less key rotation.
 
 5. Wire the hook into `serveMcpHttp`
 

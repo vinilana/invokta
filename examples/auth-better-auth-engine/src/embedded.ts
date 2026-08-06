@@ -71,15 +71,22 @@ export function principalFromSession(
 /**
  * The embedded surface: the host application owns the session, so no token
  * crosses a process boundary and no second verification happens. This is the
- * call a Better Auth route handler makes after `auth.api.getSession`.
+ * call a Better Auth route handler makes after `auth.api.getSession`. Pass
+ * the incoming request's `AbortSignal` so a disconnected client cancels the
+ * invocation instead of letting it run to its timeout.
  */
 export async function invokeWhoamiForSession(
   resolved: BetterAuthResolvedSession | null,
+  options: { readonly signal?: AbortSignal } = {},
 ) {
   return engine.invoke(
     "identity.whoami",
     {},
-    { source: "direct", principal: principalFromSession(resolved) },
+    {
+      source: "direct",
+      principal: principalFromSession(resolved),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    },
   );
 }
 

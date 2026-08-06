@@ -22,7 +22,8 @@ export interface BetterAuthMcpHttpOptions {
   readonly port?: number;
 }
 
-const bearerPattern = /^Bearer ([^\s]+)$/;
+// RFC 9110 makes the authentication scheme case-insensitive.
+const bearerPattern = /^Bearer ([^\s]+)$/iu;
 
 /**
  * Reads the single Bearer credential the Better Auth client sends. The adapter

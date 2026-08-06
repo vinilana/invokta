@@ -95,6 +95,13 @@ describe("the Better Auth bearer parser", () => {
       readBearerToken(headerView({ authorization: "Bearer a b" })),
     ).toBeNull();
   });
+
+  it("accepts the authentication scheme case-insensitively", () => {
+    // RFC 9110 makes the scheme token case-insensitive.
+    expect(
+      readBearerToken(headerView({ authorization: "bearer abc.def" })),
+    ).toBe("abc.def");
+  });
 });
 
 describe("the Better Auth authentication hook", () => {
