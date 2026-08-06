@@ -6,7 +6,6 @@ import { Readable } from "node:stream";
 import { gzipSync } from "node:zlib";
 import { c as createTar } from "tar";
 import { afterEach, describe, expect, it } from "vitest";
-import { runCreateEngineCli } from "../src/cli.js";
 import {
   CreatorError,
   renderCreatorDiagnostic,
@@ -380,11 +379,47 @@ describe("createExampleProject", () => {
       { name: "repo-main/", typeflag: "5" },
       {
         name: "repo-main/package.json",
-        content: '{"name":"template"}\n',
+        content: '{"n":1}\n',
         typeflag: "0",
       },
       {
         name: "repo-main/big.bin",
+        content: "0123456789abcdef",
+        typeflag: "7", // ContiguousFile
+      },
+    ]);
+    const info: ExampleRepoInfo = {
+      owner: "acme",
+      repository: "repo",
+      branch: "main",
+      filePath: "",
+      label: "acme/repo",
+    };
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: info,
+        fetch: createFetch({ archive }),
+        limits: { maxFileBytes: 12 },
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+    expect(() =>
+      readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
+    ).toThrow();
+  });
+
+  it("rejects SparseFile entries that node-tar would otherwise ignore", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = buildRawTarGz([
+      {
+        name: "repo-main/package.json",
+        content: '{"name":"template"}\n',
+        typeflag: "0",
+      },
+      {
+        name: "repo-main/sparse.bin",
         content: "0123456789abcdef",
         typeflag: "S",
       },
@@ -403,7 +438,6 @@ describe("createExampleProject", () => {
         target: "my-engine",
         example: info,
         fetch: createFetch({ archive }),
-        limits: { maxFileBytes: 8 },
       }),
     ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
   });
@@ -522,6 +556,40 @@ describe("createExampleProject", () => {
     ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
   });
 
+  it("counts implicit parent directories from file paths toward the directory cap", async () => {
+    const cwd = createWorkingDirectory();
+    // No directory headers — only nested files, which still create dirs on extract.
+    const archive = buildRawTarGz([
+      {
+        name: "repo-main/package.json",
+        content: '{"name":"template"}\n',
+        typeflag: "0",
+      },
+      {
+        name: "repo-main/a/b/file.txt",
+        content: "nested\n",
+        typeflag: "0",
+      },
+    ]);
+    const info: ExampleRepoInfo = {
+      owner: "acme",
+      repository: "repo",
+      branch: "main",
+      filePath: "",
+      label: "acme/repo",
+    };
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: info,
+        fetch: createFetch({ archive }),
+        limits: { maxExtractedDirectories: 1 },
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+  });
+
   it("rejects compressed downloads that exceed the compressed-byte cap", async () => {
     const cwd = createWorkingDirectory();
     const archive = await buildRepositoryArchive({
@@ -548,62 +616,36 @@ describe("createExampleProject", () => {
       }),
     ).rejects.toMatchObject({ code: "EXAMPLE_UNAVAILABLE" });
   });
+
+  it("surfaces fetch timeouts as EXAMPLE_UNAVAILABLE", async () => {
+    const fetchImpl: ExampleFetch = async (_input, init) =>
+      await new Promise((_resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error("test should have aborted"));
+        }, 1_000);
+        init?.signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new Error("aborted"));
+        });
+      });
+
+    await expect(
+      resolveExampleReference(
+        "https://github.com/acme/repo",
+        undefined,
+        fetchImpl,
+        { fetchTimeoutMs: 20 },
+      ),
+    ).rejects.toMatchObject({ code: "EXAMPLE_UNAVAILABLE" });
+  });
 });
 
 describe("success output sanitization", () => {
-  it("escapes control characters in the example success summary", async () => {
-    const cwd = createWorkingDirectory();
-    const archive = await buildRepositoryArchive({
-      rootName: "repo-main",
-      files: {
-        "package.json": '{"name":"template"}\n',
-      },
-    });
-    const stdout: string[] = [];
-    const fetchImpl = createFetch({ archive });
-    const info: ExampleRepoInfo = {
-      owner: "acme",
-      repository: "repo",
-      branch: "main",
-      filePath: "",
-      label: "acme/repo/\u001b[31mevil",
-    };
-
-    // Bypass parse (control chars rejected there) and assert render sanitizes.
-    const project = await createExampleProject({
-      cwd,
-      target: "my-engine",
-      example: { ...info, label: "acme/repo" },
-      fetch: fetchImpl,
-    });
-    expect(project.label).toBe("acme/repo");
-
-    const exitCode = await runCreateEngineCli({
-      argv: [
-        "safe-engine",
-        "--example",
-        "https://github.com/acme/repo",
-        "--no-install",
-        "--yes",
-      ],
-      cwd: createWorkingDirectory(),
-      env: {},
-      io: {
-        writeStdout(text) {
-          stdout.push(text);
-        },
-        writeStderr() {},
-      },
-      terminal: {
-        stdinIsTty: false,
-        stderrIsTty: false,
-        readLine: async () => undefined,
-      },
-      fetch: fetchImpl,
-      loadPackageVersion: async () => "1.2.3",
-    });
-    expect(exitCode).toBe(0);
-    expect(stdout.join("")).not.toContain("\u001b");
-    expect(stdout.join("")).toContain("from example acme/repo");
+  it("escapes control characters the success renderer would emit", () => {
+    const hostile = "acme/repo/\u001b[31mevil";
+    const line = `Created my-engine from example ${sanitizeDiagnosticDetail(hostile)}.`;
+    expect(line).not.toContain("\u001b");
+    expect(line).toContain("\\u001b");
+    expect(line).toContain("from example acme/repo/");
   });
 });

@@ -123,11 +123,15 @@ Tree URL ref grammar:
    `https://codeload.github.com/<owner>/<repo>/tar.gz/<ref>`, extract only the
    selected subtree into a temporary directory, rewrite `package.json` `name`,
    and copy regular files into the target with exclusive creation.
-6. Archive symbolic links, hard links, absolute entry paths, Windows drive/UNC
+6. Before extraction, the creator scans raw ustar headers so typeflags that
+   node-tar would otherwise ignore (for example SparseFile) still fail closed.
+   Archive symbolic links, hard links, absolute entry paths, Windows drive/UNC
    paths, `..` segments, and non-directory entry types other than regular files
-   (`File`, `OldFile`, `ContiguousFile`) are rejected. The staged `package.json`
-   MUST be a regular file. A failure rolls back only target entries created by
-   that invocation and removes the temporary directory.
+   (`File`, `OldFile`, `ContiguousFile`) are rejected. Retained directories are
+   counted from both directory headers and implicit parents of file paths after
+   strip. The staged `package.json` MUST be a regular file. A failure rolls back
+   only target entries created by that invocation and removes the temporary
+   directory.
 7. Unless `--no-install` is set, exactly one shell-free package-manager install
    runs after the copy completes.
 

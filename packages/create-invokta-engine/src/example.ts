@@ -1,4 +1,4 @@
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { createGunzip } from "node:zlib";
 import { x as extractTar } from "tar";
 
 import { CreatorError } from "./errors.js";
@@ -685,14 +686,26 @@ const regularFileEntryTypes = new Set([
   "",
 ]);
 
+/** Typeflags accepted during the raw header pre-scan. */
+const allowedTarTypeflags = new Set([
+  "0", // regular file
+  "\0", // historical regular file
+  "", // empty typeflag treated as file
+  "5", // directory
+  "7", // ContiguousFile (counted as a regular file)
+  "x", // PAX extended header
+  "g", // PAX global header
+  "D", // GNU directory
+]);
+
 function entryIsRegularFile(entry: unknown): boolean {
   const type = readEntryType(entry);
-  return type === undefined || regularFileEntryTypes.has(type);
+  return type !== undefined && regularFileEntryTypes.has(type);
 }
 
 function entryIsDirectory(entry: unknown): boolean {
   const type = readEntryType(entry);
-  return type === "Directory" || type === "5";
+  return type === "Directory" || type === "5" || type === "D";
 }
 
 function isUnsafeArchivePath(posixPath: string): boolean {
@@ -706,21 +719,109 @@ function isUnsafeArchivePath(posixPath: string): boolean {
   return segments.some((segment) => segment === "..");
 }
 
+function readTarHeaderPath(header: Buffer): string {
+  const name = header.subarray(0, 100).toString("utf8").replace(/\0.*$/u, "");
+  const prefix = header
+    .subarray(345, 500)
+    .toString("utf8")
+    .replace(/\0.*$/u, "");
+  return prefix === "" ? name : `${prefix}/${name}`;
+}
+
+function readTarHeaderSize(header: Buffer): number {
+  const sizeOct = header
+    .subarray(124, 135)
+    .toString("utf8")
+    .replace(/\0.*$/u, "")
+    .trim();
+  if (sizeOct === "") return 0;
+  const size = Number.parseInt(sizeOct, 8);
+  return Number.isFinite(size) && size >= 0 ? size : Number.NaN;
+}
+
+/**
+ * node-tar silently skips some unsupported typeflags before filter/onentry.
+ * Scan raw ustar headers so SparseFile/symlink/device entries cannot bypass rejection.
+ */
+async function assertArchiveHeadersSafe(archivePath: string): Promise<void> {
+  const gunzip = createGunzip();
+  const source = createReadStream(archivePath);
+  const stream = source.pipe(gunzip);
+  let buffer = Buffer.alloc(0);
+  let pendingData = 0;
+  try {
+    for await (const chunk of stream) {
+      buffer = Buffer.concat([buffer, chunk as Buffer]);
+      while (true) {
+        if (pendingData > 0) {
+          if (buffer.byteLength === 0) break;
+          const take = Math.min(pendingData, buffer.byteLength);
+          buffer = buffer.subarray(take);
+          pendingData -= take;
+          continue;
+        }
+        if (buffer.byteLength < 512) break;
+        const header = buffer.subarray(0, 512);
+        buffer = buffer.subarray(512);
+        if (header.every((byte) => byte === 0)) continue;
+        const typeflag = String.fromCharCode(header[156] ?? 0);
+        if (!allowedTarTypeflags.has(typeflag)) failedExample();
+        const headerPath = readTarHeaderPath(header).split(sep).join(posix.sep);
+        if (headerPath !== "" && isUnsafeArchivePath(headerPath)) {
+          failedExample();
+        }
+        const size = readTarHeaderSize(header);
+        if (!Number.isFinite(size)) failedExample();
+        pendingData = Math.ceil(size / 512) * 512;
+      }
+    }
+  } catch (error) {
+    if (error instanceof CreatorError) throw error;
+    failedExample();
+  }
+}
+
+function rememberRetainedDirectories(
+  posixPath: string,
+  stripCount: number,
+  isDirectory: boolean,
+  retainedDirectories: Set<string>,
+  maxDirectories: number,
+): boolean {
+  const segments = posixPath
+    .split(posix.sep)
+    .filter((segment) => segment !== "");
+  const retained = segments.slice(stripCount);
+  if (retained.length === 0) return true;
+  const directoryParts = isDirectory ? retained : retained.slice(0, -1);
+  let current = "";
+  for (const part of directoryParts) {
+    current = current === "" ? part : `${current}/${part}`;
+    if (retainedDirectories.has(current)) continue;
+    retainedDirectories.add(current);
+    if (retainedDirectories.size > maxDirectories) return false;
+  }
+  return true;
+}
+
 async function extractRepository(
   archivePath: string,
   stagingDirectory: string,
   info: ExampleRepoInfo,
   limits: ExampleRuntimeLimits,
 ): Promise<void> {
+  await assertArchiveHeadersSafe(archivePath);
+
   let rootPath: string | null = null;
   let rejected = false;
   let uncompressedBytes = 0;
   let fileCount = 0;
-  let directoryCount = 0;
+  const retainedDirectories = new Set<string>();
   const prefix =
     info.filePath === ""
       ? []
       : info.filePath.split("/").filter((segment) => segment !== "");
+  const stripCount = prefix.length === 0 ? 1 : prefix.length + 1;
 
   const markRejected = (): void => {
     rejected = true;
@@ -743,15 +844,7 @@ async function extractRepository(
           entry.resume();
           return;
         }
-        const entryType = readEntryType(entry);
-        if (
-          !(
-            entryIsDirectory(entry) ||
-            entryIsRegularFile(entry) ||
-            // Root directory markers may arrive before classification settles.
-            entryType === undefined
-          )
-        ) {
+        if (!(entryIsDirectory(entry) || entryIsRegularFile(entry))) {
           markRejected();
           entry.resume();
           return;
@@ -784,13 +877,17 @@ async function extractRepository(
         if (!inSubtree) return false;
 
         if (entryIsDirectory(entry)) {
-          // The archive root directory is stripped; count retained dirs only.
-          if (posixPath !== rootPath) {
-            directoryCount += 1;
-            if (directoryCount > limits.maxExtractedDirectories) {
-              markRejected();
-              return false;
-            }
+          if (
+            !rememberRetainedDirectories(
+              posixPath,
+              stripCount,
+              true,
+              retainedDirectories,
+              limits.maxExtractedDirectories,
+            )
+          ) {
+            markRejected();
+            return false;
           }
           return true;
         }
@@ -811,14 +908,25 @@ async function extractRepository(
             markRejected();
             return false;
           }
+          if (
+            !rememberRetainedDirectories(
+              posixPath,
+              stripCount,
+              false,
+              retainedDirectories,
+              limits.maxExtractedDirectories,
+            )
+          ) {
+            markRejected();
+            return false;
+          }
           return true;
         }
 
-        // Symbolic links, hard links, devices, FIFOs, and unknown types.
         markRejected();
         return false;
       },
-      strip: prefix.length === 0 ? 1 : prefix.length + 1,
+      strip: stripCount,
     });
   } catch (error) {
     if (error instanceof CreatorError) throw error;
