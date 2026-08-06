@@ -561,10 +561,8 @@ async function ensureDirectory(
     return;
   } catch (error) {
     if (error instanceof CreatorError) throw error;
-    if (
-      readErrorCode(error) !== "ENOENT" &&
-      readErrorCode(error) !== "ENOTDIR"
-    ) {
+    // ENOTDIR means a non-directory path component already exists — unsafe.
+    if (readErrorCode(error) !== "ENOENT") {
       throw new CreatorError("TARGET_UNSAFE");
     }
   }
