@@ -39,6 +39,7 @@
     "prepack": "npm run --silent build"
   },
   "dependencies": {
-    "@invokta/core": "0.3.0"
+    "@invokta/core": "0.3.0",
+    "@invokta/mcp": "0.3.0"
   }
 }
