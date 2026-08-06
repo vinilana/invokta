@@ -1,8 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { isComposedCapabilities } from "@invokta/core";
-
 import {
   describeThrownValue,
   programName,
@@ -13,8 +11,11 @@ import {
 } from "./diagnostics.js";
 import type { DoctorFinding, DoctorNote, DoctorReport } from "./doctor.js";
 import { inspectEngine } from "./doctor.js";
-import { loadEngineModule } from "./load-engine.js";
-import type { StartServeResult } from "./serve.js";
+import {
+  hasComposedCapabilitiesExport,
+  loadEngineModule,
+} from "./load-engine.js";
+import type { StartServeOptions, StartServeResult } from "./serve.js";
 import { startServe } from "./serve.js";
 
 export interface DevtoolsIo {
@@ -42,18 +43,18 @@ interface ServeCommand {
   readonly exportName: string;
   readonly port?: number;
   readonly enginePort?: number;
+  readonly buildCommand?: string;
 }
 
 type DevtoolsCommand = DoctorCommand | ServeCommand;
 
 const defaultExportName = "engine";
 const mcpManifestFileName = "invokta.mcp.json";
-const composedExportName = "capabilities";
 
 const usage = `Usage:
   invokta-devtools doctor <esm-module> [--export <name>]
   invokta-devtools serve <esm-module> [--export <name>] [--port <number>]
-    [--engine-port <number>]
+    [--engine-port <number>] [--watch --build <command>]
 
 The module path is resolved against the current working directory and must
 already be built to ESM. The selected export defaults to "engine" and must be
@@ -62,6 +63,10 @@ the value returned by createEngine.
 serve preflights the engine with the doctor checks, hosts it with the MCP
 HTTP adapter on loopback, and serves the development interface on
 http://127.0.0.1:4100/ unless --port selects another loopback port.
+
+--watch requires --build and runs the engine in a replaceable child process:
+project changes run the explicit build command, and only a successful build
+replaces the running engine host. Modules are never reloaded in process.
 
 Exit codes:
   0  the engine passed the doctor checks, or the dev server shut down cleanly
@@ -129,8 +134,33 @@ function parseServeArguments(
   let exportName: string | undefined;
   let port: number | undefined;
   let enginePort: number | undefined;
+  let watch = false;
+  let buildCommand: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index] as string;
+    if (argument === "--watch") {
+      if (watch) {
+        throw new UsageError(
+          "The --watch option must be provided at most once.",
+        );
+      }
+      watch = true;
+      continue;
+    }
+    if (argument === "--build") {
+      if (buildCommand !== undefined) {
+        throw new UsageError(
+          "The --build option must be provided at most once.",
+        );
+      }
+      const value = args[index + 1];
+      if (value === undefined || value === "" || value.startsWith("-")) {
+        throw new UsageError("The --build option requires a command.");
+      }
+      buildCommand = value;
+      index += 1;
+      continue;
+    }
     if (argument === "--export") {
       if (exportName !== undefined) {
         throw new UsageError(
@@ -180,11 +210,17 @@ function parseServeArguments(
   if (positional.length > 1) {
     throw new UsageError("Exactly one module path is required.");
   }
+  if (watch !== (buildCommand !== undefined)) {
+    throw new UsageError(
+      "The --watch and --build options must be provided together.",
+    );
+  }
   return {
     moduleSpecifier: positional[0] as string,
     exportName: exportName ?? defaultExportName,
     ...(port === undefined ? {} : { port }),
     ...(enginePort === undefined ? {} : { enginePort }),
+    ...(buildCommand === undefined ? {} : { buildCommand }),
   };
 }
 
@@ -308,17 +344,6 @@ async function writeStderr(io: DevtoolsIo, text: string): Promise<void> {
   }
 }
 
-function hasComposedCapabilitiesExport(namespace: object): boolean {
-  try {
-    if (!Object.hasOwn(namespace, composedExportName)) return false;
-    return isComposedCapabilities(
-      (namespace as Readonly<Record<string, unknown>>)[composedExportName],
-    );
-  } catch {
-    return false;
-  }
-}
-
 async function runDoctor(
   command: DoctorCommand,
   cwd: string,
@@ -375,27 +400,44 @@ async function runServe(
   cwd: string,
   io: DevtoolsIo,
 ): Promise<number> {
-  const loaded = await loadEngineModule({
-    moduleSpecifier: command.moduleSpecifier,
-    exportName: command.exportName,
-    cwd,
-  });
-  if (loaded.kind === "load-failed") {
-    await writeStderr(io, renderLoadFailure(command, loaded.error));
-    return 2;
-  }
-  if (loaded.kind === "export-missing") {
-    await writeStderr(io, renderMissingExport(command));
-    return 2;
-  }
-  if (loaded.kind === "not-an-engine") {
-    await writeStderr(io, renderNotAnEngine(command));
-    return 2;
-  }
-
-  let result: StartServeResult;
-  try {
-    result = await startServe({
+  let serveOptions: StartServeOptions;
+  if (command.buildCommand !== undefined) {
+    // In watch mode the module belongs to the child host; the parent never
+    // imports it, so a rebuild can only ever apply by process replacement.
+    serveOptions = {
+      cwd,
+      watch: {
+        moduleSpecifier: command.moduleSpecifier,
+        exportName: command.exportName,
+        buildCommand: command.buildCommand,
+      },
+      onDiagnostic: (text) => {
+        void writeStderr(io, text);
+      },
+      ...(command.port === undefined ? {} : { port: command.port }),
+      ...(command.enginePort === undefined
+        ? {}
+        : { enginePort: command.enginePort }),
+    };
+  } else {
+    const loaded = await loadEngineModule({
+      moduleSpecifier: command.moduleSpecifier,
+      exportName: command.exportName,
+      cwd,
+    });
+    if (loaded.kind === "load-failed") {
+      await writeStderr(io, renderLoadFailure(command, loaded.error));
+      return 2;
+    }
+    if (loaded.kind === "export-missing") {
+      await writeStderr(io, renderMissingExport(command));
+      return 2;
+    }
+    if (loaded.kind === "not-an-engine") {
+      await writeStderr(io, renderNotAnEngine(command));
+      return 2;
+    }
+    serveOptions = {
       engine: loaded.engine,
       cwd,
       composedCapabilitiesExport: hasComposedCapabilitiesExport(
@@ -405,10 +447,25 @@ async function runServe(
       ...(command.enginePort === undefined
         ? {}
         : { enginePort: command.enginePort }),
-    });
+    };
+  }
+
+  let result: StartServeResult;
+  try {
+    result = await startServe(serveOptions);
   } catch (error) {
     await writeStderr(io, renderServeFailure(command, error));
     return 1;
+  }
+  if (result.kind === "load-error") {
+    if (result.stage === "load-failed") {
+      await writeStderr(io, renderLoadFailure(command, result.error));
+    } else if (result.stage === "export-missing") {
+      await writeStderr(io, renderMissingExport(command));
+    } else {
+      await writeStderr(io, renderNotAnEngine(command));
+    }
+    return 2;
   }
   if (result.kind === "refused") {
     await writeStderr(io, renderReport(command, result.report));

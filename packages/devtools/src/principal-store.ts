@@ -19,6 +19,8 @@ export interface PrincipalStore {
   list(): ReadonlyArray<DevPrincipal>;
   resolve(token: string): Principal | null;
   authenticate(request: McpHttpAuthenticationRequest): Principal | null;
+  /** Notifies after every mutation; used to mirror tokens into a child host. */
+  subscribe(listener: () => void): () => void;
 }
 
 export const defaultPrincipalId = "local-dev";
@@ -41,9 +43,20 @@ function readBearerToken(header: string | null): string | null {
  */
 export function createPrincipalStore(): PrincipalStore {
   const records = new Map<string, { token: string; principal: Principal }>();
+  const listeners = new Set<() => void>();
   let nextKey = 0;
 
   const mintToken = (): string => randomBytes(24).toString("base64url");
+
+  const notify = (): void => {
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch {
+        // A mirror consumer failure must not affect the store.
+      }
+    }
+  };
 
   const issue = (principal: Principal): DevPrincipal => {
     const snapshot = structuredClone(principal);
@@ -51,6 +64,7 @@ export function createPrincipalStore(): PrincipalStore {
     const key = `p${String(nextKey)}`;
     const token = mintToken();
     records.set(key, { token, principal: snapshot });
+    notify();
     return { key, token, principal: snapshot };
   };
 
@@ -62,9 +76,14 @@ export function createPrincipalStore(): PrincipalStore {
       const record = records.get(key);
       if (record === undefined) return null;
       record.token = mintToken();
+      notify();
       return { key, token: record.token, principal: record.principal };
     },
-    remove: (key) => records.delete(key),
+    remove: (key) => {
+      const removed = records.delete(key);
+      if (removed) notify();
+      return removed;
+    },
     list: () =>
       [...records.entries()].map(([key, record]) => ({
         key,
@@ -84,6 +103,12 @@ export function createPrincipalStore(): PrincipalStore {
         if (record.token === token) return record.principal;
       }
       return null;
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }

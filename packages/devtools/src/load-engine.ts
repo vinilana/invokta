@@ -6,6 +6,7 @@ import type {
   CapabilitySummary,
   InvokeOptions,
 } from "@invokta/core";
+import { isComposedCapabilities } from "@invokta/core";
 
 import { asRecord } from "./diagnostics.js";
 
@@ -71,6 +72,18 @@ function isEngineLike(value: unknown): value is LoadedEngine {
       typeof record.invoke === "function" &&
       typeof record.list === "function" &&
       typeof record.describe === "function"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the module also exposes a tracked composed `capabilities` export. */
+export function hasComposedCapabilitiesExport(namespace: object): boolean {
+  try {
+    if (!Object.hasOwn(namespace, "capabilities")) return false;
+    return isComposedCapabilities(
+      (namespace as Readonly<Record<string, unknown>>).capabilities,
     );
   } catch {
     return false;

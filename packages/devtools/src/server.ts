@@ -11,9 +11,6 @@ import { fileURLToPath } from "node:url";
 
 import type { Principal } from "@invokta/core";
 
-import { readThrownValueInfo } from "./diagnostics.js";
-import type { DoctorReport } from "./doctor.js";
-import type { LoadedEngine } from "./load-engine.js";
 import type { PrincipalStore } from "./principal-store.js";
 import type { TraceStore } from "./trace-store.js";
 
@@ -22,13 +19,26 @@ export interface DevtoolsServerAddress {
   readonly port: number;
 }
 
+/**
+ * The interface server's window onto the running engine. In-process serving
+ * reads the live engine; watch mode reads the snapshot the engine-host child
+ * reported, so the parent never imports the watched module itself.
+ */
+export interface EngineView {
+  readonly name: string;
+  readonly version: string;
+  /** The `describe` output of every capability, JSON-serializable. */
+  readonly capabilities: ReadonlyArray<unknown>;
+  /** The JSON-safe doctor report body. */
+  readonly doctor: unknown;
+}
+
 export interface DevtoolsServerOptions {
-  readonly engine: LoadedEngine;
+  readonly engineView: () => EngineView;
   readonly principals: PrincipalStore;
   readonly trace: TraceStore;
-  readonly doctor: () => DoctorReport;
-  /** The engine host's MCP endpoint port on loopback. */
-  readonly enginePort: number;
+  /** The engine host's current MCP endpoint port on loopback. */
+  readonly enginePort: () => number;
   /** Defaults to 4100. */
   readonly port?: number;
   /** Directory holding the built interface bundle. Defaults to `dist/ui`. */
@@ -117,23 +127,6 @@ function parseJson(body: Buffer): unknown {
   }
 }
 
-function doctorReportBody(report: DoctorReport): unknown {
-  return {
-    engineName: report.engineName,
-    engineVersion: report.engineVersion,
-    ...(report.capabilityCount === undefined
-      ? {}
-      : { capabilityCount: report.capabilityCount }),
-    findings: report.findings.map((finding) => ({
-      ...finding,
-      ...("error" in finding && finding.error !== undefined
-        ? { error: readThrownValueInfo(finding.error) }
-        : {}),
-    })),
-    notes: report.notes,
-  };
-}
-
 function principalBody(value: {
   readonly key: string;
   readonly principal: Principal;
@@ -173,7 +166,8 @@ export async function startDevtoolsServer(
 ): Promise<DevtoolsServer> {
   const port = options.port ?? defaultPort;
   const uiRoot = options.uiRoot ?? defaultUiRoot();
-  const engineEndpoint = `http://127.0.0.1:${String(options.enginePort)}/mcp`;
+  const engineEndpoint = (): string =>
+    `http://127.0.0.1:${String(options.enginePort())}/mcp`;
 
   let boundAuthority = "";
   let ownOrigin = "";
@@ -338,7 +332,7 @@ export async function startDevtoolsServer(
     const startedAtMs = performance.now();
     let upstream: Response;
     try {
-      upstream = await fetch(engineEndpoint, {
+      upstream = await fetch(engineEndpoint(), {
         method: "POST",
         headers: forwarded,
         body: new Uint8Array(read.body),
@@ -447,28 +441,21 @@ export async function startDevtoolsServer(
       return;
     }
     if (path === "/api/engine") {
+      const view = options.engineView();
       sendJson(response, 200, {
-        name: options.engine.name,
-        version: options.engine.version,
-        capabilityCount: options.engine.list().length,
-        engineHost: { host: "127.0.0.1", port: options.enginePort },
+        name: view.name,
+        version: view.version,
+        capabilityCount: view.capabilities.length,
+        engineHost: { host: "127.0.0.1", port: options.enginePort() },
       });
       return;
     }
     if (path === "/api/capabilities") {
-      try {
-        sendJson(
-          response,
-          200,
-          options.engine.list().map(({ id }) => options.engine.describe(id)),
-        );
-      } catch {
-        sendJson(response, 500, { error: "describe_failed" });
-      }
+      sendJson(response, 200, options.engineView().capabilities);
       return;
     }
     if (path === "/api/doctor") {
-      sendJson(response, 200, doctorReportBody(options.doctor()));
+      sendJson(response, 200, options.engineView().doctor);
       return;
     }
     if (path === "/api/events") {

@@ -217,12 +217,14 @@ dropped. Nothing is persisted, exported, or aggregated.
 
 With `--watch`, the engine runs in a child host process started from a
 devtools-owned entry that loads the module, starts the engine host, and
-reports the bound port on a single stderr line. The watcher observes the
-directory containing the module (recursively), debounces changes, runs the
-explicit `--build` command with the project working directory, and only after
-the build exits `0` terminates the child and starts a replacement. A failed
-build leaves the running child untouched and reports the failure. The
-interface receives an `engine-restarted` notice through the event stream.
+reports its state on a stderr line protocol. The watcher observes the project
+working directory recursively — ignoring dependency directories, dot-prefixed
+entries, and the directory containing the built module, so its own build
+never retriggers it — debounces changes, runs the explicit `--build` command
+with the project working directory, and only after the build exits `0`
+terminates the child and starts a replacement. A failed build leaves the
+running child untouched and reports the failure. The interface receives an
+`engine-restarted` notice through the event stream.
 
 The devtools never reloads a module in process, never guesses a package
 manager or build command, and spawns no process other than the child host and

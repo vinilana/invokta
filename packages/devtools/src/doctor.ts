@@ -1,4 +1,4 @@
-import { asRecord } from "./diagnostics.js";
+import { asRecord, readThrownValueInfo } from "./diagnostics.js";
 import type { LoadedEngine } from "./load-engine.js";
 
 export type DoctorFinding =
@@ -28,6 +28,27 @@ export interface DoctorReport {
   readonly capabilityCount?: number;
   readonly findings: readonly DoctorFinding[];
   readonly notes: readonly DoctorNote[];
+}
+
+/**
+ * Converts a report into its JSON-safe body: thrown values are reduced to
+ * their name, code, and message so no stack, cause, or payload can travel.
+ */
+export function doctorReportToJson(report: DoctorReport): unknown {
+  return {
+    engineName: report.engineName,
+    engineVersion: report.engineVersion,
+    ...(report.capabilityCount === undefined
+      ? {}
+      : { capabilityCount: report.capabilityCount }),
+    findings: report.findings.map((finding) => ({
+      ...finding,
+      ...("error" in finding && finding.error !== undefined
+        ? { error: readThrownValueInfo(finding.error) }
+        : {}),
+    })),
+    notes: report.notes,
+  };
 }
 
 export interface InspectEngineOptions {
