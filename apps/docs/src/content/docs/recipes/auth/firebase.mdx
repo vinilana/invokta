@@ -161,10 +161,18 @@ specific to Firebase Auth.
      if (typeof claims.email_verified === "boolean") {
        attributes.emailVerified = claims.email_verified;
      }
+     if (
+       typeof claims.auth_time === "number" &&
+       Number.isFinite(claims.auth_time)
+     ) {
+       attributes.authTime = claims.auth_time;
+     }
      const signInProvider = readNonEmptyString(
        readMember(claims.firebase, "sign_in_provider"),
      );
      if (signInProvider !== null) attributes.signInProvider = signInProvider;
+     const tenantId = readNonEmptyString(readMember(claims.firebase, "tenant"));
+     if (tenantId !== null) attributes.tenantId = tenantId;
 
      const customClaims: Record<string, unknown> = {};
      for (const name of options.customClaimNames ?? []) {
@@ -291,17 +299,31 @@ specific to Firebase Auth.
 </Steps>
 
 <Aside type="note" title="Provider SDK variant">
-  The production composition root is the only place `firebase-admin` appears:
+  The production composition root is the only place `firebase-admin` appears.
+  This example ships no HTTP entry file — `src/mcp-http.ts` exports only
+  functions — so this file is one you add to your own application:
 
   ```ts
+  // src/serve.ts — your application's entry file, next to the copied
+  // src/identity/ and src/mcp-http.ts.
   import { initializeApp } from "firebase-admin/app";
   import { getAuth } from "firebase-admin/auth";
+
+  import { createAdminIdTokenVerifier } from "./identity/verifier.js";
+  import { startFirebaseMcpHttp } from "./mcp-http.js";
+
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  if (projectId === undefined || projectId === "") {
+    // Fail fast: an empty project id would reject every token with 401
+    // instead of pointing at the missing configuration.
+    throw new Error("FIREBASE_PROJECT_ID is required.");
+  }
 
   initializeApp();
 
   await startFirebaseMcpHttp({
     verifier: createAdminIdTokenVerifier(getAuth(), { checkRevoked: true }),
-    projectId: process.env.FIREBASE_PROJECT_ID ?? "",
+    projectId,
     customClaimNames: ["role"],
     port: 3000,
   });
@@ -354,13 +376,15 @@ It prints the principal that the claim mapping produced:
 ```
 
 For the HTTP boundary, copy `src/identity/` and `src/mcp-http.ts` into an
-application that has `firebase-admin` installed, wire the SDK variant shown
-above, and start it with the project's environment:
+application that has `firebase-admin` installed, add the `src/serve.ts` entry
+file from the SDK-variant aside above — `src/mcp-http.ts` itself exports only
+functions and starts nothing — build, and start it with the project's
+environment:
 
 ```sh
 FIREBASE_PROJECT_ID=your-project-id \
 GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase-service-account.json \
-  node dist/mcp-http.js
+  node dist/serve.js
 ```
 
 Call the capability with an ID token from a signed-in client

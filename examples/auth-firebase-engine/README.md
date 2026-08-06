@@ -35,14 +35,26 @@ Copy `src/identity/` and `src/mcp-http.ts` into your application, install
 your composition root:
 
 ```ts
+// src/serve.ts — your application's entry file; this example ships none
+// because it does not depend on firebase-admin.
+import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 
 import { createAdminIdTokenVerifier } from "./identity/verifier.js";
 import { startFirebaseMcpHttp } from "./mcp-http.js";
 
+const projectId = process.env.FIREBASE_PROJECT_ID;
+if (projectId === undefined || projectId === "") {
+  // Fail fast: an empty project id would reject every token with 401
+  // instead of pointing at the missing configuration.
+  throw new Error("FIREBASE_PROJECT_ID is required.");
+}
+
+initializeApp();
+
 await startFirebaseMcpHttp({
   verifier: createAdminIdTokenVerifier(getAuth(), { checkRevoked: true }),
-  projectId: process.env.FIREBASE_PROJECT_ID ?? "",
+  projectId,
   customClaimNames: ["role"],
   port: 3000,
 });
