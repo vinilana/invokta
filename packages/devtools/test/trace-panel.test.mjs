@@ -46,6 +46,7 @@ class FakeText extends FakeNode {
 class FakeElement extends FakeNode {
   #attributes = new Map();
   childNodes = [];
+  hidden = false;
 
   constructor(tagName) {
     super();
@@ -115,7 +116,30 @@ function dispatchTrace(source, entry) {
   source.dispatchEvent(event);
 }
 
+function installTraceEnvironment() {
+  installGlobal("document", {
+    createElement: (tagName) => new FakeElement(tagName),
+  });
+  const sources = [];
+  class FakeEventSource extends EventTarget {
+    closed = false;
+
+    constructor(url) {
+      super();
+      this.url = url;
+      sources.push(this);
+    }
+
+    close() {
+      this.closed = true;
+    }
+  }
+  installGlobal("EventSource", FakeEventSource);
+  return sources;
+}
+
 afterEach(() => {
+  vi.useRealTimers();
   vi.resetModules();
   if (originalDocument === undefined) delete globalThis.document;
   else Object.defineProperty(globalThis, "document", originalDocument);
@@ -125,24 +149,8 @@ afterEach(() => {
 
 describe("trace panel", () => {
   it("renders a compact, accessible live log without changing stream cleanup", async () => {
-    installGlobal("document", {
-      createElement: (tagName) => new FakeElement(tagName),
-    });
-    const sources = [];
-    class FakeEventSource extends EventTarget {
-      closed = false;
-
-      constructor(url) {
-        super();
-        this.url = url;
-        sources.push(this);
-      }
-
-      close() {
-        this.closed = true;
-      }
-    }
-    installGlobal("EventSource", FakeEventSource);
+    vi.useFakeTimers();
+    const sources = installTraceEnvironment();
 
     const { renderTracePanel } = await import("../src/ui/trace.js");
     const container = new FakeElement("main");
@@ -153,6 +161,12 @@ describe("trace panel", () => {
       (node) => node.getAttribute?.("role") === "status",
     );
     const log = nodes.find((node) => node.getAttribute?.("role") === "log");
+    const warning = nodes.find(
+      (node) => node.getAttribute?.("role") === "note",
+    );
+    const empty = nodes.find(
+      (node) => node.getAttribute?.("class") === "empty",
+    );
 
     expect(sources).toHaveLength(1);
     expect(sources[0].url).toBe("/api/events");
@@ -160,14 +174,26 @@ describe("trace panel", () => {
     expect(status.getAttribute("id")).toBe("trace-status");
     expect(status.getAttribute("aria-atomic")).toBe("true");
     expect(log.getAttribute("aria-labelledby")).toBe("trace-heading");
-    expect(log.getAttribute("aria-describedby")).toBe("trace-status");
-    expect(log.getAttribute("aria-live")).toBe("polite");
+    expect(log.getAttribute("aria-describedby")).toBe(
+      "trace-status trace-data-warning",
+    );
+    expect(log.getAttribute("aria-live")).toBe("off");
     expect(log.getAttribute("aria-relevant")).toBe("additions");
     expect(log.getAttribute("aria-busy")).toBe("true");
+    expect(warning.textContent).toContain(
+      "Raw request and response bodies from all connected MCP clients",
+    );
+    expect(warning.getAttribute("id")).toBe("trace-data-warning");
+    expect(warning.textContent).toContain("sensitive data");
+    expect(empty.textContent).toBe(
+      "No activity yet. Invoke a capability or connect an MCP client to start tracing.",
+    );
+    expect(empty.hidden).toBe(false);
 
     sources[0].dispatchEvent(new Event("open"));
-    expect(status.textContent).toBe("Live · all MCP clients · newest first.");
-    expect(log.getAttribute("aria-busy")).toBe("false");
+    expect(status.textContent).toBe("Connected · loading recent activity…");
+    expect(log.getAttribute("aria-live")).toBe("off");
+    expect(log.getAttribute("aria-busy")).toBe("true");
 
     dispatchTrace(sources[0], {
       kind: "invocation",
@@ -203,10 +229,18 @@ describe("trace panel", () => {
     });
 
     expect(log.childElementCount).toBe(3);
-    expect(log.textContent).toContain("failed · INVALID_INPUT");
+    expect(empty.hidden).toBe(true);
+    expect(log.textContent).toContain("Failed · INVALID_INPUT");
     expect(log.textContent).toContain("HTTP 503");
-    expect(log.textContent).toContain("Request body — truncated");
-    expect(log.textContent).toContain("engine restarted");
+    expect(log.textContent).toContain("Request body — Truncated");
+    expect(log.textContent).toContain("Engine restarted");
+    expect(log.getAttribute("aria-live")).toBe("off");
+    expect(log.getAttribute("aria-busy")).toBe("true");
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(status.textContent).toBe("Live · 3 entries loaded · newest first.");
+    expect(log.getAttribute("aria-live")).toBe("polite");
+    expect(log.getAttribute("aria-busy")).toBe("false");
     const times = walk(log).filter((node) => node.tagName === "TIME");
     expect(times[0].textContent).toMatch(/Z$/);
     expect(times[0].getAttribute("datetime")).toBe("2026-08-06T12:00:02.000Z");
@@ -222,8 +256,68 @@ describe("trace panel", () => {
     expect(httpStatus.getAttribute("class")).toContain("error");
 
     sources[0].dispatchEvent(new Event("error"));
-    expect(status.textContent).toBe("Connection lost · reconnecting…");
+    expect(status.textContent).toBe(
+      "Disconnected · retrying automatically; existing entries remain visible.",
+    );
+    expect(log.getAttribute("aria-live")).toBe("off");
     expect(log.getAttribute("aria-busy")).toBe("true");
+
+    dispose();
+    expect(sources[0].closed).toBe(true);
+  });
+
+  it("suppresses replay announcements while preserving dedupe, order, and the visible cap", async () => {
+    vi.useFakeTimers();
+    const sources = installTraceEnvironment();
+    const { renderTracePanel } = await import("../src/ui/trace.js");
+    const container = new FakeElement("main");
+    const dispose = renderTracePanel(container);
+    const log = walk(container).find(
+      (node) => node.getAttribute?.("role") === "log",
+    );
+    const status = walk(container).find(
+      (node) => node.getAttribute?.("role") === "status",
+    );
+
+    sources[0].dispatchEvent(new Event("open"));
+    for (let id = 1; id <= 501; id += 1) {
+      dispatchTrace(sources[0], {
+        kind: "notice",
+        id,
+        at: `2026-08-06T12:00:${String(id).padStart(3, "0")}Z`,
+        notice: `replay-${String(id)}`,
+      });
+    }
+    dispatchTrace(sources[0], {
+      kind: "notice",
+      id: 501,
+      at: "2026-08-06T12:00:501Z",
+      notice: "replay-501",
+    });
+
+    expect(log.getAttribute("aria-live")).toBe("off");
+    expect(log.getAttribute("aria-busy")).toBe("true");
+    expect(log.childElementCount).toBe(500);
+    expect(log.childNodes[0].textContent).toContain("Replay 501");
+    expect(log.childNodes[499].textContent).toContain("Replay 2");
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(status.textContent).toBe(
+      "Live · 500 entries loaded · newest first.",
+    );
+    expect(log.getAttribute("aria-live")).toBe("polite");
+    expect(log.getAttribute("aria-busy")).toBe("false");
+
+    dispatchTrace(sources[0], {
+      kind: "notice",
+      id: 502,
+      at: "2026-08-06T12:00:502Z",
+      notice: "live-502",
+    });
+    expect(log.getAttribute("aria-live")).toBe("polite");
+    expect(log.childElementCount).toBe(500);
+    expect(log.childNodes[0].textContent).toContain("Live 502");
+    expect(log.childNodes[499].textContent).toContain("Replay 3");
 
     dispose();
     expect(sources[0].closed).toBe(true);

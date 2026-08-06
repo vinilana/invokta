@@ -91,6 +91,8 @@ class FakeElement extends FakeNode {
   classList = new FakeClassList();
   hidden = false;
   disabled = false;
+  focusCalls = 0;
+  scrollTop = 0;
   value = "";
 
   constructor(tagName) {
@@ -118,6 +120,10 @@ class FakeElement extends FakeNode {
 
   get firstChild() {
     return this.childNodes[0] ?? null;
+  }
+
+  focus() {
+    this.focusCalls += 1;
   }
 
   get textContent() {
@@ -209,9 +215,7 @@ describe("capability discovery", () => {
     await waitFor(() =>
       expect(container.textContent).toContain("No capabilities published."),
     );
-    expect(container.textContent).toContain(
-      "inspect its contract and invoke it",
-    );
+    expect(container.textContent).toContain("inspect its contract and test it");
     const empty = walk(container).find(
       (node) => node instanceof FakeElement && node.classList.contains("empty"),
     );
@@ -243,11 +247,23 @@ describe("capability discovery", () => {
     const dispose = renderCapabilitiesPanel(container);
 
     await waitFor(() =>
-      expect(container.textContent).toContain("2 published capabilities"),
+      expect(container.textContent).toContain("2 of 2 capabilities"),
     );
     const elements = walk(container);
+    const heading = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-sidebar-heading"),
+    );
+    const list = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-list"),
+    );
     const buttons = elements.filter(
-      (node) => node instanceof FakeElement && node.tagName === "BUTTON",
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-choice"),
     );
     const first = buttons.find((button) =>
       button.textContent.includes("support.classify-ticket"),
@@ -257,25 +273,181 @@ describe("capability discovery", () => {
     );
     const detail = elements.find(
       (node) =>
-        node instanceof FakeElement && node.getAttribute("role") === "region",
+        node instanceof FakeElement &&
+        node.classList.contains("capability-pane"),
     );
 
-    expect(first.textContent).toBe("Classify ticket · support.classify-ticket");
-    expect(first.getAttribute("aria-pressed")).toBe("true");
+    const title = walk(first).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-choice-title"),
+    );
+    const publicId = walk(first).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-choice-id"),
+    );
+
+    expect(heading.tagName).toBe("H2");
+    expect(heading.textContent).toBe("Capabilities");
+    expect(container.textContent).not.toContain("[ engine / capabilities ]");
+    expect(container.textContent).not.toContain("[ capability / detail ]");
+    expect(title.textContent).toBe("Classify ticket");
+    expect(publicId.textContent).toBe("support.classify-ticket");
+    expect(title.parentNode).toBe(first);
+    expect(publicId.parentNode).toBe(first);
+    expect(list.getAttribute("role")).toBe("tablist");
+    expect(list.getAttribute("aria-orientation")).toBe("vertical");
+    expect(first.getAttribute("role")).toBe("tab");
+    expect(first.getAttribute("aria-selected")).toBe("true");
+    expect(first.getAttribute("tabindex")).toBe("0");
     expect(first.getAttribute("aria-controls")).toBe(detail.getAttribute("id"));
+    expect(detail.getAttribute("role")).toBe("tabpanel");
     expect(detail.getAttribute("aria-labelledby")).toBe(
       first.getAttribute("id"),
     );
     expect(container.textContent).toContain("Annotations: readOnlyHint");
 
-    second.dispatchEvent(new Event("click"));
-    expect(first.getAttribute("aria-pressed")).toBe("false");
-    expect(second.getAttribute("aria-pressed")).toBe("true");
+    detail.scrollTop = 320;
+    const arrowDown = new Event("keydown", { cancelable: true });
+    Object.defineProperty(arrowDown, "key", { value: "ArrowDown" });
+    first.dispatchEvent(arrowDown);
+    expect(arrowDown.defaultPrevented).toBe(true);
+    expect(first.getAttribute("aria-selected")).toBe("false");
+    expect(first.getAttribute("tabindex")).toBe("-1");
+    expect(second.getAttribute("aria-selected")).toBe("true");
+    expect(second.getAttribute("tabindex")).toBe("0");
+    expect(second.focusCalls).toBe(1);
+    expect(detail.scrollTop).toBe(0);
     expect(detail.getAttribute("aria-labelledby")).toBe(
       second.getAttribute("id"),
     );
+    expect(
+      walk(second).find(
+        (node) =>
+          node instanceof FakeElement &&
+          node.classList.contains("capability-choice-title"),
+      ).textContent,
+    ).toBe("Untitled capability");
+    expect(detail.textContent).toContain("Untitled capability");
     expect(detail.textContent).toContain("Summarizes a support ticket.");
     dispose();
+  });
+
+  it("filters by title, ID, or description and keeps count and selection accurate", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    installGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse([
+          classify,
+          {
+            ...classify,
+            id: "support.create-brief",
+            title: "Create brief",
+            description: "Produces a concise overview for an account.",
+          },
+        ]),
+      ),
+    );
+
+    const { renderCapabilitiesPanel } = await import(
+      "../src/ui/capabilities.js"
+    );
+    const container = new FakeElement("main");
+    renderCapabilitiesPanel(container);
+
+    await waitFor(() =>
+      expect(container.textContent).toContain("2 of 2 capabilities"),
+    );
+    const elements = walk(container);
+    const search = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.getAttribute("type") === "search",
+    );
+    const count = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-count"),
+    );
+    const filterEmpty = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-filter-empty"),
+    );
+    const choices = elements.filter(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-choice"),
+    );
+    const first = choices[0];
+    const second = choices[1];
+
+    expect(search.getAttribute("aria-controls")).toBe(
+      elements
+        .find(
+          (node) =>
+            node instanceof FakeElement &&
+            node.classList.contains("capability-list"),
+        )
+        .getAttribute("id"),
+    );
+    expect(count.getAttribute("role")).toBe("status");
+    expect(filterEmpty.hidden).toBe(true);
+
+    search.value = "concise overview";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("1 of 2 capabilities");
+    expect(first.hidden).toBe(true);
+    expect(second.hidden).toBe(false);
+    expect(second.getAttribute("aria-selected")).toBe("true");
+    expect(container.textContent).toContain(
+      "Produces a concise overview for an account.",
+    );
+
+    search.value = "does-not-exist";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("0 of 2 capabilities");
+    expect(first.hidden).toBe(true);
+    expect(second.hidden).toBe(true);
+    expect(filterEmpty.hidden).toBe(false);
+    expect(filterEmpty.textContent).toContain("No capabilities match");
+    expect(second.getAttribute("aria-selected")).toBe("true");
+    const detail = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-pane"),
+    );
+    const editedRequest = walk(detail).find(
+      (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+    );
+    editedRequest.value = '{"account":"preserved"}';
+
+    search.value = "";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("2 of 2 capabilities");
+    expect(first.hidden).toBe(false);
+    expect(second.getAttribute("aria-selected")).toBe("true");
+    expect(
+      walk(detail).find(
+        (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+      ).value,
+    ).toBe('{"account":"preserved"}');
+
+    search.value = "CLASSIFY TICKET";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("1 of 2 capabilities");
+    expect(first.getAttribute("aria-selected")).toBe("true");
+
+    search.value = "concise overview";
+    search.dispatchEvent(new Event("input"));
+    expect(second.getAttribute("aria-selected")).toBe("true");
+    expect(
+      walk(detail).find(
+        (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+      ).value,
+    ).toBe('{"account":"preserved"}');
   });
 });
 
@@ -310,18 +482,38 @@ describe("capability invocation", () => {
       (node) =>
         node instanceof FakeElement &&
         node.tagName === "BUTTON" &&
-        node.textContent === "Send MCP request",
+        node.textContent === "Invoke capability",
+    );
+    const format = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Format JSON",
     );
     const feedback = elements.find(
       (node) =>
         node instanceof FakeElement && node.classList.contains("feedback"),
     );
 
-    expect(result.textContent).toContain("No response yet");
-    expect(result.getAttribute("aria-label")).toBe("Invocation response");
+    expect(result.textContent).toContain("Invoke the capability");
+    expect(result.getAttribute("aria-label")).toBe("Capability result");
     expect(editor.getAttribute("aria-describedby")).toBe(
       feedback.getAttribute("id"),
     );
+    expect(
+      elements.some(
+        (node) =>
+          node instanceof FakeElement && node.classList.contains("window-dots"),
+      ),
+    ).toBe(false);
+    expect(
+      elements.find(
+        (node) =>
+          node instanceof FakeElement &&
+          node.classList.contains("invoke-workspace"),
+      ),
+    ).toBeDefined();
+    expect(panel.textContent).toContain("Raw MCP exchange");
 
     editor.value = "{";
     invoke.dispatchEvent(new Event("click"));
@@ -330,8 +522,15 @@ describe("capability invocation", () => {
     expect(feedback.textContent).toContain("valid JSON");
 
     editor.value = '{"ticketId":"T-123"}';
-    invoke.dispatchEvent(new Event("click"));
-    expect(invoke.disabled).toBe(true);
+    format.dispatchEvent(new Event("click"));
+    expect(editor.value).toContain('\n  "ticketId": "T-123"\n');
+    const shortcut = new Event("keydown", { cancelable: true });
+    Object.defineProperties(shortcut, {
+      key: { value: "Enter" },
+      ctrlKey: { value: true },
+    });
+    editor.dispatchEvent(shortcut);
+    expect(invoke.getAttribute("aria-disabled")).toBe("true");
     expect(result.getAttribute("aria-busy")).toBe("true");
 
     await waitFor(() => expect(result.textContent).toContain('"high"'));
@@ -346,7 +545,9 @@ describe("capability invocation", () => {
     });
     expect(editor.getAttribute("aria-invalid")).toBe("false");
     expect(result.getAttribute("aria-busy")).toBe("false");
-    expect(panel.textContent).toContain("Response · success");
+    expect(invoke.getAttribute("aria-disabled")).toBe("false");
+    expect(invoke.focusCalls).toBe(0);
+    expect(panel.textContent).toContain("Result · success");
   });
 
   it("distinguishes authentication failures from engine errors", async () => {
@@ -379,7 +580,7 @@ describe("capability invocation", () => {
       (node) =>
         node instanceof FakeElement &&
         node.tagName === "BUTTON" &&
-        node.textContent === "Send MCP request",
+        node.textContent === "Invoke capability",
     );
     const feedback = elements.find(
       (node) =>
@@ -396,13 +597,13 @@ describe("capability invocation", () => {
         "Authentication failed (HTTP 401)",
       ),
     );
-    expect(panel.textContent).toContain("Response · HTTP 401");
+    expect(panel.textContent).toContain("Result · HTTP 401");
 
     invoke.dispatchEvent(new Event("click"));
     await waitFor(() =>
       expect(feedback.textContent).toContain("returned an engine error"),
     );
-    expect(panel.textContent).toContain("Response · engine error");
+    expect(panel.textContent).toContain("Result · engine error");
     expect(result.textContent).toContain('"FORBIDDEN"');
     expect(fetch).toHaveBeenCalledTimes(2);
   });

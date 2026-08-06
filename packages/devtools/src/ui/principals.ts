@@ -44,7 +44,22 @@ function writeTokens(tokens: Record<string, string>): void {
 
 const tokens = readTokens();
 let activeKey: string | null = readActiveKey();
+let knownPrincipals = new Map<string, PrincipalInfo>();
 const changeListeners = new Set<() => void>();
+
+export interface ActivePrincipalStatus {
+  readonly key: string;
+  readonly principalId: string;
+  readonly hasSessionToken: boolean;
+}
+
+function rememberPrincipals(principals: readonly PrincipalInfo[]): void {
+  knownPrincipals = new Map(principals.map((entry) => [entry.key, entry]));
+}
+
+function rememberPrincipal(principal: PrincipalInfo): void {
+  knownPrincipals.set(principal.key, principal);
+}
 
 function storeToken(key: string, token: string): void {
   tokens[key] = token;
@@ -82,17 +97,31 @@ export function getActiveToken(): string | null {
   return tokens[activeKey] ?? null;
 }
 
-export function onPrincipalChange(listener: () => void): void {
+export function getActivePrincipalStatus(): ActivePrincipalStatus | null {
+  if (activeKey === null) return null;
+  const activePrincipal = knownPrincipals.get(activeKey);
+  if (activePrincipal === undefined) return null;
+  return {
+    key: activePrincipal.key,
+    principalId: activePrincipal.principal.id,
+    hasSessionToken: tokens[activePrincipal.key] !== undefined,
+  };
+}
+
+export function onPrincipalChange(listener: () => void): () => void {
   changeListeners.add(listener);
+  return () => {
+    changeListeners.delete(listener);
+  };
 }
 
 /**
- * Makes sure the interface holds a usable token: if no stored principal
- * token exists, the first listed principal's token is minted by rotation —
- * an explicit issuance, so the credential is returned exactly once.
+ * Reconciles browser-session state with the listed principals and selects a
+ * valid principal. Initialization never issues, rotates, or revokes a token.
  */
 export async function ensureActiveToken(): Promise<void> {
   const principals = await api.principals();
+  rememberPrincipals(principals);
   const knownKeys = new Set(principals.map(({ key }) => key));
   let tokensChanged = false;
   for (const key of Object.keys(tokens)) {
@@ -103,24 +132,45 @@ export async function ensureActiveToken(): Promise<void> {
   if (tokensChanged) writeTokens(tokens);
 
   const selected =
-    principals.find(({ key }) => key === activeKey) ?? principals[0];
+    principals.find(({ key }) => key === activeKey) ??
+    principals.find(({ key }) => tokens[key] !== undefined) ??
+    principals[0];
   if (selected === undefined) {
     setActivePrincipal(null);
     return;
   }
-  if (tokens[selected.key] !== undefined) {
-    setActivePrincipal(selected.key);
-    return;
-  }
-
-  const issued = await api.rotatePrincipal(selected.key);
-  storeToken(issued.key, issued.token);
-  setActivePrincipal(issued.key);
+  setActivePrincipal(selected.key);
 }
 
 export function renderPrincipalsPanel(container: HTMLElement): () => void {
+  type FocusTarget =
+    | { readonly kind: "principal"; readonly key: string }
+    | { readonly kind: "token-action"; readonly key: string }
+    | { readonly kind: "create-action" }
+    | { readonly kind: "after-delete"; readonly index: number };
+  interface PendingCompletion {
+    readonly message: string;
+    readonly focus: FocusTarget;
+  }
+
   let active = true;
+  let pendingCompletion: PendingCompletion | null = null;
   const tokenGuidanceId = "principal-token-guidance";
+  const panelBody = el("div", { class: "principals-panel-body" }, []);
+  const panelStatus = el(
+    "p",
+    {
+      id: "principals-panel-status",
+      class: "principal-status hint",
+      role: "status",
+      "aria-live": "polite",
+      "aria-atomic": "true",
+    },
+    [],
+  );
+  const clearPanelStatus = (): void => {
+    panelStatus.textContent = "";
+  };
 
   const render = async (): Promise<void> => {
     let principals: readonly PrincipalInfo[];
@@ -128,18 +178,30 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
       principals = await api.principals();
     } catch {
       if (!active) return;
-      clear(container);
-      container.append(
-        el("h2", {}, ["Development principals"]),
+      clear(panelBody);
+      const heading = el("h2", { tabindex: "-1" }, ["Development principals"]);
+      panelBody.append(
+        heading,
         el("p", { class: "feedback", role: "alert" }, [
-          "Principals could not be loaded. Check that the dev server is still running.",
+          "Couldn’t load principals. Check that the dev server is running.",
         ]),
       );
+      if (pendingCompletion !== null) {
+        panelStatus.textContent = pendingCompletion.message;
+        pendingCompletion = null;
+        heading.focus();
+      }
       return;
     }
     if (!active) return;
-    clear(container);
+    rememberPrincipals(principals);
+    clear(panelBody);
 
+    const rowViews: Array<{
+      readonly key: string;
+      readonly row: HTMLDivElement;
+      readonly tokenAction: HTMLButtonElement;
+    }> = [];
     const rows = principals.map((entry: PrincipalInfo, index) => {
       const hasToken = tokens[entry.key] !== undefined;
       const isActive = entry.key === activeKey;
@@ -176,109 +238,142 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         for (const button of actionButtons) button.disabled = disabled;
       };
 
-      if (hasToken && !isActive) {
+      if (!isActive) {
         const activate = el(
           "button",
           {
             type: "button",
-            "aria-label": `Use ${entry.principal.id} for invocations`,
+            "aria-label": `Make ${entry.principal.id} active for invocations`,
           },
-          ["Use"],
+          ["Make active"],
         );
         activate.addEventListener("click", () => {
+          clearPanelStatus();
+          pendingCompletion = {
+            message: hasToken
+              ? `“${entry.principal.id}” is now active.`
+              : `“${entry.principal.id}” is now active. No session token is available.`,
+            focus: { kind: "principal", key: entry.key },
+          };
           setActivePrincipal(entry.key);
           void render();
         });
         actionButtons.push(activate);
       }
 
-      const tokenActionLabel = hasToken ? "Replace token" : "Mint & use";
+      const tokenActionLabel = "Rotate token and use…";
       const tokenAction = el(
         "button",
         {
           type: "button",
-          class: hasToken ? "credential-action" : "",
-          "aria-label": `${hasToken ? "Replace token" : "Mint token and use"} for ${entry.principal.id}`,
-          "aria-describedby": hasToken
-            ? `${tokenGuidanceId} ${statusId}`
-            : statusId,
+          class: "credential-action",
+          "aria-label": `Rotate token and use for ${entry.principal.id}`,
+          "aria-describedby": `${tokenGuidanceId} ${statusId}`,
         },
         [tokenActionLabel],
       );
-      tokenAction.addEventListener("click", () => {
-        setActionsDisabled(true);
-        tokenAction.textContent = hasToken ? "Replacing…" : "Minting…";
-        setActionStatus(
-          hasToken
-            ? "Replacing the token and selecting this principal…"
-            : "Minting a token and selecting this principal…",
-        );
-        void api
-          .rotatePrincipal(entry.key)
-          .then((issued) => {
-            if (!active) return;
-            storeToken(issued.key, issued.token);
-            setActivePrincipal(issued.key);
-            void render();
-          })
-          .catch(() => {
-            if (!active) return;
-            setActionsDisabled(false);
-            tokenAction.textContent = tokenActionLabel;
-            setActionStatus(
-              hasToken
-                ? "The token could not be replaced. The existing token is still valid."
-                : "A token could not be minted. Try again.",
-              "error",
-            );
-          });
-      });
-      actionButtons.push(tokenAction);
-
-      let confirmingDelete = false;
       const remove = el(
         "button",
         {
           type: "button",
           class: "danger",
           "aria-label": `Delete principal ${entry.principal.id}`,
-          "aria-controls": statusId,
-          "aria-expanded": "false",
+          "aria-describedby": statusId,
         },
         ["Delete…"],
       );
-      const cancelDelete = el(
+      const cancelConfirmation = el(
         "button",
-        { type: "button", "aria-label": "Cancel principal deletion" },
+        {
+          type: "button",
+          "aria-label": `Cancel pending action for principal ${entry.principal.id}`,
+        },
         ["Cancel"],
       );
-      cancelDelete.hidden = true;
-      const resetDelete = (): void => {
-        confirmingDelete = false;
+      cancelConfirmation.hidden = true;
+      let confirmation: "rotation" | "deletion" | null = null;
+      const resetConfirmation = (): void => {
+        confirmation = null;
+        tokenAction.textContent = tokenActionLabel;
+        tokenAction.setAttribute(
+          "aria-label",
+          `Rotate token and use for ${entry.principal.id}`,
+        );
         remove.textContent = "Delete…";
         remove.setAttribute(
           "aria-label",
           `Delete principal ${entry.principal.id}`,
         );
-        remove.setAttribute("aria-expanded", "false");
-        cancelDelete.hidden = true;
+        cancelConfirmation.hidden = true;
       };
-      remove.addEventListener("click", () => {
-        if (!confirmingDelete) {
-          confirmingDelete = true;
-          remove.textContent = "Confirm delete";
-          remove.setAttribute(
+      const beginConfirmation = (kind: "rotation" | "deletion"): void => {
+        clearPanelStatus();
+        resetConfirmation();
+        confirmation = kind;
+        cancelConfirmation.hidden = false;
+        if (kind === "rotation") {
+          tokenAction.textContent = "Confirm rotation";
+          tokenAction.setAttribute(
             "aria-label",
-            `Confirm deletion of principal ${entry.principal.id}`,
+            `Confirm token rotation for ${entry.principal.id}`,
           );
-          remove.setAttribute("aria-expanded", "true");
-          cancelDelete.hidden = false;
           setActionStatus(
-            `Delete “${entry.principal.id}”? Its token will stop working immediately.`,
+            `Rotate the token for “${entry.principal.id}”? The current token will stop working immediately.`,
           );
           return;
         }
+        remove.textContent = "Confirm delete";
+        remove.setAttribute(
+          "aria-label",
+          `Confirm deletion of principal ${entry.principal.id}`,
+        );
+        setActionStatus(
+          `Delete “${entry.principal.id}”? Its token will stop working immediately.`,
+        );
+      };
+      const rotateToken = (): void => {
+        clearPanelStatus();
+        resetConfirmation();
+        setActionsDisabled(true);
+        tokenAction.textContent = "Rotating…";
+        setActionStatus("Rotating the token and making this principal active…");
+        void api
+          .rotatePrincipal(entry.key)
+          .then((issued) => {
+            if (!active) return;
+            rememberPrincipal(issued);
+            storeToken(issued.key, issued.token);
+            pendingCompletion = {
+              message: `Rotated the session token for “${entry.principal.id}” and made it active. The previous token was revoked.`,
+              focus: { kind: "token-action", key: issued.key },
+            };
+            setActivePrincipal(issued.key);
+            void render();
+          })
+          .catch(() => {
+            if (!active) return;
+            setActionsDisabled(false);
+            resetConfirmation();
+            setActionStatus(
+              "The token could not be rotated. Any existing token remains valid.",
+              "error",
+            );
+          });
+      };
+      tokenAction.addEventListener("click", () => {
+        if (confirmation !== "rotation") {
+          beginConfirmation("rotation");
+          return;
+        }
+        rotateToken();
+      });
+      remove.addEventListener("click", () => {
+        if (confirmation !== "deletion") {
+          beginConfirmation("deletion");
+          return;
+        }
 
+        resetConfirmation();
         setActionsDisabled(true);
         remove.textContent = "Deleting…";
         setActionStatus(`Deleting principal “${entry.principal.id}”…`);
@@ -287,31 +382,37 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           .then(() => {
             if (!active) return;
             forgetToken(entry.key);
+            knownPrincipals.delete(entry.key);
+            pendingCompletion = {
+              message: `Deleted “${entry.principal.id}” and revoked its token.`,
+              focus: { kind: "after-delete", index },
+            };
             if (activeKey === entry.key) setActivePrincipal(null);
             void render();
           })
           .catch(() => {
             if (!active) return;
             setActionsDisabled(false);
-            resetDelete();
+            resetConfirmation();
             setActionStatus(
               `Principal “${entry.principal.id}” could not be deleted. Try again.`,
               "error",
             );
           });
       });
-      cancelDelete.addEventListener("click", () => {
-        resetDelete();
+      cancelConfirmation.addEventListener("click", () => {
+        resetConfirmation();
         setActionStatus("");
       });
-      actionButtons.push(remove, cancelDelete);
+      actionButtons.push(tokenAction, remove, cancelConfirmation);
 
-      return el(
+      const row = el(
         "div",
         {
           class: `principal-row${isActive ? " active" : ""}`,
           role: "group",
           "aria-label": `Principal ${entry.principal.id}`,
+          tabindex: "-1",
         },
         [
           el("div", { class: "principal-summary" }, [
@@ -324,7 +425,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
               isActive ? "Active" : "Inactive",
             ]),
             el("span", { class: `badge ${hasToken ? "ok" : "warn"}` }, [
-              hasToken ? "Token ready" : "No token",
+              hasToken ? "Token in session" : "No session token",
             ]),
           ]),
           entry.principal.attributes === undefined
@@ -339,26 +440,37 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           actionStatus,
         ],
       );
+      rowViews.push({ key: entry.key, row, tokenAction });
+      return row;
     });
 
     const idInputId = "new-principal-id";
     const attributesInputId = "new-principal-attributes";
+    const createHintId = "new-principal-hint";
+    const createFeedbackId = "new-principal-feedback";
     const idInput = el("input", {
       id: idInputId,
       type: "text",
       placeholder: "local-dev",
       autocomplete: "off",
       spellcheck: "false",
+      "aria-describedby": createHintId,
+      "aria-errormessage": createFeedbackId,
+      "aria-invalid": "false",
     });
     const attributesInput = el("textarea", {
       id: attributesInputId,
       rows: "3",
       placeholder: '{"role":"reviewer"}',
       spellcheck: "false",
+      "aria-describedby": createHintId,
+      "aria-errormessage": createFeedbackId,
+      "aria-invalid": "false",
     });
     const feedback = el(
       "p",
       {
+        id: createFeedbackId,
         class: "principal-status",
         role: "status",
         "aria-live": "polite",
@@ -379,12 +491,37 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
       feedback.setAttribute("role", kind === "error" ? "alert" : "status");
       feedback.textContent = message;
     };
+    const resetCreateValidation = (): void => {
+      idInput.setAttribute("aria-invalid", "false");
+      attributesInput.setAttribute("aria-invalid", "false");
+      setCreateFeedback("");
+    };
+    const clearFieldError = (
+      field: HTMLInputElement | HTMLTextAreaElement,
+    ): void => {
+      field.setAttribute("aria-invalid", "false");
+      if (
+        idInput.getAttribute("aria-invalid") === "false" &&
+        attributesInput.getAttribute("aria-invalid") === "false"
+      ) {
+        setCreateFeedback("");
+      }
+    };
+    idInput.addEventListener("input", () => {
+      clearFieldError(idInput);
+    });
+    attributesInput.addEventListener("input", () => {
+      clearFieldError(attributesInput);
+    });
     const create = el("button", { type: "button" }, ["Create principal"]);
     create.addEventListener("click", () => {
-      setCreateFeedback("");
+      clearPanelStatus();
+      resetCreateValidation();
       const id = idInput.value.trim();
       if (id === "") {
-        setCreateFeedback("A principal ID is required.", "error");
+        idInput.setAttribute("aria-invalid", "true");
+        setCreateFeedback("Enter a principal ID.", "error");
+        idInput.focus();
         return;
       }
       let attributes: Readonly<Record<string, unknown>> | undefined;
@@ -397,12 +534,16 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
             parsed === null ||
             Array.isArray(parsed)
           ) {
+            attributesInput.setAttribute("aria-invalid", "true");
             setCreateFeedback("Attributes must be a JSON object.", "error");
+            attributesInput.focus();
             return;
           }
           attributes = parsed as Readonly<Record<string, unknown>>;
         } catch {
+          attributesInput.setAttribute("aria-invalid", "true");
           setCreateFeedback("Attributes must be a JSON object.", "error");
+          attributesInput.focus();
           return;
         }
       }
@@ -418,7 +559,12 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         })
         .then((issued) => {
           if (!active) return;
+          rememberPrincipal(issued);
           storeToken(issued.key, issued.token);
+          pendingCompletion = {
+            message: `Created “${issued.principal.id}”, minted its session token, and made it active.`,
+            focus: { kind: "create-action" },
+          };
           setActivePrincipal(issued.key);
           void render();
         })
@@ -433,39 +579,66 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         });
     });
 
-    container.append(
-      el("h2", {}, ["Development principals"]),
+    const heading = el("h2", { tabindex: "-1" }, ["Development principals"]);
+    const createSection = el("details", { class: "principal-create" }, [
+      el("summary", {}, ["Create principal"]),
+      el("p", { id: createHintId, class: "hint" }, [
+        "Creating a principal also mints its token and makes it active.",
+      ]),
+      el("label", { for: idInputId }, ["Principal ID"]),
+      idInput,
+      el("label", { for: attributesInputId }, ["Attributes (JSON, optional)"]),
+      attributesInput,
+      create,
+      feedback,
+    ]);
+    panelBody.append(
+      heading,
       el("p", { id: tokenGuidanceId, class: "hint" }, [
         "The active principal authenticates invocations. The development server ",
         "keeps principals and tokens in memory; minted bearer tokens are also ",
         "kept in this browser session. Token values are not displayed here. ",
-        "Replacing a token revokes the previous token immediately.",
+        "Rotating a token revokes the previous token immediately.",
       ]),
       ...(principals.length === 0
         ? [
             el("p", { class: "empty" }, [
-              "No development principals. Add one to authenticate invocations.",
+              "No principals yet. Create one to authenticate invocations.",
             ]),
           ]
         : []),
       ...rows,
-      el("details", { class: "principal-create" }, [
-        el("summary", {}, ["Add principal"]),
-        el("p", { class: "hint" }, [
-          "Creating a principal also mints its token and makes it active.",
-        ]),
-        el("label", { for: idInputId }, ["Principal ID"]),
-        idInput,
-        el("label", { for: attributesInputId }, ["Attributes JSON (optional)"]),
-        attributesInput,
-        create,
-        feedback,
-      ]),
+      createSection,
     );
+
+    const completion = pendingCompletion;
+    if (completion !== null) {
+      pendingCompletion = null;
+      let focusTarget: HTMLElement;
+      if (completion.focus.kind === "principal") {
+        const key = completion.focus.key;
+        focusTarget = rowViews.find((view) => view.key === key)?.row ?? heading;
+      } else if (completion.focus.kind === "token-action") {
+        const key = completion.focus.key;
+        const principalView = rowViews.find((view) => view.key === key);
+        focusTarget =
+          principalView?.tokenAction ?? principalView?.row ?? heading;
+      } else if (completion.focus.kind === "create-action") {
+        createSection.setAttribute("open", "");
+        focusTarget = create;
+      } else {
+        focusTarget =
+          rowViews.at(Math.min(completion.focus.index, rowViews.length - 1))
+            ?.row ?? heading;
+      }
+      focusTarget.focus();
+      panelStatus.textContent = completion.message;
+    }
   };
 
   clear(container);
-  container.append(
+  container.append(panelBody, panelStatus);
+  panelBody.append(
     el("h2", {}, ["Development principals"]),
     el("p", { class: "hint", role: "status" }, ["Loading principals…"]),
   );

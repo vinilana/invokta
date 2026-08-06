@@ -8,11 +8,10 @@ const systemThemeQuery = "(prefers-color-scheme: light)";
 const choices: ReadonlyArray<{
   readonly value: ThemeChoice;
   readonly label: string;
-  readonly icon: string;
 }> = [
-  { value: "dark", label: "Dark", icon: "◐" },
-  { value: "light", label: "Light", icon: "☼" },
-  { value: "auto", label: "Auto", icon: "▣" },
+  { value: "dark", label: "Dark" },
+  { value: "light", label: "Light" },
+  { value: "auto", label: "System" },
 ];
 
 function isThemeChoice(value: unknown): value is ThemeChoice {
@@ -71,7 +70,7 @@ export function createThemeToggle(): HTMLElement {
   const group = el(
     "div",
     { class: "theme-toggle", role: "radiogroup", "aria-label": "Color theme" },
-    choices.map(({ value, label, icon }) => {
+    choices.map(({ value, label }) => {
       const button = el(
         "button",
         {
@@ -80,7 +79,16 @@ export function createThemeToggle(): HTMLElement {
           "aria-label": label,
           title: label,
         },
-        [el("span", { "aria-hidden": "true" }, [icon])],
+        [
+          el(
+            "span",
+            {
+              class: `theme-icon theme-icon--${value}`,
+              "aria-hidden": "true",
+            },
+            [],
+          ),
+        ],
       );
       button.addEventListener("click", () => {
         select(value);

@@ -1,8 +1,13 @@
 import { api } from "./api.js";
 import { renderCapabilitiesPanel } from "./capabilities.js";
 import { renderDoctorPanel } from "./doctor-panel.js";
-import { clear, el } from "./dom.js";
-import { ensureActiveToken, renderPrincipalsPanel } from "./principals.js";
+import { el } from "./dom.js";
+import {
+  ensureActiveToken,
+  getActivePrincipalStatus,
+  onPrincipalChange,
+  renderPrincipalsPanel,
+} from "./principals.js";
 import { styles } from "./styles.js";
 import { createThemeToggle } from "./theme.js";
 import { renderTracePanel } from "./trace.js";
@@ -16,35 +21,104 @@ const tabs: ReadonlyArray<{
 }> = [
   {
     name: "capabilities",
-    label: "Capabilities",
+    label: "Playground",
     render: renderCapabilitiesPanel,
   },
-  { name: "trace", label: "Trace", render: renderTracePanel },
-  { name: "doctor", label: "Doctor", render: renderDoctorPanel },
+  { name: "trace", label: "Activity", render: renderTracePanel },
+  { name: "doctor", label: "Diagnostics", render: renderDoctorPanel },
   { name: "principals", label: "Principals", render: renderPrincipalsPanel },
 ];
+
+function createBrandMark(): SVGSVGElement {
+  const namespace = "http://www.w3.org/2000/svg";
+  const mark = document.createElementNS(namespace, "svg");
+  mark.setAttribute("viewBox", "0 0 51 43");
+  mark.setAttribute("width", "24");
+  mark.setAttribute("height", "20");
+  mark.setAttribute("fill", "none");
+  mark.setAttribute("class", "brand-mark");
+  mark.setAttribute("aria-hidden", "true");
+  mark.setAttribute("focusable", "false");
+
+  const strokes = document.createElementNS(namespace, "g");
+  strokes.setAttribute("transform", "translate(-6.5,-10.5)");
+  strokes.setAttribute("stroke-width", "9");
+  strokes.setAttribute("stroke-linecap", "round");
+  strokes.setAttribute("stroke-linejoin", "round");
+
+  const chevron = document.createElementNS(namespace, "path");
+  chevron.setAttribute("d", "M11 15 L29 32 L11 49");
+  chevron.setAttribute("stroke", "var(--accent-text)");
+  const underscore = document.createElementNS(namespace, "path");
+  underscore.setAttribute("d", "M36 49 H53");
+  underscore.setAttribute("stroke", "var(--ink-fg)");
+  strokes.append(chevron, underscore);
+  mark.append(strokes);
+  return mark;
+}
 
 function boot(): void {
   document.head.append(el("style", {}, [styles]));
 
   const main = el("main", { class: "workspace-main content-frame" }, []);
   const tabButtons = new Map<TabName, HTMLButtonElement>();
-  let disposePanel: (() => void) | undefined;
+  const panelCache = new Map<
+    TabName,
+    Readonly<{
+      element: HTMLDivElement;
+      dispose: (() => void) | undefined;
+    }>
+  >();
+  let activePanel:
+    | Readonly<{
+        name: TabName;
+        element: HTMLDivElement;
+        dispose: (() => void) | undefined;
+      }>
+    | undefined;
 
   const show = (name: TabName): void => {
-    disposePanel?.();
-    disposePanel = undefined;
+    if (activePanel?.name === name) return;
+
+    if (activePanel !== undefined) {
+      activePanel.element.remove();
+      if (activePanel.name !== "capabilities") {
+        activePanel.dispose?.();
+      }
+      activePanel = undefined;
+    }
+
     for (const [tabName, button] of tabButtons) {
       const selected = tabName === name;
       button.classList.toggle("selected", selected);
       button.setAttribute("aria-selected", String(selected));
       button.setAttribute("tabindex", selected ? "0" : "-1");
     }
-    clear(main);
+
     const selectedTab = tabs.find((tab) => tab.name === name);
     if (selectedTab === undefined) return;
-    main.setAttribute("aria-labelledby", `tab-${name}`);
-    disposePanel = selectedTab.render(main) ?? undefined;
+
+    let panel = name === "capabilities" ? panelCache.get(name) : undefined;
+    if (panel === undefined) {
+      const element = el(
+        "div",
+        {
+          id: `panel-${name}`,
+          role: "tabpanel",
+          "aria-labelledby": `tab-${name}`,
+          tabindex: "0",
+        },
+        [],
+      );
+      panel = {
+        element,
+        dispose: selectedTab.render(element) ?? undefined,
+      };
+      if (name === "capabilities") panelCache.set(name, panel);
+    }
+
+    main.append(panel.element);
+    activePanel = { name, ...panel };
   };
 
   const nav = el(
@@ -54,7 +128,7 @@ function boot(): void {
       const button = el("button", { type: "button" }, [tab.label]);
       button.id = `tab-${tab.name}`;
       button.setAttribute("role", "tab");
-      button.setAttribute("aria-controls", "active-panel");
+      button.setAttribute("aria-controls", `panel-${tab.name}`);
       button.setAttribute("aria-selected", "false");
       button.setAttribute("tabindex", "-1");
       button.addEventListener("click", () => {
@@ -89,16 +163,56 @@ function boot(): void {
     button?.focus();
     button?.scrollIntoView({ block: "nearest", inline: "nearest" });
   });
-  main.id = "active-panel";
-  main.setAttribute("role", "tabpanel");
-  main.setAttribute("tabindex", "0");
+  main.id = "workspace";
 
-  const title = el("h1", {}, ["Connecting to engine…"]);
+  const title = el("h1", {}, ["Loading engine…"]);
   title.id = "engine-title";
-  const version = el("span", { class: "meta-pill" }, ["Version —"]);
-  const capabilityCount = el("span", { class: "meta-pill" }, [
-    "Capabilities —",
+  const version = el("span", { class: "meta-pill engine-version" }, [
+    "Version …",
   ]);
+  const capabilityCount = el(
+    "span",
+    { class: "meta-pill engine-capability-count" },
+    ["Capabilities …"],
+  );
+  const principalContextLabel = el("span", {}, [
+    "Run as — · Checking session token…",
+  ]);
+  const principalContext = el(
+    "button",
+    {
+      type: "button",
+      class: "meta-pill principal-context",
+      "aria-label":
+        "Run as unavailable, checking session token; manage development principals",
+    },
+    [principalContextLabel],
+  );
+  principalContext.addEventListener("click", () => {
+    show("principals");
+    tabButtons.get("principals")?.focus();
+  });
+  const updatePrincipalContext = (): void => {
+    const active = getActivePrincipalStatus();
+    if (active === null) {
+      principalContextLabel.textContent = "Run as — · No active principal";
+      principalContext.setAttribute(
+        "aria-label",
+        "No active principal; manage development principals",
+      );
+      return;
+    }
+    const tokenStatus = active.hasSessionToken ? "Token ready" : "No token";
+    const accessibleTokenStatus = active.hasSessionToken
+      ? "session token ready"
+      : "no session token";
+    principalContextLabel.textContent = `Run as ${active.principalId} · ${tokenStatus}`;
+    principalContext.setAttribute(
+      "aria-label",
+      `Run as ${active.principalId}, ${accessibleTokenStatus}; manage development principals`,
+    );
+  };
+  onPrincipalChange(updatePrincipalContext);
   const connectionLabel = el("span", { class: "connection-label" }, [
     "Connecting…",
   ]);
@@ -115,10 +229,7 @@ function boot(): void {
     ],
   );
   const brand = el("div", { class: "brand-lockup" }, [
-    el("span", { class: "brand-mark", "aria-hidden": "true" }, [
-      el("span", { class: "brand-chevron" }, [">"]),
-      el("span", { class: "brand-underscore" }, ["_"]),
-    ]),
+    createBrandMark(),
     el("span", { class: "brand-name" }, ["invokta"]),
     el("span", { class: "product-name" }, ["engine devtools"]),
   ]);
@@ -139,12 +250,10 @@ function boot(): void {
     { class: "workspace-context", "aria-labelledby": title.id },
     [
       el("div", { class: "content-frame workspace-context-inner" }, [
-        el("div", { class: "workspace-title" }, [
-          el("p", { class: "eyebrow" }, ["[ local / engine ]"]),
-          title,
-        ]),
+        el("div", { class: "workspace-title" }, [title]),
         el("div", { class: "engine-meta", "aria-label": "Engine status" }, [
           connection,
+          principalContext,
           version,
           capabilityCount,
         ]),
@@ -162,7 +271,7 @@ function boot(): void {
       title.textContent = engine.name;
       version.textContent = `v${engine.version}`;
       capabilityCount.textContent = `${String(engine.capabilityCount)} capabilities`;
-      connectionLabel.textContent = "Local server";
+      connectionLabel.textContent = "Connected locally";
       connection.classList.remove("pending");
     })
     .catch(() => {
@@ -173,9 +282,16 @@ function boot(): void {
       connection.setAttribute("role", "alert");
     });
 
-  void ensureActiveToken().catch(() => {
-    // Invocations surface the 401; the rest of the interface stays usable.
-  });
+  void ensureActiveToken()
+    .then(updatePrincipalContext)
+    .catch(() => {
+      principalContextLabel.textContent = "Run as unavailable";
+      principalContext.setAttribute(
+        "aria-label",
+        "Principal status unavailable; manage development principals",
+      );
+      // Invocations surface the 401; the rest of the interface stays usable.
+    });
 }
 
 boot();

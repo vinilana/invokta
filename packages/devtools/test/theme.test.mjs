@@ -95,8 +95,8 @@ describe("color theme control", () => {
     const buttons = walk(group).filter(
       (element) => element.getAttribute("role") === "radio",
     );
-    const auto = buttons.find(
-      (button) => button.getAttribute("aria-label") === "Auto",
+    const system = buttons.find(
+      (button) => button.getAttribute("aria-label") === "System",
     );
     const dark = buttons.find(
       (button) => button.getAttribute("aria-label") === "Dark",
@@ -105,8 +105,13 @@ describe("color theme control", () => {
     expect(documentElement.dataset.theme).toBe("light");
     keydown(group, "ArrowRight");
     expect(storage.getItem("starlight-theme")).toBe("auto");
-    expect(auto.getAttribute("aria-checked")).toBe("true");
-    expect(auto.focused).toBe(true);
+    expect(system.getAttribute("aria-checked")).toBe("true");
+    expect(system.focused).toBe(true);
+    expect(
+      walk(system).find((element) =>
+        element.getAttribute("class")?.includes("theme-icon--auto"),
+      ),
+    ).toBeDefined();
     expect(documentElement.dataset.theme).toBe("dark");
 
     media.matches = true;

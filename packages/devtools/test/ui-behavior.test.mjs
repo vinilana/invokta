@@ -203,7 +203,7 @@ afterEach(() => {
 });
 
 describe("principal browser session", () => {
-  it("replaces a stored token whose principal no longer exists", async () => {
+  it("drops an unknown stored token without rotating a credential", async () => {
     const storage = new MemoryStorage();
     storage.setItem(
       "invokta-devtools.tokens",
@@ -211,31 +211,26 @@ describe("principal browser session", () => {
     );
     storage.setItem("invokta-devtools.active", "old");
     installGlobal("sessionStorage", storage);
-    installGlobal(
-      "fetch",
-      vi.fn(async (path, options = {}) => {
-        if (path === "/api/principals" && options.method === undefined) {
-          return jsonResponse([{ key: "p1", principal: { id: "local-dev" } }]);
-        }
-        if (path === "/api/principals" && options.method === "POST") {
-          return jsonResponse({
-            key: "p1",
-            token: "fresh",
-            principal: { id: "local-dev" },
-          });
-        }
-        throw new Error(`Unexpected request: ${String(path)}`);
-      }),
-    );
+    const fetchMock = vi.fn(async (path, options = {}) => {
+      if (path === "/api/principals" && options.method === undefined) {
+        return jsonResponse([{ key: "p1", principal: { id: "local-dev" } }]);
+      }
+      throw new Error(`Unexpected request: ${String(path)}`);
+    });
+    installGlobal("fetch", fetchMock);
 
     const principals = await import("../src/ui/principals.js");
     await principals.ensureActiveToken();
 
     expect(principals.getActivePrincipalKey()).toBe("p1");
-    expect(principals.getActiveToken()).toBe("fresh");
-    expect(JSON.parse(storage.getItem("invokta-devtools.tokens"))).toEqual({
-      p1: "fresh",
+    expect(principals.getActiveToken()).toBeNull();
+    expect(principals.getActivePrincipalStatus()).toEqual({
+      key: "p1",
+      principalId: "local-dev",
+      hasSessionToken: false,
     });
+    expect(JSON.parse(storage.getItem("invokta-devtools.tokens"))).toEqual({});
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("loads when session storage is unavailable", async () => {
@@ -256,12 +251,13 @@ describe("principal browser session", () => {
 });
 
 describe("application tabs", () => {
-  it("closes the trace stream when the user leaves the Trace tab", async () => {
+  it("preserves cached panels and closes the trace stream when it is left", async () => {
     const document = {
       documentElement: new FakeElement("html"),
       head: new FakeElement("head"),
       body: new FakeElement("body"),
       createElement: (tagName) => new FakeElement(tagName),
+      createElementNS: (_namespace, tagName) => new FakeElement(tagName),
     };
     const storage = new MemoryStorage();
     const themeStorage = new MemoryStorage();
@@ -289,6 +285,8 @@ describe("application tabs", () => {
     }));
     installGlobal("sessionStorage", storage);
     installGlobal("EventSource", FakeEventSource);
+    let doctorCalls = 0;
+    let principalCalls = 0;
     installGlobal(
       "fetch",
       vi.fn(async (path, options = {}) => {
@@ -301,8 +299,18 @@ describe("application tabs", () => {
           });
         }
         if (path === "/api/capabilities") return jsonResponse([]);
+        if (path === "/api/doctor") {
+          doctorCalls += 1;
+          return jsonResponse({
+            engineName: "fixture-engine",
+            engineVersion: "1.0.0",
+            findings: [],
+            notes: [],
+          });
+        }
         if (path === "/api/principals" && options.method === undefined) {
-          return new Promise(() => undefined);
+          principalCalls += 1;
+          return jsonResponse([{ key: "p1", principal: { id: "local-dev" } }]);
         }
         throw new Error(`Unexpected request: ${String(path)}`);
       }),
@@ -324,16 +332,66 @@ describe("application tabs", () => {
     );
     expect(shell).toBeDefined();
     expect(brand.textContent).toContain("invokta");
+    expect(shell.textContent).not.toContain("[ local / engine ]");
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(themeGroup.getAttribute("role")).toBe("radiogroup");
+
+    const mark = walk(brand).find(
+      (node) => node instanceof FakeElement && node.tagName === "SVG",
+    );
+    expect(mark).toBeDefined();
+    const markPaths = walk(mark).filter(
+      (node) => node instanceof FakeElement && node.tagName === "PATH",
+    );
+    const markStrokes = walk(mark).find(
+      (node) => node instanceof FakeElement && node.tagName === "G",
+    );
+    expect(mark.getAttribute("viewBox")).toBe("0 0 51 43");
+    expect(markStrokes.getAttribute("transform")).toBe("translate(-6.5,-10.5)");
+    expect(markStrokes.getAttribute("stroke-width")).toBe("9");
+    expect(markStrokes.getAttribute("stroke-linecap")).toBe("round");
+    expect(markStrokes.getAttribute("stroke-linejoin")).toBe("round");
+    expect(markPaths.map((path) => path.getAttribute("d"))).toEqual([
+      "M11 15 L29 32 L11 49",
+      "M36 49 H53",
+    ]);
+    expect(markPaths.map((path) => path.getAttribute("stroke"))).toEqual([
+      "var(--accent-text)",
+      "var(--ink-fg)",
+    ]);
+    await waitFor(() =>
+      expect(shell.textContent).toContain("Run as local-dev"),
+    );
+    expect(shell.textContent).toContain("Connected locally");
+    expect(shell.textContent).toContain("No token");
+    const principalContext = walk(document.body).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("principal-context"),
+    );
+    expect(principalContext.getAttribute("aria-label")).toBe(
+      "Run as local-dev, no session token; manage development principals",
+    );
+    const principalContextLabel = walk(principalContext).find(
+      (node) => node instanceof FakeElement && node.tagName === "SPAN",
+    );
+    expect(principalContextLabel.getAttribute("role")).toBeNull();
 
     const buttons = walk(document.body).filter(
       (node) => node instanceof FakeElement && node.tagName === "BUTTON",
     );
     const capabilities = buttons.find(
-      (button) => button.textContent === "Capabilities",
+      (button) => button.textContent === "Playground",
     );
-    const trace = buttons.find((button) => button.textContent === "Trace");
+    const trace = buttons.find((button) => button.textContent === "Activity");
+    const diagnostics = buttons.find(
+      (button) => button.textContent === "Diagnostics",
+    );
+    const principals = buttons.find(
+      (button) => button.textContent === "Principals",
+    );
+    expect(diagnostics).toBeDefined();
+    expect(principals).toBeDefined();
     const darkTheme = buttons.find(
       (button) => button.getAttribute("aria-label") === "Dark",
     );
@@ -354,6 +412,38 @@ describe("application tabs", () => {
     expect(capabilities.getAttribute("role")).toBe("tab");
     expect(lightTheme.getAttribute("aria-checked")).toBe("true");
 
+    const mainLandmarks = walk(document.body).filter(
+      (node) => node instanceof FakeElement && node.tagName === "MAIN",
+    );
+    const tabButtons = buttons.filter(
+      (button) => button.getAttribute("role") === "tab",
+    );
+    expect(mainLandmarks).toHaveLength(1);
+    expect(mainLandmarks[0].getAttribute("role")).toBeNull();
+    expect(
+      new Set(tabButtons.map((button) => button.getAttribute("aria-controls")))
+        .size,
+    ).toBe(tabButtons.length);
+
+    const capabilitiesPanel = walk(mainLandmarks[0]).find(
+      (node) =>
+        node instanceof FakeElement && node.getAttribute("role") === "tabpanel",
+    );
+    expect(capabilities.getAttribute("aria-controls")).toBe(
+      capabilitiesPanel.getAttribute("id"),
+    );
+    expect(capabilitiesPanel.getAttribute("aria-labelledby")).toBe(
+      capabilities.id,
+    );
+    await waitFor(() =>
+      expect(capabilitiesPanel.textContent).toContain(
+        "No capabilities published",
+      ),
+    );
+    const draft = new FakeElement("textarea");
+    draft.value = '{"preserved":true}';
+    capabilitiesPanel.append(draft);
+
     darkTheme.dispatchEvent(new Event("click"));
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(themeStorage.getItem("starlight-theme")).toBe("dark");
@@ -371,9 +461,55 @@ describe("application tabs", () => {
     expect(trace.focused).toBe(true);
     expect(trace.scrolledIntoView).toBe(true);
     expect(capabilities.getAttribute("aria-selected")).toBe("false");
+    const firstTracePanel = walk(mainLandmarks[0]).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("id") === trace.getAttribute("aria-controls"),
+    );
     capabilities.dispatchEvent(new Event("click"));
 
     expect(sources[0].closed).toBe(true);
+    const restoredPanel = walk(mainLandmarks[0]).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("id") === capabilitiesPanel.getAttribute("id"),
+    );
+    expect(restoredPanel).toBe(capabilitiesPanel);
+    expect(draft.value).toBe('{"preserved":true}');
+
+    trace.dispatchEvent(new Event("click"));
+    expect(sources).toHaveLength(2);
+    const secondTracePanel = walk(mainLandmarks[0]).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("id") === trace.getAttribute("aria-controls"),
+    );
+    expect(secondTracePanel).not.toBe(firstTracePanel);
+    capabilities.dispatchEvent(new Event("click"));
+    expect(sources[1].closed).toBe(true);
+
+    diagnostics.dispatchEvent(new Event("click"));
+    await waitFor(() => expect(doctorCalls).toBe(1));
+    capabilities.dispatchEvent(new Event("click"));
+    diagnostics.dispatchEvent(new Event("click"));
+    await waitFor(() => expect(doctorCalls).toBe(2));
+
+    capabilities.dispatchEvent(new Event("click"));
+    await waitFor(() => expect(principalCalls).toBe(1));
+    principals.dispatchEvent(new Event("click"));
+    await waitFor(() => expect(principalCalls).toBe(2));
+    capabilities.dispatchEvent(new Event("click"));
+    principals.dispatchEvent(new Event("click"));
+    await waitFor(() => expect(principalCalls).toBe(3));
+
+    capabilities.dispatchEvent(new Event("click"));
+    const finalRestoredPanel = walk(mainLandmarks[0]).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("id") === capabilitiesPanel.getAttribute("id"),
+    );
+    expect(finalRestoredPanel).toBe(capabilitiesPanel);
+    expect(draft.value).toBe('{"preserved":true}');
   });
 
   it("deduplicates trace entries replayed after a reconnect", async () => {
@@ -444,9 +580,7 @@ describe("application tabs", () => {
     const dispose = renderCapabilitiesPanel(container);
 
     await waitFor(() =>
-      expect(container.textContent).toContain(
-        "Capabilities could not be loaded.",
-      ),
+      expect(container.textContent).toContain("Couldn’t load capabilities."),
     );
     dispose();
   });

@@ -47,6 +47,10 @@ class FakeText extends FakeNode {
   get textContent() {
     return this.value;
   }
+
+  set textContent(value) {
+    this.value = String(value);
+  }
 }
 
 class FakeElement extends FakeNode {
@@ -82,6 +86,12 @@ class FakeElement extends FakeNode {
 
   get textContent() {
     return this.childNodes.map((child) => child.textContent).join("");
+  }
+
+  set textContent(value) {
+    for (const child of this.childNodes) child.parentNode = null;
+    this.childNodes = [];
+    if (value !== "") this.append(String(value));
   }
 }
 
@@ -128,7 +138,7 @@ afterEach(() => {
 });
 
 describe("doctor panel", () => {
-  it("announces a healthy engine and keeps advisory notes scannable", async () => {
+  it("keeps one live status connected while rendering a healthy report", async () => {
     installDocument();
     installGlobal(
       "fetch",
@@ -146,10 +156,13 @@ describe("doctor panel", () => {
     const { renderDoctorPanel } = await import("../src/ui/doctor-panel.js");
     const container = new FakeElement("main");
     const dispose = renderDoctorPanel(container);
-
-    await waitFor(() =>
-      expect(container.textContent).toContain("Checks passed"),
+    const loadingStatus = walk(container).find(
+      (node) =>
+        node instanceof FakeElement && node.getAttribute("role") === "status",
     );
+
+    expect(loadingStatus.textContent).toBe("Running checks…");
+    await waitFor(() => expect(container.textContent).toContain("Healthy"));
     const status = walk(container).find(
       (node) =>
         node instanceof FakeElement && node.getAttribute("role") === "status",
@@ -164,10 +177,21 @@ describe("doctor panel", () => {
         node instanceof FakeElement &&
         node.classList.contains("diagnostic-item--note"),
     );
+    const notesHeading = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "H3" &&
+        node.textContent === "Notes",
+    );
 
+    expect(status).toBe(loadingStatus);
     expect(status.getAttribute("aria-live")).toBe("polite");
     expect(summary.classList.contains("doctor-summary--healthy")).toBe(true);
+    expect(summary.textContent).toContain("No blocking issues found.");
     expect(container.textContent).toContain("No blocking findings");
+    expect(container.textContent).not.toContain("[ engine / diagnostics ]");
+    expect(container.textContent).not.toContain("Advisory notes");
+    expect(notesHeading).toBeDefined();
     expect(note.textContent).toContain("MCP_MANIFEST_PRESENT");
     expect(note.textContent).toContain("invokta.mcp.json is present");
 
@@ -198,9 +222,17 @@ describe("doctor panel", () => {
     const { renderDoctorPanel } = await import("../src/ui/doctor-panel.js");
     const container = new FakeElement("main");
     const dispose = renderDoctorPanel(container);
+    const loadingStatus = walk(container).find(
+      (node) =>
+        node instanceof FakeElement && node.getAttribute("role") === "status",
+    );
 
     await waitFor(() =>
-      expect(container.textContent).toContain("1 finding needs attention"),
+      expect(container.textContent).toContain("Issues found"),
+    );
+    const status = walk(container).find(
+      (node) =>
+        node instanceof FakeElement && node.getAttribute("role") === "status",
     );
     const summary = walk(container).find(
       (node) =>
@@ -221,7 +253,11 @@ describe("doctor panel", () => {
       (node) => node instanceof FakeElement && node.tagName === "DETAILS",
     );
 
+    expect(status).toBe(loadingStatus);
     expect(summary.classList.contains("doctor-summary--issues")).toBe(true);
+    expect(summary.textContent).toContain(
+      "Resolve findings before serving the engine.",
+    );
     expect(findings.tagName).toBe("OL");
     expect(finding.textContent).toContain("DESCRIBE_FAILED");
     expect(finding.textContent).toContain("fixture.broken");
@@ -241,6 +277,10 @@ describe("doctor panel", () => {
     const { renderDoctorPanel } = await import("../src/ui/doctor-panel.js");
     const container = new FakeElement("main");
     const dispose = renderDoctorPanel(container);
+    const loadingStatus = walk(container).find(
+      (node) =>
+        node instanceof FakeElement && node.getAttribute("role") === "status",
+    );
 
     await waitFor(() =>
       expect(container.textContent).toContain(
@@ -252,6 +292,7 @@ describe("doctor panel", () => {
         node instanceof FakeElement && node.getAttribute("role") === "alert",
     );
 
+    expect(alert).toBe(loadingStatus);
     expect(alert.getAttribute("aria-atomic")).toBe("true");
 
     dispose();

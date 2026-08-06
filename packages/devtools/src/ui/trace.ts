@@ -24,6 +24,7 @@ interface TraceEntryView {
 }
 
 const maximumVisibleEntries = 500;
+const replaySettleDelayMs = 100;
 
 function timeOf(entry: TraceEntryView): string {
   const index = entry.at.indexOf("T");
@@ -70,7 +71,7 @@ function exchangeBody(
     "h3",
     { class: "field-label" },
     truncated
-      ? [`${label} — `, el("span", { class: "badge warn" }, ["truncated"])]
+      ? [`${label} — `, el("span", { class: "badge warn" }, ["Truncated"])]
       : [label],
   );
   const content = el(
@@ -86,15 +87,24 @@ function exchangeBody(
   return [heading, content];
 }
 
+function sentenceCase(value: string): string {
+  const words = value.replaceAll("-", " ");
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+}
+
+function loadedStatus(count: number): string {
+  return `Live · ${String(count)} ${count === 1 ? "entry" : "entries"} loaded · newest first.`;
+}
+
 function renderEntry(entry: TraceEntryView): HTMLElement {
   if (entry.kind === "invocation" && entry.invocation !== undefined) {
     const invocation = entry.invocation;
     const outcome =
       invocation.outcome === "completed"
-        ? "completed"
+        ? "Completed"
         : invocation.errorCode === undefined
-          ? "failed"
-          : `failed · ${invocation.errorCode}`;
+          ? "Failed"
+          : `Failed · ${invocation.errorCode}`;
     return el("div", { class: "trace-row invocation" }, [
       timestamp(entry),
       el(
@@ -133,10 +143,10 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
       ),
     ]);
   }
-  const notice = (entry.notice ?? "notice").replaceAll("-", " ");
+  const notice = sentenceCase(entry.notice ?? "notice");
   return el("div", { class: "trace-row notice" }, [
     timestamp(entry),
-    el("span", { class: "badge warn" }, ["lifecycle"]),
+    el("span", { class: "badge warn" }, ["Lifecycle"]),
     el("span", {}, [notice]),
   ]);
 }
@@ -158,31 +168,74 @@ export function renderTracePanel(container: HTMLElement): () => void {
     },
     ["Connecting to live trace…"],
   );
+  const warning = el(
+    "p",
+    { id: "trace-data-warning", class: "hint", role: "note" },
+    [
+      el("span", { class: "badge warn" }, ["Sensitive data"]),
+      " Raw request and response bodies from all connected MCP clients appear here and may contain sensitive data.",
+    ],
+  );
+  const empty = el("p", { class: "empty" }, [
+    "No activity yet. Invoke a capability or connect an MCP client to start tracing.",
+  ]);
   const list = el(
     "div",
     {
       class: "trace-list",
       role: "log",
       "aria-labelledby": "trace-heading",
-      "aria-describedby": "trace-status",
-      "aria-live": "polite",
+      "aria-describedby": "trace-status trace-data-warning",
+      "aria-live": "off",
       "aria-relevant": "additions",
       "aria-busy": "true",
     },
     [],
   );
-  container.append(heading, status, list);
+  container.append(heading, status, warning, empty, list);
 
   const visibleKeys: string[] = [];
   const seen = new Set<string>();
+  let connected = false;
+  let replayPending = true;
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const cancelReplaySettlement = (): void => {
+    if (settleTimer === undefined) return;
+    clearTimeout(settleTimer);
+    settleTimer = undefined;
+  };
+
+  const scheduleReplaySettlement = (): void => {
+    if (!connected || !replayPending) return;
+    cancelReplaySettlement();
+    settleTimer = setTimeout(() => {
+      settleTimer = undefined;
+      if (!connected) return;
+      replayPending = false;
+      list.setAttribute("aria-busy", "false");
+      list.setAttribute("aria-live", "polite");
+      status.textContent = loadedStatus(list.childElementCount);
+    }, replaySettleDelayMs);
+  };
+
   const source = new EventSource("/api/events");
   source.addEventListener("open", () => {
-    status.textContent = "Live · all MCP clients · newest first.";
-    list.setAttribute("aria-busy", "false");
+    connected = true;
+    replayPending = true;
+    list.setAttribute("aria-live", "off");
+    list.setAttribute("aria-busy", "true");
+    status.textContent = "Connected · loading recent activity…";
+    scheduleReplaySettlement();
   });
   source.addEventListener("error", () => {
-    status.textContent = "Connection lost · reconnecting…";
+    connected = false;
+    replayPending = true;
+    cancelReplaySettlement();
+    list.setAttribute("aria-live", "off");
     list.setAttribute("aria-busy", "true");
+    status.textContent =
+      "Disconnected · retrying automatically; existing entries remain visible.";
   });
   source.addEventListener("trace", (event) => {
     try {
@@ -190,20 +243,27 @@ export function renderTracePanel(container: HTMLElement): () => void {
         (event as MessageEvent<string>).data,
       ) as TraceEntryView;
       const key = `${String(entry.id)}:${entry.at}:${entry.kind}`;
-      if (seen.has(key)) return;
+      if (seen.has(key)) {
+        scheduleReplaySettlement();
+        return;
+      }
       seen.add(key);
       visibleKeys.unshift(key);
+      empty.hidden = true;
       list.prepend(renderEntry(entry));
       while (list.childElementCount > maximumVisibleEntries) {
         list.lastElementChild?.remove();
         const removed = visibleKeys.pop();
         if (removed !== undefined) seen.delete(removed);
       }
+      scheduleReplaySettlement();
     } catch {
       // A malformed frame is dropped; the stream continues.
     }
   });
   return () => {
+    connected = false;
+    cancelReplaySettlement();
     source.close();
   };
 }

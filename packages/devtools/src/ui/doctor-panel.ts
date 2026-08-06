@@ -90,7 +90,7 @@ function renderDiagnosticSection(
   diagnostics: DoctorInfo["findings"] | DoctorInfo["notes"],
 ): HTMLElement {
   const isFinding = kind === "finding";
-  const title = isFinding ? "Findings" : "Advisory notes";
+  const title = isFinding ? "Findings" : "Notes";
   const id = `doctor-${isFinding ? "findings" : "notes"}-title`;
   const count = diagnostics.length;
   return el("section", { class: "diagnostic-section", "aria-labelledby": id }, [
@@ -100,7 +100,7 @@ function renderDiagnosticSection(
     ]),
     count === 0
       ? el("p", { class: "empty doctor-empty" }, [
-          isFinding ? "No blocking findings." : "No advisory notes.",
+          isFinding ? "No blocking findings." : "No notes.",
         ])
       : el(
           "ol",
@@ -120,84 +120,70 @@ function renderReport(report: DoctorInfo): HTMLElement {
     report.capabilityCount === undefined
       ? "Unreadable"
       : String(report.capabilityCount);
-  const statusText = healthy
-    ? "Checks passed"
-    : findingCount === 1
-      ? "1 finding needs attention"
-      : `${String(findingCount)} findings need attention`;
-
-  return el(
-    "section",
-    { class: "doctor-panel", "aria-labelledby": "doctor-title" },
-    [
-      el("p", { class: "eyebrow" }, ["[ engine / diagnostics ]"]),
-      el("div", { class: "doctor-heading" }, [
-        el("div", { class: "doctor-title-group" }, [
-          el("h2", { id: "doctor-title" }, ["Doctor"]),
-          el("p", { class: "hint doctor-engine" }, [
-            `${report.engineName} ${report.engineVersion}`,
+  return el("div", { class: "doctor-report" }, [
+    el(
+      "div",
+      {
+        class: `doctor-summary doctor-summary--${
+          healthy ? "healthy" : "issues"
+        }`,
+      },
+      [
+        el("p", { class: "doctor-summary-copy" }, [
+          healthy
+            ? "No blocking issues found."
+            : "Resolve findings before serving the engine.",
+        ]),
+        el("dl", { class: "doctor-stats", "aria-label": "Doctor summary" }, [
+          el("div", { class: "doctor-stat" }, [
+            el("dt", {}, ["Capabilities"]),
+            el("dd", {}, [capabilityCount]),
+          ]),
+          el("div", { class: "doctor-stat" }, [
+            el("dt", {}, ["Findings"]),
+            el("dd", {}, [String(findingCount)]),
+          ]),
+          el("div", { class: "doctor-stat" }, [
+            el("dt", {}, ["Notes"]),
+            el("dd", {}, [String(report.notes.length)]),
           ]),
         ]),
-        el(
-          "p",
-          {
-            class: `doctor-state badge ${healthy ? "ok" : "error"}`,
-            role: "status",
-            "aria-live": "polite",
-            "aria-atomic": "true",
-          },
-          [statusText],
-        ),
-      ]),
-      el(
-        "div",
-        {
-          class: `doctor-summary doctor-summary--${
-            healthy ? "healthy" : "issues"
-          }`,
-        },
-        [
-          el("p", { class: "doctor-summary-copy" }, [
-            healthy
-              ? "The engine passed every blocking doctor check."
-              : "Review the blocking findings before serving the engine.",
-          ]),
-          el("dl", { class: "doctor-stats", "aria-label": "Doctor summary" }, [
-            el("div", { class: "doctor-stat" }, [
-              el("dt", {}, ["Capabilities"]),
-              el("dd", {}, [capabilityCount]),
-            ]),
-            el("div", { class: "doctor-stat" }, [
-              el("dt", {}, ["Findings"]),
-              el("dd", {}, [String(findingCount)]),
-            ]),
-            el("div", { class: "doctor-stat" }, [
-              el("dt", {}, ["Notes"]),
-              el("dd", {}, [String(report.notes.length)]),
-            ]),
-          ]),
-        ],
-      ),
-      renderDiagnosticSection("finding", report.findings),
-      renderDiagnosticSection("note", report.notes),
-    ],
-  );
+      ],
+    ),
+    renderDiagnosticSection("finding", report.findings),
+    renderDiagnosticSection("note", report.notes),
+  ]);
 }
 
 export function renderDoctorPanel(container: HTMLElement): () => void {
   let active = true;
   clear(container);
+  const engine = el("p", { class: "hint doctor-engine" }, []);
+  const status = el(
+    "p",
+    {
+      class: "doctor-state hint",
+      role: "status",
+      "aria-live": "polite",
+      "aria-atomic": "true",
+    },
+    ["Running checks…"],
+  );
+  const reportContent = el("div", { class: "doctor-content" }, []);
   container.append(
-    el("h2", {}, ["Doctor"]),
     el(
-      "p",
-      {
-        class: "hint",
-        role: "status",
-        "aria-live": "polite",
-        "aria-atomic": "true",
-      },
-      ["Running checks…"],
+      "section",
+      { class: "doctor-panel", "aria-labelledby": "doctor-title" },
+      [
+        el("div", { class: "doctor-heading" }, [
+          el("div", { class: "doctor-title-group" }, [
+            el("h2", { id: "doctor-title" }, ["Doctor"]),
+            engine,
+          ]),
+          status,
+        ]),
+        reportContent,
+      ],
     ),
   );
 
@@ -205,26 +191,25 @@ export function renderDoctorPanel(container: HTMLElement): () => void {
     .doctor()
     .then((report) => {
       if (!active) return;
-      clear(container);
-      container.append(renderReport(report));
+      clear(reportContent);
+      reportContent.append(renderReport(report));
+      engine.textContent = `${report.engineName} ${report.engineVersion}`;
+      const healthy = report.findings.length === 0;
+      status.setAttribute(
+        "class",
+        `doctor-state badge ${healthy ? "ok" : "error"}`,
+      );
+      status.textContent = healthy ? "Healthy" : "Issues found";
     })
     .catch(() => {
       if (!active) return;
-      clear(container);
-      container.append(
-        el("h2", {}, ["Doctor"]),
-        el(
-          "p",
-          {
-            class: "feedback doctor-load-error",
-            role: "alert",
-            "aria-atomic": "true",
-          },
-          [
-            "Doctor checks could not be loaded. Check that the dev server is still running.",
-          ],
-        ),
-      );
+      clear(reportContent);
+      engine.textContent = "";
+      status.setAttribute("class", "feedback doctor-load-error");
+      status.setAttribute("role", "alert");
+      status.setAttribute("aria-live", "assertive");
+      status.textContent =
+        "Doctor checks could not be loaded. Check that the dev server is still running.";
     });
 
   return () => {

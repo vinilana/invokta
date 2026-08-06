@@ -4,6 +4,8 @@ import { exampleFromSchema } from "./example-from-schema.js";
 import { parseMcpResponse } from "./mcp-response.js";
 import { getActiveToken } from "./principals.js";
 
+const emptyResult = "Invoke the capability to see its result.";
+
 /**
  * The invocation playground for one capability: a schema-seeded JSON editor,
  * the invoke action, and the raw MCP request and response of each attempt —
@@ -17,7 +19,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     "textarea",
     {
       id: editorId,
-      rows: "10",
+      rows: "8",
       class: "editor",
       spellcheck: "false",
       "aria-describedby": feedbackId,
@@ -40,22 +42,17 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     {
       class: "result",
       role: "status",
-      "aria-label": "Invocation response",
+      "aria-label": "Capability result",
       "aria-live": "polite",
       "aria-atomic": "true",
       "aria-busy": "false",
     },
-    ["No response yet. Send an MCP request to inspect structured output."],
+    [emptyResult],
   );
-  const resultState = el("span", {}, ["Response · not sent"]);
+  const resultState = el("span", {}, ["Result · not run"]);
 
   const windowBar = (label: string | HTMLElement): HTMLElement =>
     el("div", { class: "code-window-bar" }, [
-      el("span", { class: "window-dots", "aria-hidden": "true" }, [
-        el("span", {}, []),
-        el("span", {}, []),
-        el("span", {}, []),
-      ]),
       typeof label === "string" ? el("span", {}, [label]) : label,
     ]);
 
@@ -70,7 +67,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     [],
   );
   const rawSection = el("details", {}, [
-    el("summary", {}, ["MCP exchange (request and response)"]),
+    el("summary", {}, ["Raw MCP exchange"]),
     el("h4", {}, ["Request · POST /mcp"]),
     rawRequest,
     el("h4", {}, ["Response"]),
@@ -78,28 +75,54 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   ]);
   rawSection.hidden = true;
 
-  const showResponse = (
+  const showResult = (
     state: string,
     content: string,
     isError = false,
   ): void => {
-    resultState.textContent = `Response · ${state}`;
+    resultState.textContent = `Result · ${state}`;
     resultView.textContent = content;
     resultView.classList.toggle("error", isError);
   };
 
   const reset = el("button", { type: "button" }, ["Reset example"]);
-  reset.addEventListener("click", () => {
-    editor.value = pretty(exampleFromSchema(capability.inputSchema));
-    editor.setAttribute("aria-invalid", "false");
+  const format = el("button", { type: "button" }, ["Format JSON"]);
+  const invoke = el(
+    "button",
+    {
+      type: "button",
+      class: "primary",
+      "aria-disabled": "false",
+      title: "Invoke capability (Ctrl/Cmd + Enter)",
+    },
+    ["Invoke capability"],
+  );
+  let pending = false;
+
+  const resetOutput = (): void => {
     feedback.textContent = "";
-    showResponse(
-      "not sent",
-      "No response yet. Send an MCP request to inspect structured output.",
-    );
+    showResult("not run", emptyResult);
     rawRequest.textContent = "";
     rawResponse.textContent = "";
     rawSection.hidden = true;
+  };
+
+  reset.addEventListener("click", () => {
+    editor.value = pretty(exampleFromSchema(capability.inputSchema));
+    editor.setAttribute("aria-invalid", "false");
+    resetOutput();
+  });
+
+  format.addEventListener("click", () => {
+    feedback.textContent = "";
+    editor.setAttribute("aria-invalid", "false");
+    try {
+      editor.value = pretty(JSON.parse(editor.value) as unknown);
+    } catch {
+      editor.setAttribute("aria-invalid", "true");
+      feedback.textContent = "Enter valid JSON before formatting.";
+      editor.focus();
+    }
   });
 
   editor.addEventListener("input", () => {
@@ -109,10 +132,17 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     }
   });
 
-  const invoke = el("button", { type: "button", class: "primary" }, [
-    "Send MCP request",
-  ]);
-  invoke.addEventListener("click", () => {
+  const setPending = (next: boolean): void => {
+    pending = next;
+    invoke.setAttribute("aria-disabled", String(next));
+    reset.disabled = next;
+    format.disabled = next;
+    invoke.textContent = next ? "Invoking…" : "Invoke capability";
+    resultView.setAttribute("aria-busy", String(next));
+  };
+
+  const runInvocation = (): void => {
+    if (pending) return;
     feedback.textContent = "";
     editor.setAttribute("aria-invalid", "false");
     rawRequest.textContent = "";
@@ -123,19 +153,13 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
       args = JSON.parse(editor.value);
     } catch {
       editor.setAttribute("aria-invalid", "true");
-      feedback.textContent =
-        "Input error: The request arguments are not valid JSON.";
-      showResponse(
-        "not sent",
-        "Request not sent because the input is invalid.",
-      );
+      feedback.textContent = "Enter valid JSON before invoking.";
+      showResult("not run", "The capability was not invoked.", true);
+      editor.focus();
       return;
     }
-    invoke.disabled = true;
-    reset.disabled = true;
-    invoke.textContent = "Sending…";
-    resultView.setAttribute("aria-busy", "true");
-    showResponse("pending", `Waiting for ${capability.id}…`);
+    setPending(true);
+    showResult("running", `Running ${capability.id}…`);
     void callTool(capability.id, args, getActiveToken())
       .then((exchange) => {
         rawSection.hidden = false;
@@ -143,8 +167,8 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
         rawResponse.textContent = `HTTP ${String(exchange.status)}\n${exchange.responseBody}`;
         if (exchange.status === 401) {
           feedback.textContent =
-            "Authentication failed (HTTP 401). Select a principal with a minted token and send the request again.";
-          showResponse(
+            "Authentication failed (HTTP 401). In Principals, activate a principal with a session token, then try again.";
+          showResult(
             "HTTP 401",
             exchange.responseBody || "The MCP endpoint returned no body.",
             true,
@@ -152,8 +176,8 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
           return;
         }
         if (exchange.status < 200 || exchange.status >= 300) {
-          feedback.textContent = `MCP request failed (HTTP ${String(exchange.status)}). Inspect the exchange for details.`;
-          showResponse(
+          feedback.textContent = `MCP request failed (HTTP ${String(exchange.status)}). Expand “Raw MCP exchange” for details.`;
+          showResult(
             `HTTP ${String(exchange.status)}`,
             exchange.responseBody || "The MCP endpoint returned no body.",
             true,
@@ -178,13 +202,13 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
         if (result === undefined) {
           if (message?.error !== undefined) {
             feedback.textContent =
-              "MCP returned a protocol error. Inspect the exchange for details.";
-            showResponse("protocol error", pretty(message.error), true);
+              "MCP returned a protocol error. Expand “Raw MCP exchange” for details.";
+            showResult("protocol error", pretty(message.error), true);
             return;
           }
           feedback.textContent =
-            "The MCP response could not be parsed. Inspect the exchange for details.";
-          showResponse(
+            "Couldn’t parse the MCP response. Expand “Raw MCP exchange” for details.";
+          showResult(
             "unreadable",
             exchange.responseBody || "The MCP endpoint returned no body.",
             true,
@@ -193,7 +217,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
         }
         if (result.isError === true) {
           feedback.textContent = "The capability returned an engine error.";
-          showResponse(
+          showResult(
             "engine error",
             pretty(
               ((): unknown => {
@@ -223,36 +247,48 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
             output = result;
           }
         }
-        showResponse("success", pretty(output));
+        showResult("success", pretty(output));
       })
       .catch(() => {
         feedback.textContent =
-          "MCP endpoint unreachable. Confirm the dev server is running and try again.";
-        showResponse("no response", "No response received.", true);
+          "Couldn’t reach the MCP endpoint. Check that the dev server is running, then try again.";
+        showResult("no response", "No response received.", true);
       })
       .finally(() => {
-        resultView.setAttribute("aria-busy", "false");
-        invoke.disabled = false;
-        reset.disabled = false;
-        invoke.textContent = "Send MCP request";
+        setPending(false);
       });
+  };
+
+  invoke.addEventListener("click", runInvocation);
+  editor.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) return;
+    event.preventDefault();
+    runInvocation();
   });
 
-  return el("div", { class: "invoke-panel" }, [
-    el("h3", {}, ["Test invocation"]),
-    el("p", { class: "hint" }, [
-      "Edit the generated arguments, then send a real MCP tools/call request through the engine's invoke path.",
+  const requestPane = el("section", { class: "invoke-request" }, [
+    el("label", { for: editorId, class: "field-label" }, ["Arguments (JSON)"]),
+    el("div", { class: "code-window" }, [
+      windowBar("tools/call arguments"),
+      editor,
     ]),
-    el("label", { for: editorId, class: "field-label" }, [
-      "Request arguments (JSON)",
-    ]),
-    el("div", { class: "code-window" }, [windowBar("MCP arguments"), editor]),
-    el("div", { class: "invoke-actions" }, [invoke, reset]),
+    el("div", { class: "invoke-actions" }, [invoke, format, reset]),
     feedback,
+  ]);
+  const resultPane = el("section", { class: "invoke-result" }, [
+    el("h4", { class: "field-label" }, ["Capability result"]),
     el("div", { class: "code-window result-window" }, [
       windowBar(resultState),
       resultView,
     ]),
+  ]);
+
+  return el("div", { class: "invoke-panel" }, [
+    el("h3", {}, ["Invoke capability"]),
+    el("p", { class: "hint" }, [
+      "Edit the generated arguments, then send a tools/call request through engine.invoke.",
+    ]),
+    el("div", { class: "invoke-workspace" }, [requestPane, resultPane]),
     rawSection,
   ]);
 }
