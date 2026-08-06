@@ -155,6 +155,7 @@ export default defineConfig({
             { slug: "reference/cli" },
             { slug: "reference/mcp" },
             { slug: "reference/tooling" },
+            { slug: "reference/devtools" },
             { slug: "reference/installer" },
             { slug: "reference/deploy" },
             { slug: "reference/create-invokta-engine" },

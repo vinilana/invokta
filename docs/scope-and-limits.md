@@ -2,16 +2,17 @@
 
 ## Public packages
 
-**AE-SCOPE-01 — Nine packages with isolated roles.** Invokta publishes:
+**AE-SCOPE-01 — Ten packages with isolated roles.** Invokta publishes:
 
 | Package | Responsibility |
 | --- | --- |
 | `@invokta/core` | Capability contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
-| `@invokta/mcp` | MCP tools over stdio and stateless Streamable HTTP |
+| `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, and probing |
+| `@invokta/devtools` | Development-time engine dev server, doctor diagnostics, and installed MCP inspection and homologation |
 | `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile, or import of one public GitHub example tree |
 | `create-invokta-capability` | Creation of a standalone atomic capability package |
 | `create-invokta-capability-library` | Creation of a standalone capability-library package |
@@ -40,7 +41,7 @@ useful.
 | Dimension | Limit |
 | --- | --- |
 | Framework runtime packages | 3: core, CLI, and MCP |
-| Supporting packages | 6: tooling, installer, deploy, and three project creators |
+| Supporting packages | 7: tooling, installer, deploy, devtools, and three project creators |
 | Official adapters | CLI and MCP |
 | MCP transports | stdio and stateless Streamable HTTP |
 | Core primitives | Capability, Engine, Context, and Principal |
@@ -50,6 +51,8 @@ useful.
 | Cross-cutting hooks | 1: `onEvent` |
 | Auth or PDP implementations | 0 |
 | Containers or runtime plugin systems | 0 |
+| Concurrent attached devtools targets | 1 |
+| Concurrent attached devtools tool calls | 1, explicitly initiated |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,
@@ -72,6 +75,16 @@ language, relationship graph, PDP adapter, or session binding.
 **AE-LIMIT-05 — MCP.** Invokta does not provide MCP resources, prompts,
 sampling, elicitation, tasks, stateful sessions, resumption, or server-to-client
 requests.
+
+**AE-LIMIT-06 — Installed MCP inspection.** Devtools may initialize, list tools
+from, and manually call one explicitly configured stdio or Streamable HTTP MCP
+target. For an interactive HTTP target it may complete one ephemeral OAuth
+Authorization Code with PKCE flow through the isolated official SDK. It does
+not discover or import installations, persist connections or credentials,
+connect multiple targets, invoke automatically, retry a connected tool call,
+evaluate, judge, certify, or gate a release. Workspace-only Doctor, principals,
+watch, core events, and `engine.invoke` trace claims do not apply to an attached
+external target.
 
 ## Evolution triggers
 

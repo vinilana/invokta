@@ -27,3 +27,6 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0018](0018-interactive-engine-creator-profiles.md) | Interactive engine creator profiles | Accepted | 2026-07-30 |
 | [0019](0019-engine-embedded-mcp-install-commands.md) | Engine-embedded MCP install and uninstall commands | Accepted | 2026-08-02 |
 | [0020](0020-github-example-import-for-engine-creator.md) | GitHub example import for the engine creator | Accepted | 2026-08-06 |
+| [0021](0021-engine-devtools-dev-server.md) | Engine devtools dev server | Accepted | 2026-08-05 |
+| [0022](0022-mcp-installation-inspection-and-homologation.md) | MCP installation inspection and homologation | Accepted | 2026-08-06 |
+| [0023](0023-ephemeral-oauth-for-installed-mcp-inspection.md) | Ephemeral OAuth for installed MCP inspection | Accepted | 2026-08-06 |

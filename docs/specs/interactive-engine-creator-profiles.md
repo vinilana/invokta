@@ -246,10 +246,13 @@ tsconfig.json
 tsconfig.test.json
 ```
 
-The common `package.json` contains `@invokta/core`, `zod`, the existing build,
-typecheck, test, check, and direct scripts, and the existing development tools.
-The capability, engine, direct entry point, and engine test remain byte-for-byte
-equivalent for the same project name, Invokta version, and package manager.
+The common `package.json` contains `@invokta/core`, `zod`, and
+`@invokta/devtools` as a development dependency. It preserves the existing
+build, typecheck, test, check, and direct scripts. Every profile also contains
+an explicit build-and-watch `devtools` script plus a build-first
+`devtools:doctor` script for read-only project diagnostics. The capability,
+engine, direct entry point, and engine test remain byte-for-byte equivalent for
+the same project name, Invokta version, and package manager.
 
 ### Adapter additions
 

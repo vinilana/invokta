@@ -34,6 +34,7 @@ const packageReferences = [
   ["cli", "@invokta/cli"],
   ["mcp", "@invokta/mcp"],
   ["tooling", "@invokta/tooling"],
+  ["devtools", "@invokta/devtools"],
   ["installer", "@invokta/installer"],
   ["deploy", "@invokta/deploy"],
   ["create-invokta-engine", "create-invokta-engine"],

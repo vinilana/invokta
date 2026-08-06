@@ -165,6 +165,23 @@ ${commands.check}
 \`\`\`sh
 ${commands.direct}
 \`\`\`
+
+## Develop interactively
+
+\`\`\`sh
+${runScript("devtools")}
+\`\`\`
+
+Builds the engine and starts the Invokta devtools on http://127.0.0.1:4100/:
+browse capabilities, invoke them from schema-seeded JSON, follow the live
+invocation trace, switch test identities, and read the doctor report.
+Source changes rebuild and restart the hosted engine automatically.
+
+Run the read-only devtools diagnostics with:
+
+\`\`\`sh
+${runScript("devtools:doctor")}
+\`\`\`
 ${cliSection}${stdioSection}${httpSection}`;
 }
 
@@ -282,6 +299,10 @@ function renderPackageManifest(
   profile: EngineStarterProfile,
 ): string {
   const features = profileFeatures(profile);
+  const devtoolsServe =
+    'tsc -p tsconfig.json --pretty false && invokta-devtools serve dist/engine.js --watch --build "tsc -p tsconfig.json --pretty false"';
+  const devtoolsDoctor =
+    "tsc -p tsconfig.json --pretty false && invokta-devtools doctor dist/engine.js";
   const scripts = {
     build: "tsc -p tsconfig.json --pretty false",
     typecheck:
@@ -290,6 +311,8 @@ function renderPackageManifest(
     check:
       "tsc -p tsconfig.json --pretty false --noEmit && tsc -p tsconfig.test.json --pretty false --noEmit && vitest run && tsc -p tsconfig.json --pretty false",
     direct: "node dist/direct.js",
+    devtools: devtoolsServe,
+    "devtools:doctor": devtoolsDoctor,
     ...(features.cli ? { cli: "node dist/cli.js" } : {}),
     ...(features.mcpStdio
       ? {
@@ -318,6 +341,7 @@ function renderPackageManifest(
   };
   const devDependencies = {
     ...(features.mcpHttp ? { "@invokta/deploy": invoktaVersion } : {}),
+    "@invokta/devtools": invoktaVersion,
     "@types/node": "26.1.2",
     typescript: "7.0.2",
     vitest: "4.1.10",

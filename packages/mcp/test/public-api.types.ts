@@ -2,13 +2,102 @@ import type { Engine, Principal } from "@invokta/core";
 import { expectTypeOf } from "vitest";
 
 import {
+  beginMcpOAuthAuthorization,
+  connectMcpClient,
+  type McpClientConnection,
+  McpClientError,
+  type McpClientOperationOptions,
+  type McpClientServerInfo,
+  type McpClientTarget,
+  type McpClientTool,
+  type McpClientToolPage,
+  type McpClientToolResult,
   type McpHttpAuthenticationRequest,
   type McpHttpServerHandle,
+  type McpJsonValue,
+  type McpOAuthAuthorization,
+  type McpOAuthAuthorizationOptions,
+  type McpOAuthClientTarget,
   type ServeMcpHttpOptions,
   type ServeMcpStdioOptions,
   serveMcpHttp,
   serveMcpStdio,
 } from "../src/index.js";
+
+const stdioTarget = {
+  transport: "stdio",
+  command: process.execPath,
+  args: ["server.mjs"],
+  env: { API_TOKEN: "secret" },
+} as const satisfies McpClientTarget;
+const httpTarget = {
+  transport: "http",
+  url: "https://mcp.example.com/mcp",
+  authentication: { type: "bearer", token: "secret" },
+} as const satisfies McpClientTarget;
+
+expectTypeOf(connectMcpClient(stdioTarget)).toEqualTypeOf<
+  Promise<McpClientConnection>
+>();
+expectTypeOf(
+  connectMcpClient(httpTarget, { signal: new AbortController().signal }),
+).toEqualTypeOf<Promise<McpClientConnection>>();
+
+const oauthTarget = {
+  transport: "http",
+  url: "https://mcp.example.com/mcp",
+  authentication: { type: "oauth" },
+} as const satisfies McpOAuthClientTarget;
+const oauthOptions: McpOAuthAuthorizationOptions = {
+  redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+  state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+};
+expectTypeOf(
+  beginMcpOAuthAuthorization(oauthTarget, oauthOptions),
+).toEqualTypeOf<Promise<McpOAuthAuthorization>>();
+
+declare const oauthAuthorization: McpOAuthAuthorization;
+expectTypeOf(oauthAuthorization.authorizationUrl).toEqualTypeOf<string>();
+expectTypeOf(oauthAuthorization.finish("authorization-code")).toEqualTypeOf<
+  Promise<McpClientConnection>
+>();
+expectTypeOf(oauthAuthorization.close()).toEqualTypeOf<Promise<void>>();
+
+declare const connection: McpClientConnection;
+expectTypeOf(connection.server).toEqualTypeOf<McpClientServerInfo>();
+expectTypeOf(connection.listTools()).toEqualTypeOf<
+  Promise<McpClientToolPage>
+>();
+expectTypeOf(connection.listTools("cursor", {})).toEqualTypeOf<
+  Promise<McpClientToolPage>
+>();
+expectTypeOf(
+  connection.callTool("example.inspect", { value: "ok" }),
+).toEqualTypeOf<Promise<McpClientToolResult>>();
+expectTypeOf(connection.close()).toEqualTypeOf<Promise<void>>();
+
+declare const tool: McpClientTool;
+expectTypeOf(tool.inputSchema).toEqualTypeOf<
+  Readonly<Record<string, McpJsonValue>>
+>();
+expectTypeOf<McpClientOperationOptions["signal"]>().toEqualTypeOf<
+  AbortSignal | undefined
+>();
+
+const clientError = new McpClientError(
+  "INVALID_TARGET",
+  "The MCP client target is invalid.",
+);
+expectTypeOf(clientError.code).toEqualTypeOf<
+  | "INVALID_TARGET"
+  | "SPAWN_FAILED"
+  | "CONNECTION_FAILED"
+  | "AUTHENTICATION_FAILED"
+  | "PROTOCOL_ERROR"
+  | "TIMEOUT"
+  | "LIMIT_EXCEEDED"
+  | "CANCELLED"
+>();
 
 declare const engine: Engine;
 declare const principal: Principal;

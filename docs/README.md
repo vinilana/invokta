@@ -31,6 +31,12 @@ decision is accepted and the implementation evidence is complete.
   accepted by [ADR 0018](./adr/0018-interactive-engine-creator-profiles.md)
 - [GitHub example import for create-invokta-engine](./specs/github-example-import.md),
   accepted by [ADR 0020](./adr/0020-github-example-import-for-engine-creator.md)
+- [Engine devtools dev server](./specs/engine-devtools-dev-server.md),
+  accepted by [ADR 0021](./adr/0021-engine-devtools-dev-server.md)
+- [MCP installation inspection and homologation](./specs/mcp-installation-inspection-and-homologation.md),
+  accepted by [ADR 0022](./adr/0022-mcp-installation-inspection-and-homologation.md)
+  and extended with ephemeral OAuth by
+  [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md)
 
 ## Guides and examples
 

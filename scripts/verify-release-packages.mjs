@@ -41,6 +41,12 @@ const publicPackages = [
     requiredFiles: [...distEntryFiles, "dist/cli.js"],
   },
   {
+    directory: "devtools",
+    name: "@invokta/devtools",
+    // The dev-only package ships the executable and the interface bundle.
+    requiredFiles: [...distEntryFiles, "dist/cli.js", "dist/ui/app.js"],
+  },
+  {
     directory: "installer",
     name: "@invokta/installer",
     // The installer is binary-first; its only import API is the engine subpath.
@@ -843,13 +849,15 @@ try {
         "@invokta/installer",
         "@invokta/mcp",
       ],
-      devDependencies: ["@invokta/deploy"],
+      devDependencies: ["@invokta/deploy", "@invokta/devtools"],
       scripts: [
         "build",
         "check",
         "cli",
         "deploy:package",
         "deploy:probe",
+        "devtools",
+        "devtools:doctor",
         "direct",
         "mcp:http",
         "mcp:install",
@@ -875,10 +883,12 @@ try {
         "src/mcp-stdio.ts",
       ],
       dependencies: ["@invokta/core", "@invokta/installer", "@invokta/mcp"],
-      devDependencies: [],
+      devDependencies: ["@invokta/devtools"],
       scripts: [
         "build",
         "check",
+        "devtools",
+        "devtools:doctor",
         "direct",
         "mcp:install",
         "mcp:stdio",
@@ -898,12 +908,14 @@ try {
       target: "release-engine-http",
       entries: [...commonCreatorEntries, ...httpCreatorEntries],
       dependencies: ["@invokta/core", "@invokta/mcp"],
-      devDependencies: ["@invokta/deploy"],
+      devDependencies: ["@invokta/deploy", "@invokta/devtools"],
       scripts: [
         "build",
         "check",
         "deploy:package",
         "deploy:probe",
+        "devtools",
+        "devtools:doctor",
         "direct",
         "mcp:http",
         "test",
@@ -921,8 +933,17 @@ try {
       target: "release-engine-cli",
       entries: [...commonCreatorEntries, "src/cli.ts"],
       dependencies: ["@invokta/cli", "@invokta/core"],
-      devDependencies: [],
-      scripts: ["build", "check", "cli", "direct", "test", "typecheck"],
+      devDependencies: ["@invokta/devtools"],
+      scripts: [
+        "build",
+        "check",
+        "cli",
+        "devtools",
+        "devtools:doctor",
+        "direct",
+        "test",
+        "typecheck",
+      ],
       cli: true,
       mcpStdio: false,
       mcpHttp: false,
@@ -1041,10 +1062,17 @@ try {
       }
     }
 
-    const generatedDependencyTarballs = [
+    const generatedPackageNames = new Set([
       ...profileCase.dependencies,
       ...profileCase.devDependencies,
-    ].map((name) => tarballsByName.get(name));
+    ]);
+    // Devtools loads its public MCP dependency at runtime. Install the matching
+    // local artifact so this pre-release smoke validates one coherent release
+    // set instead of resolving an older published package for focused profiles.
+    generatedPackageNames.add("@invokta/mcp");
+    const generatedDependencyTarballs = [...generatedPackageNames].map((name) =>
+      tarballsByName.get(name),
+    );
     if (generatedDependencyTarballs.some((tarball) => tarball === undefined)) {
       throw new Error(
         `${profileCase.profile} generated consumer tarballs are incomplete`,
@@ -1063,6 +1091,9 @@ try {
       { cwd: projectDirectory },
     );
     run("npm", ["run", "--silent", "check"], { cwd: projectDirectory });
+    run("npm", ["run", "--silent", "devtools:doctor"], {
+      cwd: projectDirectory,
+    });
 
     const directResult = run(
       "npm",

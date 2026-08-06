@@ -132,13 +132,21 @@ describe("createStarterFiles", () => {
         "@invokta/mcp",
         "zod",
       ],
-      ["@invokta/deploy", "@types/node", "typescript", "vitest"],
+      [
+        "@invokta/deploy",
+        "@invokta/devtools",
+        "@types/node",
+        "typescript",
+        "vitest",
+      ],
       [
         "build",
         "check",
         "cli",
         "deploy:package",
         "deploy:probe",
+        "devtools",
+        "devtools:doctor",
         "direct",
         "mcp:http",
         "mcp:install",
@@ -151,10 +159,12 @@ describe("createStarterFiles", () => {
     [
       "mcp-stdio",
       ["@invokta/core", "@invokta/installer", "@invokta/mcp", "zod"],
-      ["@types/node", "typescript", "vitest"],
+      ["@invokta/devtools", "@types/node", "typescript", "vitest"],
       [
         "build",
         "check",
+        "devtools",
+        "devtools:doctor",
         "direct",
         "mcp:install",
         "mcp:stdio",
@@ -166,12 +176,20 @@ describe("createStarterFiles", () => {
     [
       "mcp-http",
       ["@invokta/core", "@invokta/mcp", "zod"],
-      ["@invokta/deploy", "@types/node", "typescript", "vitest"],
+      [
+        "@invokta/deploy",
+        "@invokta/devtools",
+        "@types/node",
+        "typescript",
+        "vitest",
+      ],
       [
         "build",
         "check",
         "deploy:package",
         "deploy:probe",
+        "devtools",
+        "devtools:doctor",
         "direct",
         "mcp:http",
         "test",
@@ -181,8 +199,17 @@ describe("createStarterFiles", () => {
     [
       "cli",
       ["@invokta/cli", "@invokta/core", "zod"],
-      ["@types/node", "typescript", "vitest"],
-      ["build", "check", "cli", "direct", "test", "typecheck"],
+      ["@invokta/devtools", "@types/node", "typescript", "vitest"],
+      [
+        "build",
+        "check",
+        "cli",
+        "devtools",
+        "devtools:doctor",
+        "direct",
+        "test",
+        "typecheck",
+      ],
     ],
   ] as const)(
     "renders only the dependencies and scripts required by %s",
@@ -209,6 +236,28 @@ describe("createStarterFiles", () => {
       })) {
         if (name.startsWith("@invokta/")) expect(version).toBe("1.2.3");
       }
+    },
+  );
+
+  it.each(["complete", "mcp-stdio", "mcp-http", "cli"] as const)(
+    "adds only the explicit devtools commands to the %s profile",
+    (profile) => {
+      const packageFile = createFiles(profile).find(
+        (file) => file.path === "package.json",
+      );
+      const manifest = JSON.parse(
+        packageFile && "contents" in packageFile ? packageFile.contents : "",
+      ) as {
+        readonly scripts: Readonly<Record<string, string>>;
+      };
+      const serveCommand =
+        'tsc -p tsconfig.json --pretty false && invokta-devtools serve dist/engine.js --watch --build "tsc -p tsconfig.json --pretty false"';
+
+      expect(manifest.scripts.dev).toBeUndefined();
+      expect(manifest.scripts.devtools).toBe(serveCommand);
+      expect(manifest.scripts["devtools:doctor"]).toBe(
+        "tsc -p tsconfig.json --pretty false && invokta-devtools doctor dist/engine.js",
+      );
     },
   );
 
@@ -460,22 +509,46 @@ describe("createStarterFiles", () => {
   });
 
   it.each([
-    ["npm", "npm run check", "npm run mcp:install", "npm run mcp:uninstall"],
+    [
+      "npm",
+      "npm run check",
+      "npm run devtools",
+      "npm run devtools:doctor",
+      "npm run dev",
+      "npm run mcp:install",
+      "npm run mcp:uninstall",
+    ],
     [
       "pnpm",
       "pnpm run check",
+      "pnpm run devtools",
+      "pnpm run devtools:doctor",
+      "pnpm run dev",
       "pnpm run mcp:install",
       "pnpm run mcp:uninstall",
     ],
-    ["yarn", "yarn run check", "yarn mcp:install", "yarn mcp:uninstall"],
+    [
+      "yarn",
+      "yarn run check",
+      "yarn devtools",
+      "yarn devtools:doctor",
+      "yarn dev",
+      "yarn mcp:install",
+      "yarn mcp:uninstall",
+    ],
   ] as const)(
     "renders %s commands in the generated README",
-    (manager, check, install, uninstall) => {
+    (manager, check, devtools, doctor, legacyDev, install, uninstall) => {
       const files = createFiles("complete", manager);
 
       const readme = files.find((file) => file.path === "README.md");
       const contents = readme && "contents" in readme ? readme.contents : "";
       expect(contents).toContain(check);
+      expect(contents).toContain(devtools);
+      expect(contents).toContain(doctor);
+      expect(contents).toContain("switch test identities");
+      expect(contents).not.toContain("development principals");
+      expect(contents).not.toContain(`\`${legacyDev}\``);
       expect(contents).toContain(install);
       expect(contents).toContain(uninstall);
     },

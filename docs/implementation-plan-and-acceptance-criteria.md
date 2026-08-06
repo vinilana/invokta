@@ -38,11 +38,14 @@ persistence, configuration field, or operational limit:
 | `AE-OBS-01` | Three minimal events preserve order and contain no payloads or credentials |
 | `AE-CLI-01..02` | Integration covers commands, input channels, UTF-8 failure, writers, and exit codes |
 | `AE-MCP-01..04` | An official client lists and calls tools over stdio and HTTP; tests cover schemas, errors, cancellation boundaries, statelessness, and boundary security |
+| `AE-MCP-CLIENT-01..03` | Public type tests prove SDK isolation; stdio and HTTP fixtures cover exact descriptors, initialization, pagination, manual calls, cancellation, closure, secure URLs, authentication, and byte limits |
 | `AE-SEC-01..02` | Authentication occurs before `invoke`; authorization occurs before `run`; insecure authentication requires explicit opt-in |
 | `AE-INSTALL-01..05` | Packed creator smoke tests install a built local engine; target transactions cover confirmation, idempotency, drift, locks, rollback, management, remote descriptors, and secret-free diagnostics without process or network access |
 | `AE-CREATE-PROFILE-01..12` | Terminal and non-terminal harnesses cover bounded prompting and confirmation; golden and packed tests cover all four exact profiles, public deploy-owned HTTP bytes, adapter omission, filesystem races, installation order, and direct/CLI/MCP equivalence |
+| `AE-DEVTOOLS-01..08` | Doctor fixtures cover exit codes and stack-free diagnostics; a real MCP HTTP host proves single-path execution, fail-closed bearer authentication, origin isolation without CORS headers, bounded tracing, and watch by child-process replacement |
+| `AE-DEVTOOLS-ATTACH-01..10` | Inert-startup spies, stdio and HTTP fixtures, hostile local requests, canary secrets, fake clocks, boundary payloads, OAuth callback and cleanup fixtures, accessibility tests, and packed consumers prove explicit read-only verification and bounded manual homologation |
 | `AE-CREATE-EXAMPLE-01..08` | Injected fetch harnesses cover official short names, GitHub URL resolution, mutual exclusion with `--profile`, confirmation cancellation, package-name rewrite, archive limits, symlink rejection, and offline profile network boundaries |
-| `AE-SCOPE-01..04`, `AE-LIMIT-01..05` | Manifest and API review prove package roles and the absence of deferred abstractions |
+| `AE-SCOPE-01..04`, `AE-LIMIT-01..06` | Manifest and API review prove package roles and the absence of deferred abstractions |
 
 Supporting packages require focused contract tests for their own authority:
 engine, atomic capability, and capability-library creator scaffolds remain

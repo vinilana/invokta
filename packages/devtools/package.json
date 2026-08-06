@@ -1,0 +1,47 @@
+{
+  "name": "@invokta/devtools",
+  "version": "0.3.0",
+  "description": "Local MCP workbench, installation verifier, and engine diagnostics for Invokta.",
+  "author": "Vini Lana <vini@aicoders.academy>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vinilana/invokta.git",
+    "directory": "packages/devtools"
+  },
+  "homepage": "https://docs.invokta.dev/reference/devtools/",
+  "bugs": {
+    "url": "https://github.com/vinilana/invokta/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "invokta-devtools": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "prepack": "npm run --silent build",
+    "test": "yarn --cwd ../.. test packages/devtools",
+    "test:run": "yarn --cwd ../.. test:run packages/devtools"
+  },
+  "dependencies": {
+    "@invokta/core": "0.3.0",
+    "@invokta/mcp": "0.3.0"
+  }
+}

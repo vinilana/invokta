@@ -9,5 +9,7 @@
     "packages/*/test/**/*.ts",
     "examples/*/src/**/*.ts",
     "examples/*/test/**/*.ts"
-  ]
+  ],
+  "comment": "The devtools UI and its tests need the DOM lib; adding it here would put the DOM ReadableStream in scope for every package, so they typecheck through packages/devtools/tsconfig.test.json instead.",
+  "exclude": ["packages/devtools/src/ui", "packages/devtools/test"]
 }
