@@ -1,3 +1,4 @@
+import { createCopyButton } from "./clipboard.js";
 import { el, pretty, type Child } from "./dom.js";
 
 type JsonSchema = Readonly<Record<string, unknown>>;
@@ -110,6 +111,8 @@ export function renderSchemaView(
 ): HTMLElement {
   const fields = propertyEntries(schema);
   const required = requiredFields(schema);
+  const raw = pretty(schema);
+  const requiredCount = fields.filter(([name]) => required.has(name)).length;
   const fieldCount = `${String(fields.length)} ${fields.length === 1 ? "field" : "fields"}`;
   return el(
     "section",
@@ -120,6 +123,12 @@ export function renderSchemaView(
         el("div", { class: "schema-card-meta" }, [
           el("span", { class: "schema-type" }, [schemaType(schema)]),
           el("span", { class: "schema-field-count" }, [fieldCount]),
+          requiredCount === 0
+            ? null
+            : el("span", { class: "schema-required" }, [
+                `${String(requiredCount)} required`,
+              ]),
+          createCopyButton(`${label.toLowerCase()} schema`, () => raw),
         ]),
       ]),
       typeof schema.description === "string" && schema.description.trim() !== ""
@@ -142,7 +151,7 @@ export function renderSchemaView(
           ),
       el("details", { class: "schema-raw" }, [
         el("summary", {}, ["Raw JSON Schema"]),
-        el("pre", { class: "raw" }, [pretty(schema)]),
+        el("pre", { class: "raw" }, [raw]),
       ]),
     ],
   );

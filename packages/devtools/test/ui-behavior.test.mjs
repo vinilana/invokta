@@ -118,6 +118,10 @@ class FakeElement extends FakeNode {
     this.focused = true;
   }
 
+  select() {
+    this.selected = true;
+  }
+
   scrollIntoView() {
     this.scrolledIntoView = true;
   }
@@ -518,6 +522,102 @@ describe("application tabs", () => {
     );
     expect(finalRestoredPanel).toBe(capabilitiesPanel);
     expect(draft.value).toBe('{"preserved":true}');
+  });
+
+  it("returns to the catalog filter from the slash shortcut", async () => {
+    const document = {
+      documentElement: new FakeElement("html"),
+      head: new FakeElement("head"),
+      body: new FakeElement("body"),
+      createElement: (tagName) => new FakeElement(tagName),
+      createElementNS: (_namespace, tagName) => new FakeElement(tagName),
+    };
+    class FakeEventSource extends EventTarget {
+      close() {}
+    }
+    installGlobal("document", document);
+    installGlobal("localStorage", new MemoryStorage());
+    installGlobal("matchMedia", () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    installGlobal("sessionStorage", new MemoryStorage());
+    installGlobal("EventSource", FakeEventSource);
+    installGlobal(
+      "fetch",
+      vi.fn(async (path) => {
+        if (path === "/api/engine") {
+          return jsonResponse({
+            name: "fixture-engine",
+            version: "1.0.0",
+            capabilityCount: 1,
+            engineHost: { host: "127.0.0.1", port: 4101 },
+          });
+        }
+        if (path === "/api/capabilities") {
+          return jsonResponse([
+            {
+              id: "support.classify",
+              title: "Classify ticket",
+              description: "Classifies a support ticket.",
+              inputSchema: { type: "object" },
+              outputSchema: { type: "object" },
+            },
+          ]);
+        }
+        if (path === "/api/principals") return jsonResponse([]);
+        throw new Error(`Unexpected request: ${String(path)}`);
+      }),
+    );
+
+    await import("../src/ui/app.js");
+    await waitFor(() =>
+      expect(
+        walk(document.body).some(
+          (node) =>
+            node instanceof FakeElement &&
+            node.getAttribute("id") === "capability-search",
+        ),
+      ).toBe(true),
+    );
+    const search = walk(document.body).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("id") === "capability-search",
+    );
+    const tabButtons = walk(document.body).filter(
+      (node) => node instanceof FakeElement && node.tagName === "BUTTON",
+    );
+    const playground = tabButtons.find(
+      (button) => button.textContent === "Playground",
+    );
+    const activity = tabButtons.find(
+      (button) => button.textContent === "Activity",
+    );
+
+    activity.dispatchEvent(new Event("click"));
+    expect(playground.getAttribute("aria-selected")).toBe("false");
+
+    const shortcut = new Event("keydown", { cancelable: true });
+    Object.defineProperties(shortcut, {
+      key: { value: "/" },
+      target: { value: document.body },
+    });
+    document.body.dispatchEvent(shortcut);
+
+    expect(playground.getAttribute("aria-selected")).toBe("true");
+    expect(search.focused).toBe(true);
+    expect(search.selected).toBe(true);
+    expect(shortcut.defaultPrevented).toBe(true);
+
+    const typing = new Event("keydown", { cancelable: true });
+    Object.defineProperties(typing, {
+      key: { value: "/" },
+      target: { value: search },
+    });
+    document.body.dispatchEvent(typing);
+    expect(typing.defaultPrevented).toBe(false);
   });
 
   it("deduplicates trace entries replayed after a reconnect", async () => {

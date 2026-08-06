@@ -1,3 +1,4 @@
+import { createCopyButton } from "./clipboard.js";
 import { el } from "./dom.js";
 
 interface TraceEntryView {
@@ -84,7 +85,13 @@ function exchangeBody(
     },
     [body],
   );
-  return el("section", { class: "trace-payload" }, [heading, content]);
+  return el("section", { class: "trace-payload" }, [
+    el("div", { class: "trace-payload-heading" }, [
+      heading,
+      createCopyButton(label.toLowerCase(), () => body),
+    ]),
+    content,
+  ]);
 }
 
 function sentenceCase(value: string): string {
@@ -165,10 +172,53 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
   ]);
 }
 
+type TraceKindFilter = "all" | TraceEntryView["kind"];
+
+const kindFilters: ReadonlyArray<{
+  readonly value: TraceKindFilter;
+  readonly label: string;
+}> = [
+  { value: "all", label: "All" },
+  { value: "invocation", label: "Invocations" },
+  { value: "exchange", label: "Exchanges" },
+  { value: "notice", label: "Lifecycle" },
+];
+
+/** Everything about one entry a developer might type into the filter box. */
+function searchTextOf(entry: TraceEntryView): string {
+  const parts: string[] = [entry.kind, entry.at];
+  if (entry.invocation !== undefined) {
+    parts.push(
+      entry.invocation.capabilityId,
+      entry.invocation.outcome,
+      entry.invocation.errorCode ?? "",
+    );
+  }
+  if (entry.exchange !== undefined) {
+    parts.push(
+      `http ${String(entry.exchange.status)}`,
+      entry.exchange.mcpMethod ?? "",
+      entry.exchange.capabilityId ?? "",
+      entry.exchange.requestBody,
+      entry.exchange.responseBody,
+    );
+  }
+  if (entry.notice !== undefined) parts.push(entry.notice);
+  return parts.join("\n").toLowerCase();
+}
+
+interface TraceRecord {
+  readonly key: string;
+  readonly kind: TraceEntryView["kind"];
+  readonly element: HTMLElement;
+  readonly searchText: string;
+}
+
 /**
  * The live invocation timeline: every entry the dev server traces arrives
  * over the `/api/events` stream, newest first, including a replay of the
- * session buffer on connect.
+ * session buffer on connect. Filtering, holding, and clearing act on this
+ * view only; the dev server's bounded buffer is never mutated from here.
  */
 export function renderTracePanel(container: HTMLElement): () => void {
   const heading = el("h2", { id: "trace-heading" }, ["Activity"]);
@@ -201,6 +251,17 @@ export function renderTracePanel(container: HTMLElement): () => void {
       "Invoke a capability or connect an MCP client to start tracing.",
     ]),
   ]);
+  const filterEmpty = el(
+    "div",
+    { class: "trace-empty trace-filter-empty", role: "status" },
+    [
+      el("p", { class: "trace-empty-title" }, ["No entries match this filter"]),
+      el("p", { class: "hint" }, [
+        "Clear the search or choose another kind to see the buffered activity again.",
+      ]),
+    ],
+  );
+  filterEmpty.hidden = true;
   const count = el(
     "span",
     { id: "trace-count", class: "trace-count", "aria-hidden": "true" },
@@ -209,6 +270,7 @@ export function renderTracePanel(container: HTMLElement): () => void {
   const list = el(
     "div",
     {
+      id: "trace-list",
       class: "trace-list",
       role: "log",
       "aria-labelledby": "trace-feed-heading",
@@ -219,6 +281,194 @@ export function renderTracePanel(container: HTMLElement): () => void {
     },
     [],
   );
+
+  const records: TraceRecord[] = [];
+  const held: Array<{ readonly key: string; readonly entry: TraceEntryView }> =
+    [];
+  const seen = new Set<string>();
+  let activeKind: TraceKindFilter = "all";
+  let holding = false;
+  let connected = false;
+  let replayPending = true;
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const search = el(
+    "input",
+    {
+      id: "trace-search",
+      class: "trace-search",
+      type: "search",
+      placeholder: "Capability, method, status, or payload",
+      autocomplete: "off",
+      "aria-controls": "trace-list",
+    },
+    [],
+  );
+  const hold = el(
+    "button",
+    {
+      type: "button",
+      class: "trace-toolbar-button",
+      "aria-pressed": "false",
+      title: "Stop adding new entries to this view",
+    },
+    ["Hold"],
+  );
+  const clearView = el(
+    "button",
+    {
+      type: "button",
+      class: "trace-toolbar-button",
+      title: "Remove every entry from this view",
+    },
+    ["Clear view"],
+  );
+  const kindButtons = new Map<TraceKindFilter, HTMLButtonElement>();
+  let query = "";
+
+  const applyFilter = (): void => {
+    let visible = 0;
+    for (const record of records) {
+      const matches =
+        (activeKind === "all" || record.kind === activeKind) &&
+        (query === "" || record.searchText.includes(query));
+      record.element.hidden = !matches;
+      if (matches) visible += 1;
+    }
+    const filtering = query !== "" || activeKind !== "all";
+    count.textContent = filtering
+      ? `${String(visible)} of ${entryCount(records.length)}`
+      : entryCount(records.length);
+    empty.hidden = records.length !== 0;
+    filterEmpty.hidden = !(filtering && records.length !== 0 && visible === 0);
+  };
+
+  const paintHold = (): void => {
+    hold.setAttribute("aria-pressed", String(holding));
+    hold.textContent = holding
+      ? held.length === 0
+        ? "Held"
+        : `Held · ${String(held.length)} waiting`
+      : "Hold";
+  };
+
+  const admit = (key: string, entry: TraceEntryView): void => {
+    const record: TraceRecord = {
+      key,
+      kind: entry.kind,
+      element: renderEntry(entry),
+      searchText: searchTextOf(entry),
+    };
+    records.unshift(record);
+    list.prepend(record.element);
+    while (records.length > maximumVisibleEntries) {
+      const dropped = records.pop();
+      if (dropped === undefined) break;
+      dropped.element.remove();
+      seen.delete(dropped.key);
+    }
+  };
+
+  const filterGroup = el(
+    "div",
+    {
+      class: "trace-kind-filter",
+      role: "radiogroup",
+      "aria-label": "Entry kind",
+    },
+    kindFilters.map(({ value, label }) => {
+      const button = el(
+        "button",
+        {
+          type: "button",
+          role: "radio",
+          class: "trace-kind-choice",
+          "aria-checked": String(value === "all"),
+          tabindex: value === "all" ? "0" : "-1",
+        },
+        [label],
+      );
+      button.addEventListener("click", () => {
+        selectKind(value, true);
+      });
+      kindButtons.set(value, button);
+      return button;
+    }),
+  );
+
+  function selectKind(value: TraceKindFilter, focus: boolean): void {
+    activeKind = value;
+    for (const [candidate, button] of kindButtons) {
+      const checked = candidate === value;
+      button.setAttribute("aria-checked", String(checked));
+      button.setAttribute("tabindex", checked ? "0" : "-1");
+    }
+    applyFilter();
+    if (focus) kindButtons.get(value)?.focus();
+  }
+
+  filterGroup.addEventListener("keydown", (event) => {
+    const keyboardEvent = event as KeyboardEvent;
+    const current = kindFilters.findIndex(({ value }) => value === activeKind);
+    if (current < 0) return;
+    let next = current;
+    if (keyboardEvent.key === "ArrowRight" || keyboardEvent.key === "ArrowDown")
+      next = current + 1;
+    else if (
+      keyboardEvent.key === "ArrowLeft" ||
+      keyboardEvent.key === "ArrowUp"
+    )
+      next = current - 1;
+    else if (keyboardEvent.key === "Home") next = 0;
+    else if (keyboardEvent.key === "End") next = kindFilters.length - 1;
+    else return;
+    keyboardEvent.preventDefault();
+    const choice = kindFilters.at(
+      (next + kindFilters.length) % kindFilters.length,
+    );
+    if (choice !== undefined) selectKind(choice.value, true);
+  });
+
+  search.addEventListener("input", () => {
+    query = search.value.trim().toLowerCase();
+    applyFilter();
+  });
+  search.addEventListener("keydown", (event) => {
+    if ((event as KeyboardEvent).key !== "Escape" || query === "") return;
+    event.preventDefault();
+    search.value = "";
+    query = "";
+    applyFilter();
+  });
+
+  hold.addEventListener("click", () => {
+    holding = !holding;
+    if (!holding) {
+      for (const { key, entry } of held) admit(key, entry);
+      held.length = 0;
+      applyFilter();
+    }
+    paintHold();
+  });
+
+  clearView.addEventListener("click", () => {
+    for (const record of records) record.element.remove();
+    records.length = 0;
+    held.length = 0;
+    seen.clear();
+    paintHold();
+    applyFilter();
+  });
+
+  const toolbar = el("div", { class: "trace-toolbar" }, [
+    el("label", { class: "trace-toolbar-label", for: "trace-search" }, [
+      "Filter",
+    ]),
+    search,
+    filterGroup,
+    el("div", { class: "trace-toolbar-actions" }, [hold, clearView]),
+  ]);
+
   const panel = el(
     "section",
     { class: "trace-panel", "aria-labelledby": "trace-heading" },
@@ -241,19 +491,15 @@ export function renderTracePanel(container: HTMLElement): () => void {
             el("h3", { id: "trace-feed-heading" }, ["Session activity"]),
             count,
           ]),
+          toolbar,
           empty,
+          filterEmpty,
           list,
         ],
       ),
     ],
   );
   container.append(panel);
-
-  const visibleKeys: string[] = [];
-  const seen = new Set<string>();
-  let connected = false;
-  let replayPending = true;
-  let settleTimer: ReturnType<typeof setTimeout> | undefined;
 
   const cancelReplaySettlement = (): void => {
     if (settleTimer === undefined) return;
@@ -306,15 +552,18 @@ export function renderTracePanel(container: HTMLElement): () => void {
         return;
       }
       seen.add(key);
-      visibleKeys.unshift(key);
-      empty.hidden = true;
-      list.prepend(renderEntry(entry));
-      while (list.childElementCount > maximumVisibleEntries) {
-        list.lastElementChild?.remove();
-        const removed = visibleKeys.pop();
-        if (removed !== undefined) seen.delete(removed);
+      if (holding) {
+        held.push({ key, entry });
+        while (held.length > maximumVisibleEntries) {
+          const dropped = held.shift();
+          if (dropped !== undefined) seen.delete(dropped.key);
+        }
+        paintHold();
+        scheduleReplaySettlement();
+        return;
       }
-      count.textContent = entryCount(list.childElementCount);
+      admit(key, entry);
+      applyFilter();
       scheduleReplaySettlement();
     } catch {
       // A malformed frame is dropped; the stream continues.

@@ -1,4 +1,6 @@
+import { createCopyButton, formatDuration } from "./clipboard.js";
 import { clear, el, pretty } from "./dom.js";
+import { exampleFromSchema } from "./example-from-schema.js";
 import { createCompactThemeToggle, createThemeToggle } from "./theme.js";
 
 export type AttachedJsonValue =
@@ -591,6 +593,51 @@ function errorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
     : "The local request could not be completed.";
+}
+
+const annotationLabels: Readonly<Record<string, string>> = {
+  readOnlyHint: "Read-only",
+  destructiveHint: "Destructive",
+  idempotentHint: "Idempotent",
+  openWorldHint: "Open world",
+};
+
+/** Advertised behavior hints, shown before a call so intent is visible. */
+function annotationTags(
+  annotations: Readonly<Record<string, AttachedJsonValue>> | undefined,
+): readonly HTMLElement[] {
+  return Object.entries(annotations ?? {})
+    .filter(([, value]) => value === true)
+    .map(([name]) =>
+      el(
+        "span",
+        {
+          class: `att-tag${name === "destructiveHint" ? " danger" : ""}`,
+        },
+        [annotationLabels[name] ?? name],
+      ),
+    );
+}
+
+/**
+ * A starter argument object drawn from the advertised input schema so the
+ * editor opens on real field names. It is a seed, not a validated value; the
+ * attached server remains the only authority on its own schema.
+ */
+export function seedArguments(
+  schema: Readonly<Record<string, AttachedJsonValue>>,
+): string {
+  const example = exampleFromSchema(schema);
+  if (typeof example !== "object" || example === null || Array.isArray(example))
+    return "{}";
+  return pretty(example);
+}
+
+/** Splits an ISO instant into a scannable clock reading and its full value. */
+function clockReading(instant: string): string {
+  const separator = instant.indexOf("T");
+  if (separator === -1) return instant;
+  return instant.slice(separator + 1).replace("Z", "");
 }
 
 function statusPill(state: AttachedConnectionState): HTMLElement {
@@ -1737,10 +1784,10 @@ export function mountAttachedApp(
       ]);
     }
 
-    const schema = el("pre", { class: "att-pre" }, [
-      pretty(selected.inputSchema),
-    ]);
-    const source = argumentDrafts.get(selected.name) ?? "{}";
+    const schemaText = pretty(selected.inputSchema);
+    const schema = el("pre", { class: "att-pre" }, [schemaText]);
+    const seed = seedArguments(selected.inputSchema);
+    const source = argumentDrafts.get(selected.name) ?? seed;
     const argumentsId = controlId("arguments");
     const argumentsEditor = el("textarea", {
       id: argumentsId,
@@ -1757,6 +1804,8 @@ export function mountAttachedApp(
       role: "alert",
       "aria-live": "assertive",
     });
+    const emptyResult = "Invoke this tool to inspect its current result.";
+    const hasResult = currentResult?.toolName === selected.name;
     const result = el(
       "pre",
       {
@@ -1765,18 +1814,42 @@ export function mountAttachedApp(
         "aria-live": "polite",
         "aria-label": "Current result",
       },
-      [
-        currentResult?.toolName === selected.name
-          ? pretty(currentResult.value)
-          : "Invoke this tool to inspect its current result.",
-      ],
+      [hasResult ? pretty(currentResult?.value) : emptyResult],
     );
+    const resultState = el("span", {}, [hasResult ? "Returned" : "Not run"]);
     const invoke = el(
       "button",
       { type: "button", class: "att-button primary" },
       ["Invoke"],
     );
-    invoke.addEventListener("click", () => {
+    const format = el("button", { type: "button", class: "att-button" }, [
+      "Format JSON",
+    ]);
+    const reset = el("button", { type: "button", class: "att-button" }, [
+      "Reset to schema",
+    ]);
+
+    const writeDraft = (value: string): void => {
+      argumentsEditor.value = value;
+      argumentDrafts.set(selected.name, value);
+    };
+    format.addEventListener("click", () => {
+      feedback.textContent = "";
+      try {
+        writeDraft(pretty(parseToolArguments(argumentsEditor.value)));
+      } catch (error) {
+        feedback.textContent = errorMessage(error);
+        argumentsEditor.focus();
+      }
+    });
+    reset.addEventListener("click", () => {
+      feedback.textContent = "";
+      writeDraft(seed);
+      argumentsEditor.focus();
+    });
+
+    const runCall = (): void => {
+      if (invoke.disabled) return;
       feedback.textContent = "";
       let argumentsValue: Readonly<Record<string, AttachedJsonValue>>;
       try {
@@ -1787,24 +1860,35 @@ export function mountAttachedApp(
       }
       invoke.disabled = true;
       invoke.textContent = "Invoking…";
+      resultState.textContent = "Waiting";
       result.textContent = "Waiting for the server…";
+      const startedAt = performance.now();
       void api
         .callTool(selected.name, argumentsValue)
         .then((value) => {
           currentResult = { toolName: selected.name, value };
           result.textContent = pretty(value);
+          resultState.textContent = `Returned · ${formatDuration(performance.now() - startedAt)}`;
         })
         .catch((error: unknown) => {
           feedback.textContent = errorMessage(error);
           result.textContent = "No result was returned.";
+          resultState.textContent = `Failed · ${formatDuration(performance.now() - startedAt)}`;
         })
         .finally(() => {
           invoke.disabled = false;
           invoke.textContent = "Invoke";
           activityLoaded = false;
         });
+    };
+    invoke.addEventListener("click", runCall);
+    argumentsEditor.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) return;
+      event.preventDefault();
+      runCall();
     });
 
+    const tags = annotationTags(selected.annotations);
     const detail = el(
       "section",
       { id: "attached-tool-detail", class: "att-tool-detail" },
@@ -1812,6 +1896,9 @@ export function mountAttachedApp(
         el("header", { class: "att-tool-header" }, [
           el("h2", {}, [selected.title ?? selected.name]),
           el("span", { class: "att-tool-name" }, [selected.name]),
+          ...(tags.length === 0
+            ? []
+            : [el("div", { class: "att-tool-tags" }, tags)]),
           ...(selected.description === undefined
             ? []
             : [el("p", {}, [selected.description])]),
@@ -1820,7 +1907,14 @@ export function mountAttachedApp(
           el("section", { class: "att-pane", "aria-label": "Input schema" }, [
             el("div", { class: "att-pane-bar" }, [
               el("span", {}, ["Input schema"]),
-              el("span", {}, ["JSON Schema"]),
+              el("div", { class: "att-pane-tools" }, [
+                el("span", {}, ["JSON Schema"]),
+                createCopyButton(
+                  "input schema",
+                  () => schemaText,
+                  "att-copy-button",
+                ),
+              ]),
             ]),
             schema,
           ]),
@@ -1835,10 +1929,30 @@ export function mountAttachedApp(
               el("div", { class: "att-pane-body" }, [
                 labelFor("Arguments", argumentsId, "att-label"),
                 argumentsEditor,
-                el("div", { class: "att-actions" }, [invoke]),
+                el("div", { class: "att-actions" }, [
+                  invoke,
+                  format,
+                  reset,
+                  el("span", { class: "att-shortcut" }, [
+                    "Ctrl/⌘ + Enter invokes",
+                  ]),
+                ]),
                 feedback,
               ]),
-              el("div", { class: "att-pane-bar" }, ["Current result"]),
+              el("div", { class: "att-pane-bar" }, [
+                el("span", {}, ["Current result"]),
+                el("div", { class: "att-pane-tools" }, [
+                  resultState,
+                  createCopyButton(
+                    "current result",
+                    () => {
+                      const text = result.textContent ?? "";
+                      return text === emptyResult ? "" : text;
+                    },
+                    "att-copy-button",
+                  ),
+                ]),
+              ]),
               result,
             ],
           ),
@@ -1862,7 +1976,16 @@ export function mountAttachedApp(
             "Protocol-operation metadata for this connection",
           ]),
         ]),
-        refresh,
+        el("div", { class: "att-actions att-heading-actions" }, [
+          ...(activityLoaded && activity.length > 0
+            ? [
+                el("span", { class: "att-pill" }, [
+                  `${String(activity.length)} ${activity.length === 1 ? "operation" : "operations"}`,
+                ]),
+              ]
+            : []),
+          refresh,
+        ]),
       ]),
     ];
     if (activityLoading && !activityLoaded) {
@@ -1885,9 +2008,11 @@ export function mountAttachedApp(
           el("tr", {}, [
             el("td", { class: "att-mono" }, [String(record.sequence)]),
             el("td", {}, [record.operation]),
-            el("td", {}, [record.toolName ?? "—"]),
-            el("td", {}, [record.startedAt]),
-            el("td", { class: "att-mono" }, [
+            el("td", { class: "att-mono" }, [record.toolName ?? "—"]),
+            el("td", { class: "att-mono", title: record.startedAt }, [
+              clockReading(record.startedAt),
+            ]),
+            el("td", { class: "att-mono att-numeric" }, [
               `${String(record.durationMs)} ms`,
             ]),
             el(

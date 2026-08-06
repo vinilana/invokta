@@ -12,6 +12,7 @@ import {
   filterAttachedTools,
   nextRovingIndex,
   parseToolArguments,
+  seedArguments,
   type SecretControl,
 } from "../src/ui/attached-app.js";
 
@@ -222,6 +223,28 @@ describe("attached tools", () => {
     );
   });
 
+  it("seeds the argument editor from the advertised input schema", () => {
+    expect(
+      JSON.parse(
+        seedArguments({
+          type: "object",
+          properties: {
+            ticketId: { type: "string" },
+            priority: { type: "integer", default: 3 },
+            urgent: { type: "boolean" },
+          },
+          required: ["ticketId"],
+        }),
+      ),
+    ).toEqual({ ticketId: "", priority: 3, urgent: false });
+  });
+
+  it("falls back to an empty object when the schema is not object-shaped", () => {
+    expect(seedArguments({ type: "array" })).toBe("{}");
+    expect(seedArguments({ type: "string" })).toBe("{}");
+    expect(seedArguments({})).toBe("{}");
+  });
+
   it("computes wrapped roving focus for horizontal and vertical composites", () => {
     expect(nextRovingIndex(0, 3, "ArrowRight", "horizontal")).toBe(1);
     expect(nextRovingIndex(2, 3, "ArrowRight", "horizontal")).toBe(0);
@@ -380,7 +403,15 @@ describe("attached workbench interface contract", () => {
     expect(app).toContain('role: "option"');
     expect(app).toContain('"aria-errormessage"');
     expect(app).toContain('el("span", {}, ["JSON Schema"])');
+    expect(app).toContain('"Format JSON"');
+    expect(app).toContain('"Reset to schema"');
+    expect(app).toContain("Ctrl/⌘ + Enter invokes");
+    expect(app).toMatch(/createCopyButton\(\s*"input schema"/);
+    expect(app).toMatch(/createCopyButton\(\s*"current result"/);
+    expect(app).toContain('destructiveHint: "Destructive"');
     expect(styles).toContain(":focus-visible");
+    expect(styles).toContain(".att-copy-button");
+    expect(styles).toContain(".att-tool-tags");
     expect(styles).toMatch(/@media \(max-width:/);
     expect(styles).toContain("@media (max-width: 22rem)");
     expect(styles).toContain(".att-auth-options");

@@ -8,6 +8,20 @@ function capabilityTitle(capability: CapabilityInfo): string {
   return title === undefined || title === "" ? "Untitled capability" : title;
 }
 
+let mountedSearch: HTMLInputElement | undefined;
+
+/**
+ * Moves focus to the catalog filter of the mounted Playground so the shell can
+ * offer one search shortcut without reaching into this panel's DOM. Returns
+ * whether a filter was available to focus.
+ */
+export function focusCapabilitySearch(): boolean {
+  if (mountedSearch === undefined) return false;
+  mountedSearch.focus();
+  mountedSearch.select();
+  return true;
+}
+
 function renderDetail(capability: CapabilityInfo): HTMLElement {
   const annotations = Object.entries(capability.annotations ?? {})
     .filter(([, enabled]) => enabled === true)
@@ -47,6 +61,7 @@ function renderDetail(capability: CapabilityInfo): HTMLElement {
 
 export function renderCapabilitiesPanel(container: HTMLElement): () => void {
   let active = true;
+  let ownedSearch: HTMLInputElement | undefined;
   clear(container);
   container.append(
     el("h2", {}, ["Capabilities"]),
@@ -249,6 +264,14 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
         }
       };
       search.addEventListener("input", applyFilter);
+      search.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || search.value === "") return;
+        event.preventDefault();
+        search.value = "";
+        applyFilter();
+      });
+      ownedSearch = search;
+      mountedSearch = search;
 
       const sidebar = el(
         "aside",
@@ -265,6 +288,9 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
           count,
           el("label", { for: searchId, class: "capability-filter-label" }, [
             "Search capabilities",
+            el("span", { class: "capability-filter-shortcut" }, [
+              el("kbd", {}, ["/"]),
+            ]),
           ]),
           search,
           list,
@@ -292,5 +318,6 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
 
   return () => {
     active = false;
+    if (mountedSearch === ownedSearch) mountedSearch = undefined;
   };
 }

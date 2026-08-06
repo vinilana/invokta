@@ -689,6 +689,90 @@ body.attached-mode {
 
 .att-pane-bar > span:last-child { color: var(--att-faint); }
 
+.att-pane-tools {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+}
+
+.att-pane-tools > span {
+  color: var(--att-faint);
+  white-space: nowrap;
+}
+
+.att-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+  min-height: 1.5rem;
+  padding: 0.14rem 0.5rem;
+  border: 1px solid var(--att-line-strong);
+  border-radius: 999px;
+  background: var(--att-raised);
+  color: var(--att-muted);
+  font-family: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 620;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.att-copy-button:hover {
+  border-color: var(--att-accent);
+  color: var(--att-fg);
+}
+
+.att-copy-button[data-state="copied"] {
+  border-color: var(--att-success);
+  background: var(--att-success-low);
+  color: var(--att-success);
+}
+
+.att-copy-button[data-state="failed"] {
+  border-color: var(--att-danger);
+  background: var(--att-danger-low);
+  color: var(--att-danger);
+}
+
+.att-tool-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.35rem 0 0.15rem;
+}
+
+.att-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--att-line-strong);
+  border-radius: 999px;
+  color: var(--att-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+
+.att-tag.danger {
+  border-color: var(--att-danger);
+  background: var(--att-danger-low);
+  color: var(--att-danger);
+}
+
+.att-shortcut {
+  margin-left: auto;
+  color: var(--att-faint);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.att-heading-actions { margin-top: 0; }
+.att-numeric { text-align: right; }
+
 .att-pane-body { padding: 0.62rem; }
 .att-pane-body > .att-label:first-child { margin-top: 0; }
 

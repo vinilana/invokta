@@ -1,4 +1,5 @@
 import { type CapabilityInfo, callTool } from "./api.js";
+import { createCopyButton, formatDuration } from "./clipboard.js";
 import { el, pretty } from "./dom.js";
 import { exampleFromSchema } from "./example-from-schema.js";
 import { parseMcpResponse } from "./mcp-response.js";
@@ -51,9 +52,15 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   );
   const resultState = el("span", {}, ["Result · not run"]);
 
-  const windowBar = (label: string | HTMLElement): HTMLElement =>
+  const windowBar = (
+    label: string | HTMLElement,
+    ...actions: readonly HTMLElement[]
+  ): HTMLElement =>
     el("div", { class: "code-window-bar" }, [
       typeof label === "string" ? el("span", {}, [label]) : label,
+      actions.length === 0
+        ? null
+        : el("span", { class: "code-window-actions" }, actions),
     ]);
 
   const rawRequest = el(
@@ -66,11 +73,28 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     { class: "raw", "aria-label": "Raw MCP response body" },
     [],
   );
+  const rawHeading = (
+    heading: string,
+    copyLabel: string,
+    read: () => string,
+  ): HTMLElement =>
+    el("div", { class: "raw-heading" }, [
+      el("h4", {}, [heading]),
+      createCopyButton(copyLabel, read),
+    ]);
   const rawSection = el("details", {}, [
     el("summary", {}, ["Raw MCP exchange"]),
-    el("h4", {}, ["Request · POST /mcp"]),
+    rawHeading(
+      "Request · POST /mcp",
+      "raw MCP request",
+      () => rawRequest.textContent ?? "",
+    ),
     rawRequest,
-    el("h4", {}, ["Response"]),
+    rawHeading(
+      "Response",
+      "raw MCP response",
+      () => rawResponse.textContent ?? "",
+    ),
     rawResponse,
   ]);
   rawSection.hidden = true;
@@ -79,8 +103,11 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     state: string,
     content: string,
     isError = false,
+    durationMs?: number,
   ): void => {
-    resultState.textContent = `Result · ${state}`;
+    const elapsed =
+      durationMs === undefined ? "" : ` · ${formatDuration(durationMs)}`;
+    resultState.textContent = `Result · ${state}${elapsed}`;
     resultView.textContent = content;
     resultView.classList.toggle("error", isError);
   };
@@ -160,8 +187,10 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     }
     setPending(true);
     showResult("running", `Running ${capability.id}…`);
+    const startedAt = performance.now();
     void callTool(capability.id, args, getActiveToken())
       .then((exchange) => {
+        const elapsedMs = performance.now() - startedAt;
         rawSection.hidden = false;
         rawRequest.textContent = exchange.requestBody;
         rawResponse.textContent = `HTTP ${String(exchange.status)}\n${exchange.responseBody}`;
@@ -172,6 +201,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
             "HTTP 401",
             exchange.responseBody || "The MCP endpoint returned no body.",
             true,
+            elapsedMs,
           );
           return;
         }
@@ -181,6 +211,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
             `HTTP ${String(exchange.status)}`,
             exchange.responseBody || "The MCP endpoint returned no body.",
             true,
+            elapsedMs,
           );
           return;
         }
@@ -203,7 +234,12 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
           if (message?.error !== undefined) {
             feedback.textContent =
               "MCP returned a protocol error. Expand “Raw MCP exchange” for details.";
-            showResult("protocol error", pretty(message.error), true);
+            showResult(
+              "protocol error",
+              pretty(message.error),
+              true,
+              elapsedMs,
+            );
             return;
           }
           feedback.textContent =
@@ -212,6 +248,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
             "unreadable",
             exchange.responseBody || "The MCP endpoint returned no body.",
             true,
+            elapsedMs,
           );
           return;
         }
@@ -231,6 +268,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
               })(),
             ),
             true,
+            elapsedMs,
           );
           return;
         }
@@ -247,12 +285,17 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
             output = result;
           }
         }
-        showResult("success", pretty(output));
+        showResult("success", pretty(output), false, elapsedMs);
       })
       .catch(() => {
         feedback.textContent =
           "Couldn’t reach the MCP endpoint. Check that the dev server is running, then try again.";
-        showResult("no response", "No response received.", true);
+        showResult(
+          "no response",
+          "No response received.",
+          true,
+          performance.now() - startedAt,
+        );
       })
       .finally(() => {
         setPending(false);
@@ -269,16 +312,37 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   const requestPane = el("section", { class: "invoke-request" }, [
     el("label", { for: editorId, class: "field-label" }, ["Arguments (JSON)"]),
     el("div", { class: "code-window" }, [
-      windowBar("tools/call arguments"),
+      windowBar(
+        "tools/call arguments",
+        createCopyButton("arguments", () => editor.value),
+      ),
       editor,
     ]),
-    el("div", { class: "invoke-actions" }, [invoke, format, reset]),
+    el("div", { class: "invoke-actions" }, [
+      invoke,
+      format,
+      reset,
+      el("span", { class: "shortcut-hint" }, [
+        el("kbd", {}, ["Ctrl"]),
+        "/",
+        el("kbd", {}, ["⌘"]),
+        " + ",
+        el("kbd", {}, ["Enter"]),
+        " invokes from the editor",
+      ]),
+    ]),
     feedback,
   ]);
   const resultPane = el("section", { class: "invoke-result" }, [
     el("h4", { class: "field-label" }, ["Capability result"]),
     el("div", { class: "code-window result-window" }, [
-      windowBar(resultState),
+      windowBar(
+        resultState,
+        createCopyButton("capability result", () => {
+          const text = resultView.textContent ?? "";
+          return text === emptyResult ? "" : text;
+        }),
+      ),
       resultView,
     ]),
   ]);

@@ -32,6 +32,23 @@ describe("compact devtools styles", () => {
     expect(compact).toMatch(/\.capability-list button \{[^}]*flex: 0 1 auto/s);
   });
 
+  it("styles the copy, shortcut, and activity filter affordances", () => {
+    expect(styles).toContain(".copy-button {");
+    expect(styles).toContain('.copy-button[data-state="copied"]');
+    expect(styles).toContain('.copy-button[data-state="failed"]');
+    expect(styles).toContain(".code-window-actions {");
+    expect(styles).toContain(".trace-payload-heading {");
+    expect(styles).toContain(".shortcut-hint {");
+    expect(styles).toContain("kbd {");
+    expect(styles).toContain(".capability-filter-shortcut {");
+    expect(styles).toContain(".trace-toolbar {");
+    expect(styles).toContain("input.trace-search {");
+    expect(styles).toContain(".trace-kind-filter {");
+    expect(styles).toContain('.trace-kind-choice[aria-checked="true"]');
+    expect(styles).toContain(".trace-toolbar-button {");
+    expect(styles).toContain('.trace-toolbar-button[aria-pressed="true"]');
+  });
+
   it("distributes diagnostics and identity workflows across the shared workspace", () => {
     expect(styles).toContain(".trace-header {");
     expect(styles).toContain(".trace-state--live");

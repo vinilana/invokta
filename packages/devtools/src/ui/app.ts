@@ -1,5 +1,8 @@
 import { api } from "./api.js";
-import { renderCapabilitiesPanel } from "./capabilities.js";
+import {
+  focusCapabilitySearch,
+  renderCapabilitiesPanel,
+} from "./capabilities.js";
 import { renderDoctorPanel } from "./doctor-panel.js";
 import { el } from "./dom.js";
 import {
@@ -270,6 +273,31 @@ function boot(): void {
     el("div", { class: "app-shell" }, [rails, topbar, context, main]),
   );
   show("capabilities");
+
+  // One global gesture: "/" jumps to the catalog filter from anywhere that is
+  // not already a text field, matching how developers search other dev tools.
+  document.body.addEventListener("keydown", (event) => {
+    const keyboardEvent = event as KeyboardEvent;
+    if (
+      keyboardEvent.key !== "/" ||
+      keyboardEvent.ctrlKey ||
+      keyboardEvent.metaKey ||
+      keyboardEvent.altKey
+    ) {
+      return;
+    }
+    const target = keyboardEvent.target as HTMLElement | null;
+    const tagName = target?.tagName;
+    if (
+      tagName === "INPUT" ||
+      tagName === "TEXTAREA" ||
+      target?.isContentEditable === true
+    ) {
+      return;
+    }
+    show("capabilities");
+    if (focusCapabilitySearch()) keyboardEvent.preventDefault();
+  });
 
   void api
     .engine()

@@ -47,10 +47,16 @@ class FakeElement extends FakeNode {
   #attributes = new Map();
   childNodes = [];
   hidden = false;
+  focusCalls = 0;
+  value = "";
 
   constructor(tagName) {
     super();
     this.tagName = tagName.toUpperCase();
+  }
+
+  focus() {
+    this.focusCalls += 1;
   }
 
   setAttribute(name, value) {
@@ -108,6 +114,16 @@ function walk(element) {
       child instanceof FakeElement ? walk(child) : [],
     ),
   ];
+}
+
+function byClass(root, className) {
+  return walk(root).filter(
+    (node) => node.getAttribute?.("class") === className,
+  );
+}
+
+function click(element) {
+  element.dispatchEvent(new Event("click"));
 }
 
 function dispatchTrace(source, entry) {
@@ -357,6 +373,137 @@ describe("trace panel", () => {
     expect(log.childElementCount).toBe(500);
     expect(log.childNodes[0].textContent).toContain("Live 502");
     expect(log.childNodes[499].textContent).toContain("Replay 3");
+
+    dispose();
+    expect(sources[0].closed).toBe(true);
+  });
+
+  it("filters, holds, and clears the view without disturbing the stream", async () => {
+    vi.useFakeTimers();
+    const sources = installTraceEnvironment();
+    const { renderTracePanel } = await import("../src/ui/trace.js");
+    const container = new FakeElement("main");
+    const dispose = renderTracePanel(container);
+    const nodes = walk(container);
+    const log = nodes.find((node) => node.getAttribute?.("role") === "log");
+    const count = nodes.find(
+      (node) => node.getAttribute?.("id") === "trace-count",
+    );
+    const empty = nodes.find(
+      (node) => node.getAttribute?.("class") === "trace-empty",
+    );
+    const [filterEmpty] = byClass(container, "trace-empty trace-filter-empty");
+    const search = nodes.find(
+      (node) => node.getAttribute?.("id") === "trace-search",
+    );
+    const kinds = byClass(container, "trace-kind-choice");
+    const [hold, clearView] = byClass(container, "trace-toolbar-button");
+
+    expect(kinds.map((button) => button.textContent)).toEqual([
+      "All",
+      "Invocations",
+      "Exchanges",
+      "Lifecycle",
+    ]);
+    expect(kinds[0].getAttribute("aria-checked")).toBe("true");
+    expect(filterEmpty.hidden).toBe(true);
+    expect(search.getAttribute("aria-controls")).toBe("trace-list");
+
+    sources[0].dispatchEvent(new Event("open"));
+    dispatchTrace(sources[0], {
+      kind: "invocation",
+      id: 1,
+      at: "2026-08-06T12:00:00.000Z",
+      invocation: {
+        capabilityId: "support.classify",
+        durationMs: 4,
+        outcome: "completed",
+      },
+    });
+    dispatchTrace(sources[0], {
+      kind: "exchange",
+      id: 2,
+      at: "2026-08-06T12:00:01.000Z",
+      exchange: {
+        status: 200,
+        durationMs: 8,
+        mcpMethod: "tools/list",
+        requestBody: '{"needle":"payload-marker"}',
+        responseBody: "{}",
+      },
+    });
+    dispatchTrace(sources[0], {
+      kind: "notice",
+      id: 3,
+      at: "2026-08-06T12:00:02.000Z",
+      notice: "engine-restarted",
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(count.textContent).toBe("3 entries");
+
+    click(kinds[1]);
+    expect(kinds[1].getAttribute("aria-checked")).toBe("true");
+    expect(kinds[0].getAttribute("aria-checked")).toBe("false");
+    expect(count.textContent).toBe("1 of 3 entries");
+    expect(log.childNodes.filter((node) => !node.hidden)).toHaveLength(1);
+    expect(log.childNodes.find((node) => !node.hidden).textContent).toContain(
+      "support.classify",
+    );
+
+    click(kinds[0]);
+    expect(count.textContent).toBe("3 entries");
+
+    search.value = "payload-marker";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("1 of 3 entries");
+    expect(log.childNodes.find((node) => !node.hidden).textContent).toContain(
+      "HTTP 200",
+    );
+    expect(filterEmpty.hidden).toBe(true);
+
+    search.value = "absent-needle";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("0 of 3 entries");
+    expect(filterEmpty.hidden).toBe(false);
+    expect(empty.hidden).toBe(true);
+
+    search.value = "";
+    search.dispatchEvent(new Event("input"));
+    expect(count.textContent).toBe("3 entries");
+    expect(filterEmpty.hidden).toBe(true);
+
+    expect(hold.textContent).toBe("Hold");
+    click(hold);
+    expect(hold.getAttribute("aria-pressed")).toBe("true");
+    dispatchTrace(sources[0], {
+      kind: "notice",
+      id: 4,
+      at: "2026-08-06T12:00:03.000Z",
+      notice: "engine-restarted",
+    });
+    expect(log.childElementCount).toBe(3);
+    expect(hold.textContent).toBe("Held · 1 waiting");
+
+    click(hold);
+    expect(hold.getAttribute("aria-pressed")).toBe("false");
+    expect(hold.textContent).toBe("Hold");
+    expect(log.childElementCount).toBe(4);
+    expect(count.textContent).toBe("4 entries");
+
+    click(clearView);
+    expect(log.childElementCount).toBe(0);
+    expect(count.textContent).toBe("0 entries");
+    expect(empty.hidden).toBe(false);
+    expect(filterEmpty.hidden).toBe(true);
+
+    dispatchTrace(sources[0], {
+      kind: "notice",
+      id: 5,
+      at: "2026-08-06T12:00:04.000Z",
+      notice: "engine-restarted",
+    });
+    expect(log.childElementCount).toBe(1);
+    expect(sources[0].closed).toBe(false);
 
     dispose();
     expect(sources[0].closed).toBe(true);

@@ -337,8 +337,22 @@ describe("capability discovery", () => {
     expect(schemaCards).toHaveLength(2);
     expect(schemaCards[0].textContent).toContain("Input schema");
     expect(schemaCards[0].textContent).toContain("ticketIdstringrequired");
+    expect(schemaCards[0].textContent).toContain("1 required");
     expect(schemaCards[1].textContent).toContain("Output schema");
     expect(schemaCards[1].textContent).toContain("urgencystringoptional");
+    expect(schemaCards[1].textContent).not.toContain("required");
+    expect(
+      schemaCards.map(
+        (card) =>
+          walk(card)
+            .find(
+              (node) =>
+                node instanceof FakeElement &&
+                node.classList.contains("copy-button"),
+            )
+            ?.getAttribute("aria-label") ?? null,
+      ),
+    ).toEqual(["Copy input schema", "Copy output schema"]);
     expect(
       elements.filter(
         (node) =>
@@ -588,6 +602,30 @@ describe("capability invocation", () => {
     expect(invoke.getAttribute("aria-disabled")).toBe("false");
     expect(invoke.focusCalls).toBe(0);
     expect(panel.textContent).toContain("Result · success");
+
+    const resultState = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "SPAN" &&
+        node.textContent.startsWith("Result · success"),
+    );
+    expect(resultState.textContent).toMatch(
+      /^Result · success · \d+\.\d+ (?:ms|s)$/,
+    );
+
+    const copyButtons = walk(panel).filter(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("copy-button"),
+    );
+    expect(
+      copyButtons.map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "Copy arguments",
+      "Copy capability result",
+      "Copy raw MCP request",
+      "Copy raw MCP response",
+    ]);
+    expect(panel.textContent).toContain("invokes from the editor");
   });
 
   it("distinguishes authentication failures from engine errors", async () => {

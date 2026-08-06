@@ -32,6 +32,15 @@ Open the printed loopback URL. Connect either a structured stdio command or a
 Streamable HTTP URL from the Connection view. The attached UI provides Tools,
 Activity, and Connection validation.
 
+In Tools, the argument editor opens on a starter object derived from the
+selected tool's advertised input schema, `Format JSON` and `Reset to schema`
+keep that draft workable, and `Ctrl`/`⌘` + `Enter` runs the call from the
+editor. Advertised behavior hints such as `readOnlyHint` and `destructiveHint`
+appear as tags above the panes, and the result bar reports the outcome and its
+elapsed time. The input schema and the current result each carry a copy
+control. The seed is a convenience, not a validated value; the attached server
+remains the only authority on its own schema.
+
 For an HTTP server that uses OAuth, select **OAuth**, then **Connect**. Continue
 through the provider in the new tab and return to the workbench after the
 loopback callback completes. Invokta uses Authorization Code with PKCE, the
@@ -136,6 +145,20 @@ Playground, Activity, Diagnostics, and Test identities. Playground summarizes
 top-level input and output fields for scanning and keeps each complete JSON
 Schema available under **Raw JSON Schema**. Invocations still use the
 schema-seeded JSON editor and the same MCP HTTP path to `engine.invoke`.
+
+Playground reports each invocation's outcome and elapsed time in the result
+bar, and the arguments, result, raw MCP request, raw MCP response, and each
+JSON Schema carry a copy control. `Ctrl`/`⌘` + `Enter` invokes from the editor,
+and `/` returns focus to the capability filter from anywhere outside a text
+field.
+
+Activity adds a view-scoped toolbar: filter entries by text across capability
+IDs, MCP methods, HTTP status, and captured payloads; narrow the feed to
+invocations, MCP exchanges, or lifecycle notices; **Hold** stops new entries
+from arriving while you read one; and **Clear view** empties the visible list.
+All three act on the browser view only — the dev server's bounded in-memory
+buffer is never mutated, and held entries appear as soon as the hold is
+released.
 
 ## invokta-devtools doctor
 
