@@ -16,6 +16,17 @@ const requiredRecipeRoutes = [
   "/recipes/capability-composition/",
   "/recipes/mcp-stdio-consumer/",
   "/recipes/external-provider/",
+  "/recipes/auth/jwt-bearer/",
+  "/recipes/auth/supabase/",
+  "/recipes/auth/clerk/",
+  "/recipes/auth/auth0/",
+  "/recipes/auth/cognito/",
+  "/recipes/auth/firebase/",
+  "/recipes/auth/better-auth/",
+  "/recipes/auth/authjs/",
+  "/recipes/auth/workos/",
+  "/recipes/auth/api-key/",
+  "/recipes/auth/mcp-oauth-discovery/",
 ];
 
 const packageReferences = [

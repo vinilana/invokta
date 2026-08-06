@@ -1,0 +1,390 @@
+---
+title: Authenticate with Auth.js
+description: Map an Auth.js session to a principal in an embedded route handler, and verify an app-issued token at the MCP HTTP boundary.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Auth.js (NextAuth v5) owns a session inside your application. Its primary
+surface for an Action Engine is therefore **embedded**: a route handler that
+already called `auth()` maps the session to a `Principal` and calls
+`engine.invoke` directly. Nothing is transported, so nothing has to be
+re-verified.
+
+When a caller cannot invoke the engine in process, the application issues its
+own short-lived access token and the engine verifies that token in the
+`authenticate` hook. The generic JWKS mechanics live in
+[Authenticate with a JWT bearer token](/recipes/auth/jwt-bearer/); this page
+covers only what is specific to Auth.js.
+
+<Aside type="caution" title="Do not forward the Auth.js session cookie">
+  Auth.js encrypts its JWT session by default — a JWE using `A256CBC-HS512`,
+  with the key derived from `AUTH_SECRET`. It is readable only by the
+  application that holds that secret, and it is a browser session cookie, not
+  a bearer token scoped to a separate resource server. Forwarding it would
+  either leak `AUTH_SECRET` into the engine or require the engine to call back
+  into your application on every request. Issue a narrow, short-lived token
+  instead.
+</Aside>
+
+## Map the session in an embedded handler
+
+<Steps>
+
+1. Declare the part of the session you read
+
+   ```ts
+   export interface AuthjsSessionUser {
+     readonly id?: string | undefined;
+     readonly name?: string | null | undefined;
+     readonly email?: string | null | undefined;
+     readonly image?: string | null | undefined;
+   }
+
+   export interface AuthjsSession {
+     readonly user?: AuthjsSessionUser | undefined;
+     /** ISO 8601 timestamp; Auth.js always sets it on a resolved session. */
+     readonly expires?: string | undefined;
+   }
+   ```
+
+   Declaring the shape structurally keeps the engine free of a `next-auth`
+   dependency. The `Session` that `auth()` returns is assignable to it.
+
+2. Map only the fields authorization needs
+
+   ```ts
+   export function sessionToPrincipal(
+     session: AuthjsSession | null | undefined,
+   ): Principal | null {
+     if (session === null || session === undefined) return null;
+     if (!isUnexpired(session.expires)) return null;
+
+     const user = session.user;
+     if (user === null || user === undefined) return null;
+
+     const id = nonEmptyString(user.id);
+     if (id === null) return null;
+
+     const attributes: Record<string, unknown> = {
+       channel: "authjs-session" satisfies IdentityChannel,
+     };
+     const email = nonEmptyString(user.email);
+     if (email !== null) attributes.email = email;
+     const name = nonEmptyString(user.name);
+     if (name !== null) attributes.name = name;
+
+     return { id, attributes };
+   }
+   ```
+
+   Every field is enumerated. `image` is not authorization relevant, so it is
+   not copied, and the session cookie itself never reaches the principal. Any
+   session that does not prove a usable identity returns `null`, so the
+   embedded surface fails closed exactly like the HTTP hook.
+
+3. Invoke the engine with the trusted principal
+
+   ```ts
+   export function createEngineWhoamiRunner(
+     target: AuthjsEngine = defaultEngine,
+   ): WhoamiRunner {
+     return ({ principal, signal }) =>
+       target.invoke(
+         "identity.whoami",
+         {},
+         { source: "direct", principal, signal },
+       );
+   }
+   ```
+
+   The capability declares `access: "authenticated"` and derives its result
+   only from `context.principal`. The request's `AbortSignal` is forwarded, so
+   a disconnected browser cancels the invocation.
+
+4. Wire it into a route handler
+
+   ```ts
+   export function createWhoamiRouteHandler(
+     options: WhoamiRouteHandlerOptions,
+   ): (request: Request) => Promise<Response> {
+     const runWhoami = options.runWhoami ?? createEngineWhoamiRunner();
+
+     return async (request) => {
+       let principal: Principal | null;
+       try {
+         principal = sessionToPrincipal(await options.resolveSession());
+       } catch {
+         // Session resolution failed, which is infrastructure, not a denial.
+         return jsonResponse(500, { error: { code: "EXECUTION_FAILED" } });
+       }
+
+       if (principal === null) {
+         return jsonResponse(401, { error: { code: "UNAUTHENTICATED" } });
+       }
+
+       try {
+         return jsonResponse(
+           200,
+           await runWhoami({ principal, signal: request.signal }),
+         );
+       } catch (error) {
+         return toErrorResponse(error);
+       }
+     };
+   }
+   ```
+
+   In a Next.js App Router project the route file is one line, because
+   `resolveSession` is exactly the `auth()` helper:
+
+   ```ts
+   // app/api/engine/whoami/route.ts
+   import { auth } from "@/auth";
+
+   export const POST = createWhoamiRouteHandler({ resolveSession: auth });
+   ```
+
+   The same split as the HTTP hook applies: an unusable session is 401, a
+   capability denial is 403, and only infrastructure failure is a sanitized
+   500.
+
+   <Aside type="caution" title="The default JWT strategy does not expose the user id">
+     With Auth.js v5's default JWT session strategy, `session.user` carries
+     only `name`, `email`, and `image` — `session.user.id` stays unset, so
+     `sessionToPrincipal` fails closed and every signed-in user receives 401
+     from this route. Add the documented
+     [session-extension callbacks](https://authjs.dev/guides/extending-the-session)
+     to your Auth.js config so the user id reaches the session:
+
+     ```ts
+     // auth.ts
+     export const { auth, handlers } = NextAuth({
+       // ...providers...
+       callbacks: {
+         session({ session, token }) {
+           session.user.id = token.sub ?? "";
+           return session;
+         },
+       },
+     });
+     ```
+
+     Database-session deployments populate `session.user.id` already and need
+     no callback.
+   </Aside>
+
+</Steps>
+
+## Issue a token for callers outside the process
+
+<Steps>
+
+1. Mint a short-lived token from the session
+
+   ```ts
+   const defaultLifetimeSeconds = 300;
+   const maximumLifetimeSeconds = 900;
+
+   export async function issueEngineAccessToken(
+     session: AuthjsSession | null | undefined,
+     options: EngineAccessTokenIssuerOptions,
+   ): Promise<string | null> {
+     const lifetimeSeconds = options.lifetimeSeconds ?? defaultLifetimeSeconds;
+     if (
+       !Number.isInteger(lifetimeSeconds) ||
+       lifetimeSeconds < 1 ||
+       lifetimeSeconds > maximumLifetimeSeconds
+     ) {
+       throw new TypeError(
+         `lifetimeSeconds must be an integer between 1 and ${maximumLifetimeSeconds}.`,
+       );
+     }
+
+     const principal = sessionToPrincipal(session);
+     if (principal === null) return null;
+
+     const attributes = principal.attributes ?? {};
+     const claims: Record<string, unknown> = {
+       scope: [...(options.scopes ?? defaultScopes)].join(" "),
+     };
+     if (typeof attributes.email === "string") claims.email = attributes.email;
+     if (typeof attributes.name === "string") claims.name = attributes.name;
+
+     const issuedAt = Math.floor(Date.now() / 1000);
+     return new SignJWT(claims)
+       .setProtectedHeader({
+         alg: options.algorithm ?? defaultAlgorithm,
+         kid: options.keyId,
+         typ: "at+jwt",
+       })
+       .setIssuer(options.issuer)
+       .setAudience(options.audience)
+       .setSubject(principal.id)
+       .setJti(randomUUID())
+       .setIssuedAt(issuedAt)
+       .setExpirationTime(issuedAt + lifetimeSeconds)
+       .sign(options.signingKey);
+   }
+   ```
+
+   This runs in your application, next to Auth.js, never in the engine. The
+   issuer, audience, and signing key are yours; the subject is the same Auth.js
+   user id the embedded surface uses, so one caller keeps one identity across
+   both surfaces. The lifetime is capped at 900 seconds and a caller without a
+   session receives no token at all.
+
+2. Verify it, separating a bad credential from a broken key source
+
+   ```ts
+   const invalidCredentialCodes: ReadonlySet<string> = new Set([
+     "ERR_JOSE_ALG_NOT_ALLOWED",
+     "ERR_JWK_INVALID",
+     "ERR_JWKS_NO_MATCHING_KEY",
+     "ERR_JWS_INVALID",
+     "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
+     "ERR_JWT_CLAIM_VALIDATION_FAILED",
+     "ERR_JWT_EXPIRED",
+     "ERR_JWT_INVALID",
+   ]);
+   ```
+
+   ```ts
+   async verify(token, { signal }) {
+     if (token === "" || token.length > maxTokenLength) return null;
+
+     const bounded = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+     let payload: JWTPayload;
+     try {
+       const result = await withinDeadline(
+         jwtVerify(token, options.resolveKey, {
+           issuer: options.issuer,
+           audience: options.audience,
+           algorithms,
+           clockTolerance,
+           requiredClaims: ["sub", "iat", "exp"],
+         }),
+         bounded,
+       );
+       payload = result.payload;
+     } catch (error) {
+       // A rejected credential is a 401; anything else is a 500. The original
+       // error is deliberately dropped so no token or endpoint detail leaks.
+       if (isInvalidCredential(error)) return null;
+       throw new EngineAccessTokenVerificationError();
+     }
+
+     return toVerifiedToken(payload);
+   }
+   ```
+
+   Only the listed JOSE codes prove the credential itself is unacceptable.
+   Anything else — an unreachable JWKS endpoint, an elapsed deadline, a caller
+   disconnect — throws, so a broken key source can never be reported to a
+   caller as "invalid credential". `resolveKey` is injected, which is what
+   makes the whole matrix testable offline.
+
+3. Wire the hook at the composition root
+
+   ```ts
+   export function createAuthjsAuthenticate(
+     verifier: EngineAccessTokenVerifier,
+   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
+     return async (request) => {
+       const token = readBearerToken(request.headers);
+       if (token === null) return null;
+
+       const verified = await verifier.verify(token, { signal: request.signal });
+       return verified === null ? null : accessTokenToPrincipal(verified);
+     };
+   }
+   ```
+
+   ```ts
+   const verifier = createEngineAccessTokenVerifier({
+     resolveKey: createRemoteJWKSet(new URL(jwksUrl), {
+       timeoutDuration: 2_000,
+       cooldownDuration: 30_000,
+     }),
+     issuer,
+     audience,
+   });
+
+   return serveMcpHttp(engine, {
+     port,
+     auth: {
+       mode: "required",
+       authenticate: createAuthjsAuthenticate(verifier),
+     },
+   });
+   ```
+
+   `AUTH_SECRET` is never read by the engine. It stays in the Auth.js
+   application, which remains the only party that can decrypt a session cookie.
+
+</Steps>
+
+<Aside type="note" title="Database sessions work the same way">
+  With `strategy: "database"` there is no JWT session at all, only an opaque
+  cookie plus an adapter lookup. `auth()` still returns the same `Session`
+  object, so `sessionToPrincipal` and both surfaces above are unchanged.
+</Aside>
+
+## Run it
+
+Build the repository, then run the embedded surface. It substitutes a stub
+session for the one `auth()` returns and executes the same handler code:
+
+```sh
+yarn build
+node examples/auth-authjs-engine/dist/direct.js
+```
+
+```json
+{"principalId":"user_2f1a","attributes":{"channel":"authjs-session","email":"ada@example.com","name":"Ada Lovelace"}}
+```
+
+Now serve the MCP HTTP surface. All three values describe your application, not
+Auth.js:
+
+```sh
+AUTHJS_ENGINE_TOKEN_ISSUER='https://app.example.com' \
+AUTHJS_ENGINE_TOKEN_AUDIENCE='https://engine.example.com/mcp' \
+AUTHJS_ENGINE_JWKS_URL='https://app.example.com/.well-known/jwks.json' \
+PORT=3000 \
+  node examples/auth-authjs-engine/dist/mcp-http.js
+```
+
+```sh
+curl --fail-with-body http://127.0.0.1:3000/mcp \
+  --header 'Accept: application/json, text/event-stream' \
+  --header "Authorization: Bearer $ENGINE_ACCESS_TOKEN" \
+  --header 'Content-Type: application/json' \
+  --data '{"jsonrpc":"2.0","id":"whoami-1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+```
+
+A missing, malformed, expired, foreign-issuer, foreign-audience, or
+badly-signed token returns HTTP 401 before `engine.invoke` runs.
+
+## Verify it
+
+The example generates an ES256 key pair in process and resolves it with
+`createLocalJWKSet`, so signature verification is real while no test performs
+network I/O or needs an Auth.js project:
+
+```sh
+yarn workspace @invokta/example-auth-authjs test
+```
+
+The suite covers the session mapping, the full invalid-credential matrix,
+infrastructure failure, and the assertion that no token material reaches a
+principal.
+
+Read the complete
+[`auth-authjs-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-authjs-engine)
+example for the capability, both surfaces, and the offline tests.
+
+Continue with [Authorize with domain data](/guides/capability-authorization/)
+for the policy half, and
+[Integrate an identity provider at the HTTP boundary](/guides/http-authentication/)
+for the hook contract and the secret rules.

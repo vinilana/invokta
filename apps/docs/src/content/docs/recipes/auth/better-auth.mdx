@@ -1,0 +1,330 @@
+---
+title: Authenticate with Better Auth
+description: Map a Better Auth session or JWT to an Invokta principal, embedded in your app or across an MCP HTTP boundary.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Better Auth runs inside your own application, so your app is the issuer. That
+changes the shape of the integration compared with a hosted identity provider:
+when the engine shares the app's process there is no token to verify at all, and
+when it does not, the JWKS document you verify against is one your app publishes.
+
+The generic JWKS mechanics — bearer parsing, `jose` verification, and the 401
+versus 500 split — are covered once in the
+[JWT bearer recipe](/recipes/auth/jwt-bearer/). This page shows only what is
+specific to Better Auth.
+
+## Choose the surface
+
+<Steps>
+
+1. Embedded, when the engine and the app share a process
+
+   The Next.js route handler, Hono handler, or server action already resolved a
+   session. Map it to a principal and invoke directly. Nothing is signed,
+   transmitted, or re-verified.
+
+   ```ts
+   export function principalFromSession(
+     resolved: BetterAuthResolvedSession | null,
+   ): Principal | null {
+     if (resolved === null) return null;
+
+     const subject = optionalString(resolved.user.id);
+     if (subject === undefined) return null;
+
+     const email = optionalString(resolved.user.email);
+     const emailVerified = optionalBoolean(resolved.user.emailVerified);
+     const name = optionalString(resolved.user.name);
+     const role = optionalString(resolved.user.role);
+     const activeOrganizationId = optionalString(
+       resolved.session.activeOrganizationId,
+     );
+
+     const claims: BetterAuthClaims = {
+       subject,
+       ...(email === undefined ? {} : { email }),
+       ...(emailVerified === undefined ? {} : { emailVerified }),
+       ...(name === undefined ? {} : { name }),
+       ...(role === undefined ? {} : { role }),
+       ...(activeOrganizationId === undefined ? {} : { activeOrganizationId }),
+     };
+     return toPrincipal(claims);
+   }
+   ```
+
+   `auth.api.getSession` resolves much more than this — the opaque session
+   token, timestamps, the IP address, the user's image. The mapping picks the
+   few fields the engine authorizes on and leaves the rest at the boundary.
+
+   ```ts
+   export async function invokeWhoamiForSession(
+     resolved: BetterAuthResolvedSession | null,
+     options: { readonly signal?: AbortSignal } = {},
+   ) {
+     return engine.invoke(
+       "identity.whoami",
+       {},
+       {
+         source: "direct",
+         principal: principalFromSession(resolved),
+         ...(options.signal === undefined ? {} : { signal: options.signal }),
+       },
+     );
+   }
+   ```
+
+   A `null` principal is not an error here. The capability declares
+   `access: "authenticated"`, so the core reports `UNAUTHENTICATED` before
+   `run`. Pass the incoming request's `AbortSignal` so a disconnected client
+   cancels the invocation instead of letting it run to its timeout.
+
+2. Enable the JWT plugin, when the engine is a separate service
+
+   ```ts
+   // Your Better Auth application, not the engine.
+   import { betterAuth } from "better-auth";
+   import { jwt } from "better-auth/plugins";
+
+   export const auth = betterAuth({
+     baseURL: process.env.BETTER_AUTH_URL,
+     plugins: [jwt()],
+   });
+   ```
+
+   The plugin publishes JWKS at `<baseURL>/api/auth/jwks` and mints a token at
+   `<baseURL>/api/auth/token`, which the client reaches through
+   `authClient.token()`. With the defaults, the signing algorithm is EdDSA over
+   Ed25519, `sub` is the user id, `iss` and `aud` are both the app base URL, and
+   the token expires after 15 minutes.
+
+3. Narrow the payload before it is signed
+
+   ```ts
+   // Your Better Auth application, not the engine.
+   jwt({
+     jwt: {
+       definePayload: ({ user }) => ({
+         email: user.email,
+         emailVerified: user.emailVerified,
+         name: user.name,
+       }),
+     },
+   });
+   ```
+
+   By default the plugin puts the entire user object in the payload. Narrowing
+   it at the issuer keeps the token small, and the engine narrows again on
+   arrival so a new database column never widens a principal by itself.
+
+4. Verify the token with injectable key resolution
+
+   ```ts
+   export const betterAuthJwksPath = "api/auth/jwks";
+
+   /**
+    * Builds the JWKS URL the JWT plugin serves for an app base URL. The
+    * relative resolution preserves a proxy subpath: `https://host/portal`
+    * yields `https://host/portal/api/auth/jwks`.
+    */
+   export function betterAuthJwksUrl(baseUrl: string): URL {
+     return new URL(
+       betterAuthJwksPath,
+       baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`,
+     );
+   }
+
+   /** Production key resolution: the app's own JWKS document, fetched and cached. */
+   export function createBetterAuthRemoteKeySet(
+     options: BetterAuthRemoteKeySetOptions,
+   ): JWTVerifyGetKey {
+     return createRemoteJWKSet(betterAuthJwksUrl(options.baseUrl), {
+       timeoutDuration: options.timeoutMs ?? defaultJwksTimeoutMs,
+     });
+   }
+   ```
+
+   `keys` is a constructor parameter, not a module-level constant. Production
+   passes the remote key set; the tests pass `createLocalJWKSet`, so signature
+   verification stays real without any network call.
+
+   ```ts
+   export function createBetterAuthJwtVerifier(
+     options: BetterAuthJwtVerifierOptions,
+   ): BetterAuthTokenVerifier {
+     const algorithms = [...(options.algorithms ?? defaultAlgorithms)];
+     return {
+       async verify(token, { signal }) {
+         const verified = await untilAborted(
+           jwtVerify(token, options.keys, {
+             issuer: options.issuer,
+             audience: options.audience,
+             algorithms,
+             requiredClaims: ["sub", "iss", "aud", "exp"],
+             ...(options.clockToleranceSeconds === undefined
+               ? {}
+               : { clockTolerance: options.clockToleranceSeconds }),
+           }),
+           signal,
+         ).catch((error: unknown) => {
+           if (error instanceof IdentityVerificationUnavailableError) throw error;
+           const code = readErrorCode(error);
+           if (code !== undefined && invalidCredentialCodes.has(code)) return null;
+           throw new IdentityVerificationUnavailableError();
+         });
+         return verified === null ? null : readBetterAuthClaims(verified.payload);
+       },
+     };
+   }
+   ```
+
+   The `catch` is where the 401-versus-500 split is decided. A jose error whose
+   code names a bad credential becomes `null`; anything else — an unreachable
+   JWKS endpoint, an unusable key set, a cancelled request — becomes an
+   infrastructure failure with a fixed message and no cause, because a jose or
+   `fetch` error can quote the token or the JWKS response body.
+
+   ```ts
+   const invalidCredentialCodes: ReadonlySet<string> = new Set([
+     "ERR_JOSE_ALG_NOT_ALLOWED",
+     "ERR_JWKS_NO_MATCHING_KEY",
+     "ERR_JWS_INVALID",
+     "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
+     "ERR_JWT_CLAIM_VALIDATION_FAILED",
+     "ERR_JWT_EXPIRED",
+     "ERR_JWT_INVALID",
+   ]);
+   ```
+
+   An ambiguous key set (`ERR_JWKS_MULTIPLE_MATCHING_KEYS`) is deliberately
+   not in the invalid set: it is the app's key-publication problem, and a 401
+   would silently reject legitimate tokens during a kid-less key rotation.
+
+5. Wire the hook into `serveMcpHttp`
+
+   ```ts
+   export function createBetterAuthAuthenticate(
+     verifier: BetterAuthTokenVerifier,
+   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
+     return async (request) => {
+       const token = readBearerToken(request.headers);
+       if (token === null) return null;
+
+       const claims = await verifier.verify(token, { signal: request.signal });
+       return claims === null ? null : toPrincipal(claims);
+     };
+   }
+
+   export async function startBetterAuthMcpHttp(
+     options: BetterAuthMcpHttpOptions,
+   ): Promise<McpHttpServerHandle> {
+     return serveMcpHttp(engine, {
+       ...(options.host === undefined ? {} : { host: options.host }),
+       ...(options.port === undefined ? {} : { port: options.port }),
+       auth: {
+         mode: "required",
+         authenticate: createBetterAuthAuthenticate(options.verifier),
+       },
+     });
+   }
+   ```
+
+   One base URL configures all three checks, because the app that issues the
+   token is the app that publishes the keys:
+
+   ```ts
+   const baseUrl = readRequired("BETTER_AUTH_URL");
+   const issuer = process.env.BETTER_AUTH_JWT_ISSUER ?? baseUrl;
+   const audience = process.env.BETTER_AUTH_JWT_AUDIENCE ?? baseUrl;
+   ```
+
+</Steps>
+
+<Aside type="note" title="SDK variant: the bearer plugin">
+  A deployment that keeps opaque session tokens can use the `bearer` plugin
+  instead of the `jwt` plugin. The client stores the token from the
+  `set-auth-token` response header and sends it in a standard `Authorization`
+  Bearer header; the engine validates it by asking Better Auth, which requires
+  the engine to import your `auth` instance and reach its database:
+
+  ```ts
+  // Provider-SDK variant. Not code from the example package.
+  auth: {
+    mode: "required",
+    async authenticate(request) {
+      const authorization = request.headers.get("authorization");
+      if (authorization === null) return null;
+
+      const resolved = await auth.api.getSession({
+        headers: new Headers({ authorization }),
+      });
+      return principalFromSession(resolved);
+    },
+  }
+  ```
+
+  This trades the JWT plugin's stateless verification for a session lookup on
+  every request. Prefer it only when instant revocation matters more than
+  keeping the engine independent of the app's database.
+</Aside>
+
+<Aside type="caution" title="Enumerate the claims you trust">
+  Better Auth's JWT plugin signs the whole user object unless you set
+  `definePayload`. Copying that payload into `Principal.attributes` would ship
+  whatever columns your user table grows next. Map an explicit allowlist —
+  `email`, `emailVerified`, `name`, `role`, `activeOrganizationId` — and decide
+  what each value authorizes in the capability's `access` rule.
+</Aside>
+
+## Run it
+
+The embedded surface needs no token and no server:
+
+```sh
+yarn build
+yarn workspace @invokta/example-auth-better-auth embedded
+```
+
+The MCP HTTP surface needs your app's base URL, which must serve the JWT
+plugin's JWKS document:
+
+```sh
+BETTER_AUTH_URL="https://app.example.com" PORT=3000 \
+  yarn workspace @invokta/example-auth-better-auth mcp:http
+```
+
+Call it with a token from `authClient.token()`:
+
+```sh
+curl -sS http://127.0.0.1:3000/mcp \
+  -H "authorization: Bearer $BETTER_AUTH_JWT" \
+  -H "accept: application/json, text/event-stream" \
+  -H "content-type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+```
+
+Without the header, or with an expired token, the adapter answers HTTP 401
+before `engine.invoke` runs.
+
+## Verify it
+
+```sh
+yarn workspace @invokta/example-auth-better-auth test
+```
+
+The tests generate an Ed25519 key pair, serve it through `createLocalJWKSet`,
+and mint tokens in Better Auth's claim shape. They cover the valid token, every
+invalid class (missing header, malformed token, expired, wrong issuer, wrong
+audience, unknown signing key, no subject), the JWKS outage that must throw
+rather than resolve `null`, and the absence of token material in the principal.
+No test performs network I/O.
+
+Read the complete
+[`auth-better-auth-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-better-auth-engine)
+example for the verifier, the claim mapping, the embedded surface, and the tests.
+
+Authentication stops here. Decide what a principal may do in
+[Authorize with capability access rules](/guides/capability-authorization/), and
+review the secret and logging rules in
+[HTTP authentication](/guides/http-authentication/).

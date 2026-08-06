@@ -1,0 +1,317 @@
+---
+title: Authenticate with Supabase Auth
+description: Verify Supabase access tokens at the MCP HTTP boundary and map their claims to a Principal.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Supabase Auth issues a JWT access token for every signed-in user. With
+asymmetric JWT signing keys enabled, the project publishes the public half of
+its signing key, so an engine verifies a token locally instead of calling the
+Auth server on every request.
+
+This recipe wires that verification into the `auth.authenticate` hook of
+`serveMcpHttp`. The generic JWKS mechanics live in the
+[JWT bearer recipe](/recipes/auth/jwt-bearer/); what follows is only what is
+specific to a Supabase project: its issuer, its JWKS location, its audience,
+and its claim names.
+
+The runnable code is
+[`examples/auth-supabase-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-supabase-engine),
+which exposes one capability, `identity.whoami`, declared
+`access: "authenticated"`.
+
+## Build the integration
+
+<Steps>
+
+1. Derive the issuer and JWKS URL from the project URL
+
+   ```ts
+   /** `https://<project-ref>.supabase.co` -> `https://<project-ref>.supabase.co/auth/v1`. */
+   export function supabaseIssuer(projectUrl: string): string {
+     return `${projectOrigin(projectUrl)}/auth/v1`;
+   }
+
+   /** The project's published JWKS document for asymmetric signing keys. */
+   export function supabaseJwksUrl(projectUrl: string): string {
+     return `${supabaseIssuer(projectUrl)}/.well-known/jwks.json`;
+   }
+   ```
+
+   Supabase signs access tokens with `iss` set to
+   `https://<project-ref>.supabase.co/auth/v1` and serves the matching JWKS at
+   `<issuer>/.well-known/jwks.json`. Deriving both from one configured project
+   URL keeps them from drifting apart.
+
+2. Verify the token with injectable key resolution
+
+   ```ts
+   export function createSupabaseVerifier(
+     options: SupabaseVerifierOptions,
+   ): SupabaseAccessTokenVerifier {
+     const audience = options.audience ?? "authenticated";
+     const timeoutMs = options.timeoutMs ?? 5_000;
+
+     return {
+       async verify(token, { signal }) {
+         if (token === "") return null;
+
+         try {
+           const { payload } = await withDeadline(
+             jwtVerify(token, options.keys, {
+               issuer: options.issuer,
+               audience,
+               algorithms: ["ES256", "RS256"],
+               requiredClaims: ["sub", "iss", "aud", "exp"],
+               clockTolerance: 5,
+             }),
+             signal,
+             timeoutMs,
+           );
+           return toSupabaseIdentity(payload);
+         } catch (error) {
+           if (isInvalidCredential(error)) return null;
+           throw new SupabaseVerificationUnavailableError();
+         }
+       },
+     };
+   }
+   ```
+
+   `options.keys` is a `JWTVerifyGetKey`. Production wiring passes
+   `createRemoteJWKSet(new URL(supabaseJwksUrl(projectUrl)))`; the tests pass
+   `createLocalJWKSet(...)`, so signature verification stays real and offline.
+
+   The audience is `authenticated` for every user session — including
+   anonymous sign-ins, whose tokens differ only by an `is_anonymous: true`
+   claim. The legacy `anon` audience belongs to the anon API key, not to
+   anonymous users, and that key's issuer fails validation here anyway.
+   `requiredClaims` pins the claims Supabase always mints, so a signed token
+   missing an expiry can never become a permanent credential.
+
+   <Aside type="caution" title="Audience validation does not exclude anonymous users">
+     A project with [anonymous sign-ins](https://supabase.com/docs/guides/auth/auth-anonymous)
+     enabled authenticates anonymous visitors here too. The verifier maps
+     `is_anonymous` into `Principal.attributes`, so a capability access rule
+     can exclude them:
+
+     ```ts
+     access: async ({ principal }) =>
+       principal !== null && principal.attributes?.isAnonymous !== true,
+     ```
+   </Aside>
+
+3. Separate an invalid credential from an unavailable check
+
+   ```ts
+   const INVALID_CREDENTIAL_CODES: ReadonlySet<string> = new Set([
+     "ERR_JOSE_ALG_NOT_ALLOWED",
+     "ERR_JOSE_NOT_SUPPORTED",
+     "ERR_JWKS_NO_MATCHING_KEY",
+     "ERR_JWS_INVALID",
+     "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
+     "ERR_JWT_CLAIM_VALIDATION_FAILED",
+     "ERR_JWT_EXPIRED",
+     "ERR_JWT_INVALID",
+   ]);
+   ```
+
+   Every code above describes the token. Anything else — DNS, TLS, a timeout,
+   an aborted request, a malformed or ambiguous JWKS — is an infrastructure
+   failure and is rethrown as a fixed-message error with no cause attached, so
+   nothing from the failed call can reach a log. An ambiguous key set
+   (`ERR_JWKS_MULTIPLE_MATCHING_KEYS`) is deliberately not treated as an
+   invalid credential: it is the project's key-publication problem, and a 401
+   would silently reject legitimate tokens during a kid-less key rotation.
+
+4. Map only the claims an access rule may use
+
+   ```ts
+   export function toSupabaseIdentity(
+     claims: Readonly<Record<string, unknown>>,
+   ): SupabaseIdentity | null {
+     const subject = readString(claims.sub);
+     if (subject === null) return null;
+
+     return {
+       subject,
+       role: readString(claims.role),
+       email: readString(claims.email),
+       sessionId: readString(claims.session_id),
+     };
+   }
+
+   export function toSupabasePrincipal(identity: SupabaseIdentity): Principal {
+     return {
+       id: identity.subject,
+       attributes: {
+         ...(identity.role === null ? {} : { role: identity.role }),
+         ...(identity.email === null ? {} : { email: identity.email }),
+         ...(identity.sessionId === null
+           ? {}
+           : { sessionId: identity.sessionId }),
+         ...(identity.isAnonymous === null
+           ? {}
+           : { isAnonymous: identity.isAnonymous }),
+       },
+     };
+   }
+   ```
+
+   `sub` is the Supabase user id. `role` is normally `authenticated`,
+   `session_id` identifies the Auth session, `email` is present when the user
+   has one, and `is_anonymous` marks an anonymous sign-in session. A Supabase
+   token also carries `aal`, `amr`, `phone`, `app_metadata`, and
+   `user_metadata`; copy one of them only when a capability rule actually
+   decides with it. A token with no usable `sub` returns `null`, so a broken
+   claim set fails closed instead of producing an unidentified principal.
+
+5. Wire the hook into `serveMcpHttp`
+
+   ```ts
+   export function createSupabaseAuthenticate(
+     verifier: SupabaseAccessTokenVerifier,
+   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
+     return async (request) => {
+       const token = readBearerToken(request.headers);
+       if (token === null) return null;
+
+       const identity = await verifier.verify(token, { signal: request.signal });
+       return identity === null ? null : toSupabasePrincipal(identity);
+     };
+   }
+
+   return serveMcpHttp(engine, {
+     port,
+     auth: {
+       mode: "required",
+       authenticate: createSupabaseAuthenticate(
+         createSupabaseProjectVerifier({ projectUrl }),
+       ),
+     },
+   });
+   ```
+
+   The verifier receives `request.signal`, and it also applies its own deadline
+   so a stalled JWKS fetch cannot hold a request open.
+
+6. Authorize the principal in the capability
+
+   ```ts
+   export const whoami = defineCapability({
+     title: "Describe the authenticated principal",
+     description:
+       "Return the identity the request boundary verified for this invocation.",
+     input: z.object({}),
+     output: z.object({
+       principalId: z.string().min(1),
+       attributes: z.record(z.string(), z.unknown()),
+     }),
+     access: "authenticated",
+     async run({ context }) {
+       const principal = context.principal;
+       if (principal === null) {
+         throw new EngineError({
+           code: "UNAUTHENTICATED",
+           message: "The request has no verified identity.",
+         });
+       }
+
+       return {
+         principalId: principal.id,
+         attributes: { ...principal.attributes },
+       };
+     },
+   });
+   ```
+
+   Authentication proved who is calling; the capability's `access` rule decides
+   what they may do. Replace `"authenticated"` with a function rule to read
+   `attributes.role` or a tenant claim.
+
+</Steps>
+
+## The `@supabase/supabase-js` variant
+
+Instead of `jose`, the Supabase SDK can verify the same token. Replace the body
+of `verify` and change nothing else:
+
+```ts
+// Provider-SDK variant: not used by the runnable example.
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(projectUrl, supabaseClientKey);
+
+async function verify(token: string): Promise<SupabaseIdentity | null> {
+  const { data, error } = await supabase.auth.getClaims(token);
+  if (error !== null || data === null) return null;
+  return toSupabaseIdentity(data.claims);
+}
+```
+
+`auth.getClaims` verifies the signature locally with the Web Crypto API when
+the project uses asymmetric signing keys, falling back to an Auth server call
+otherwise. `auth.getUser(token)` always calls the Auth server, which adds a
+network round trip to every MCP request; prefer `getClaims` at a Resource
+Server boundary. Either way, keep the SDK at the composition root — a
+capability must never receive the client.
+
+<Aside type="caution" title="Legacy HS256 projects">
+  A project that still signs with the shared JWT secret publishes no usable
+  JWKS, and the verifier above refuses HS256 on purpose. A shared secret that
+  verifies a token can also mint one, so every service holding it can
+  impersonate any user, and a leak is hard to detect and impossible to bound in
+  time. Migrate the project to asymmetric JWT signing keys (Dashboard →
+  Authentication → JWT Keys) before exposing an engine as a Resource Server.
+</Aside>
+
+## Run it
+
+Build the repository, then start the adapter against a real project:
+
+```sh
+yarn build
+
+SUPABASE_URL=https://<project-ref>.supabase.co \
+  node examples/auth-supabase-engine/dist/mcp-http.js
+```
+
+`SUPABASE_URL` is required. `SUPABASE_JWT_AUDIENCE` (default `authenticated`)
+and `PORT` (default `3000`) are optional.
+
+Call the endpoint with an access token taken from a client session
+(`supabase.auth.getSession()` returns `session.access_token`):
+
+```sh
+curl -sS http://127.0.0.1:3000/mcp \
+  -H "authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+```
+
+The same request without the header returns HTTP 401 before `engine.invoke`
+runs.
+
+## Verify it
+
+```sh
+yarn workspace @invokta/example-auth-supabase test
+```
+
+The tests need no Supabase account and make no network call: a locally
+generated ES256 key pair mints Supabase-shaped tokens and `createLocalJWKSet`
+stands in for the project JWKS. They assert a verified principal for a valid
+token, `null` for every invalid class — missing, malformed, expired, missing
+expiry, wrong issuer, `anon` audience, unknown key, forged signature, legacy
+HS256, no subject — a raised error for an unavailable check or an ambiguous
+key set, and that no token material reaches the principal.
+
+Read the complete
+[`auth-supabase-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-supabase-engine)
+example for the verifier, the claim mapping, and the boundary tests.
+
+Continue with [capability authorization](/guides/capability-authorization/) for
+the policy half, and [HTTP authentication](/guides/http-authentication/) for the
+normative hook contract and the secret rules.

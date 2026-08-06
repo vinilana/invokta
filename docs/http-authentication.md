@@ -45,7 +45,8 @@ function readBearerToken(headers: McpHttpHeaderView): string | null {
   const authorization = headers.get("authorization");
   if (authorization === null) return null;
 
-  const match = /^Bearer ([^\s]+)$/.exec(authorization);
+  // RFC 9110 makes the authentication scheme case-insensitive.
+  const match = /^Bearer ([^\s]+)$/iu.exec(authorization);
   return match?.[1] ?? null;
 }
 
@@ -192,6 +193,17 @@ For MCP tools, `FORBIDDEN` is returned as `isError: true` inside a successful HT
 
 See [Integrating a PDP through an access rule](./capability-authorization.md) for
 domain authorization.
+
+## Provider recipes
+
+This guide stays provider-neutral. The repository ships runnable, offline-tested
+examples that implement this hook contract for common TypeScript identity
+providers — generic OIDC/JWT bearer, Supabase, Clerk, Auth0, AWS Cognito,
+Firebase Auth, Better Auth, Auth.js, WorkOS AuthKit, and machine-to-machine API
+keys — under [`examples/auth-*`](../examples/). Each pairs with a documentation
+recipe at <https://docs.invokta.dev/recipes/auth/>. The plan and scope for this
+catalog are recorded in
+[`docs/specs/auth-provider-examples-and-recipes.md`](./specs/auth-provider-examples-and-recipes.md).
 
 ## Dangerous development mode
 

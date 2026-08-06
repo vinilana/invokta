@@ -9,6 +9,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added ten authentication examples under `examples/auth-*` — a
+  provider-neutral JWT bearer engine plus Supabase, Clerk, Auth0, AWS Cognito,
+  Firebase Auth, Better Auth, Auth.js, WorkOS AuthKit, and hashed API-key
+  engines — each verifying credentials at the composition root, mapping them
+  into the minimal `Principal`, and testing the hook contract offline with
+  locally generated keys. Twelve matching documentation recipes, including an
+  MCP OAuth discovery walkthrough, ship under a new Authentication group; the
+  scope is recorded in `docs/specs/auth-provider-examples-and-recipes.md`.
+
 - `@invokta/installer` now exposes the `@invokta/installer/engine` subpath with
   `runEngineInstallerCli`, so a distributed engine binary can run the existing
   engine-scoped install and removal sessions against its own package root

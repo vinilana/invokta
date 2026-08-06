@@ -1,0 +1,256 @@
+---
+title: Authenticate with API keys
+description: Verify machine-to-machine API keys with hashed storage and a constant-time comparison.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Machine callers rarely carry a user session. Give each calling service its own
+API key, store only the key's digest, and verify it in the `authenticate` hook
+of `serveMcpHttp`.
+
+This recipe is the upgrade path from the static bearer token in
+[`support-engine`](https://github.com/vinilana/invokta/tree/main/examples/support-engine/src/mcp-http.ts).
+That example compares one literal token, so every caller shares one identity and
+rotation means a restart. Here each key identifies one service, keys rotate
+without downtime, and the stored value is useless if it leaks.
+
+There is no issuer, no JWKS, and no expiry to check: for token-shaped
+credentials issued by an identity provider, read
+[Authenticate with a JWT bearer token](/recipes/auth/jwt-bearer/) instead.
+
+## Build the verifier
+
+<Steps>
+
+1. Shape the key so the secret half stays opaque
+
+   A key is `<keyId>.<secret>`. The key id is a public lookup handle; only the
+   secret half is a credential. Storing `sha256(secret)` means a leaked
+   configuration file or database dump yields nothing usable.
+
+   ```ts
+   export function hashApiKeySecret(secret: string): string {
+     return createHash("sha256").update(secret, "utf8").digest("hex");
+   }
+
+   export function parseApiKey(
+     credential: string,
+   ): { readonly keyId: string; readonly secret: string } | null {
+     const match = API_KEY_PATTERN.exec(credential);
+     const keyId = match?.[1];
+     const secret = match?.[2];
+     if (keyId === undefined || secret === undefined) return null;
+     if (!KEY_ID_PATTERN.test(keyId) || !SECRET_PATTERN.test(secret)) return null;
+     return { keyId, secret };
+   }
+   ```
+
+   Issue a key once with a one-liner, keep the `hash` line, and hand the `key`
+   line to the calling service:
+
+   ```sh
+   node -e 'const c=require("node:crypto");const id="svc_"+c.randomBytes(4).toString("hex");const s=c.randomBytes(32).toString("base64url");console.log("key:  "+id+"."+s);console.log("keyId:"+id);console.log("hash: "+c.createHash("sha256").update(s).digest("hex"))'
+   ```
+
+2. Declare the key set as a port
+
+   ```ts
+   export interface ApiKeyRecord {
+     readonly keyId: string;
+     readonly secretHash: string;
+     readonly serviceName: string;
+     readonly scopes: ReadonlyArray<string>;
+   }
+
+   export interface ApiKeyRegistry {
+     findByKeyId(
+       keyId: string,
+       options: { readonly signal: AbortSignal },
+     ): Promise<ApiKeyRecord | null>;
+   }
+   ```
+
+   The example ships an environment-configured in-memory registry. A deployment
+   can back the same port with a database table or a secret manager. Keep the
+   contract exactly: `null` for an unknown key id, and a rejection when the
+   store is unavailable.
+
+3. Compare digests in constant time
+
+   ```ts
+   function matchesStoredDigest(presented: Buffer, storedHex: string): boolean {
+     const stored = DIGEST_PATTERN.test(storedHex)
+       ? Buffer.from(storedHex, "hex")
+       : null;
+     const comparand =
+       stored !== null && stored.length === presented.length
+         ? stored
+         : decoyDigest;
+     const equal = timingSafeEqual(presented, comparand);
+     return comparand === stored && equal;
+   }
+   ```
+
+   `decoyDigest` is a zero-filled 32-byte buffer. A misconfigured entry — a
+   plaintext secret where a digest belongs — costs the same as a wrong secret
+   and still denies the request.
+
+4. Verify the presented key
+
+   ```ts
+   async verify(credential, options) {
+     const parsed = parseApiKey(credential);
+     if (parsed === null) return null;
+
+     const signal = AbortSignal.any([
+       options.signal,
+       AbortSignal.timeout(lookupTimeoutMs),
+     ]);
+     const record = await registry.findByKeyId(parsed.keyId, { signal });
+
+     const presented = createHash("sha256")
+       .update(parsed.secret, "utf8")
+       .digest();
+     const matches = matchesStoredDigest(
+       presented,
+       record?.secretHash ?? decoyDigest.toString("hex"),
+     );
+     if (record === null || !matches) return null;
+
+     return {
+       keyId: record.keyId,
+       serviceName: record.serviceName,
+       scopes: [...record.scopes],
+     };
+   }
+   ```
+
+   The digest is computed and compared for an unknown key id too, so response
+   time does not separate "no such key" from "wrong secret". The verifier bounds
+   its own lookup and links the request's `AbortSignal`, and a registry failure
+   propagates instead of being reported as an invalid credential.
+
+5. Map the verified key to a `Principal`
+
+   ```ts
+   export function toPrincipal(identity: VerifiedApiKey): Principal {
+     return Object.freeze({
+       id: identity.serviceName,
+       attributes: Object.freeze({
+         keyId: identity.keyId,
+         scopes: Object.freeze([...identity.scopes]),
+       }),
+     });
+   }
+   ```
+
+   The principal identifies the *service*, not the key, so rotating a key never
+   changes who the capability sees. The key id travels along for audit logs. The
+   credential and its digest never leave the verifier.
+
+6. Wire the hook at the composition root
+
+   ```ts
+   export function createApiKeyAuthenticate(
+     verifier: ApiKeyVerifier,
+   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
+     return async (request) => {
+       const credential = readBearerCredential(request.headers);
+       if (credential === null) return null;
+
+       const verified = await verifier.verify(credential, {
+         signal: request.signal,
+       });
+       return verified === null ? null : toPrincipal(verified);
+     };
+   }
+
+   return serveMcpHttp(engine, {
+     auth: {
+       mode: "required",
+       authenticate: createApiKeyAuthenticate(options.verifier),
+     },
+   });
+   ```
+
+   A missing, malformed, unknown, or wrong-secret key becomes `null`, which the
+   adapter answers with HTTP 401 before `engine.invoke`. A registry outage
+   throws, which becomes a sanitized HTTP 500.
+
+</Steps>
+
+<Aside type="tip" title="Rotate with two active hashes per service">
+  Add a second record with a new key id and the same `serviceName`, switch the
+  caller, then delete the old record. Both keys authenticate to the same
+  principal during the switch, so rotation needs no restart and no downtime.
+  Because the key id is part of the credential, the registry never has to try
+  every hash for a service.
+</Aside>
+
+<Aside type="caution" title="Never compare secrets with ===">
+  String equality returns as soon as two bytes differ, so its running time leaks
+  how many leading characters an attacker guessed correctly. `timingSafeEqual`
+  takes the same time for every input of the same length. It also *requires*
+  equal byte lengths and throws a `TypeError` otherwise, which is a second
+  reason to compare sha256 digests instead of raw secrets: digests are always 32
+  bytes, so the comparison never reveals the length of the stored secret.
+</Aside>
+
+<Aside type="caution" title="Keys are identity, not authorization">
+  `scopes` in `Principal.attributes` is verified data, but it grants nothing on
+  its own. A capability still has to check it in its `access` rule.
+</Aside>
+
+## Run it
+
+Build the repository, then start the adapter with a configured key set:
+
+```sh
+yarn build
+API_KEY_ENGINE_KEYS='[{"keyId":"svc_9f21c4a7","secretHash":"<hex sha256>","serviceName":"reports-worker","scopes":["identity:read"]}]' \
+  node examples/auth-api-key-engine/dist/mcp-http.js
+```
+
+Call `identity.whoami` with the key whose secret hashes to that digest:
+
+```sh
+curl -sS http://127.0.0.1:3000/mcp \
+  -H 'authorization: Bearer svc_9f21c4a7.<secret>' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+```
+
+The result reports `principalId: "reports-worker"` and the `keyId` that proved
+it. Repeat the call without the header, or with any other secret, and the
+adapter answers HTTP 401.
+
+The same verifier works on a local channel, where the composition root verifies
+the configured key once and passes the principal to `engine.invoke`:
+
+```sh
+API_KEY_ENGINE_KEYS='[…]' \
+  API_KEY_ENGINE_CREDENTIAL='svc_9f21c4a7.<secret>' \
+  node examples/auth-api-key-engine/dist/direct.js
+```
+
+## Verify it
+
+The example's tests cover the whole invalid-credential matrix — missing header,
+malformed key, unknown key id, wrong secret — plus registry failure, rotation,
+and the rule that no credential material reaches the principal or an error
+message:
+
+```sh
+yarn workspace @invokta/example-auth-api-key test
+```
+
+Read the complete
+[`auth-api-key-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-api-key-engine)
+example for the registry port, the constant-time comparison, and the HTTP
+boundary tests.
+
+Continue with [capability authorization](/guides/capability-authorization/) for
+the policy half, and [HTTP authentication](/guides/http-authentication/) for the
+hook contract and the secret rules.

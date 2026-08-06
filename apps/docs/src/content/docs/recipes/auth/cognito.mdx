@@ -1,0 +1,351 @@
+---
+title: Authenticate with AWS Cognito
+description: Verify Amazon Cognito user pool access tokens in the MCP HTTP authentication hook.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An Amazon Cognito user pool is a JWKS issuer, so it plugs into the same
+`auth.authenticate` hook as any other JWT bearer provider. What makes Cognito
+different is the shape of its **access** token: it carries no `aud` claim, it
+names the calling app client in `client_id`, and it labels itself with
+`token_use`.
+
+This recipe covers only those Cognito specifics. The generic mechanics — bearer
+parsing, JWKS caching, and the 401-versus-500 split — live in
+[the JWT bearer recipe](/recipes/auth/jwt-bearer/).
+
+## What a Cognito user pool gives you
+
+| Value | Shape |
+| --- | --- |
+| Issuer (`iss`) | `https://cognito-idp.<region>.amazonaws.com/<user-pool-id>` |
+| JWKS | `https://cognito-idp.<region>.amazonaws.com/<user-pool-id>/.well-known/jwks.json` |
+| Algorithm | `RS256` |
+| Subject | `sub` |
+| App client | `client_id` on an access token (an id token uses `aud`) |
+| Token kind | `token_use`: `access` or `id` |
+| Scopes | `scope`, one space-delimited string |
+| Groups | `cognito:groups`, an array of strings |
+
+<Aside type="caution" title="An access token has no audience">
+  AWS documents that an access token payload contains the app client as
+  `client_id`, not `aud`. A verifier that only sets an `audience` option
+  therefore accepts a token from **any** app client in the pool. Validate
+  `client_id` explicitly, and require `token_use === "access"` so an id token
+  cannot be replayed against your API.
+</Aside>
+
+## Build the verifier
+
+<Steps>
+
+1. Derive the pool endpoints
+
+   ```ts
+   export function cognitoIssuer(region: string, userPoolId: string): string {
+     return `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`;
+   }
+
+   export function cognitoJwksUri(region: string, userPoolId: string): URL {
+     return new URL(`${cognitoIssuer(region, userPoolId)}/.well-known/jwks.json`);
+   }
+   ```
+
+   Both are public. No AWS credential and no client secret are needed to verify
+   a token.
+
+2. Declare the verified identity
+
+   ```ts
+   export interface CognitoVerifiedIdentity {
+     readonly subject: string;
+     readonly clientId: string;
+     readonly scopes: ReadonlyArray<string>;
+     readonly groups: ReadonlyArray<string>;
+   }
+   ```
+
+   This is the whole surface the engine gets. The token, its header, and every
+   unverified claim stop at the composition root.
+
+3. Make key resolution injectable
+
+   ```ts
+   const getKey: JWTVerifyGetKey =
+     config.getKey ??
+     createRemoteJWKSet(cognitoJwksUri(config.region, config.userPoolId), {
+       timeoutDuration: config.jwksTimeoutMs ?? DEFAULT_JWKS_TIMEOUT_MS,
+     });
+   ```
+
+   Production wiring omits `getKey` and gets a cached remote JWKS bounded by
+   its own timeout, three seconds by default. Tests pass
+   `createLocalJWKSet(...)`, so signature verification is real with no network
+   access.
+
+4. Verify signature, issuer, and algorithm
+
+   ```ts
+   try {
+     const verified = await withAbort(
+       jwtVerify(token, getKey, {
+         issuer,
+         algorithms: ["RS256"],
+         // Cognito access tokens carry no aud claim; client_id is checked
+         // in toIdentity instead. The other claims are always minted, so a
+         // signed token missing one is not a Cognito access token.
+         requiredClaims: ["sub", "iss", "exp"],
+       }),
+       options.signal,
+     );
+     payload = verified.payload;
+   } catch (error) {
+     if (isInvalidCredential(error)) return null;
+     // Nothing from the failure is re-exported: no message, no cause.
+     throw new CognitoVerificationUnavailableError();
+   }
+   ```
+
+   `isInvalidCredential` matches the `jose` error classes that mean "this
+   credential is unusable" — `JWTExpired`, `JWTClaimValidationFailed`,
+   `JWSSignatureVerificationFailed`, `JWKSNoMatchingKey`, and their siblings.
+   Anything else, including a JWKS timeout, an aborted request, or an
+   ambiguous key set (`JWKSMultipleMatchingKeys` — the pool's key-publication
+   problem, not the caller's), is infrastructure and is rethrown as one
+   sanitized error.
+
+5. Apply the Cognito claim rules
+
+   ```ts
+   function toIdentity(
+     payload: JWTPayload,
+     appClientIds: ReadonlyArray<string>,
+   ): CognitoVerifiedIdentity | null {
+     if (payload.token_use !== "access") return null;
+
+     const subject = readStringClaim(payload, "sub");
+     if (subject === null) return null;
+
+     // An access token has no `aud` claim, so the app client is authorized here.
+     const clientId = readStringClaim(payload, "client_id");
+     if (clientId === null || !appClientIds.includes(clientId)) return null;
+
+     const scopes = readScopes(payload);
+     const groups = readGroups(payload);
+     if (scopes === null || groups === null) return null;
+
+     return { subject, clientId, scopes, groups };
+   }
+   ```
+
+   Every rejection returns `null`, never a thrown error, so an unusable token
+   ends as HTTP 401. A malformed `scope` or `cognito:groups` claim also denies
+   the request rather than being guessed at.
+
+6. Map the claims to a `Principal`
+
+   ```ts
+   export function toPrincipal(identity: CognitoVerifiedIdentity): Principal {
+     return {
+       id: identity.subject,
+       attributes: {
+         clientId: identity.clientId,
+         scopes: [...identity.scopes],
+         groups: [...identity.groups],
+       },
+     };
+   }
+   ```
+
+   `sub` becomes the principal id, `scope` becomes `attributes.scopes`, and
+   `cognito:groups` becomes `attributes.groups` — the claims an access rule can
+   act on. The token itself never appears.
+
+7. Wire the hook at the composition root
+
+   ```ts
+   export function createCognitoAuthenticate(
+     verifier: CognitoAccessTokenVerifier,
+   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
+     return async (request) => {
+       const token = readBearerToken(request.headers);
+       if (token === null) return null;
+
+       const identity = await verifier.verify(token, { signal: request.signal });
+       return identity === null ? null : toPrincipal(identity);
+     };
+   }
+
+   await serveMcpHttp(engine, {
+     port,
+     auth: {
+       mode: "required",
+       authenticate: createCognitoAuthenticate(verifier),
+     },
+   });
+   ```
+
+   The hook observes `request.signal`, so a disconnected client stops the
+   verifier from waiting on the JWKS work; the underlying fetch itself is
+   bounded by the remote key set's own `timeoutDuration`.
+
+</Steps>
+
+## Provider SDK variant
+
+AWS recommends
+[`aws-jwt-verify`](https://github.com/awslabs/aws-jwt-verify) for Node.js. It
+applies the same `iss`, `token_use`, and `client_id` rules and caches the JWKS
+for you. It is a drop-in replacement for the verifier function above, and the
+example does not depend on it:
+
+```ts
+// Provider-SDK variant. Not used by the runnable example.
+import { CognitoJwtVerifier } from "aws-jwt-verify";
+import {
+  FailedAssertionError,
+  JwtInvalidSignatureError,
+  JwtParseError,
+} from "aws-jwt-verify/error";
+
+const cognito = CognitoJwtVerifier.create({
+  userPoolId: "us-east-1_ExamplePool",
+  tokenUse: "access",
+  clientId: "1example23456789",
+});
+
+const verifier: CognitoAccessTokenVerifier = {
+  // aws-jwt-verify does not consume an AbortSignal; the parameter stays in
+  // the port contract so the hook-level wait remains bounded by the caller.
+  async verify(token, _options) {
+    try {
+      const payload = await cognito.verify(token);
+      return {
+        subject: payload.sub,
+        clientId: payload.client_id,
+        scopes: payload.scope?.split(" ") ?? [],
+        groups: payload["cognito:groups"] ?? [],
+      };
+    } catch (error) {
+      // Only the SDK's token-validation failures mean "invalid credential":
+      // malformed tokens, bad signatures, and every claim assertion
+      // (expiry, issuer, token_use, client_id, algorithm).
+      const invalidToken =
+        error instanceof FailedAssertionError ||
+        error instanceof JwtInvalidSignatureError ||
+        error instanceof JwtParseError;
+      if (invalidToken) return null;
+      // JWKS fetch or validation failures stay an infrastructure error and
+      // reach the adapter as a sanitized HTTP 500.
+      throw error;
+    }
+  },
+};
+```
+
+<Aside type="caution" title="Keep the null/throw split">
+  A `catch`-all that returns `null` also swallows a JWKS fetch failure and
+  turns an outage into HTTP 401. The narrow catch above maps only
+  `aws-jwt-verify`'s token-validation errors to `null` and lets an
+  infrastructure failure reach the adapter as HTTP 500.
+</Aside>
+
+## Authorization stays in the capability
+
+The hook only proves who called. The example's capability derives its whole
+result from the trusted principal and asks for nothing more than authentication:
+
+```ts
+export const whoami = defineCapability({
+  title: "Describe the authenticated principal",
+  description:
+    "Return the verified principal id and attributes of the current request.",
+  input: z.object({}),
+  output: z.object({
+    principalId: z.string().min(1),
+    attributes: z.record(z.string(), z.unknown()),
+  }),
+  access: "authenticated",
+  annotations: {
+    readOnly: true,
+    destructive: false,
+    idempotent: true,
+    openWorld: false,
+  },
+  async run({ context }) {
+    const principal = context.principal;
+    if (principal === null) {
+      // Unreachable through the engine: "authenticated" is enforced before run.
+      throw new EngineError({
+        code: "FORBIDDEN",
+        message: "An authenticated principal is required.",
+      });
+    }
+    return {
+      principalId: principal.id,
+      attributes: { ...principal.attributes },
+    };
+  },
+});
+```
+
+Turn `attributes.groups` or `attributes.scopes` into a real policy with a
+function access rule, as in
+[Authorize with domain data](/recipes/domain-authorization/). An authenticated
+Cognito user that the rule denies receives `FORBIDDEN`, not HTTP 401.
+
+## Run it
+
+Build the example and start it against your user pool:
+
+```sh
+yarn workspace @invokta/example-auth-cognito build
+
+COGNITO_REGION=us-east-1 \
+COGNITO_USER_POOL_ID=us-east-1_ExamplePool \
+COGNITO_APP_CLIENT_IDS=1example23456789 \
+PORT=3000 \
+yarn workspace @invokta/example-auth-cognito mcp:http
+```
+
+`COGNITO_REGION`, `COGNITO_USER_POOL_ID`, and `COGNITO_APP_CLIENT_IDS` are
+required; `PORT` defaults to `3000`, and the optional `COGNITO_RESOURCE_URL`
+publishes Protected Resource Metadata pointing at the user pool issuer.
+
+Call it with an access token issued to that app client:
+
+```sh
+curl -sS http://127.0.0.1:3000/mcp \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -H "authorization: Bearer $COGNITO_ACCESS_TOKEN" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call",
+       "params":{"name":"identity.whoami","arguments":{}}}'
+```
+
+The response reports the principal built from `sub`, `client_id`, `scope`, and
+`cognito:groups`. Omitting the header, passing an id token, or passing a token
+from another app client returns HTTP 401.
+
+## Verify it
+
+```sh
+yarn workspace @invokta/example-auth-cognito test
+```
+
+The tests generate an RSA key pair locally, serve it through
+`createLocalJWKSet`, and mint tokens in the Cognito access-token claim shape.
+They assert a valid token maps to the expected principal, that an expired,
+malformed, foreign-issuer, foreign-`client_id`, foreign-key, or `token_use:
+"id"` token resolves to `null`, that a JWKS failure rejects instead, and that
+no token material reaches the principal. No test performs network I/O or needs
+an AWS account.
+
+Read the complete
+[`auth-cognito-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-cognito-engine)
+example for the verifier, the claim mapping, and the offline test matrix.
+
+Continue with [capability authorization](/guides/capability-authorization/) for
+the policy half, and [HTTP authentication](/guides/http-authentication/) for the
+hook contract and the secret and logging rules.

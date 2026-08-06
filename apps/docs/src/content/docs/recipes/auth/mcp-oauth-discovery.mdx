@@ -1,0 +1,216 @@
+---
+title: Let an MCP client discover your Authorization Server
+description: Publish Protected Resource Metadata so an OAuth-capable MCP client can find the Authorization Server from a 401.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An OAuth-capable MCP client that has never seen your engine still needs to know
+where to get a token. RFC 9728 Protected Resource Metadata answers that: the
+engine publishes a small JSON document naming itself and its Authorization
+Servers, and points at that document from every 401.
+
+Invokta implements the Resource Server half only. Configuring
+`auth.resourceMetadata` publishes the document and enriches the challenge. It
+does not add a login, consent, token, refresh, or user-management route, and it
+never makes the engine an Authorization Server.
+
+This recipe runs against the
+[`auth-jwt-bearer-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-jwt-bearer-engine)
+example. Its verification mechanics live in
+[Authenticate with a JWT bearer token](/recipes/auth/jwt-bearer/); only the
+discovery layer is new here.
+
+## Publish the metadata
+
+<Steps>
+
+1. Accept a resource metadata configuration
+
+   ```ts
+   export interface AuthJwtBearerMcpHttpOptions {
+     readonly verifier: AccessTokenVerifier;
+     readonly host?: string;
+     readonly port?: number;
+     readonly allowedHosts?: ReadonlyArray<string>;
+     readonly allowedOrigins?: ReadonlyArray<string>;
+     readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
+   }
+   ```
+
+   `McpHttpProtectedResourceMetadata` carries `resource`, a non-empty
+   `authorizationServers` array, and optional `scopesSupported`. Making it
+   optional keeps the same composition root usable for a deployment whose
+   clients already hold tokens.
+
+2. Pass it to `serveMcpHttp`
+
+   ```ts
+   return serveMcpHttp(engine, {
+     ...(options.host === undefined ? {} : { host: options.host }),
+     ...(options.port === undefined ? {} : { port: options.port }),
+     auth: {
+       mode: "required",
+       authenticate: createJwtBearerAuthenticate(options.verifier),
+       ...(options.resourceMetadata === undefined
+         ? {}
+         : { resourceMetadata: options.resourceMetadata }),
+     },
+   });
+   ```
+
+   The adapter validates the metadata at startup and snapshots it before it
+   listens. Mutating the configuration object afterwards cannot change the
+   published document or the challenge.
+
+3. Build it from deployment configuration
+
+   ```ts
+   function readResourceMetadata(
+     issuer: string,
+   ): McpHttpProtectedResourceMetadata | undefined {
+     const resource = process.env.AUTH_JWT_RESOURCE;
+     if (resource === undefined || resource === "") return undefined;
+
+     const configured = readList("AUTH_JWT_AUTHORIZATION_SERVERS");
+     const [first, ...rest] = configured ?? [issuer];
+     if (first === undefined) {
+       throw new Error(
+         "AUTH_JWT_AUTHORIZATION_SERVERS must list at least one entry.",
+       );
+     }
+     const scopesSupported = readList("AUTH_JWT_SCOPES_SUPPORTED");
+
+     return {
+       resource,
+       authorizationServers: [first, ...rest],
+       ...(scopesSupported === undefined ? {} : { scopesSupported }),
+     };
+   }
+   ```
+
+   `resource` is the engine's public `/mcp` URL, and it comes from
+   configuration — never from `Host`, `X-Forwarded-Host`, or any other request
+   header. Behind a reverse proxy this is the only value that makes the
+   published document correct.
+
+4. Respect the validation rules
+
+   The adapter rejects a configuration that cannot describe a real protected
+   resource:
+
+   - `resource` must be an HTTPS URL whose path is exactly `/mcp`, with
+     loopback HTTP allowed only for local development;
+   - `resource` cannot contain credentials, a query, or a fragment;
+   - every entry in `authorizationServers` must be an HTTPS identifier without
+     credentials, query, or fragment; an issuer path is allowed;
+   - at least one Authorization Server is required.
+
+   For the example above, `AUTH_JWT_ISSUER` doubles as the Authorization Server
+   identifier, because the issuer that signs the tokens is the server the
+   client must talk to.
+
+</Steps>
+
+## What the client sees
+
+The engine now answers two requests it did not answer before.
+
+The metadata document, served on `GET` before authentication runs — the
+discovery path for a resource ending in `/mcp` is
+`/.well-known/oauth-protected-resource/mcp`:
+
+```json
+{
+  "resource": "https://engine.example.com/mcp",
+  "authorization_servers": ["https://identity.example.com"],
+  "scopes_supported": ["engine:invoke"]
+}
+```
+
+And an enriched challenge on every 401, whose URL is derived from the configured
+`resource`:
+
+```http
+HTTP/1.1 401 Unauthorized
+www-authenticate: Bearer resource_metadata="https://engine.example.com/.well-known/oauth-protected-resource/mcp"
+```
+
+From there the MCP authorization specification takes over: the client parses the
+challenge, fetches the metadata document, picks an Authorization Server from
+`authorization_servers`, retrieves that server's own metadata (RFC 8414, at
+`/.well-known/oauth-authorization-server`), optionally registers dynamically,
+and runs an OAuth 2.1 authorization code flow with PKCE. It sends the RFC 8707
+`resource` parameter set to this engine's canonical URI, so the token it
+receives is audience-bound to your engine — which is exactly what the verifier's
+`audience` check enforces on the way back in.
+
+<Aside type="caution" title="Metadata is advertisement, not enforcement">
+  Publishing `scopes_supported` tells a client what to ask for. It does not
+  grant anything. The `authenticate` hook still verifies issuer, audience,
+  signature, and expiry, and the capability `access` rule still decides whether
+  the verified principal may run the operation.
+</Aside>
+
+<Aside type="tip" title="A 403 is not part of this flow">
+  The adapter reserves HTTP 403 for a rejected `Host` or `Origin`, which happens
+  before authentication. A domain denial arrives as `FORBIDDEN` inside a
+  successful HTTP 200 MCP response with `isError: true`.
+</Aside>
+
+## Run it
+
+Build the repository and start the engine with a resource identifier
+configured. A loopback HTTP resource is accepted for local development:
+
+```sh
+yarn build
+AUTH_JWT_ISSUER="https://your-tenant.example.com/" \
+AUTH_JWT_AUDIENCE="http://127.0.0.1:3000/mcp" \
+AUTH_JWT_RESOURCE="http://127.0.0.1:3000/mcp" \
+AUTH_JWT_SCOPES_SUPPORTED="engine:invoke" \
+PORT=3000 \
+node examples/auth-jwt-bearer-engine/dist/mcp-http.js
+```
+
+Read the published document, which needs no credential:
+
+```sh
+curl -s http://127.0.0.1:3000/.well-known/oauth-protected-resource/mcp
+```
+
+Then trigger the challenge an OAuth-capable client starts from:
+
+```sh
+curl -si http://127.0.0.1:3000/mcp \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}' \
+  | grep -i www-authenticate
+```
+
+Point an OAuth-capable MCP client at `http://127.0.0.1:3000/mcp` and it will
+follow the same two steps on its own before running the authorization flow with
+your provider.
+
+## Verify it
+
+```sh
+yarn workspace @invokta/example-auth-jwt-bearer test
+```
+
+The example's HTTP tests start the adapter with `resourceMetadata` configured
+and assert that the well-known document is served unauthenticated with the
+expected fields, and that an unauthenticated `tools/call` returns 401 with the
+`resource_metadata` challenge pointing at that exact URL.
+
+Read the complete
+[`auth-jwt-bearer-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-jwt-bearer-engine)
+example for the composition root and those tests.
+
+## Next
+
+- [Authorize with capability access rules](/guides/capability-authorization/)
+  turns the scopes a client obtained into a policy decision.
+- [HTTP authentication](/guides/http-authentication/) is the normative contract
+  for Protected Resource Metadata, the challenge, and the secret rules.

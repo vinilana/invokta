@@ -1,0 +1,423 @@
+---
+title: Authenticate with Firebase Auth
+description: Verify a Firebase ID token behind a port and map its claims to a Principal.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A Firebase client SDK hands your application an **ID token**: an RS256 JWT whose
+`iss` is `https://securetoken.google.com/<project-id>`, whose `aud` is the bare
+project id, and whose `sub` is the user's `uid`. Verifying it is the job of the
+Firebase Admin SDK, which also owns the signing-key cache and the revocation
+check.
+
+So this integration keeps verification behind a **port**. The engine depends on
+an interface, the Admin SDK implements it at the composition root, and every
+test runs offline against a fake.
+
+This recipe follows the
+[`auth-firebase-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-firebase-engine)
+example. The generic mechanics of a bearer-token `authenticate` hook live in the
+[JWT bearer recipe](/recipes/auth/jwt-bearer/); this page only covers what is
+specific to Firebase Auth.
+
+## Build the integration
+
+<Steps>
+
+1. Collect the project id
+
+   ```sh
+   FIREBASE_PROJECT_ID=your-project-id
+   GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase-service-account.json
+   ```
+
+   One value drives both checks: the project id is the expected `aud`, and the
+   expected `iss` is that id appended to `https://securetoken.google.com/`.
+   The service account file is a secret; keep it in the deployment's secret
+   mechanism and never in the repository.
+
+2. Define the verification port
+
+   ```ts
+   export interface FirebaseIdTokenVerifier {
+     verifyIdToken(
+       idToken: string,
+       options: { readonly signal: AbortSignal },
+     ): Promise<FirebaseIdTokenClaims | null>;
+   }
+   ```
+
+   The port has the same three outcomes the hook must produce: decoded claims
+   for a valid token, `null` for any invalid credential, and a rejection only
+   when verification could not complete. Everything downstream — the hook, the
+   principal mapping, the capability — depends on this interface, not on
+   `firebase-admin`.
+
+3. Adapt the Admin SDK to the port
+
+   ```ts
+   /**
+    * The part of `firebase-admin/auth`'s `Auth` this example uses. `getAuth()`
+    * satisfies it structurally, so the production composition root passes the
+    * real object and the tests pass a fake.
+    */
+   export interface FirebaseAdminAuth {
+     verifyIdToken(
+       idToken: string,
+       checkRevoked?: boolean,
+     ): Promise<FirebaseIdTokenClaims>;
+   }
+
+   export function createAdminIdTokenVerifier(
+     auth: FirebaseAdminAuth,
+     options: AdminIdTokenVerifierOptions = {},
+   ): FirebaseIdTokenVerifier {
+     const checkRevoked = options.checkRevoked ?? true;
+     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+     if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+       throw new TypeError("timeoutMs must be a positive integer.");
+     }
+
+     return {
+       async verifyIdToken(idToken, { signal }) {
+         // The provider call is bounded by both the caller's cancellation and
+         // this verifier's own deadline, because the SDK takes neither.
+         const bounded = AbortSignal.any([
+           signal,
+           AbortSignal.timeout(timeoutMs),
+         ]);
+         try {
+           // A cancelled request never reaches the provider.
+           if (bounded.aborted) throw bounded.reason;
+           return await settleWithSignal(
+             auth.verifyIdToken(idToken, checkRevoked),
+             bounded,
+           );
+         } catch (error) {
+           if (isInvalidIdTokenError(error)) return null;
+           throw new IdTokenVerificationUnavailableError();
+         }
+       },
+     };
+   }
+   ```
+
+   `FirebaseAdminAuth` is a structural view of `getAuth()`, so the example
+   compiles and tests without installing `firebase-admin` while the real object
+   still fits. `verifyIdToken` takes no `AbortSignal`, so the adapter supplies
+   the bound the hook contract requires: the request's own cancellation plus a
+   deadline of its own.
+
+4. Separate an invalid token from an unavailable check
+
+   ```ts
+   export const INVALID_ID_TOKEN_ERROR_CODES: ReadonlySet<string> = new Set([
+     "auth/argument-error",
+     "auth/id-token-expired",
+     "auth/id-token-revoked",
+     "auth/invalid-argument",
+     "auth/invalid-id-token",
+     "auth/user-disabled",
+     "auth/user-not-found",
+   ]);
+
+   export function isInvalidIdTokenError(error: unknown): boolean {
+     if (typeof error !== "object" || error === null) return false;
+     const code = (error as { readonly code?: unknown }).code;
+     return typeof code === "string" && INVALID_ID_TOKEN_ERROR_CODES.has(code);
+   }
+   ```
+
+   Only these Admin SDK codes mean "this credential is not valid" and become
+   `null`, which the adapter answers with HTTP 401. A network failure, a
+   timeout, or an unknown code falls through to a thrown
+   `IdTokenVerificationUnavailableError`, which becomes a sanitized HTTP 500.
+   That error carries a fixed message and no cause, so no token and no provider
+   message can reach a log through it.
+
+5. Map the claims to a principal
+
+   ```ts
+   export function firebaseIssuer(projectId: string): string {
+     return `https://securetoken.google.com/${projectId}`;
+   }
+
+   export function toPrincipal(
+     claims: FirebaseIdTokenClaims,
+     options: FirebasePrincipalOptions,
+   ): Principal | null {
+     if (claims.iss !== firebaseIssuer(options.projectId)) return null;
+     if (claims.aud !== options.projectId) return null;
+
+     const uid =
+       readNonEmptyString(claims.sub) ?? readNonEmptyString(claims.uid);
+     if (uid === null) return null;
+
+     const attributes: Record<string, unknown> = {};
+
+     const email = readNonEmptyString(claims.email);
+     if (email !== null) attributes.email = email;
+     if (typeof claims.email_verified === "boolean") {
+       attributes.emailVerified = claims.email_verified;
+     }
+     if (
+       typeof claims.auth_time === "number" &&
+       Number.isFinite(claims.auth_time)
+     ) {
+       attributes.authTime = claims.auth_time;
+     }
+     const signInProvider = readNonEmptyString(
+       readMember(claims.firebase, "sign_in_provider"),
+     );
+     if (signInProvider !== null) attributes.signInProvider = signInProvider;
+     const tenantId = readNonEmptyString(readMember(claims.firebase, "tenant"));
+     if (tenantId !== null) attributes.tenantId = tenantId;
+
+     const customClaims: Record<string, unknown> = {};
+     for (const name of options.customClaimNames ?? []) {
+       const value = readCustomClaimValue(claims[name]);
+       if (value !== undefined) customClaims[name] = value;
+     }
+     if (Object.keys(customClaims).length > 0) {
+       attributes.customClaims = customClaims;
+     }
+
+     return { id: uid, attributes };
+   }
+   ```
+
+   The `uid` becomes `Principal.id`; `email`, `email_verified`,
+   `firebase.sign_in_provider`, `firebase.tenant`, and `auth_time` become
+   attributes. Firebase publishes custom claims as **top-level** claims of the
+   token, so they are copied by name from `customClaimNames` — never as a
+   blanket copy of the decoded token, which would put provider-owned and
+   unreviewed fields into capability-visible identity.
+
+   The issuer and audience are re-checked here even though the SDK already
+   validated them. It costs two string comparisons and makes "a token minted
+   for another Firebase project can never become a principal of this engine" a
+   local, testable guarantee.
+
+6. Wire the hook at the composition root
+
+   ```ts
+   export function createFirebaseAuthenticate(
+     options: FirebaseAuthenticationOptions,
+   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
+     const { verifier, ...principalOptions } = options;
+
+     return async (request) => {
+       const idToken = readBearerToken(request.headers);
+       if (
+         idToken === null ||
+         idToken.length > MAX_ID_TOKEN_LENGTH ||
+         !COMPACT_JWS.test(idToken)
+       ) {
+         return null;
+       }
+
+       // A rejection here is deliberately not caught: only the verifier can
+       // tell an invalid credential (null) from an unavailable check (throw).
+       const claims = await verifier.verifyIdToken(idToken, {
+         signal: request.signal,
+       });
+       return claims === null ? null : toPrincipal(claims, principalOptions);
+     };
+   }
+
+   export async function startFirebaseMcpHttp(
+     options: FirebaseMcpHttpOptions,
+   ): Promise<McpHttpServerHandle> {
+     const { host, port, ...authenticationOptions } = options;
+
+     return serveMcpHttp(engine, {
+       ...(host === undefined ? {} : { host }),
+       ...(port === undefined ? {} : { port }),
+       auth: createFirebaseHttpAuth(authenticationOptions),
+     });
+   }
+   ```
+
+   A credential that cannot be a compact JWS is rejected before any provider
+   call, so a malformed header costs no Firebase round trip. The verifier is a
+   parameter: production passes the Admin SDK adapter, tests pass a fake.
+
+7. Keep authorization in the capability
+
+   ```ts
+   export const whoami = defineCapability({
+     title: "Who am I",
+     description: "Return the verified identity of the calling principal.",
+     input,
+     output,
+     access: "authenticated",
+     async run({ context }) {
+       const { principal } = context;
+       if (principal === null) {
+         // Unreachable through the engine: "authenticated" is applied first.
+         throw new EngineError({
+           code: "UNAUTHENTICATED",
+           message: "This capability requires an authenticated principal.",
+         });
+       }
+       return {
+         principalId: principal.id,
+         attributes: { ...principal.attributes },
+       };
+     },
+   });
+   ```
+
+   The capability never imports a Firebase module and never sees the token. A
+   real capability replaces `"authenticated"` with a function rule that reads
+   `attributes.customClaims` or requires `attributes.emailVerified === true`.
+
+8. Use the same mapping for an embedded host
+
+   ```ts
+   const principal = toPrincipal(verifiedClaims, {
+     projectId,
+     customClaimNames: ["role"],
+   });
+   if (principal === null) {
+     throw new Error("The sample claims are not valid for this project.");
+   }
+
+   const result = await engine.invoke(
+     "identity.whoami",
+     {},
+     { source: "direct", principal },
+   );
+   ```
+
+   A Next.js route handler or a Cloud Function has already called
+   `verifyIdToken`, so it skips the HTTP hook entirely: it maps the claims it
+   holds and invokes the engine directly. Identity still arrives through the
+   trusted invocation boundary, never through capability input.
+
+</Steps>
+
+<Aside type="note" title="Provider SDK variant">
+  The production composition root is the only place `firebase-admin` appears.
+  This example ships no HTTP entry file — `src/mcp-http.ts` exports only
+  functions — so this file is one you add to your own application:
+
+  ```ts
+  // src/serve.ts — your application's entry file, next to the copied
+  // src/identity/ and src/mcp-http.ts.
+  import { initializeApp } from "firebase-admin/app";
+  import { getAuth } from "firebase-admin/auth";
+
+  import { createAdminIdTokenVerifier } from "./identity/verifier.js";
+  import { startFirebaseMcpHttp } from "./mcp-http.js";
+
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  if (projectId === undefined || projectId === "") {
+    // Fail fast: an empty project id would reject every token with 401
+    // instead of pointing at the missing configuration.
+    throw new Error("FIREBASE_PROJECT_ID is required.");
+  }
+
+  initializeApp();
+
+  await startFirebaseMcpHttp({
+    verifier: createAdminIdTokenVerifier(getAuth(), { checkRevoked: true }),
+    projectId,
+    customClaimNames: ["role"],
+    port: 3000,
+  });
+  ```
+
+  `getAuth().verifyIdToken(idToken, true)` checks format, expiry, signature,
+  issuer, and audience, and the `true` adds the revocation check. The example
+  package does not depend on `firebase-admin`; install it in the application
+  that runs the engine.
+</Aside>
+
+<Aside type="caution" title="checkRevoked costs a lookup and buys revocation">
+  Without it, `verifyIdToken` only proves the token is well formed, unexpired,
+  and correctly signed — a token stays valid for up to an hour after you
+  disable the account or revoke its refresh tokens. With it, the Admin SDK
+  makes an extra call to look the user record up and raises
+  `auth/id-token-revoked` (or `auth/user-disabled`) for a revoked session. Both
+  codes are already classified as invalid credentials, so they answer 401. Turn
+  it off only when the extra per-request lookup matters more than immediate
+  revocation.
+</Aside>
+
+<Aside type="tip" title="Verify locally with the Auth emulator">
+  The Firebase Auth emulator issues **unsigned** ID tokens, so nothing but an
+  emulator-aware Admin SDK accepts them. Point the process at it with
+
+  ```sh
+  export FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+  ```
+
+  and the same `createAdminIdTokenVerifier` adapter keeps working against
+  emulator-issued tokens — no code change, no service account, no production
+  project. Never set that variable in a deployed environment.
+</Aside>
+
+## Run it
+
+The example's runnable entrypoint is the embedded one, because it needs no
+credential and no Firebase project:
+
+```sh
+yarn build
+yarn workspace @invokta/example-auth-firebase direct
+```
+
+It prints the principal that the claim mapping produced:
+
+```json
+{"principalId":"uid-demo-1","attributes":{"email":"ada@example.com","emailVerified":true,"authTime":1754400000,"signInProvider":"password","customClaims":{"role":"support-agent"}}}
+```
+
+For the HTTP boundary, copy `src/identity/` and `src/mcp-http.ts` into an
+application that has `firebase-admin` installed, add the `src/serve.ts` entry
+file from the SDK-variant aside above — `src/mcp-http.ts` itself exports only
+functions and starts nothing — build, and start it with the project's
+environment:
+
+```sh
+FIREBASE_PROJECT_ID=your-project-id \
+GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase-service-account.json \
+  node dist/serve.js
+```
+
+Call the capability with an ID token from a signed-in client
+(`user.getIdToken()`):
+
+```sh
+curl -i --request POST http://127.0.0.1:3000/mcp \
+  --header "authorization: Bearer $FIREBASE_ID_TOKEN" \
+  --header 'accept: application/json, text/event-stream' \
+  --header 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+```
+
+The result echoes the `uid` and the enumerated attributes the token proved.
+Repeat the request without the `authorization` header to get HTTP 401.
+
+## Verify it
+
+Every test is offline: the hook runs against a fake verifier and the Admin SDK
+adapter runs against a fake `getAuth()`, so nothing reaches Google:
+
+```sh
+yarn workspace @invokta/example-auth-firebase test
+```
+
+They cover a verified token, a missing header, a non-bearer scheme, a value that
+is not a compact JWS, an oversized credential, a token the verifier rejects (the
+expired, revoked, disabled, and malformed classes), a token minted for another
+project, a wrong audience, claims without a usable subject, a cancelled request,
+a verification timeout, an infrastructure failure that must reject rather than
+return `null`, and the absence of any token material in the produced
+`Principal`, the HTTP 401 body, and the HTTP 500 body.
+
+Read [Authorize with domain data](/guides/capability-authorization/) for the
+policy half, and [HTTP authentication](/guides/http-authentication/) for the
+hook contract and the secret and logging rules.
