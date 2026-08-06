@@ -1,7 +1,7 @@
 {
   "name": "@invokta/mcp",
   "version": "0.3.0",
-  "description": "MCP stdio and stateless HTTP adapters for Invokta Action Engines.",
+  "description": "MCP server adapters and a plain client facade for Invokta Action Engines.",
   "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",
   "repository": {
