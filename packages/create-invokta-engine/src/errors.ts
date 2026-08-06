@@ -9,6 +9,9 @@ export const creatorErrorMessages = Object.freeze({
   SCAFFOLD_CONFLICT: "A scaffold file appeared during creation.",
   WRITE_FAILED: "The project scaffold could not be written.",
   INSTALL_FAILED: "The project dependencies could not be installed.",
+  EXAMPLE_INVALID: "The example reference is invalid.",
+  EXAMPLE_UNAVAILABLE: "The example could not be resolved or downloaded.",
+  EXAMPLE_FAILED: "The example project could not be created.",
 } as const);
 
 export type CreatorErrorCode = keyof typeof creatorErrorMessages;
@@ -24,7 +27,29 @@ const creatorErrorExitCodes = Object.freeze({
   SCAFFOLD_CONFLICT: 1,
   WRITE_FAILED: 1,
   INSTALL_FAILED: 1,
+  EXAMPLE_INVALID: 2,
+  EXAMPLE_UNAVAILABLE: 1,
+  EXAMPLE_FAILED: 1,
 } as const) satisfies Readonly<Record<CreatorErrorCode, CreatorExitCode>>;
+
+const unsafeDiagnosticCharacterPattern = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+
+function escapeDiagnosticCharacter(character: string): string {
+  const codePoint = character.codePointAt(0);
+  if (codePoint === undefined) return "";
+  if (codePoint <= 0xffff) {
+    return `\\u${codePoint.toString(16).padStart(4, "0")}`;
+  }
+  return `\\u{${codePoint.toString(16)}}`;
+}
+
+/** Escapes terminal-active characters in diagnostic detail strings. */
+export function sanitizeDiagnosticDetail(detail: string): string {
+  return detail.replace(
+    unsafeDiagnosticCharacterPattern,
+    escapeDiagnosticCharacter,
+  );
+}
 
 /** A sanitized creator failure. It intentionally stores no cause or raw input. */
 export class CreatorError extends Error {
@@ -37,7 +62,7 @@ export class CreatorError extends Error {
     this.name = "CreatorError";
     this.code = code;
     this.exitCode = creatorErrorExitCodes[code];
-    this.details = Object.freeze([...details]);
+    this.details = Object.freeze(details.map(sanitizeDiagnosticDetail));
   }
 }
 

@@ -380,3 +380,19 @@ profiles are bounded bootstrap projects rather than a weakening of the reuse or
 single-invocation-path invariants. Adding another profile, prompt decision,
 template authority, or in-place conversion requires another architectural
 decision.
+
+**AE-CREATE-EXAMPLE-01..08 — GitHub example import.** `create-invokta-engine`
+accepts `--example <name|github-url>` and optional `--example-path`. The flag
+is mutually exclusive with `--profile`. Official short names resolve to
+`vinilana/invokta` `examples/<name>` on `main`; public HTTPS `github.com`
+repository and tree URLs resolve owner, repository, ref, and subdirectory.
+Before mutation the creator verifies `package.json` at the example root. After
+confirmation it downloads only from `codeload.github.com`, extracts the selected
+subtree, rewrites `package.json` `name` to the project directory name, and
+copies regular files through the existing exclusive-create and rollback
+boundary. Archive links and path escapes are rejected. Creator-owned example
+network hosts are only `api.github.com` and `codeload.github.com`, with no
+authentication headers. Profile creation without `--example` still starts no
+creator-owned network request. `--no-install` skips only the package manager.
+Sanitized diagnostics are `EXAMPLE_INVALID`, `EXAMPLE_UNAVAILABLE`, and
+`EXAMPLE_FAILED`.

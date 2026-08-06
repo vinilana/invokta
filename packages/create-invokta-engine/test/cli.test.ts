@@ -6,10 +6,12 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 
+import { c as createTar } from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -18,6 +20,7 @@ import {
   type InstallProject,
   runCreateEngineCli,
 } from "../src/cli.js";
+import type { ExampleFetch } from "../src/example.js";
 import { createBoundedPromptInput } from "../src/prompt.js";
 import { createStarterFiles } from "../src/starter.js";
 
@@ -101,6 +104,28 @@ const invalidArgumentCases: readonly Readonly<{
   },
   { argv: ["--help", "my-engine"] },
   { argv: ["--version", "fixture-secret-payload-marker"] },
+  {
+    argv: [
+      "my-engine",
+      "--profile",
+      "cli",
+      "--example",
+      "auth-clerk-engine",
+      "--no-install",
+    ],
+  },
+  { argv: ["my-engine", "--example-path", "templates/engine", "--no-install"] },
+  { argv: ["my-engine", "--example"] },
+  { argv: ["my-engine", "--example", "--yes"] },
+  {
+    argv: [
+      "my-engine",
+      "--example",
+      "auth-clerk-engine",
+      "--example",
+      "hello-engine",
+    ],
+  },
 ];
 
 afterEach(() => {
@@ -705,5 +730,125 @@ describe("runCreateEngineCli", () => {
         io,
       }),
     ).resolves.toBe(2);
+  });
+
+  it("imports a GitHub example without prompting for a profile", async () => {
+    const cwd = createWorkingDirectory();
+    const archiveRoot = createWorkingDirectory();
+    await mkdir(join(archiveRoot, "repo-main/templates/engine/src"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(archiveRoot, "repo-main/templates/engine/package.json"),
+      '{\n  "name": "@acme/template",\n  "private": true\n}\n',
+      "utf8",
+    );
+    await writeFile(
+      join(archiveRoot, "repo-main/templates/engine/src/engine.ts"),
+      "export const ready = true;\n",
+      "utf8",
+    );
+    const archivePath = join(archiveRoot, "repository.tar.gz");
+    await createTar({ gzip: true, file: archivePath, cwd: archiveRoot }, [
+      "repo-main",
+    ]);
+    const archive = readFileSync(archivePath);
+    let apiCalls = 0;
+    let codeloadCalls = 0;
+    const fetchImpl: ExampleFetch = async (input, init) => {
+      const url = new URL(input);
+      expect(init?.redirect).toBe("error");
+      if (url.pathname.includes("/contents/")) {
+        apiCalls += 1;
+        return new Response(null, { status: 200 });
+      }
+      if (url.hostname === "codeload.github.com") {
+        codeloadCalls += 1;
+        return new Response(Readable.toWeb(Readable.from(archive)), {
+          status: 200,
+        });
+      }
+      apiCalls += 1;
+      return new Response(JSON.stringify({ default_branch: "main" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const io = createHarness();
+    const terminal = createTerminal([promptLine("yes")]);
+    const install = vi.fn<InstallProject>();
+
+    const exitCode = await runCreateEngineCli({
+      argv: [
+        "my-engine",
+        "--example",
+        "https://github.com/acme/repo/tree/main/templates/engine",
+        "--no-install",
+      ],
+      cwd,
+      env: {},
+      io,
+      terminal,
+      install,
+      fetch: fetchImpl,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(terminal.readLine).toHaveBeenCalledOnce();
+    expect(apiCalls).toBe(1);
+    expect(codeloadCalls).toBe(1);
+    expect(io.stderr).toEqual([
+      'Create from GitHub example "acme/repo/templates/engine" in "my-engine" without installing dependencies? (y/N) ',
+    ]);
+    expect(io.stdout.join("")).toContain(
+      "Created my-engine from example acme/repo/templates/engine.",
+    );
+    expect(
+      JSON.parse(readFileSync(join(cwd, "my-engine/package.json"), "utf8")),
+    ).toMatchObject({ name: "my-engine" });
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it("cancels an example import before downloading the archive", async () => {
+    const cwd = createWorkingDirectory();
+    let codeloadCalls = 0;
+    const fetchImpl: ExampleFetch = async (input, init) => {
+      expect(init?.redirect).toBe("error");
+      const url = new URL(input);
+      if (url.hostname === "codeload.github.com") {
+        codeloadCalls += 1;
+        return new Response(null, { status: 500 });
+      }
+      if (url.pathname.includes("/contents/")) {
+        return new Response(null, { status: 200 });
+      }
+      return new Response(JSON.stringify({ default_branch: "main" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const io = createHarness();
+    const terminal = createTerminal([promptLine("n")]);
+    const install = vi.fn<InstallProject>();
+
+    const exitCode = await runCreateEngineCli({
+      argv: [
+        "my-engine",
+        "--example",
+        "https://github.com/acme/repo",
+        "--no-install",
+      ],
+      cwd,
+      io,
+      terminal,
+      install,
+      fetch: fetchImpl,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(codeloadCalls).toBe(0);
+    expect(io.stdout).toEqual(["Creation cancelled. No files were created.\n"]);
+    expect(existsSync(join(cwd, "my-engine"))).toBe(false);
+    expect(install).not.toHaveBeenCalled();
   });
 });

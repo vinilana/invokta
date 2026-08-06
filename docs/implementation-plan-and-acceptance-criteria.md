@@ -41,6 +41,7 @@ persistence, configuration field, or operational limit:
 | `AE-SEC-01..02` | Authentication occurs before `invoke`; authorization occurs before `run`; insecure authentication requires explicit opt-in |
 | `AE-INSTALL-01..05` | Packed creator smoke tests install a built local engine; target transactions cover confirmation, idempotency, drift, locks, rollback, management, remote descriptors, and secret-free diagnostics without process or network access |
 | `AE-CREATE-PROFILE-01..12` | Terminal and non-terminal harnesses cover bounded prompting and confirmation; golden and packed tests cover all four exact profiles, public deploy-owned HTTP bytes, adapter omission, filesystem races, installation order, and direct/CLI/MCP equivalence |
+| `AE-CREATE-EXAMPLE-01..08` | Injected fetch harnesses cover official short names, GitHub URL resolution, mutual exclusion with `--profile`, confirmation cancellation, package-name rewrite, archive limits, symlink rejection, and offline profile network boundaries |
 | `AE-SCOPE-01..04`, `AE-LIMIT-01..05` | Manifest and API review prove package roles and the absence of deferred abstractions |
 
 Supporting packages require focused contract tests for their own authority:

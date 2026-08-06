@@ -29,6 +29,8 @@ decision is accepted and the implementation evidence is complete.
 
 - [Interactive engine creator profiles](./specs/interactive-engine-creator-profiles.md),
   accepted by [ADR 0018](./adr/0018-interactive-engine-creator-profiles.md)
+- [GitHub example import for create-invokta-engine](./specs/github-example-import.md),
+  accepted by [ADR 0020](./adr/0020-github-example-import-for-engine-creator.md)
 
 ## Guides and examples
 
