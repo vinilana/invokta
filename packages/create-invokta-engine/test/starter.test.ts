@@ -142,7 +142,6 @@ describe("createStarterFiles", () => {
         "cli",
         "deploy:package",
         "deploy:probe",
-        "dev",
         "devtools",
         "devtools:doctor",
         "direct",
@@ -161,7 +160,6 @@ describe("createStarterFiles", () => {
       [
         "build",
         "check",
-        "dev",
         "devtools",
         "devtools:doctor",
         "direct",
@@ -187,7 +185,6 @@ describe("createStarterFiles", () => {
         "check",
         "deploy:package",
         "deploy:probe",
-        "dev",
         "devtools",
         "devtools:doctor",
         "direct",
@@ -204,7 +201,6 @@ describe("createStarterFiles", () => {
         "build",
         "check",
         "cli",
-        "dev",
         "devtools",
         "devtools:doctor",
         "direct",
@@ -241,7 +237,7 @@ describe("createStarterFiles", () => {
   );
 
   it.each(["complete", "mcp-stdio", "mcp-http", "cli"] as const)(
-    "adds explicit devtools commands to the %s profile without removing dev",
+    "adds only the explicit devtools commands to the %s profile",
     (profile) => {
       const packageFile = createFiles(profile).find(
         (file) => file.path === "package.json",
@@ -254,7 +250,7 @@ describe("createStarterFiles", () => {
       const serveCommand =
         'tsc -p tsconfig.json --pretty false && invokta-devtools serve dist/engine.js --watch --build "tsc -p tsconfig.json --pretty false"';
 
-      expect(manifest.scripts.dev).toBe(serveCommand);
+      expect(manifest.scripts.dev).toBeUndefined();
       expect(manifest.scripts.devtools).toBe(serveCommand);
       expect(manifest.scripts["devtools:doctor"]).toBe(
         "tsc -p tsconfig.json --pretty false && invokta-devtools doctor dist/engine.js",
@@ -515,6 +511,7 @@ describe("createStarterFiles", () => {
       "npm run check",
       "npm run devtools",
       "npm run devtools:doctor",
+      "npm run dev",
       "npm run mcp:install",
       "npm run mcp:uninstall",
     ],
@@ -523,6 +520,7 @@ describe("createStarterFiles", () => {
       "pnpm run check",
       "pnpm run devtools",
       "pnpm run devtools:doctor",
+      "pnpm run dev",
       "pnpm run mcp:install",
       "pnpm run mcp:uninstall",
     ],
@@ -531,12 +529,13 @@ describe("createStarterFiles", () => {
       "yarn run check",
       "yarn devtools",
       "yarn devtools:doctor",
+      "yarn dev",
       "yarn mcp:install",
       "yarn mcp:uninstall",
     ],
   ] as const)(
     "renders %s commands in the generated README",
-    (manager, check, devtools, doctor, install, uninstall) => {
+    (manager, check, devtools, doctor, legacyDev, install, uninstall) => {
       const files = createFiles("complete", manager);
 
       const readme = files.find((file) => file.path === "README.md");
@@ -544,6 +543,7 @@ describe("createStarterFiles", () => {
       expect(contents).toContain(check);
       expect(contents).toContain(devtools);
       expect(contents).toContain(doctor);
+      expect(contents).not.toContain(`\`${legacyDev}\``);
       expect(contents).toContain(install);
       expect(contents).toContain(uninstall);
     },

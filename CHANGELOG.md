@@ -34,7 +34,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `docs/specs/engine-devtools-dev-server.md`.
 - Generated engine starters now include `@invokta/devtools` as a development
   dependency, explicit `devtools` and `devtools:doctor` scripts for interactive
-  development and read-only diagnostics, and a compatible `dev` alias.
+  development and read-only diagnostics.
 
 - Added ten authentication examples under `examples/auth-*` — a
   provider-neutral JWT bearer engine plus Supabase, Clerk, Auth0, AWS Cognito,

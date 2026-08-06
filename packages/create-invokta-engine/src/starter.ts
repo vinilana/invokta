@@ -177,8 +177,7 @@ browse capabilities, invoke them from schema-seeded JSON, follow the live
 invocation trace, switch development principals, and read the doctor report.
 Source changes rebuild and restart the hosted engine automatically.
 
-The existing \`${runScript("dev")}\` command remains a short compatible alias.
-Run the read-only project checks with:
+Run the read-only devtools diagnostics with:
 
 \`\`\`sh
 ${runScript("devtools:doctor")}
@@ -312,7 +311,6 @@ function renderPackageManifest(
     check:
       "tsc -p tsconfig.json --pretty false --noEmit && tsc -p tsconfig.test.json --pretty false --noEmit && vitest run && tsc -p tsconfig.json --pretty false",
     direct: "node dist/direct.js",
-    dev: devtoolsServe,
     devtools: devtoolsServe,
     "devtools:doctor": devtoolsDoctor,
     ...(features.cli ? { cli: "node dist/cli.js" } : {}),

@@ -195,8 +195,8 @@ Create a standalone engine:
 npm create invokta-engine@latest my-engine
 cd my-engine
 npm run check
-npm run dev
-# Opens the devtools inspector on http://127.0.0.1:4100/ with watch mode.
+npm run devtools
+# Starts the devtools inspector on http://127.0.0.1:4100/ with watch mode.
 npm run mcp:install
 # Later, remove the engine from every managed MCP client:
 npm run mcp:uninstall

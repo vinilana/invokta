@@ -309,12 +309,11 @@ MUST leave the running host untouched.
 ## Compatibility and migration
 
 `@invokta/devtools` is a new package; no existing package changes behavior.
-Generated starters gain the development dependency, a compatible `dev` alias,
-an explicit `devtools` build-and-watch script, and a build-first
-`devtools:doctor` diagnostic script. This changes starter snapshots and is
-released as a creator change with release notes. Existing generated projects
-are unaffected and can adopt the devtools by installing the package and running
-`invokta-devtools serve dist/engine.js`.
+Generated starters gain the development dependency, an explicit `devtools`
+build-and-watch script, and a build-first `devtools:doctor` diagnostic script.
+This changes starter snapshots and is released as a creator change with release
+notes. Existing generated projects are unaffected and can adopt the devtools by
+installing the package and running `invokta-devtools serve dist/engine.js`.
 
 ## Required architecture decision
 
