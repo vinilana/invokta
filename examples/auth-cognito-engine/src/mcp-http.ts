@@ -32,7 +32,8 @@ export interface CognitoMcpHttpOptions {
   readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
 }
 
-const bearerPattern = /^Bearer ([^\s]+)$/;
+// RFC 9110 makes the authentication scheme case-insensitive.
+const bearerPattern = /^Bearer ([^\s]+)$/iu;
 
 function readBearerToken(headers: McpHttpHeaderView): string | null {
   const authorization = headers.get("authorization");

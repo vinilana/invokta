@@ -92,6 +92,10 @@ parsing, JWKS caching, and the 401-versus-500 split — live in
        jwtVerify(token, getKey, {
          issuer,
          algorithms: ["RS256"],
+         // Cognito access tokens carry no aud claim; client_id is checked
+         // in toIdentity instead. The other claims are always minted, so a
+         // signed token missing one is not a Cognito access token.
+         requiredClaims: ["sub", "iss", "exp"],
        }),
        options.signal,
      );
@@ -106,8 +110,10 @@ parsing, JWKS caching, and the 401-versus-500 split — live in
    `isInvalidCredential` matches the `jose` error classes that mean "this
    credential is unusable" — `JWTExpired`, `JWTClaimValidationFailed`,
    `JWSSignatureVerificationFailed`, `JWKSNoMatchingKey`, and their siblings.
-   Anything else, including a JWKS timeout or an aborted request, is
-   infrastructure and is rethrown as one sanitized error.
+   Anything else, including a JWKS timeout, an aborted request, or an
+   ambiguous key set (`JWKSMultipleMatchingKeys` — the pool's key-publication
+   problem, not the caller's), is infrastructure and is rethrown as one
+   sanitized error.
 
 5. Apply the Cognito claim rules
 
@@ -180,8 +186,9 @@ parsing, JWKS caching, and the 401-versus-500 split — live in
    });
    ```
 
-   The hook observes `request.signal`, so a disconnected client stops the JWKS
-   work instead of holding it open.
+   The hook observes `request.signal`, so a disconnected client stops the
+   verifier from waiting on the JWKS work; the underlying fetch itself is
+   bounded by the remote key set's own `timeoutDuration`.
 
 </Steps>
 
@@ -196,6 +203,11 @@ example does not depend on it:
 ```ts
 // Provider-SDK variant. Not used by the runnable example.
 import { CognitoJwtVerifier } from "aws-jwt-verify";
+import {
+  FailedAssertionError,
+  JwtInvalidSignatureError,
+  JwtParseError,
+} from "aws-jwt-verify/error";
 
 const cognito = CognitoJwtVerifier.create({
   userPoolId: "us-east-1_ExamplePool",
@@ -204,7 +216,9 @@ const cognito = CognitoJwtVerifier.create({
 });
 
 const verifier: CognitoAccessTokenVerifier = {
-  async verify(token) {
+  // aws-jwt-verify does not consume an AbortSignal; the parameter stays in
+  // the port contract so the hook-level wait remains bounded by the caller.
+  async verify(token, _options) {
     try {
       const payload = await cognito.verify(token);
       return {
@@ -213,9 +227,18 @@ const verifier: CognitoAccessTokenVerifier = {
         scopes: payload.scope?.split(" ") ?? [],
         groups: payload["cognito:groups"] ?? [],
       };
-    } catch {
-      // aws-jwt-verify throws for an invalid token; the hook needs null.
-      return null;
+    } catch (error) {
+      // Only the SDK's token-validation failures mean "invalid credential":
+      // malformed tokens, bad signatures, and every claim assertion
+      // (expiry, issuer, token_use, client_id, algorithm).
+      const invalidToken =
+        error instanceof FailedAssertionError ||
+        error instanceof JwtInvalidSignatureError ||
+        error instanceof JwtParseError;
+      if (invalidToken) return null;
+      // JWKS fetch or validation failures stay an infrastructure error and
+      // reach the adapter as a sanitized HTTP 500.
+      throw error;
     }
   },
 };
@@ -223,9 +246,9 @@ const verifier: CognitoAccessTokenVerifier = {
 
 <Aside type="caution" title="Keep the null/throw split">
   A `catch`-all that returns `null` also swallows a JWKS fetch failure and
-  turns an outage into HTTP 401. Narrow the catch to the SDK's
-  invalid-token errors and let an infrastructure failure reach the adapter as
-  HTTP 500.
+  turns an outage into HTTP 401. The narrow catch above maps only
+  `aws-jwt-verify`'s token-validation errors to `null` and lets an
+  infrastructure failure reach the adapter as HTTP 500.
 </Aside>
 
 ## Authorization stays in the capability

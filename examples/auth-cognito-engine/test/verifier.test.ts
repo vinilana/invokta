@@ -1,4 +1,11 @@
-import { createLocalJWKSet, errors } from "jose";
+import {
+  createLocalJWKSet,
+  errors,
+  exportJWK,
+  generateKeyPair,
+  generateSecret,
+  SignJWT,
+} from "jose";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { toPrincipal } from "../src/identity/principal.js";
@@ -161,6 +168,28 @@ describe("cognito access token verifier", () => {
     ).resolves.toBeNull();
   });
 
+  it("returns null for a signed token without an expiry", async () => {
+    const claims = accessTokenClaims();
+    delete claims.exp;
+
+    await expect(
+      createVerifier().verify(await tokens.sign(claims), { signal }),
+    ).resolves.toBeNull();
+  });
+
+  it("returns null for a token signed outside the algorithm allowlist", async () => {
+    // Pins algorithms: ["RS256"] — an HS256 token must never verify, even
+    // with otherwise perfect claims.
+    const secret = await generateSecret("HS256", { extractable: true });
+    const token = await new SignJWT(accessTokenClaims())
+      .setProtectedHeader({ alg: "HS256" })
+      .sign(secret);
+
+    await expect(
+      createVerifier().verify(token, { signal }),
+    ).resolves.toBeNull();
+  });
+
   it("returns null when the subject claim is missing", async () => {
     const claims = accessTokenClaims();
     delete claims.sub;
@@ -187,6 +216,33 @@ describe("cognito access token verifier", () => {
     await expect(
       createVerifier().verify(await tokens.sign(claims), { signal }),
     ).resolves.toMatchObject({ groups: [] });
+  });
+
+  it("throws when the key set is ambiguous for the token", async () => {
+    // Two same-algorithm keys without kid headers: jose cannot pick a
+    // candidate, which is the pool's key-publication problem, not proof
+    // against the credential — so it surfaces as unavailable, not null.
+    const first = await generateKeyPair("RS256", { extractable: true });
+    const second = await generateKeyPair("RS256", { extractable: true });
+    const ambiguous = createLocalJWKSet({
+      keys: [
+        { ...(await exportJWK(first.publicKey)), alg: "RS256", use: "sig" },
+        { ...(await exportJWK(second.publicKey)), alg: "RS256", use: "sig" },
+      ],
+    });
+    const verifier = createCognitoVerifier({
+      region,
+      userPoolId,
+      appClientIds: [appClientId],
+      getKey: ambiguous,
+    });
+    const token = await new SignJWT(accessTokenClaims())
+      .setProtectedHeader({ alg: "RS256" })
+      .sign(first.privateKey);
+
+    await expect(verifier.verify(token, { signal })).rejects.toBeInstanceOf(
+      CognitoVerificationUnavailableError,
+    );
   });
 
   it("throws a sanitized error when key resolution is unavailable", async () => {

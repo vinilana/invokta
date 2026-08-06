@@ -96,6 +96,28 @@ describe("cognito authenticate hook", () => {
     ).resolves.toBeNull();
   });
 
+  it("accepts the authentication scheme case-insensitively", async () => {
+    // RFC 9110 makes the scheme token case-insensitive.
+    const authenticate = createCognitoAuthenticate(
+      createCognitoVerifier({
+        region,
+        userPoolId,
+        appClientIds: [appClientId],
+        getKey: createLocalJWKSet(tokens.jwks),
+      }),
+    );
+    const token = await tokens.sign(accessTokenClaims());
+
+    await expect(
+      authenticate({
+        method: "POST",
+        path: "/mcp",
+        headers: { get: () => `bearer ${token}`, has: () => true },
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toMatchObject({ id: subject });
+  });
+
   it("propagates an infrastructure failure instead of denying the request", async () => {
     const authenticate = createCognitoAuthenticate(
       createCognitoVerifier({

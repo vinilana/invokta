@@ -87,6 +87,11 @@ export function cognitoJwksUri(region: string, userPoolId: string): URL {
  * else — a JWKS timeout, a transport error, a malformed JWKS document, an
  * abort — is infrastructure and must not be reported as "invalid credential".
  */
+// An ambiguous key set (JWKSMultipleMatchingKeys) is deliberately not in this
+// list: two same-algorithm keys published without kid headers is the pool's
+// key-publication problem, not evidence against the credential, so it surfaces
+// as an infrastructure failure (500) instead of silently rejecting legitimate
+// tokens during a kid-less key rotation.
 function isInvalidCredential(error: unknown): boolean {
   return (
     error instanceof errors.JWTInvalid ||
@@ -95,8 +100,7 @@ function isInvalidCredential(error: unknown): boolean {
     error instanceof errors.JWTClaimValidationFailed ||
     error instanceof errors.JWSSignatureVerificationFailed ||
     error instanceof errors.JOSEAlgNotAllowed ||
-    error instanceof errors.JWKSNoMatchingKey ||
-    error instanceof errors.JWKSMultipleMatchingKeys
+    error instanceof errors.JWKSNoMatchingKey
   );
 }
 
@@ -188,6 +192,10 @@ export function createCognitoVerifier(
           jwtVerify(token, getKey, {
             issuer,
             algorithms: [SIGNING_ALGORITHM],
+            // Cognito access tokens carry no aud claim; client_id is checked
+            // in toIdentity instead. The other claims are always minted, so a
+            // signed token missing one is not a Cognito access token.
+            requiredClaims: ["sub", "iss", "exp"],
           }),
           options.signal,
         );
