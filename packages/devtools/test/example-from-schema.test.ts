@@ -93,6 +93,27 @@ describe("exampleFromSchema", () => {
     ]);
   });
 
+  it("bounds an extreme minLength and minItems from an attached server", () => {
+    // The seed is something a developer edits, so an absurd minimum from a
+    // third-party schema must not build a multi-megabyte value.
+    const text = exampleFromSchema({ type: "string", minLength: 5e7 });
+    expect(typeof text).toBe("string");
+    expect((text as string).length).toBe(64);
+
+    const list = exampleFromSchema({
+      type: "array",
+      minItems: 2e6,
+      items: { type: "string" },
+    });
+    expect(list).toEqual(["", "", ""]);
+
+    expect(exampleFromSchema({ type: "array", minItems: 2e6 })).toEqual([
+      null,
+      null,
+      null,
+    ]);
+  });
+
   it("returns null for unusable input", () => {
     expect(exampleFromSchema(undefined)).toBeNull();
     expect(exampleFromSchema("not-a-schema")).toBeNull();

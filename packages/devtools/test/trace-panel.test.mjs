@@ -808,7 +808,7 @@ describe("trace panel", () => {
     expect(sources[0].closed).toBe(true);
   });
 
-  it("clears the server buffer best-effort and links the ndjson export", async () => {
+  it("clears the server buffer best-effort and offers no export control", async () => {
     vi.useFakeTimers();
     const sources = installTraceEnvironment();
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
@@ -817,14 +817,11 @@ describe("trace panel", () => {
     const { renderTracePanel } = await import("../src/ui/trace.js");
     const container = new FakeElement("main");
     const dispose = renderTracePanel(container);
-    const exportLink = walk(container).find(
-      (node) =>
-        node.getAttribute?.("class") === "trace-toolbar-button trace-export",
+    // ADR 0020 keeps the trace in memory: the panel offers no export.
+    expect(walk(container).filter((node) => node.tagName === "A")).toHaveLength(
+      0,
     );
-    expect(exportLink.tagName).toBe("A");
-    expect(exportLink.getAttribute("href")).toBe("/api/trace/export");
-    expect(exportLink.getAttribute("download")).toBe("invokta-trace.ndjson");
-    expect(exportLink.textContent).toBe("Export");
+    expect(container.textContent).not.toContain("Export");
 
     const [, clearView] = byClass(container, "trace-toolbar-button");
     click(clearView);

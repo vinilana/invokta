@@ -61,8 +61,11 @@ export type AttachedConnectionState =
         readonly status: "error";
         readonly error: { readonly code: string; readonly message: string };
       };
-      /** Activity the server retained from the disconnected target. */
-      readonly recentActivity?: readonly AttachedActivityRecord[];
+      /**
+       * Activity the server retained from the disconnected target. The name
+       * matches the `activity` field of the `GET /api/session` idle state.
+       */
+      readonly activity?: readonly AttachedActivityRecord[];
     }
   | { readonly state: "busy" | "connecting" | "closing" }
   | {
@@ -647,19 +650,14 @@ function clockReading(instant: string): string {
 
 /**
  * Reads the activity a server may retain from a disconnected target. The field
- * is optional and its name is accepted in both spellings, so the workbench
- * degrades to showing nothing when the server exposes no retained records.
+ * is optional, so the workbench degrades to showing nothing when the server
+ * exposes no retained records.
  */
 export function retainedActivityOf(
   state: AttachedConnectionState,
 ): readonly AttachedActivityRecord[] {
   if (state.state !== "idle") return [];
-  const candidate =
-    (state as { readonly recentActivity?: unknown }).recentActivity ??
-    (state as { readonly activity?: unknown }).activity;
-  return Array.isArray(candidate)
-    ? (candidate as readonly AttachedActivityRecord[])
-    : [];
+  return Array.isArray(state.activity) ? state.activity : [];
 }
 
 /** Protocol-operation table shared by the Activity tab and the idle recap. */
@@ -852,7 +850,7 @@ export function mountAttachedApp(
                           : { validation: session.validation }),
                         ...(retained.length === 0
                           ? {}
-                          : { recentActivity: retained }),
+                          : { activity: retained }),
                       }
                     : { state: session.state };
             }
@@ -2274,7 +2272,7 @@ export function mountAttachedApp(
                 ...(session.validation === undefined
                   ? {}
                   : { validation: session.validation }),
-                ...(retained.length === 0 ? {} : { recentActivity: retained }),
+                ...(retained.length === 0 ? {} : { activity: retained }),
               }
             : { state: session.state };
       connectionError =

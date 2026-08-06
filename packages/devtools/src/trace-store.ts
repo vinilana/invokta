@@ -33,17 +33,17 @@ export type TraceEntry =
       readonly id: number;
       readonly at: string;
       readonly notice: string;
+      /** Extra lifecycle context, such as build output or restart timing. */
+      readonly detail?: string;
     };
 
 export interface TraceStore {
   appendInvocation(record: InvocationRecord): TraceEntry;
   appendExchange(capture: ExchangeCapture): TraceEntry;
-  appendNotice(notice: string): TraceEntry;
+  appendNotice(notice: string, detail?: string): TraceEntry;
   entries(): ReadonlyArray<TraceEntry>;
   /** Drops every buffered entry; later appends keep their monotonic ids. */
   clear(): void;
-  /** Serializes the buffered entries as newline-delimited JSON. */
-  toNdjson(): string;
   subscribe(listener: (entry: TraceEntry) => void): () => void;
 }
 
@@ -128,15 +128,17 @@ export function createTraceStore(
           : {}),
       });
     },
-    appendNotice: (notice) => append({ kind: "notice", ...stamp(), notice }),
+    appendNotice: (notice, detail) =>
+      append({
+        kind: "notice",
+        ...stamp(),
+        notice,
+        ...(detail === undefined || detail === "" ? {} : { detail }),
+      }),
     entries: () => [...buffered],
     clear: () => {
       buffered.length = 0;
     },
-    toNdjson: () =>
-      buffered.length === 0
-        ? ""
-        : `${buffered.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {

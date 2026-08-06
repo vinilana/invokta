@@ -56,9 +56,12 @@ function legacyCopy(text: string): LegacyCopyOutcome {
     }
   }
   if (copied) {
+    area.value = "";
     area.remove();
     return "copied";
   }
+  // The node stays attached only while the selection it holds is the user's
+  // only way to copy; the value is cleared on the next attempt.
   return "selected";
 }
 

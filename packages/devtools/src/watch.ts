@@ -266,14 +266,6 @@ export async function startWatchMode(
       });
     });
 
-  // Notices carry an optional `detail` rendered by the trace UI; the store
-  // signature lands with the trace-store change, so call through a local
-  // view of that contract.
-  const appendNotice = options.trace.appendNotice as (
-    notice: string,
-    detail?: string,
-  ) => unknown;
-
   const buildDetail = (output: string): string =>
     output.split("\n").slice(0, noticeDetailLineLimit).join("\n").trimEnd();
 
@@ -290,7 +282,7 @@ export async function startWatchMode(
       const built = await runBuild();
       if (closed) break;
       if (!built.ok) {
-        appendNotice("build-failed", buildDetail(built.output));
+        options.trace.appendNotice("build-failed", buildDetail(built.output));
         diagnostic("build failed, keeping previous engine\n");
         continue;
       }
@@ -300,12 +292,12 @@ export async function startWatchMode(
       const started = await startChild();
       if (started.kind === "ready") {
         const elapsed = ((Date.now() - cycleStartedAt) / 1000).toFixed(1);
-        appendNotice("engine-restarted", `${elapsed}s`);
+        options.trace.appendNotice("engine-restarted", `${elapsed}s`);
         diagnostic(
           `rebuild ok (${elapsed}s), engine restarted on port ${String(started.snapshot.port)}\n`,
         );
       } else {
-        appendNotice("engine-start-failed");
+        options.trace.appendNotice("engine-start-failed");
         diagnostic(
           "invokta-devtools: the rebuilt engine could not start; waiting for the next change.\n",
         );

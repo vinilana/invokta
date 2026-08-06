@@ -1,5 +1,6 @@
 import { createCopyButton } from "./clipboard.js";
 import { el } from "./dom.js";
+import { openCapabilityInPlayground } from "./playground-handoff.js";
 
 interface TraceEntryView {
   readonly kind: "invocation" | "exchange" | "notice";
@@ -127,48 +128,6 @@ function entrySubject(kind: string, value: string): HTMLElement {
     el("span", { class: "trace-entry-kind" }, [kind]),
     el("code", {}, [value]),
   ]);
-}
-
-/**
- * Hands a traced exchange to the Playground: the parsed JSON-RPC arguments are
- * staged in session storage for the invoke panel, the hash routes to the
- * capability, and the panel is notified so it can select the entry.
- */
-export function openCapabilityInPlayground(
-  capabilityId: string,
-  prefill?: string,
-): void {
-  if (prefill !== undefined) {
-    try {
-      sessionStorage.setItem(
-        `invokta-devtools:prefill:${capabilityId}`,
-        prefill,
-      );
-    } catch {
-      // Session storage is a convenience; navigation still happens.
-    }
-  }
-  try {
-    if (typeof location !== "undefined") {
-      location.hash = `#capabilities/${encodeURIComponent(capabilityId)}`;
-    }
-  } catch {
-    // Hash routing is a convenience; the selection event still fires.
-  }
-  try {
-    if (
-      typeof CustomEvent === "function" &&
-      typeof document.dispatchEvent === "function"
-    ) {
-      document.dispatchEvent(
-        new CustomEvent("invokta:select-capability", {
-          detail: { id: capabilityId },
-        }),
-      );
-    }
-  } catch {
-    // The invoke panel may not be listening; the prefill remains staged.
-  }
 }
 
 /** Extracts `params.arguments` from a traced JSON-RPC request body. */
@@ -520,16 +479,6 @@ export function renderTracePanel(container: HTMLElement): () => void {
     },
     ["Clear view"],
   );
-  const exportTrace = el(
-    "a",
-    {
-      class: "trace-toolbar-button trace-export",
-      href: "/api/trace/export",
-      download: "invokta-trace.ndjson",
-      title: "Download the buffered trace as NDJSON",
-    },
-    ["Export"],
-  );
   const kindButtons = new Map<TraceKindFilter, HTMLButtonElement>();
   let query = "";
 
@@ -712,11 +661,7 @@ export function renderTracePanel(container: HTMLElement): () => void {
     search,
     errorsOnlyToggle,
     filterGroup,
-    el("div", { class: "trace-toolbar-actions" }, [
-      hold,
-      clearView,
-      exportTrace,
-    ]),
+    el("div", { class: "trace-toolbar-actions" }, [hold, clearView]),
   ]);
 
   const panel = el(

@@ -1,6 +1,7 @@
 import { api, type DoctorInfo } from "./api.js";
 import { createCopyButton } from "./clipboard.js";
 import { clear, el, pretty } from "./dom.js";
+import { openCapabilityInPlayground } from "./playground-handoff.js";
 
 const compositionCheckCommand = "invokta check-capabilities";
 const restartRecheckDelayMs = 250;
@@ -58,31 +59,6 @@ function describeDiagnostic(
   }
 }
 
-/** Routes to the Playground and asks the invoke panel to select a capability. */
-function openInPlayground(capabilityId: string): void {
-  try {
-    if (typeof location !== "undefined") {
-      location.hash = `#capabilities/${encodeURIComponent(capabilityId)}`;
-    }
-  } catch {
-    // Hash routing is a convenience; the selection event still fires.
-  }
-  try {
-    if (
-      typeof CustomEvent === "function" &&
-      typeof document.dispatchEvent === "function"
-    ) {
-      document.dispatchEvent(
-        new CustomEvent("invokta:select-capability", {
-          detail: { id: capabilityId },
-        }),
-      );
-    }
-  } catch {
-    // The invoke panel may not be listening.
-  }
-}
-
 function renderDiagnostic(
   kind: DiagnosticKind,
   diagnostic: Diagnostic,
@@ -111,7 +87,7 @@ function renderDiagnostic(
       ["Open in Playground"],
     );
     playground.addEventListener("click", () => {
-      openInPlayground(capabilityId);
+      openCapabilityInPlayground(capabilityId);
     });
     actions.push(playground);
   }

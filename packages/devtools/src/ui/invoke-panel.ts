@@ -3,6 +3,7 @@ import { createCopyButton, formatDuration } from "./clipboard.js";
 import { el, pretty } from "./dom.js";
 import { exampleFromSchema } from "./example-from-schema.js";
 import { parseMcpResponse } from "./mcp-response.js";
+import { prefillKeyFor } from "./playground-handoff.js";
 import { getActiveToken } from "./principals.js";
 
 const emptyResult = "Invoke the capability to see its result.";
@@ -33,6 +34,42 @@ function dropSession(key: string): void {
   } catch {
     // Session storage is a convenience only.
   }
+}
+
+/**
+ * The newest editor for each capability, keyed by id. One module-level
+ * listener serves all of them, so the number of registrations never grows
+ * with the catalog size or with how often a panel is rebuilt.
+ */
+const handoffTargets = new Map<string, (staged: string) => void>();
+let handoffListenerAttached = false;
+
+function ensureHandoffListener(): void {
+  if (handoffListenerAttached) return;
+  if (typeof document.addEventListener !== "function") return;
+  handoffListenerAttached = true;
+  document.addEventListener("invokta:select-capability", (event) => {
+    const id = (event as CustomEvent<{ readonly id?: unknown }>).detail?.id;
+    if (typeof id !== "string") return;
+    const apply = handoffTargets.get(id);
+    if (apply === undefined) return;
+    const staged = readSession(prefillKeyFor(id));
+    if (staged === null) return;
+    dropSession(prefillKeyFor(id));
+    apply(staged);
+  });
+}
+
+/** The shell variable a copied curl command reads the session token from. */
+const tokenVariableName = "INVOKTA_DEV_TOKEN";
+
+/**
+ * Wraps a value as a POSIX single-quoted shell word. Everything inside single
+ * quotes is literal, so only the closing quote itself needs escaping — which
+ * keeps apostrophes inside JSON arguments from breaking the command.
+ */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 type SchemaRecord = Readonly<Record<string, unknown>>;
@@ -158,7 +195,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   const editorId = `input-${safeId}`;
   const feedbackId = `input-feedback-${safeId}`;
   const draftKey = `invokta-devtools:draft:${capability.id}`;
-  const prefillKey = `invokta-devtools:prefill:${capability.id}`;
+  const prefillKey = prefillKeyFor(capability.id);
   // A prefill handoff (for example "Open in Playground" from Activity) wins
   // over the persisted draft, and both win over the schema-seeded example.
   const prefill = readSession(prefillKey);
@@ -326,6 +363,17 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
       editor.setAttribute("aria-invalid", "false");
       feedback.textContent = "";
     }
+  });
+
+  // The panel is built once per capability and then reused, so a later
+  // handoff (Activity or Diagnostics "Open in Playground") has to be applied
+  // here rather than only at construction.
+  ensureHandoffListener();
+  handoffTargets.set(capability.id, (staged) => {
+    editor.value = staged;
+    writeSession(draftKey, staged);
+    editor.setAttribute("aria-invalid", "false");
+    resetOutput();
   });
 
   const setPending = (next: boolean): void => {
@@ -535,15 +583,21 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     } catch {
       return "";
     }
-    const request = toolCallRequest(capability.id, args, getActiveToken());
+    // The session token is never copied: the command references an
+    // environment variable so the clipboard never carries a live credential.
+    const request = toolCallRequest(capability.id, args, null);
     const origin = (globalThis as { location?: { origin?: unknown } }).location
       ?.origin;
     const target = `${typeof origin === "string" ? origin : ""}${request.path}`;
-    const lines = [`curl -X ${request.method} ${target}`];
+    const lines = [`curl -X ${request.method} ${shellQuote(target)}`];
     for (const [name, value] of Object.entries(request.headers)) {
-      lines.push(`  -H "${name}: ${value}"`);
+      lines.push(`  -H ${shellQuote(`${name}: ${value}`)}`);
     }
-    lines.push(`  -d '${request.body}'`);
+    if (getActiveToken() !== null) {
+      // Deliberately double-quoted so the shell expands the variable.
+      lines.push(`  -H "authorization: Bearer $${tokenVariableName}"`);
+    }
+    lines.push(`  -d ${shellQuote(request.body)}`);
     return lines.join(" \\\n");
   };
 
@@ -553,7 +607,10 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
       windowBar(
         "tools/call arguments",
         createCopyButton("arguments", () => editor.value),
-        createCopyButton("curl command", readCurlCommand),
+        createCopyButton(
+          `curl command (reads the token from $${tokenVariableName})`,
+          readCurlCommand,
+        ),
       ),
       editor,
     ]),

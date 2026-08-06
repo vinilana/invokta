@@ -91,27 +91,21 @@ describe("createTraceStore", () => {
     store.clear();
 
     expect(store.entries()).toEqual([]);
-    expect(store.toNdjson()).toBe("");
     expect(store.appendInvocation(record(2)).id).toBe(3);
   });
 
-  it("exports the buffered entries as newline-delimited JSON", () => {
+  it("carries an optional notice detail and omits an empty one", () => {
     const store = createTraceStore();
-    store.appendNotice("engine-restarted");
-    store.appendInvocation(record(1));
 
-    const ndjson = store.toNdjson();
-    expect(ndjson.endsWith("\n")).toBe(true);
-    const lines = ndjson.trim().split("\n");
-    expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0] as string)).toMatchObject({
+    expect(store.appendNotice("build-failed", "error TS2322")).toMatchObject({
       kind: "notice",
-      notice: "engine-restarted",
+      notice: "build-failed",
+      detail: "error TS2322",
     });
-    expect(JSON.parse(lines[1] as string)).toMatchObject({
-      kind: "invocation",
-      invocation: { capabilityId: "fixture.echo" },
-    });
+    expect(store.appendNotice("engine-restarted")).not.toHaveProperty("detail");
+    expect(store.appendNotice("engine-restarted", "")).not.toHaveProperty(
+      "detail",
+    );
   });
 
   it("notifies subscribers and isolates their failures", () => {

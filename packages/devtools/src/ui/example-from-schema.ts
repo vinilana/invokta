@@ -9,6 +9,14 @@ type JsonValue =
 type SchemaRecord = Readonly<Record<string, unknown>>;
 
 const maxDepth = 8;
+/**
+ * A seed is something a developer edits, not a schema-valid value, so
+ * `minItems` and `minLength` are honored only up to these bounds. In attached
+ * mode the schema comes from a third-party server, where an extreme minimum
+ * would otherwise build a multi-megabyte value and freeze the editor.
+ */
+const maxSeedItems = 3;
+const maxSeedStringLength = 64;
 
 /** Recognized `format` values seed realistic strings instead of empty ones. */
 const formatSeeds: Readonly<Record<string, string>> = {
@@ -17,10 +25,11 @@ const formatSeeds: Readonly<Record<string, string>> = {
   uri: "https://example.com",
 };
 
-function positiveInt(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : 0;
+function boundedCount(value: unknown, limit: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  return Math.min(Math.floor(value), limit);
 }
 
 function asSchema(value: unknown): SchemaRecord | undefined {
@@ -108,7 +117,7 @@ function build(
     return example;
   }
   if (type === "array") {
-    const minItems = positiveInt(schema.minItems);
+    const minItems = boundedCount(schema.minItems, maxSeedItems);
     if (schema.items === undefined) {
       return Array.from({ length: minItems }, () => null);
     }
@@ -121,7 +130,7 @@ function build(
       const seed = formatSeeds[format];
       if (seed !== undefined) return seed;
     }
-    return "x".repeat(positiveInt(schema.minLength));
+    return "x".repeat(boundedCount(schema.minLength, maxSeedStringLength));
   }
   if (type === "number" || type === "integer") {
     const minimum = schema.minimum;

@@ -396,17 +396,12 @@ describe("attached workbench interface contract", () => {
 
     expect(retainedActivityOf({ state: "idle" })).toEqual([]);
     expect(retainedActivityOf({ state: "busy" })).toEqual([]);
+    // The field name matches the `activity` field the session route returns.
+    expect(retainedActivityOf({ state: "idle", activity: [record] })).toEqual([
+      record,
+    ]);
     expect(
-      retainedActivityOf({ state: "idle", recentActivity: [record] }),
-    ).toEqual([record]);
-    expect(
-      retainedActivityOf({
-        state: "idle",
-        activity: [record],
-      } as never),
-    ).toEqual([record]);
-    expect(
-      retainedActivityOf({ state: "idle", recentActivity: "nope" } as never),
+      retainedActivityOf({ state: "idle", activity: "nope" } as never),
     ).toEqual([]);
   });
 

@@ -8,6 +8,19 @@ function capabilityTitle(capability: CapabilityInfo): string {
   return title === undefined || title === "" ? "Untitled capability" : title;
 }
 
+/** Reads the capability id from a `#capabilities/<id>` deep link. */
+function capabilityFromHash(): string | undefined {
+  try {
+    if (typeof location === "undefined") return undefined;
+    const [route, ...rest] = location.hash.replace(/^#\/?/, "").split("/");
+    if (route !== "capabilities" || rest.length === 0) return undefined;
+    const id = decodeURIComponent(rest.join("/"));
+    return id === "" ? undefined : id;
+  } catch {
+    return undefined;
+  }
+}
+
 let mountedSearch: HTMLInputElement | undefined;
 
 /**
@@ -61,10 +74,24 @@ function renderDetail(capability: CapabilityInfo): HTMLElement {
 
 export function renderCapabilitiesPanel(container: HTMLElement): () => void {
   let active = true;
+  let loading = false;
   let ownedSearch: HTMLInputElement | undefined;
-  let selectListener: ((event: Event) => void) | undefined;
+  // One registration for the panel's lifetime. Each successful load swaps the
+  // handler it delegates to, so a repeated Retry cannot stack listeners that
+  // still close over a detached catalog.
+  let selectCapabilityById: ((id: string) => void) | undefined;
+  const selectListener = (event: Event): void => {
+    const id = (event as CustomEvent<{ readonly id?: unknown }>).detail?.id;
+    if (typeof id === "string") selectCapabilityById?.(id);
+  };
+  const documentListens = typeof document.addEventListener === "function";
+  if (documentListens) {
+    document.addEventListener("invokta:select-capability", selectListener);
+  }
 
   const load = (): void => {
+    if (loading) return;
+    loading = true;
     clear(container);
     container.append(
       el("h2", {}, ["Capabilities"]),
@@ -269,25 +296,16 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
         ownedSearch = search;
         mountedSearch = search;
 
-        // App and trace panels hand a capability over with this event; treat it
-        // like a sidebar click, clearing the filter so the row stays visible.
-        if (typeof document.addEventListener === "function") {
-          selectListener = (event: Event) => {
-            const id = (event as CustomEvent<{ id?: unknown }>).detail?.id;
-            if (typeof id !== "string") return;
-            const match = choices.find(
-              ({ capability }) => capability.id === id,
-            );
-            if (match === undefined || match.button === selectedButton) return;
-            search.value = "";
-            applyFilter();
-            select(match.capability, match.button);
-          };
-          document.addEventListener(
-            "invokta:select-capability",
-            selectListener,
-          );
-        }
+        // Activity and Diagnostics hand a capability over with this event;
+        // treat it like a sidebar click, clearing the filter so the row stays
+        // visible.
+        selectCapabilityById = (id: string): void => {
+          const match = choices.find(({ capability }) => capability.id === id);
+          if (match === undefined || match.button === selectedButton) return;
+          search.value = "";
+          applyFilter();
+          select(match.capability, match.button);
+        };
 
         const sidebar = el(
           "aside",
@@ -316,9 +334,15 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
         container.append(
           el("div", { class: "capabilities-layout" }, [sidebar, detail]),
         );
-        const first = choices[0];
-        if (first !== undefined) {
-          select(first.capability, first.button);
+        // A shared `#capabilities/<id>` link opens on its capability.
+        const deepLinked = capabilityFromHash();
+        const initial =
+          (deepLinked === undefined
+            ? undefined
+            : choices.find(({ capability }) => capability.id === deepLinked)) ??
+          choices[0];
+        if (initial !== undefined) {
+          select(initial.capability, initial.button);
         }
       })
       .catch(() => {
@@ -339,6 +363,9 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
           ]),
           retry,
         );
+      })
+      .finally(() => {
+        loading = false;
       });
   };
 
@@ -346,13 +373,10 @@ export function renderCapabilitiesPanel(container: HTMLElement): () => void {
 
   return () => {
     active = false;
+    selectCapabilityById = undefined;
     if (mountedSearch === ownedSearch) mountedSearch = undefined;
-    if (
-      selectListener !== undefined &&
-      typeof document.removeEventListener === "function"
-    ) {
+    if (documentListens && typeof document.removeEventListener === "function") {
       document.removeEventListener("invokta:select-capability", selectListener);
-      selectListener = undefined;
     }
   };
 }

@@ -494,14 +494,9 @@ export async function startDevtoolsServer(
       sendJson(response, 200, options.engineView().doctor);
       return;
     }
-    if (path === "/api/trace/export") {
-      response.writeHead(200, {
-        "content-type": "application/x-ndjson; charset=utf-8",
-        "cache-control": "no-store",
-      });
-      response.end(options.trace.toNdjson());
-      return;
-    }
+    // There is deliberately no trace export route: ADR 0020 requires the
+    // trace to stay an in-memory session buffer that leaves the process only
+    // through the local event stream.
     if (path === "/api/events") {
       handleEvents(request, response);
       return;

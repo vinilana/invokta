@@ -1246,16 +1246,21 @@ async function runServe(
   }
 
   const address = result.handles.devtoolsAddress;
+  // ADR 0020 pins stdout to exactly this ready line, and `open` prints the
+  // same one; the extra startup context is a diagnostic and goes to stderr.
+  await writeStderr(
+    io,
+    renderLines([
+      ...(engineSummary === undefined ? [] : [engineSummary]),
+      command.buildCommand === undefined
+        ? "watch: off"
+        : `watch: on build=${quote(command.buildCommand)}`,
+      "Ctrl+C to stop",
+    ]),
+  );
   try {
     await io.writeStdout(
-      renderLines([
-        ...(engineSummary === undefined ? [] : [engineSummary]),
-        `ui: http://${address.host}:${String(address.port)}/`,
-        command.buildCommand === undefined
-          ? "watch: off"
-          : `watch: on build=${quote(command.buildCommand)}`,
-        "Ctrl+C to stop",
-      ]),
+      `Invokta devtools listening on http://${address.host}:${String(address.port)}/\n`,
     );
   } catch {
     // A gone stdout must not abort a running dev server.

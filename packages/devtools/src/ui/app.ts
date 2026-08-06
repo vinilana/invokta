@@ -318,9 +318,13 @@ function boot(): void {
 
   // A tiny reference for the gestures this shell supports; "?" toggles it.
   let shortcutsOverlay: HTMLElement | undefined;
+  let shortcutsOpener: HTMLElement | undefined;
   const closeShortcuts = (): void => {
-    shortcutsOverlay?.remove();
+    if (shortcutsOverlay === undefined) return;
+    shortcutsOverlay.remove();
     shortcutsOverlay = undefined;
+    shortcutsOpener?.focus();
+    shortcutsOpener = undefined;
   };
   const shortcutEntry = (keys: string, action: string): HTMLElement =>
     el("div", { class: "shortcuts-entry" }, [
@@ -332,27 +336,42 @@ function boot(): void {
       closeShortcuts();
       return;
     }
-    shortcutsOverlay = el(
+    const card = el("div", { class: "shortcuts-card", tabindex: "-1" }, [
+      el("h2", { id: "shortcuts-title" }, ["Keyboard shortcuts"]),
+      el("dl", { class: "shortcuts-list" }, [
+        shortcutEntry("/", "Focus the Playground search"),
+        shortcutEntry("Ctrl/⌘ + Enter", "Invoke the edited capability"),
+        shortcutEntry("← →", "Move between tabs"),
+        shortcutEntry("?", "Toggle this overlay"),
+      ]),
+      el("p", { class: "hint" }, ["Press ? or Escape to close."]),
+    ]);
+    const overlay = el(
       "div",
       {
         class: "shortcuts-overlay",
         role: "dialog",
-        "aria-label": "Keyboard shortcuts",
+        "aria-modal": "true",
+        "aria-labelledby": "shortcuts-title",
       },
-      [
-        el("div", { class: "shortcuts-card" }, [
-          el("h2", {}, ["Keyboard shortcuts"]),
-          el("dl", { class: "shortcuts-list" }, [
-            shortcutEntry("/", "Focus the Playground search"),
-            shortcutEntry("Ctrl/⌘ + Enter", "Invoke the edited capability"),
-            shortcutEntry("← →", "Move between tabs"),
-            shortcutEntry("?", "Toggle this overlay"),
-          ]),
-          el("p", { class: "hint" }, ["Press ? or Escape to close."]),
-        ]),
-      ],
+      [card],
     );
-    document.body.append(shortcutsOverlay);
+    // Clicking the backdrop dismisses it, the way every other overlay does.
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeShortcuts();
+    });
+    shortcutsOverlay = overlay;
+    const previous: unknown = (document as { activeElement?: unknown })
+      .activeElement;
+    shortcutsOpener =
+      typeof previous === "object" &&
+      previous !== null &&
+      previous !== document.body &&
+      typeof (previous as { focus?: unknown }).focus === "function"
+        ? (previous as HTMLElement)
+        : undefined;
+    document.body.append(overlay);
+    card.focus();
   };
 
   // One global gesture: "/" jumps to the catalog filter from anywhere that is

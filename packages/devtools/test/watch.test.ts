@@ -18,7 +18,10 @@ mkdirSync("out", { recursive: true });
 copyFileSync("engine-source.js", "out/engine.js");
 `;
 
-const failingBuildScript = `process.exit(1);
+// A real failing build prints why; the watcher forwards that as the notice
+// detail so Activity can show it.
+const failingBuildScript = `process.stderr.write("engine-source.js(3,1): error TS1005\\n");
+process.exit(1);
 `;
 
 function engineSource(greeting: string): string {
@@ -161,7 +164,10 @@ describe("serve --watch", () => {
     return body.result?.structuredContent?.greeting;
   }
 
-  async function hasNotice(notice: string): Promise<boolean> {
+  /** The replayed notice entry for one notice name, when it arrived. */
+  async function readNotice(
+    notice: string,
+  ): Promise<Readonly<Record<string, unknown>> | undefined> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2000);
     try {
@@ -176,12 +182,19 @@ describe("serve --watch", () => {
         const { done, value } = await reader.read();
         if (done) break;
         text += decoder.decode(value, { stream: true });
-        if (text.includes(`"notice":"${notice}"`)) return true;
+        if (text.includes(`"notice":"${notice}"`)) break;
         if (text.endsWith("\n\n")) break;
       }
-      return text.includes(`"notice":"${notice}"`);
+      for (const line of text.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        const entry = JSON.parse(line.slice("data: ".length)) as Readonly<
+          Record<string, unknown>
+        >;
+        if (entry.notice === notice) return entry;
+      }
+      return undefined;
     } catch {
-      return false;
+      return undefined;
     } finally {
       clearTimeout(timeout);
       controller.abort();
@@ -213,19 +226,24 @@ describe("serve --watch", () => {
     );
 
     expect(greeting).toBe("two");
-    expect(await hasNotice("engine-restarted")).toBe(true);
+    const restarted = await readNotice("engine-restarted");
+    expect(restarted).toBeDefined();
+    // The elapsed time rides along as the notice detail.
+    expect(restarted?.detail).toMatch(/^\d+\.\d+s$/);
   }, 20_000);
 
   it("keeps the running host when the build fails", async () => {
     writeFileSync(join(projectRoot, "build.mjs"), failingBuildScript);
     writeFileSync(join(projectRoot, "engine-source.js"), engineSource("three"));
 
-    await waitFor(
-      async () => ((await hasNotice("build-failed")) ? true : undefined),
+    const failed = await waitFor(
+      async () => await readNotice("build-failed"),
       15_000,
       "the failed build notice",
     );
 
+    // The build output rides along so Activity can show why it failed.
+    expect(failed.detail).toContain("error TS1005");
     expect(await greet()).toBe("two");
   }, 20_000);
 });

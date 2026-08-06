@@ -256,13 +256,16 @@ JSON Schema carry a copy control. `Ctrl`/`⌘` + `Enter` invokes from the editor
 and `/` returns focus to the capability filter from anywhere outside a text
 field.
 
-Activity adds a view-scoped toolbar: filter entries by text across capability
-IDs, MCP methods, HTTP status, and captured payloads; narrow the feed to
-invocations, MCP exchanges, or lifecycle notices; **Hold** stops new entries
-from arriving while you read one; and **Clear view** empties the visible list.
-All three act on the browser view only — the dev server's bounded in-memory
-buffer is never mutated, and held entries appear as soon as the hold is
-released.
+Activity adds a toolbar: filter entries by text across capability IDs, MCP
+methods, HTTP status, and captured payloads; narrow the feed to invocations,
+MCP exchanges, or lifecycle notices; and **Hold** stops new entries from
+arriving while you read one, releasing the held entries as soon as you resume.
+Filtering and holding act on the browser view only.
+
+**Clear view** is different: it empties the visible list *and* the dev
+server's in-memory buffer, so the entries do not come back on the next
+reconnect. The trace stays a session-scoped in-memory aid — there is no export
+route, and nothing is written to disk.
 
 ## Troubleshooting
 

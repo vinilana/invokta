@@ -139,9 +139,28 @@ class FakeElement extends FakeNode {
 
 class FakeDocument extends EventTarget {
   body = new FakeElement("body");
+  #listeners = new Map();
 
   createElement(tagName) {
     return new FakeElement(tagName);
+  }
+
+  addEventListener(type, listener, options) {
+    this.#listeners.set(type, (this.#listeners.get(type) ?? 0) + 1);
+    super.addEventListener(type, listener, options);
+  }
+
+  removeEventListener(type, listener, options) {
+    this.#listeners.set(
+      type,
+      Math.max(0, (this.#listeners.get(type) ?? 0) - 1),
+    );
+    super.removeEventListener(type, listener, options);
+  }
+
+  /** How many listeners are currently registered for one event type. */
+  listenerCount(type) {
+    return this.#listeners.get(type) ?? 0;
   }
 }
 
@@ -608,6 +627,88 @@ describe("capability discovery", () => {
     document.dispatchEvent(ignored);
     expect(second.getAttribute("aria-selected")).toBe("true");
   });
+
+  it("opens a #capabilities/<id> deep link on its capability", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    installGlobal("location", { hash: "#capabilities/support.summarize" });
+    installGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse([
+          classify,
+          {
+            ...classify,
+            id: "support.summarize",
+            title: "Summarize ticket",
+            description: "Summarizes a support ticket.",
+          },
+        ]),
+      ),
+    );
+
+    const { renderCapabilitiesPanel } = await import(
+      "../src/ui/capabilities.js"
+    );
+    const container = new FakeElement("main");
+    const dispose = renderCapabilitiesPanel(container);
+
+    await waitFor(() =>
+      expect(container.textContent).toContain("2 of 2 capabilities"),
+    );
+    const deepLinked = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-choice") &&
+        node.textContent.includes("support.summarize"),
+    );
+    expect(deepLinked.getAttribute("aria-selected")).toBe("true");
+
+    dispose();
+  });
+
+  it("registers one handoff listener no matter how often a load retries", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    let attempt = 0;
+    installGlobal(
+      "fetch",
+      vi.fn(async () => {
+        attempt += 1;
+        if (attempt === 1) throw new Error("offline");
+        return jsonResponse([classify]);
+      }),
+    );
+
+    const { renderCapabilitiesPanel } = await import(
+      "../src/ui/capabilities.js"
+    );
+    const container = new FakeElement("main");
+    const dispose = renderCapabilitiesPanel(container);
+
+    await waitFor(() =>
+      expect(container.textContent).toContain("Couldn’t load capabilities."),
+    );
+    const retry = walk(container).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("capability-retry"),
+    );
+    // Impatient clicking must not stack listeners on the document.
+    retry.dispatchEvent(new Event("click"));
+    retry.dispatchEvent(new Event("click"));
+    retry.dispatchEvent(new Event("click"));
+
+    await waitFor(() =>
+      expect(container.textContent).toContain("1 of 1 capability"),
+    );
+    // Exactly two: the catalog's own listener plus the one the invoke-panel
+    // module shares across every capability.
+    expect(document.listenerCount("invokta:select-capability")).toBe(2);
+
+    dispose();
+    expect(document.listenerCount("invokta:select-capability")).toBe(1);
+  });
 });
 
 describe("capability invocation", () => {
@@ -730,7 +831,7 @@ describe("capability invocation", () => {
       copyButtons.map((button) => button.getAttribute("aria-label")),
     ).toEqual([
       "Copy arguments",
-      "Copy curl command",
+      "Copy curl command (reads the token from $INVOKTA_DEV_TOKEN)",
       "Copy capability result",
       "Copy raw MCP request",
       "Copy raw MCP response",
@@ -797,6 +898,41 @@ describe("capability invocation", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("applies a staged prefill to a panel that is already rendered", async () => {
+    installDocument();
+    const storage = new MemoryStorage();
+    installGlobal("sessionStorage", storage);
+    installGlobal("fetch", vi.fn());
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const editor = walk(panel).find(
+      (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+    );
+    // The panel is cached across selections, so the handoff has to reach the
+    // editor after construction, not only during it.
+    expect(editor.value).not.toContain("T-42");
+
+    storage.setItem(
+      "invokta-devtools:prefill:support.classify-ticket",
+      '{"ticketId":"T-42"}',
+    );
+    const handoff = new Event("invokta:select-capability");
+    Object.defineProperty(handoff, "detail", {
+      value: { id: "support.classify-ticket" },
+    });
+    document.dispatchEvent(handoff);
+
+    expect(editor.value).toBe('{"ticketId":"T-42"}');
+    // The staged value is consumed so it cannot resurface on a later reload.
+    expect(
+      storage.getItem("invokta-devtools:prefill:support.classify-ticket"),
+    ).toBeNull();
+    expect(
+      storage.getItem("invokta-devtools:draft:support.classify-ticket"),
+    ).toBe('{"ticketId":"T-42"}');
+  });
+
   it("copies the exact request as a curl command", async () => {
     installDocument();
     installGlobal("sessionStorage", new MemoryStorage());
@@ -812,7 +948,8 @@ describe("capability invocation", () => {
     const curl = walk(panel).find(
       (node) =>
         node instanceof FakeElement &&
-        node.getAttribute("aria-label") === "Copy curl command",
+        node.getAttribute("aria-label") ===
+          "Copy curl command (reads the token from $INVOKTA_DEV_TOKEN)",
     );
     expect(curl).toBeDefined();
 
@@ -820,15 +957,44 @@ describe("capability invocation", () => {
     curl.dispatchEvent(new Event("click"));
     await waitFor(() => expect(writeText).toHaveBeenCalled());
     const command = writeText.mock.calls[0][0];
-    expect(command).toContain("curl -X POST /mcp");
-    expect(command).toContain('-H "content-type: application/json"');
+    expect(command).toContain("curl -X POST '/mcp'");
+    expect(command).toContain("-H 'content-type: application/json'");
     expect(command).toContain(
-      '-H "accept: application/json, text/event-stream"',
+      "-H 'accept: application/json, text/event-stream'",
     );
     expect(command).not.toContain("authorization");
     expect(command).toContain('"method": "tools/call"');
     expect(command).toContain('"name": "support.classify-ticket"');
     expect(command).toContain('"ticketId": "T-9"');
+  });
+
+  it("keeps an apostrophe in the arguments from breaking the shell word", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    const writeText = vi.fn(async () => undefined);
+    installGlobal("navigator", { clipboard: { writeText } });
+    installGlobal("fetch", vi.fn());
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const editor = walk(panel).find(
+      (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+    );
+    const curl = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("aria-label") ===
+          "Copy curl command (reads the token from $INVOKTA_DEV_TOKEN)",
+    );
+
+    editor.value = JSON.stringify({ ticketId: "it's fine" });
+    curl.dispatchEvent(new Event("click"));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const command = writeText.mock.calls[0][0];
+    // Every apostrophe closes and reopens the quoted word, so no raw
+    // apostrophe survives to terminate the shell word early.
+    expect(command).toContain("it'\\''s fine");
+    expect(command).not.toContain("it's fine");
   });
 
   it("includes the authorization header in the curl command when a token is active", async () => {
@@ -849,14 +1015,17 @@ describe("capability invocation", () => {
     const curl = walk(panel).find(
       (node) =>
         node instanceof FakeElement &&
-        node.getAttribute("aria-label") === "Copy curl command",
+        node.getAttribute("aria-label") ===
+          "Copy curl command (reads the token from $INVOKTA_DEV_TOKEN)",
     );
 
     curl.dispatchEvent(new Event("click"));
     await waitFor(() => expect(writeText).toHaveBeenCalled());
-    expect(writeText.mock.calls[0][0]).toContain(
-      '-H "authorization: Bearer tok-123"',
-    );
+    const command = writeText.mock.calls[0][0];
+    // The live token never reaches the clipboard; the command reads it from
+    // the environment instead.
+    expect(command).toContain('-H "authorization: Bearer $INVOKTA_DEV_TOKEN"');
+    expect(command).not.toContain("tok-123");
   });
 
   it("checks required fields, primitive types, and enums before invoking", async () => {

@@ -69,9 +69,10 @@ async function readSse(
   url: string,
   minimumDataFrames: number,
   action?: () => Promise<void>,
+  timeoutMs = 4000,
 ): Promise<string> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const response = await fetch(url, { signal: controller.signal });
   const reader = (response.body as ReadableStream<Uint8Array>).getReader();
   const decoder = new TextDecoder();
@@ -328,20 +329,13 @@ describe("startServe", () => {
     expect(text).toContain('"capabilityId":"fixture.echo"');
   });
 
-  it("exports the trace as ndjson and clears it", async () => {
+  it("clears the trace buffer and offers no export route", async () => {
     const call = await callTool({ authorization: `Bearer ${token}` });
     await call.arrayBuffer();
 
+    // ADR 0020 keeps the trace in memory: there is no export route at all.
     const exported = await fetch(`${base}/api/trace/export`);
-    expect(exported.status).toBe(200);
-    expect(exported.headers.get("content-type")).toContain(
-      "application/x-ndjson",
-    );
-    const lines = (await exported.text()).trim().split("\n");
-    expect(lines.length).toBeGreaterThan(0);
-    for (const line of lines) {
-      expect(JSON.parse(line)).toHaveProperty("kind");
-    }
+    expect(exported.status).toBe(404);
 
     const wrongMethod = await fetch(`${base}/api/trace/clear`);
     expect(wrongMethod.status).toBe(405);
@@ -356,8 +350,12 @@ describe("startServe", () => {
     expect(cleared.status).toBe(200);
     expect(await cleared.json()).toEqual({ cleared: true });
 
-    const after = await fetch(`${base}/api/trace/export`);
-    expect(await after.text()).toBe("");
+    // The replay of a fresh stream carries nothing until the next exchange.
+    const replay = await readSse(`${base}/api/events`, 1, async () => {
+      const next = await callTool({ authorization: `Bearer ${token}` });
+      await next.arrayBuffer();
+    });
+    expect(replay.match(/\ndata: /g)?.length ?? 0).toBeLessThanOrEqual(2);
   });
 
   it("responds 404 on unknown routes and 405 on wrong methods", async () => {
@@ -438,11 +436,11 @@ describe("startServe trace capacity", () => {
         await response.arrayBuffer();
       }
 
-      const exported = await fetch(`${base}/api/trace/export`);
-      expect(exported.status).toBe(200);
       // Each call appends an invocation and an exchange entry; the buffer
-      // keeps only the newest three.
-      expect((await exported.text()).trim().split("\n")).toHaveLength(3);
+      // keeps only the newest three, which a fresh stream replays. Asking for
+      // a fourth frame proves no more than three were retained.
+      const replay = await readSse(`${base}/api/events`, 4, undefined, 1_500);
+      expect(replay.match(/\ndata: /g) ?? []).toHaveLength(3);
     } finally {
       await result.handles.close();
     }
@@ -464,7 +462,7 @@ describe("invokta-devtools serve", () => {
     );
   });
 
-  it("prints the startup block, serves, and shuts down cleanly on SIGTERM", async () => {
+  it("prints the ready line, serves, and shuts down cleanly on SIGTERM", async () => {
     const port = await freePort();
     const child = spawn(
       process.execPath,
@@ -488,7 +486,8 @@ describe("invokta-devtools serve", () => {
       stderr += chunk;
     });
 
-    const readyLine = `ui: http://127.0.0.1:${String(port)}/\n`;
+    // ADR 0020 pins stdout to exactly this line.
+    const readyLine = `Invokta devtools listening on http://127.0.0.1:${String(port)}/\n`;
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(
         () => reject(new Error(`serve never became ready: ${stderr}`)),
@@ -515,8 +514,13 @@ describe("invokta-devtools serve", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(stdout).toBe(
-      `engine: name="fixture-engine" version="0.1.0" capabilities=2\n${readyLine}watch: off\nCtrl+C to stop\n`,
+    // Stdout carries the ready line and nothing else; the startup context is
+    // a diagnostic and belongs on stderr.
+    expect(stdout).toBe(readyLine);
+    expect(stderr).toContain(
+      'engine: name="fixture-engine" version="0.1.0" capabilities=2',
     );
+    expect(stderr).toContain("watch: off");
+    expect(stderr).toContain("Ctrl+C to stop");
   }, 20_000);
 });

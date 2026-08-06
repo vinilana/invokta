@@ -6,6 +6,8 @@ import {
   type McpClientTarget,
 } from "@invokta/mcp";
 
+import { quote } from "./diagnostics.js";
+
 const defaultInitializationDeadlineMs = 15_000;
 const defaultCatalogDeadlineMs = 15_000;
 const defaultMaxCatalogPages = 100;
@@ -160,7 +162,9 @@ function asFailure(
       ok: false,
       code,
       stage,
-      message: `The MCP server process could not start: the executable "${target.command}" failed to spawn.`,
+      // JSON-quoted so a crafted executable cannot forge a second
+      // diagnostic line on the line-oriented stderr stream.
+      message: `The MCP server process could not start: the executable ${quote(target.command)} failed to spawn.`,
       details: { executable: target.command },
     };
   }

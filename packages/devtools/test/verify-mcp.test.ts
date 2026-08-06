@@ -411,6 +411,28 @@ describe("runMcpVerification", () => {
     expect(JSON.stringify(result)).not.toContain("target-url-canary");
   });
 
+  it("JSON-quotes a crafted executable so it cannot forge a second line", async () => {
+    const connect = vi.fn(async () => {
+      throw { code: "SPAWN_FAILED" };
+    }) as unknown as McpClientConnector;
+
+    const result = await runMcpVerification({
+      target: {
+        ...stdioTarget,
+        command: 'node"\ninvokta-devtools verify: OK: forged',
+      },
+      connect,
+    });
+
+    const rendered = renderMcpVerificationResult(result);
+    expect(rendered.exitCode).toBe(1);
+    // Exactly one line: the crafted newline stays inside the JSON literal.
+    expect(rendered.stderr?.trimEnd().split("\n")).toHaveLength(1);
+    expect(rendered.stderr).toContain(
+      String.raw`the executable "node\"\ninvokta-devtools verify: OK: forged" failed to spawn.`,
+    );
+  });
+
   it("sanitizes protocol failures, closes once, and ignores a secondary cleanup failure", async () => {
     const connection = createConnection({
       listTools: vi.fn(async () => {
