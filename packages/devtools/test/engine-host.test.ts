@@ -279,13 +279,25 @@ describe("createPrincipalStore", () => {
     });
   });
 
-  it("revokes tokens", () => {
+  it("rotates a principal's token, revoking the previous one", () => {
+    const store = createPrincipalStore();
+    const issued = store.issue({ id: "rotating" });
+    const rotated = store.rotate(issued.key);
+
+    expect(rotated?.key).toBe(issued.key);
+    expect(rotated?.token).not.toBe(issued.token);
+    expect(store.resolve(issued.token)).toBeNull();
+    expect(store.resolve(rotated?.token as string)?.id).toBe("rotating");
+    expect(store.rotate("p999")).toBeNull();
+  });
+
+  it("removes principals by key", () => {
     const store = createPrincipalStore();
     const issued = store.issue({ id: "temporary" });
 
-    expect(store.revoke(issued.token)).toBe(true);
+    expect(store.remove(issued.key)).toBe(true);
     expect(store.resolve(issued.token)).toBeNull();
-    expect(store.revoke(issued.token)).toBe(false);
+    expect(store.remove(issued.key)).toBe(false);
   });
 
   it("authenticates only well-formed bearer headers", () => {

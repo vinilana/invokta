@@ -32,6 +32,33 @@ export function renderLines(lines: readonly string[]): string {
   return `${lines.join("\n")}\n`;
 }
 
+export interface ThrownValueInfo {
+  readonly name?: string;
+  readonly code?: string;
+  readonly message?: string;
+}
+
+/**
+ * Extracts the safe, serializable facts of a thrown value: name, code, and
+ * message only — never a stack, cause, or payload.
+ */
+export function readThrownValueInfo(error: unknown): ThrownValueInfo {
+  try {
+    if (typeof error === "string") return { message: error };
+    const record = asRecord(error);
+    if (record === undefined) return {};
+    return {
+      ...(typeof record.name === "string" ? { name: record.name } : {}),
+      ...(typeof record.code === "string" ? { code: record.code } : {}),
+      ...(typeof record.message === "string"
+        ? { message: record.message }
+        : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Describes a thrown value without echoing a stack, cause, or payload. Only
  * the error name, code, and message are actionable at this boundary.

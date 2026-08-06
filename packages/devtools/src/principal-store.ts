@@ -4,14 +4,19 @@ import type { Principal } from "@invokta/core";
 import type { McpHttpAuthenticationRequest } from "@invokta/mcp";
 
 export interface DevPrincipal {
+  /** Stable management key; safe to list and reference from the interface. */
+  readonly key: string;
+  /** Opaque bearer credential; returned only when it is minted. */
   readonly token: string;
   readonly principal: Principal;
 }
 
 export interface PrincipalStore {
   issue(principal: Principal): DevPrincipal;
+  /** Mints a replacement token for an existing principal, revoking the old one. */
+  rotate(key: string): DevPrincipal | null;
+  remove(key: string): boolean;
   list(): ReadonlyArray<DevPrincipal>;
-  revoke(token: string): boolean;
   resolve(token: string): Principal | null;
   authenticate(request: McpHttpAuthenticationRequest): Principal | null;
 }
@@ -35,30 +40,50 @@ function readBearerToken(header: string | null): string | null {
  * default principal so a fresh dev server is immediately invocable.
  */
 export function createPrincipalStore(): PrincipalStore {
-  const records = new Map<string, Principal>();
+  const records = new Map<string, { token: string; principal: Principal }>();
+  let nextKey = 0;
+
+  const mintToken = (): string => randomBytes(24).toString("base64url");
 
   const issue = (principal: Principal): DevPrincipal => {
     const snapshot = structuredClone(principal);
-    const token = randomBytes(24).toString("base64url");
-    records.set(token, snapshot);
-    return { token, principal: snapshot };
+    nextKey += 1;
+    const key = `p${String(nextKey)}`;
+    const token = mintToken();
+    records.set(key, { token, principal: snapshot });
+    return { key, token, principal: snapshot };
   };
 
   issue({ id: defaultPrincipalId });
 
   return {
     issue,
+    rotate: (key) => {
+      const record = records.get(key);
+      if (record === undefined) return null;
+      record.token = mintToken();
+      return { key, token: record.token, principal: record.principal };
+    },
+    remove: (key) => records.delete(key),
     list: () =>
-      [...records.entries()].map(([token, principal]) => ({
-        token,
-        principal,
+      [...records.entries()].map(([key, record]) => ({
+        key,
+        token: record.token,
+        principal: record.principal,
       })),
-    revoke: (token) => records.delete(token),
-    resolve: (token) => records.get(token) ?? null,
+    resolve: (token) => {
+      for (const record of records.values()) {
+        if (record.token === token) return record.principal;
+      }
+      return null;
+    },
     authenticate: (request) => {
       const token = readBearerToken(request.headers.get("authorization"));
       if (token === null) return null;
-      return records.get(token) ?? null;
+      for (const record of records.values()) {
+        if (record.token === token) return record.principal;
+      }
+      return null;
     },
   };
 }

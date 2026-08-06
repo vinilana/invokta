@@ -14,6 +14,8 @@ import {
 import type { DoctorFinding, DoctorNote, DoctorReport } from "./doctor.js";
 import { inspectEngine } from "./doctor.js";
 import { loadEngineModule } from "./load-engine.js";
+import type { StartServeResult } from "./serve.js";
+import { startServe } from "./serve.js";
 
 export interface DevtoolsIo {
   readonly writeStdout: (text: string) => void | Promise<void>;
@@ -34,7 +36,15 @@ interface DoctorCommand {
   readonly exportName: string;
 }
 
-type DevtoolsCommand = DoctorCommand;
+interface ServeCommand {
+  readonly command: "serve";
+  readonly moduleSpecifier: string;
+  readonly exportName: string;
+  readonly port?: number;
+  readonly enginePort?: number;
+}
+
+type DevtoolsCommand = DoctorCommand | ServeCommand;
 
 const defaultExportName = "engine";
 const mcpManifestFileName = "invokta.mcp.json";
@@ -42,14 +52,20 @@ const composedExportName = "capabilities";
 
 const usage = `Usage:
   invokta-devtools doctor <esm-module> [--export <name>]
+  invokta-devtools serve <esm-module> [--export <name>] [--port <number>]
+    [--engine-port <number>]
 
 The module path is resolved against the current working directory and must
 already be built to ESM. The selected export defaults to "engine" and must be
 the value returned by createEngine.
 
+serve preflights the engine with the doctor checks, hosts it with the MCP
+HTTP adapter on loopback, and serves the development interface on
+http://127.0.0.1:4100/ unless --port selects another loopback port.
+
 Exit codes:
-  0  the engine passed the doctor checks; notes may be reported
-  1  the doctor reported findings
+  0  the engine passed the doctor checks, or the dev server shut down cleanly
+  1  the doctor reported findings, or the dev server could not start
   2  invalid usage, a module that failed to load, a missing export, or an
      export that is not an engine`;
 
@@ -93,13 +109,95 @@ function parseModuleArguments(args: readonly string[]): {
   return { moduleSpecifier, exportName: exportName ?? defaultExportName };
 }
 
+function parsePort(option: string, value: string | undefined): number {
+  if (value === undefined || value === "" || value.startsWith("-")) {
+    throw new UsageError(`The ${option} option requires a port number.`);
+  }
+  const port = Number(value);
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new UsageError(
+      `The ${option} option requires a port between 1 and 65535.`,
+    );
+  }
+  return port;
+}
+
+function parseServeArguments(
+  args: readonly string[],
+): Omit<ServeCommand, "command"> {
+  const positional: string[] = [];
+  let exportName: string | undefined;
+  let port: number | undefined;
+  let enginePort: number | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index] as string;
+    if (argument === "--export") {
+      if (exportName !== undefined) {
+        throw new UsageError(
+          "The --export option must be provided at most once.",
+        );
+      }
+      const value = args[index + 1];
+      if (value === undefined || value === "" || value.startsWith("-")) {
+        throw new UsageError("The --export option requires a name.");
+      }
+      exportName = value;
+      index += 1;
+      continue;
+    }
+    if (argument === "--port") {
+      if (port !== undefined) {
+        throw new UsageError(
+          "The --port option must be provided at most once.",
+        );
+      }
+      port = parsePort("--port", args[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (argument === "--engine-port") {
+      if (enginePort !== undefined) {
+        throw new UsageError(
+          "The --engine-port option must be provided at most once.",
+        );
+      }
+      enginePort = parsePort("--engine-port", args[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith("-")) {
+      throw new UsageError(`Unknown option ${quote(argument)}.`);
+    }
+    if (argument === "") {
+      throw new UsageError("The module path must not be empty.");
+    }
+    positional.push(argument);
+  }
+
+  if (positional.length === 0) {
+    throw new UsageError("A module path is required.");
+  }
+  if (positional.length > 1) {
+    throw new UsageError("Exactly one module path is required.");
+  }
+  return {
+    moduleSpecifier: positional[0] as string,
+    exportName: exportName ?? defaultExportName,
+    ...(port === undefined ? {} : { port }),
+    ...(enginePort === undefined ? {} : { enginePort }),
+  };
+}
+
 function parseCommand(argv: readonly string[]): DevtoolsCommand {
   const [command, ...args] = argv;
   if (command === undefined) throw new UsageError("A command is required.");
-  if (command !== "doctor") {
-    throw new UsageError(`Unknown command ${quote(command)}.`);
+  if (command === "doctor") {
+    return { command: "doctor", ...parseModuleArguments(args) };
   }
-  return { command: "doctor", ...parseModuleArguments(args) };
+  if (command === "serve") {
+    return { command: "serve", ...parseServeArguments(args) };
+  }
+  throw new UsageError(`Unknown command ${quote(command)}.`);
 }
 
 function renderContext(command: DevtoolsCommand): readonly string[] {
@@ -252,9 +350,87 @@ async function runDoctor(
   return report.findings.length === 0 ? 0 : 1;
 }
 
+function renderServeFailure(command: DevtoolsCommand, error: unknown): string {
+  return renderLines([
+    `${programName}: the dev server could not start.`,
+    ...renderContext(command),
+    describeThrownValue(error),
+  ]);
+}
+
+function waitForShutdownSignal(): Promise<void> {
+  return new Promise((resolvePromise) => {
+    const stop = (): void => {
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
+      resolvePromise();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+}
+
+async function runServe(
+  command: ServeCommand,
+  cwd: string,
+  io: DevtoolsIo,
+): Promise<number> {
+  const loaded = await loadEngineModule({
+    moduleSpecifier: command.moduleSpecifier,
+    exportName: command.exportName,
+    cwd,
+  });
+  if (loaded.kind === "load-failed") {
+    await writeStderr(io, renderLoadFailure(command, loaded.error));
+    return 2;
+  }
+  if (loaded.kind === "export-missing") {
+    await writeStderr(io, renderMissingExport(command));
+    return 2;
+  }
+  if (loaded.kind === "not-an-engine") {
+    await writeStderr(io, renderNotAnEngine(command));
+    return 2;
+  }
+
+  let result: StartServeResult;
+  try {
+    result = await startServe({
+      engine: loaded.engine,
+      cwd,
+      composedCapabilitiesExport: hasComposedCapabilitiesExport(
+        loaded.namespace,
+      ),
+      ...(command.port === undefined ? {} : { port: command.port }),
+      ...(command.enginePort === undefined
+        ? {}
+        : { enginePort: command.enginePort }),
+    });
+  } catch (error) {
+    await writeStderr(io, renderServeFailure(command, error));
+    return 1;
+  }
+  if (result.kind === "refused") {
+    await writeStderr(io, renderReport(command, result.report));
+    return 1;
+  }
+
+  const address = result.handles.devtoolsAddress;
+  try {
+    await io.writeStdout(
+      `Invokta devtools listening on http://${address.host}:${String(address.port)}/\n`,
+    );
+  } catch {
+    // A gone stdout must not abort a running dev server.
+  }
+  await waitForShutdownSignal();
+  await result.handles.close();
+  return 0;
+}
+
 /**
  * Runs `invokta-devtools` and resolves with its exit code. Diagnostics are
- * written only to `stderr`.
+ * written only to `stderr`; `serve` writes its single ready line to `stdout`.
  */
 export async function runDevtoolsCli(
   options: RunDevtoolsCliOptions = {},
@@ -270,5 +446,9 @@ export async function runDevtoolsCli(
     return 2;
   }
 
-  return runDoctor(command, options.cwd ?? process.cwd(), io);
+  const cwd = options.cwd ?? process.cwd();
+  if (command.command === "serve") {
+    return runServe(command, cwd, io);
+  }
+  return runDoctor(command, cwd, io);
 }
