@@ -13,7 +13,7 @@ import { dirname, join, posix, relative, sep } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
-import { x as extractTar } from "tar";
+import { x as extractTar, Parser as TarParser } from "tar";
 
 import { CreatorError } from "./errors.js";
 import {
@@ -686,16 +686,17 @@ const regularFileEntryTypes = new Set([
   "",
 ]);
 
-/** Typeflags accepted during the raw header pre-scan. */
-const allowedTarTypeflags = new Set([
-  "0", // regular file
-  "\0", // historical regular file
-  "", // empty typeflag treated as file
-  "5", // directory
-  "7", // ContiguousFile (counted as a regular file)
-  "x", // PAX extended header
-  "g", // PAX global header
-  "D", // GNU directory
+const allowedPreScanEntryTypes = new Set([
+  "File",
+  "OldFile",
+  "ContiguousFile",
+  "Directory",
+  "GNUDumpDir",
+  "0",
+  "5",
+  "7",
+  "D",
+  "",
 ]);
 
 function entryIsRegularFile(entry: unknown): boolean {
@@ -719,150 +720,58 @@ function isUnsafeArchivePath(posixPath: string): boolean {
   return segments.some((segment) => segment === "..");
 }
 
-function readTarHeaderPath(header: Buffer): string {
-  const name = header.subarray(0, 100).toString("utf8").replace(/\0.*$/u, "");
-  const prefix = header
-    .subarray(345, 500)
-    .toString("utf8")
-    .replace(/\0.*$/u, "");
-  return prefix === "" ? name : `${prefix}/${name}`;
-}
-
-function readTarHeaderSize(header: Buffer): number {
-  const sizeOct = header
-    .subarray(124, 135)
-    .toString("utf8")
-    .replace(/\0.*$/u, "")
-    .trim();
-  if (sizeOct === "") return 0;
-  const size = Number.parseInt(sizeOct, 8);
-  return Number.isFinite(size) && size >= 0 ? size : Number.NaN;
-}
-
-function parsePaxSizeOverride(body: Buffer): number | undefined {
-  const text = body.toString("utf8");
-  let offset = 0;
-  while (offset < text.length) {
-    const space = text.indexOf(" ", offset);
-    if (space < 0) break;
-    const length = Number.parseInt(text.slice(offset, space), 10);
-    if (!Number.isFinite(length) || length <= 0) break;
-    if (offset + length > text.length) break;
-    const record = text.slice(offset, offset + length);
-    const separator = record.indexOf("=");
-    if (separator >= 0) {
-      const key = record.slice(space - offset + 1, separator);
-      const value = record.slice(separator + 1).replace(/\n$/u, "");
-      if (key === "size") {
-        const size = Number.parseInt(value, 10);
-        if (Number.isFinite(size) && size >= 0) return size;
-      }
-    }
-    offset += length;
-  }
-  return undefined;
-}
-
 /**
- * node-tar silently skips some unsupported typeflags before filter/onentry.
- * Scan raw ustar headers so SparseFile/symlink/device entries cannot bypass rejection.
- * PAX `size` overrides are applied so the scanner stays aligned with node-tar.
+ * node-tar silently skips unsupported typeflags (e.g. SparseFile) before
+ * filter/onentry. Parse with the same Parser so PAX/directory size semantics
+ * stay aligned, and fail closed on ignoredEntry plus any non-file/dir type.
  */
 async function assertArchiveHeadersSafe(archivePath: string): Promise<void> {
-  const gunzip = createGunzip();
-  const source = createReadStream(archivePath);
-  // Ignore late stream errors after we intentionally abort the scan.
-  gunzip.on("error", () => undefined);
-  source.on("error", () => undefined);
-  const stream = source.pipe(gunzip);
-  let buffer = Buffer.alloc(0);
-  let pendingData = 0;
-  let pendingKind: "skip" | "pax-x" | "pax-g" | undefined;
-  let pendingBodySize = 0;
-  let pendingChunks: Buffer[] = [];
-  let nextFileSizeOverride: number | undefined;
-  let globalSizeOverride: number | undefined;
+  let rejected = false;
+  await new Promise<void>((resolve, reject) => {
+    const source = createReadStream(archivePath);
+    const gunzip = createGunzip();
+    const parser = new TarParser();
+    let settled = false;
+    const settle = (error?: CreatorError): void => {
+      if (settled) return;
+      settled = true;
+      if (error) reject(error);
+      else resolve();
+    };
+    const settleFailed = (): void => {
+      settle(new CreatorError("EXAMPLE_FAILED"));
+    };
 
-  const finishPending = (): void => {
-    if (pendingKind === "pax-x" || pendingKind === "pax-g") {
-      const body = Buffer.concat(pendingChunks).subarray(0, pendingBodySize);
-      const override = parsePaxSizeOverride(body);
-      if (override !== undefined) {
-        if (pendingKind === "pax-g") globalSizeOverride = override;
-        else nextFileSizeOverride = override;
+    source.on("error", settleFailed);
+    gunzip.on("error", settleFailed);
+    parser.on("error", settleFailed);
+
+    parser.on("entry", (entry) => {
+      const type = readEntryType(entry) ?? "";
+      if (!allowedPreScanEntryTypes.has(type)) rejected = true;
+      else {
+        const entryPath = String((entry as { path?: unknown }).path ?? "")
+          .split(sep)
+          .join(posix.sep);
+        if (entryPath !== "" && isUnsafeArchivePath(entryPath)) {
+          rejected = true;
+        }
       }
-    }
-    pendingKind = undefined;
-    pendingBodySize = 0;
-    pendingChunks = [];
-  };
+      entry.resume();
+    });
 
-  const stopStreams = (): void => {
-    source.destroy();
-    gunzip.destroy();
-  };
+    parser.on("ignoredEntry", (entry) => {
+      rejected = true;
+      entry.resume();
+    });
 
-  try {
-    for await (const chunk of stream) {
-      buffer = Buffer.concat([buffer, chunk as Buffer]);
-      while (true) {
-        if (pendingData > 0) {
-          if (buffer.byteLength === 0) break;
-          const take = Math.min(pendingData, buffer.byteLength);
-          if (pendingKind === "pax-x" || pendingKind === "pax-g") {
-            pendingChunks.push(buffer.subarray(0, take));
-          }
-          buffer = buffer.subarray(take);
-          pendingData -= take;
-          if (pendingData === 0) finishPending();
-          continue;
-        }
-        if (buffer.byteLength < 512) break;
-        const header = buffer.subarray(0, 512);
-        buffer = buffer.subarray(512);
-        if (header.every((byte) => byte === 0)) continue;
-        const typeflag = String.fromCharCode(header[156] ?? 0);
-        if (!allowedTarTypeflags.has(typeflag)) failedExample();
-        const headerPath = readTarHeaderPath(header).split(sep).join(posix.sep);
-        if (
-          typeflag !== "x" &&
-          typeflag !== "g" &&
-          headerPath !== "" &&
-          isUnsafeArchivePath(headerPath)
-        ) {
-          failedExample();
-        }
-        const headerSize = readTarHeaderSize(header);
-        if (!Number.isFinite(headerSize)) failedExample();
+    parser.on("end", () => {
+      if (rejected) settleFailed();
+      else settle();
+    });
 
-        if (typeflag === "x" || typeflag === "g") {
-          pendingKind = typeflag === "x" ? "pax-x" : "pax-g";
-          pendingBodySize = headerSize;
-          pendingChunks = [];
-          pendingData = Math.ceil(headerSize / 512) * 512;
-          if (pendingData === 0) finishPending();
-          continue;
-        }
-
-        const effectiveSize =
-          nextFileSizeOverride ?? globalSizeOverride ?? headerSize;
-        nextFileSizeOverride = undefined;
-        if (!Number.isFinite(effectiveSize) || effectiveSize < 0) {
-          failedExample();
-        }
-        pendingKind = "skip";
-        pendingData = Math.ceil(effectiveSize / 512) * 512;
-        if (pendingData === 0) finishPending();
-      }
-    }
-    if (pendingData > 0) failedExample();
-  } catch (error) {
-    stopStreams();
-    if (error instanceof CreatorError) throw error;
-    failedExample();
-  } finally {
-    stopStreams();
-  }
+    source.pipe(gunzip).pipe(parser);
+  });
 }
 
 function rememberRetainedDirectories(

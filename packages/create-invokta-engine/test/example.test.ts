@@ -85,6 +85,28 @@ function createPaxSizeRecord(size: number): Buffer {
   }
 }
 
+function createPaxSizeRecords(sizes: readonly number[]): Buffer {
+  return Buffer.concat(sizes.map((size) => createPaxSizeRecord(size)));
+}
+
+function buildSparseSmugglingArchive(options: {
+  readonly beforeSparse: Buffer;
+}): Buffer {
+  const sparseEntry = createUstarEntry(
+    "repo-main/sparse.bin",
+    "0123456789abcdef",
+    "S",
+  );
+  return gzipSync(
+    Buffer.concat([
+      createUstarEntry("repo-main/package.json", '{"name":"template"}\n', "0"),
+      options.beforeSparse,
+      sparseEntry,
+      Buffer.alloc(1024),
+    ]),
+  );
+}
+
 function buildRawTarGz(
   entries: ReadonlyArray<
     Readonly<{ name: string; content?: string | Buffer; typeflag: string }>
@@ -466,27 +488,19 @@ describe("createExampleProject", () => {
 
   it("rejects SparseFile hidden by a PAX size override desync", async () => {
     // PAX size=0 makes node-tar treat the next file as empty, while the ustar
-    // size claims enough bytes to swallow a following SparseFile header. A
-    // scanner that ignores PAX size never sees typeflag S and would accept.
+    // size claims enough bytes to swallow a following SparseFile header.
     const cwd = createWorkingDirectory();
     const sparseEntry = createUstarEntry(
       "repo-main/sparse.bin",
       "0123456789abcdef",
       "S",
     );
-    const archive = gzipSync(
-      Buffer.concat([
-        createUstarEntry(
-          "repo-main/package.json",
-          '{"name":"template"}\n',
-          "0",
-        ),
+    const archive = buildSparseSmugglingArchive({
+      beforeSparse: Buffer.concat([
         createUstarEntry("PaxHeader/decoy", createPaxSizeRecord(0), "x"),
         createUstarHeader("repo-main/decoy.bin", sparseEntry.byteLength, "0"),
-        sparseEntry,
-        Buffer.alloc(1024),
       ]),
-    );
+    });
     const info: ExampleRepoInfo = {
       owner: "acme",
       repository: "repo",
@@ -506,6 +520,104 @@ describe("createExampleProject", () => {
     expect(() =>
       readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
     ).toThrow();
+  });
+
+  it("rejects SparseFile hidden when duplicate PAX size keeps the last value", async () => {
+    // node-tar keeps the last size= record; a first-wins scanner skips the
+    // SparseFile header as decoy payload and would accept the archive.
+    const cwd = createWorkingDirectory();
+    const sparseEntry = createUstarEntry(
+      "repo-main/sparse.bin",
+      "0123456789abcdef",
+      "S",
+    );
+    const archive = buildSparseSmugglingArchive({
+      beforeSparse: Buffer.concat([
+        createUstarEntry(
+          "PaxHeader/decoy",
+          createPaxSizeRecords([sparseEntry.byteLength, 0]),
+          "x",
+        ),
+        createUstarHeader("repo-main/decoy.bin", sparseEntry.byteLength, "0"),
+      ]),
+    });
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: {
+          owner: "acme",
+          repository: "repo",
+          branch: "main",
+          filePath: "",
+          label: "acme/repo",
+        },
+        fetch: createFetch({ archive }),
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+  });
+
+  it("rejects SparseFile hidden behind a nonzero directory header size", async () => {
+    const cwd = createWorkingDirectory();
+    const sparseEntry = createUstarEntry(
+      "repo-main/sparse.bin",
+      "0123456789abcdef",
+      "S",
+    );
+    const archive = buildSparseSmugglingArchive({
+      beforeSparse: createUstarHeader(
+        "repo-main/dir/",
+        sparseEntry.byteLength,
+        "5",
+      ),
+    });
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: {
+          owner: "acme",
+          repository: "repo",
+          branch: "main",
+          filePath: "",
+          label: "acme/repo",
+        },
+        fetch: createFetch({ archive }),
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+  });
+
+  it("rejects SparseFile hidden behind a trailing-slash file header", async () => {
+    const cwd = createWorkingDirectory();
+    const sparseEntry = createUstarEntry(
+      "repo-main/sparse.bin",
+      "0123456789abcdef",
+      "S",
+    );
+    const archive = buildSparseSmugglingArchive({
+      beforeSparse: createUstarHeader(
+        "repo-main/dirish/",
+        sparseEntry.byteLength,
+        "0",
+      ),
+    });
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: {
+          owner: "acme",
+          repository: "repo",
+          branch: "main",
+          filePath: "",
+          label: "acme/repo",
+        },
+        fetch: createFetch({ archive }),
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
   });
 
   it("rejects absolute archive entry paths", async () => {
