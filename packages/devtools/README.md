@@ -307,12 +307,9 @@ repository, replace `npx @invokta/devtools` with the locally built binary:
 node packages/devtools/dist/cli.js serve examples/hello-engine/dist/engine.js
 ```
 
-The built-engine contract is specified in the
-[engine devtools dev server specification](../../docs/specs/engine-devtools-dev-server.md)
-and chartered by [ADR 0021](../../docs/adr/0021-engine-devtools-dev-server.md).
-Installed-target inspection is specified in the
-[MCP installation inspection and homologation specification](../../docs/specs/mcp-installation-inspection-and-homologation.md)
-and chartered by
+The built-engine contract is chartered by
+[ADR 0021](../../docs/adr/0021-engine-devtools-dev-server.md).
+Installed-target inspection is chartered by
 [ADR 0022](../../docs/adr/0022-mcp-installation-inspection-and-homologation.md),
 with interactive OAuth accepted by
 [ADR 0023](../../docs/adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md).

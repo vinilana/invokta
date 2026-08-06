@@ -7,7 +7,9 @@
   accepted in ADR 0016; engine-scoped MCP uninstall accepted in ADR 0017;
   interactive engine creator profiles and the public deploy scaffold planner
   accepted in ADR 0018; GitHub example import for `create-invokta-engine`
-  accepted in ADR 0020
+  accepted in ADR 0020; the `@invokta/devtools` dev server and doctor accepted
+  in ADR 0021; MCP installation inspection and homologation accepted in
+  ADR 0022; ephemeral OAuth for installed MCP inspection accepted in ADR 0023
 
 ## Reuse evidence
 
@@ -29,15 +31,15 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 2,268 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 2,621 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  85.38% statements, 79.30% branches, 87.73% functions, and 87.08% lines.
+  80.90% statements, 76.22% branches, 83.91% functions, and 82.33% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
 - `yarn validate` in `apps/docs` passes route and link tests, Astro diagnostics,
   and the production site build.
-- `yarn audit` reports zero vulnerabilities across 253 audited packages.
+- `yarn audit` reports zero vulnerabilities across 271 audited packages.
 
 ## Boundaries exercised
 

@@ -1,6 +1,6 @@
 {
   "name": "@invokta/devtools",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local MCP workbench, installation verifier, and engine diagnostics for Invokta.",
   "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",
@@ -41,7 +41,7 @@
     "test:run": "yarn --cwd ../.. test:run packages/devtools"
   },
   "dependencies": {
-    "@invokta/core": "0.3.0",
-    "@invokta/mcp": "0.3.0"
+    "@invokta/core": "0.4.0",
+    "@invokta/mcp": "0.4.0"
   }
 }
