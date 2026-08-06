@@ -17,6 +17,12 @@ export interface SupabaseIdentity {
   readonly email: string | null;
   /** The `session_id` claim: the Supabase Auth session this token belongs to. */
   readonly sessionId: string | null;
+  /**
+   * The `is_anonymous` claim. Supabase anonymous sign-ins produce tokens with
+   * `aud: "authenticated"` and `role: "authenticated"`, so this claim is the
+   * only way an access rule can tell an anonymous session apart.
+   */
+  readonly isAnonymous: boolean | null;
 }
 
 function readString(value: unknown): string | null {
@@ -41,6 +47,8 @@ export function toSupabaseIdentity(
     role: readString(claims.role),
     email: readString(claims.email),
     sessionId: readString(claims.session_id),
+    isAnonymous:
+      typeof claims.is_anonymous === "boolean" ? claims.is_anonymous : null,
   };
 }
 
@@ -55,6 +63,9 @@ export function toSupabasePrincipal(identity: SupabaseIdentity): Principal {
       ...(identity.role === null ? {} : { role: identity.role }),
       ...(identity.email === null ? {} : { email: identity.email }),
       ...(identity.sessionId === null ? {} : { sessionId: identity.sessionId }),
+      ...(identity.isAnonymous === null
+        ? {}
+        : { isAnonymous: identity.isAnonymous }),
     },
   };
 }

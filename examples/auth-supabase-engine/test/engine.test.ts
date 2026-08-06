@@ -6,8 +6,8 @@ import { createSupabaseVerifier } from "../src/identity/verifier.js";
 import {
   createTokenFactory,
   issuer,
-  sessionId,
   type SupabaseTokenFactory,
+  sessionId,
   subject,
 } from "./tokens.js";
 
@@ -37,6 +37,7 @@ describe("identity.whoami", () => {
         role: "authenticated",
         email: "ada@example.com",
         sessionId,
+        isAnonymous: false,
       },
     });
   });

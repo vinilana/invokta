@@ -16,8 +16,8 @@ import {
 import {
   createTokenFactory,
   issuer,
-  sessionId,
   type SupabaseTokenFactory,
+  sessionId,
   subject,
 } from "./tokens.js";
 
@@ -131,6 +131,7 @@ describe("Supabase MCP HTTP boundary", () => {
             role: "authenticated",
             email: "ada@example.com",
             sessionId,
+            isAnonymous: false,
           },
         },
       });
@@ -184,7 +185,19 @@ describe("createSupabaseAuthenticate", () => {
         role: "authenticated",
         email: "ada@example.com",
         sessionId,
+        isAnonymous: false,
       },
     });
+  });
+
+  it("accepts the authentication scheme case-insensitively", async () => {
+    // RFC 9110 makes the scheme token case-insensitive.
+    const authenticate = createSupabaseAuthenticate(
+      createSupabaseVerifier({ issuer, keys: tokens.keys }),
+    );
+
+    await expect(
+      authenticate(request(`bearer ${await tokens.sign()}`)),
+    ).resolves.toMatchObject({ id: subject });
   });
 });

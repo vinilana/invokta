@@ -67,7 +67,7 @@ SUPABASE_URL=https://<project-ref>.supabase.co \
 | Variable | Required | Meaning |
 | --- | --- | --- |
 | `SUPABASE_URL` | yes | Project URL, `https://<project-ref>.supabase.co`. The issuer and JWKS URL are derived from it. |
-| `SUPABASE_JWT_AUDIENCE` | no | Defaults to `authenticated`. Use `anon` only if the deployment intends to accept anonymous users. |
+| `SUPABASE_JWT_AUDIENCE` | no | Defaults to `authenticated`, which every user session carries — including anonymous sign-ins, whose tokens differ only by `is_anonymous: true` (mapped into `Principal.attributes.isAnonymous` for access rules). |
 | `PORT` | no | Defaults to `3000`. |
 
 Obtain an access token from any Supabase client session

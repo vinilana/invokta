@@ -1,19 +1,26 @@
-import { generateSecret, type JWTVerifyGetKey, SignJWT } from "jose";
+import {
+  createLocalJWKSet,
+  exportJWK,
+  generateKeyPair,
+  generateSecret,
+  type JWTVerifyGetKey,
+  SignJWT,
+} from "jose";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { toSupabasePrincipal } from "../src/identity/principal.js";
 import {
   createSupabaseVerifier,
+  SupabaseVerificationUnavailableError,
   supabaseIssuer,
   supabaseJwksUrl,
-  SupabaseVerificationUnavailableError,
 } from "../src/identity/verifier.js";
 import {
   createTokenFactory,
   issuer,
   projectUrl,
-  sessionId,
   type SupabaseTokenFactory,
+  sessionId,
   subject,
 } from "./tokens.js";
 
@@ -54,6 +61,7 @@ describe("Supabase access token verification", () => {
       role: "authenticated",
       email: "ada@example.com",
       sessionId,
+      isAnonymous: false,
     });
   });
 
@@ -61,6 +69,7 @@ describe("Supabase access token verification", () => {
     const token = await tokens.sign({
       email: undefined,
       session_id: undefined,
+      is_anonymous: undefined,
     });
 
     await expect(
@@ -70,7 +79,19 @@ describe("Supabase access token verification", () => {
       role: "authenticated",
       email: null,
       sessionId: null,
+      isAnonymous: null,
     });
+  });
+
+  it("verifies an anonymous sign-in session and exposes is_anonymous", async () => {
+    // Anonymous sign-ins carry aud "authenticated" and role "authenticated";
+    // the is_anonymous claim is the only distinguishing mark, so it must reach
+    // the identity for an access rule to act on.
+    const token = await tokens.sign({ is_anonymous: true });
+
+    await expect(
+      verifier().verify(token, { signal: signal() }),
+    ).resolves.toMatchObject({ subject, isAnonymous: true });
   });
 
   it.each([
@@ -110,6 +131,10 @@ describe("Supabase access token verification", () => {
       "a token with a blank subject",
       async () => tokens.sign({}, { subject: "   " }),
     ],
+    [
+      "a signed token without an expiry",
+      async () => tokens.sign({}, { expiresAt: null }),
+    ],
   ])("returns null for %s", async (_label, mint) => {
     await expect(
       verifier().verify(await mint(), { signal: signal() }),
@@ -130,6 +155,32 @@ describe("Supabase access token verification", () => {
     await expect(
       verifier().verify(legacy, { signal: signal() }),
     ).resolves.toBeNull();
+  });
+
+  it("rejects when the key set is ambiguous for the token", async () => {
+    // Two same-algorithm keys without kid headers: jose cannot pick a
+    // candidate, which is the project's key-publication problem, not proof
+    // against the credential — so it must surface as unavailable, not null.
+    const first = await generateKeyPair("ES256", { extractable: true });
+    const second = await generateKeyPair("ES256", { extractable: true });
+    const ambiguous = createLocalJWKSet({
+      keys: [
+        { ...(await exportJWK(first.publicKey)), alg: "ES256", use: "sig" },
+        { ...(await exportJWK(second.publicKey)), alg: "ES256", use: "sig" },
+      ],
+    });
+    const token = await new SignJWT({ role: "authenticated" })
+      .setProtectedHeader({ alg: "ES256" })
+      .setSubject(subject)
+      .setIssuer(issuer)
+      .setAudience("authenticated")
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(first.privateKey);
+
+    await expect(
+      verifier(ambiguous).verify(token, { signal: signal() }),
+    ).rejects.toBeInstanceOf(SupabaseVerificationUnavailableError);
   });
 
   it("rejects when key resolution fails for an infrastructure reason", async () => {
@@ -186,7 +237,13 @@ describe("Supabase access token verification", () => {
     const token = await tokens.sign();
     const identity = await verifier().verify(token, { signal: signal() });
     const principal = toSupabasePrincipal(
-      identity ?? { subject, role: null, email: null, sessionId: null },
+      identity ?? {
+        subject,
+        role: null,
+        email: null,
+        sessionId: null,
+        isAnonymous: null,
+      },
     );
 
     const serialized = JSON.stringify(principal);
@@ -200,6 +257,7 @@ describe("Supabase access token verification", () => {
       role: "authenticated",
       email: "ada@example.com",
       sessionId,
+      isAnonymous: false,
     });
   });
 });

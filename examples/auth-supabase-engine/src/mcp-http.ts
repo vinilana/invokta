@@ -15,7 +15,8 @@ import {
   type SupabaseAccessTokenVerifier,
 } from "./identity/verifier.js";
 
-const BEARER_PATTERN = /^Bearer (\S+)$/;
+// RFC 9110 makes the authentication scheme case-insensitive.
+const BEARER_PATTERN = /^Bearer (\S+)$/iu;
 
 /**
  * Reads the single bearer credential. The adapter has already rejected

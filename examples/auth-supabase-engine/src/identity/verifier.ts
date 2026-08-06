@@ -21,11 +21,15 @@ const DEFAULT_CLOCK_TOLERANCE_SECONDS = 5;
 /**
  * Verification failures jose reports for the credential itself. Every one of
  * them means "this token is not acceptable", never "the check could not run".
+ *
+ * `ERR_JWKS_MULTIPLE_MATCHING_KEYS` is deliberately absent: an ambiguous key
+ * set is the project's key-publication problem, not evidence against the
+ * credential, so it surfaces as an infrastructure failure (500) instead of
+ * silently rejecting legitimate tokens during a kid-less key rotation.
  */
 const INVALID_CREDENTIAL_CODES: ReadonlySet<string> = new Set([
   "ERR_JOSE_ALG_NOT_ALLOWED",
   "ERR_JOSE_NOT_SUPPORTED",
-  "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
   "ERR_JWKS_NO_MATCHING_KEY",
   "ERR_JWS_INVALID",
   "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
@@ -66,7 +70,12 @@ export interface SupabaseVerifierOptions {
    * offline.
    */
   readonly keys: JWTVerifyGetKey;
-  /** Supabase issues "authenticated" for users and "anon" for anonymous ones. */
+  /**
+   * Defaults to "authenticated", which every user session carries — including
+   * anonymous sign-ins, whose tokens differ only by `is_anonymous: true`. The
+   * legacy "anon" audience belongs to the anon API key, not to anonymous
+   * users, and that key's `iss` fails issuer validation here anyway.
+   */
   readonly audience?: string;
   /** Deadline for one verification, including key resolution. */
   readonly timeoutMs?: number;
@@ -163,6 +172,7 @@ export function createSupabaseVerifier(
             issuer,
             audience,
             algorithms: [...SUPABASE_ASYMMETRIC_ALGORITHMS],
+            requiredClaims: ["sub", "iss", "aud", "exp"],
             clockTolerance,
           }),
           signal,

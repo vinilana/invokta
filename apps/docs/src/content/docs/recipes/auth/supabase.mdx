@@ -63,6 +63,7 @@ which exposes one capability, `identity.whoami`, declared
                issuer: options.issuer,
                audience,
                algorithms: ["ES256", "RS256"],
+               requiredClaims: ["sub", "iss", "aud", "exp"],
                clockTolerance: 5,
              }),
              signal,
@@ -82,9 +83,24 @@ which exposes one capability, `identity.whoami`, declared
    `createRemoteJWKSet(new URL(supabaseJwksUrl(projectUrl)))`; the tests pass
    `createLocalJWKSet(...)`, so signature verification stays real and offline.
 
-   The audience is `authenticated` for a signed-in user. Supabase issues `anon`
-   for anonymous users, so the default audience keeps anonymous sessions out
-   unless a deployment opts in.
+   The audience is `authenticated` for every user session — including
+   anonymous sign-ins, whose tokens differ only by an `is_anonymous: true`
+   claim. The legacy `anon` audience belongs to the anon API key, not to
+   anonymous users, and that key's issuer fails validation here anyway.
+   `requiredClaims` pins the claims Supabase always mints, so a signed token
+   missing an expiry can never become a permanent credential.
+
+   <Aside type="caution" title="Audience validation does not exclude anonymous users">
+     A project with [anonymous sign-ins](https://supabase.com/docs/guides/auth/auth-anonymous)
+     enabled authenticates anonymous visitors here too. The verifier maps
+     `is_anonymous` into `Principal.attributes`, so a capability access rule
+     can exclude them:
+
+     ```ts
+     access: async ({ principal }) =>
+       principal !== null && principal.attributes?.isAnonymous !== true,
+     ```
+   </Aside>
 
 3. Separate an invalid credential from an unavailable check
 
@@ -92,7 +108,6 @@ which exposes one capability, `identity.whoami`, declared
    const INVALID_CREDENTIAL_CODES: ReadonlySet<string> = new Set([
      "ERR_JOSE_ALG_NOT_ALLOWED",
      "ERR_JOSE_NOT_SUPPORTED",
-     "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
      "ERR_JWKS_NO_MATCHING_KEY",
      "ERR_JWS_INVALID",
      "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
@@ -103,9 +118,12 @@ which exposes one capability, `identity.whoami`, declared
    ```
 
    Every code above describes the token. Anything else — DNS, TLS, a timeout,
-   an aborted request, a malformed JWKS — is an infrastructure failure and is
-   rethrown as a fixed-message error with no cause attached, so nothing from
-   the failed call can reach a log.
+   an aborted request, a malformed or ambiguous JWKS — is an infrastructure
+   failure and is rethrown as a fixed-message error with no cause attached, so
+   nothing from the failed call can reach a log. An ambiguous key set
+   (`ERR_JWKS_MULTIPLE_MATCHING_KEYS`) is deliberately not treated as an
+   invalid credential: it is the project's key-publication problem, and a 401
+   would silently reject legitimate tokens during a kid-less key rotation.
 
 4. Map only the claims an access rule may use
 
@@ -133,18 +151,21 @@ which exposes one capability, `identity.whoami`, declared
          ...(identity.sessionId === null
            ? {}
            : { sessionId: identity.sessionId }),
+         ...(identity.isAnonymous === null
+           ? {}
+           : { isAnonymous: identity.isAnonymous }),
        },
      };
    }
    ```
 
    `sub` is the Supabase user id. `role` is normally `authenticated`,
-   `session_id` identifies the Auth session, and `email` is present when the
-   user has one. A Supabase token also carries `aal`, `amr`, `phone`,
-   `app_metadata`, and `user_metadata`; copy one of them only when a capability
-   rule actually decides with it. A token with no usable `sub` returns `null`,
-   so a broken claim set fails closed instead of producing an anonymous
-   principal.
+   `session_id` identifies the Auth session, `email` is present when the user
+   has one, and `is_anonymous` marks an anonymous sign-in session. A Supabase
+   token also carries `aal`, `amr`, `phone`, `app_metadata`, and
+   `user_metadata`; copy one of them only when a capability rule actually
+   decides with it. A token with no usable `sub` returns `null`, so a broken
+   claim set fails closed instead of producing an unidentified principal.
 
 5. Wire the hook into `serveMcpHttp`
 
@@ -282,10 +303,10 @@ yarn workspace @invokta/example-auth-supabase test
 The tests need no Supabase account and make no network call: a locally
 generated ES256 key pair mints Supabase-shaped tokens and `createLocalJWKSet`
 stands in for the project JWKS. They assert a verified principal for a valid
-token, `null` for every invalid class — missing, malformed, expired, wrong
-issuer, `anon` audience, unknown key, forged signature, legacy HS256, no
-subject — a raised error for an unavailable check, and that no token material
-reaches the principal.
+token, `null` for every invalid class — missing, malformed, expired, missing
+expiry, wrong issuer, `anon` audience, unknown key, forged signature, legacy
+HS256, no subject — a raised error for an unavailable check or an ambiguous
+key set, and that no token material reaches the principal.
 
 Read the complete
 [`auth-supabase-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-supabase-engine)

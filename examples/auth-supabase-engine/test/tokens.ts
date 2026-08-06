@@ -24,7 +24,8 @@ export interface SupabaseTokenOptions {
   readonly issuer?: string;
   readonly audience?: string;
   readonly subject?: string | null;
-  readonly expiresAt?: string | number;
+  /** `null` mints a token without an `exp` claim. */
+  readonly expiresAt?: string | number | null;
   readonly keyId?: string;
   readonly signWith?: "project" | "attacker";
 }
@@ -63,8 +64,10 @@ export async function createTokenFactory(): Promise<SupabaseTokenFactory> {
         .setProtectedHeader({ alg: "ES256", kid: options.keyId ?? keyId })
         .setIssuer(options.issuer ?? issuer)
         .setAudience(options.audience ?? "authenticated")
-        .setIssuedAt()
-        .setExpirationTime(options.expiresAt ?? "1h");
+        .setIssuedAt();
+      if (options.expiresAt !== null) {
+        token.setExpirationTime(options.expiresAt ?? "1h");
+      }
       if (options.subject !== null) {
         token.setSubject(options.subject ?? subject);
       }
