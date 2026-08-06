@@ -5,8 +5,8 @@ description: Command reference for the engine dev server, web inspector, and doc
 
 `@invokta/devtools` is the development-time surface for one built engine: a
 read-only doctor and a local dev server with a web interface for browsing
-capabilities, invoking them, following a live trace, and switching development
-principals.
+capabilities, invoking them, following a live trace, and switching test
+identities backed by `Principal` values.
 
 The package adds no runtime contract, adapter, or transport. Every capability
 execution reaches the engine exclusively through the unmodified
@@ -75,14 +75,15 @@ loopback servers:
 The single ready line on standard output names the interface address.
 Terminate with `SIGINT` or `SIGTERM` for a clean shutdown.
 
-#### Development principals
+#### Test identities
 
-The dev server maintains in-memory development principals and mints an opaque
-bearer token for each one. The engine host resolves presented tokens through
-its authentication hook, so `access` rules run against real principals, and a
-request without a valid token receives the adapter's own `401` Bearer
-challenge. Tokens exist only in process memory and in the browser session
-that minted them; the insecure
+The interface calls this surface **Test identities** and uses **Act as** to
+select one for invocations. Each test identity maps to an in-memory development
+`Principal` and receives an opaque bearer token. The engine host resolves
+presented tokens through its authentication hook, so `access` rules run against
+real principals, and a request without a valid token receives the adapter's own
+`401` Bearer challenge. Tokens exist only in process memory and in the browser
+session that minted them; the insecure
 `dangerously-disabled-for-development` mode is never used.
 
 #### Trace

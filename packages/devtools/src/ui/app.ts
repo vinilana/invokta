@@ -26,7 +26,11 @@ const tabs: ReadonlyArray<{
   },
   { name: "trace", label: "Activity", render: renderTracePanel },
   { name: "doctor", label: "Diagnostics", render: renderDoctorPanel },
-  { name: "principals", label: "Principals", render: renderPrincipalsPanel },
+  {
+    name: "principals",
+    label: "Test identities",
+    render: renderPrincipalsPanel,
+  },
 ];
 
 function createBrandMark(): SVGSVGElement {
@@ -176,7 +180,7 @@ function boot(): void {
     ["Capabilities …"],
   );
   const principalContextLabel = el("span", {}, [
-    "Run as — · Checking session token…",
+    "Act as — · Checking session token…",
   ]);
   const principalContext = el(
     "button",
@@ -184,7 +188,7 @@ function boot(): void {
       type: "button",
       class: "meta-pill principal-context",
       "aria-label":
-        "Run as unavailable, checking session token; manage development principals",
+        "Act as unavailable, checking session token; manage test identities",
     },
     [principalContextLabel],
   );
@@ -195,10 +199,11 @@ function boot(): void {
   const updatePrincipalContext = (): void => {
     const active = getActivePrincipalStatus();
     if (active === null) {
-      principalContextLabel.textContent = "Run as — · No active principal";
+      principalContextLabel.textContent =
+        "Act as — · No test identity selected";
       principalContext.setAttribute(
         "aria-label",
-        "No active principal; manage development principals",
+        "No test identity selected; manage test identities",
       );
       return;
     }
@@ -206,10 +211,10 @@ function boot(): void {
     const accessibleTokenStatus = active.hasSessionToken
       ? "session token ready"
       : "no session token";
-    principalContextLabel.textContent = `Run as ${active.principalId} · ${tokenStatus}`;
+    principalContextLabel.textContent = `Act as ${active.principalId} · ${tokenStatus}`;
     principalContext.setAttribute(
       "aria-label",
-      `Run as ${active.principalId}, ${accessibleTokenStatus}; manage development principals`,
+      `Act as ${active.principalId}, ${accessibleTokenStatus}; manage test identities`,
     );
   };
   onPrincipalChange(updatePrincipalContext);
@@ -285,10 +290,10 @@ function boot(): void {
   void ensureActiveToken()
     .then(updatePrincipalContext)
     .catch(() => {
-      principalContextLabel.textContent = "Run as unavailable";
+      principalContextLabel.textContent = "Act as unavailable";
       principalContext.setAttribute(
         "aria-label",
-        "Principal status unavailable; manage development principals",
+        "Test identity status unavailable; manage test identities",
       );
       // Invocations surface the 401; the rest of the interface stays usable.
     });

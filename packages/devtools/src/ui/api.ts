@@ -56,7 +56,7 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ principal }),
     });
-    if (!response.ok) throw new Error("The principal could not be created.");
+    if (!response.ok) throw new Error("The test identity could not be added.");
     return (await response.json()) as IssuedPrincipal;
   },
   rotatePrincipal: async (key: string): Promise<IssuedPrincipal> => {
@@ -74,7 +74,8 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ key }),
     });
-    if (!response.ok) throw new Error("The principal could not be deleted.");
+    if (!response.ok)
+      throw new Error("The test identity could not be deleted.");
   },
 };
 

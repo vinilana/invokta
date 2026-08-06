@@ -597,6 +597,7 @@ describe("capability invocation", () => {
         "Authentication failed (HTTP 401)",
       ),
     );
+    expect(feedback.textContent).toContain("In Test identities");
     expect(panel.textContent).toContain("Result · HTTP 401");
 
     invoke.dispatchEvent(new Event("click"));

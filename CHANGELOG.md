@@ -28,7 +28,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `invokta-devtools serve` hosts the engine through the unmodified MCP HTTP
   adapter behind minted development bearer tokens while serving a loopback
   web interface with a capability browser, schema-seeded invocation editor,
-  raw MCP exchange view, live trace, and principal switcher. `--watch --build`
+  raw MCP exchange view, live trace, and test-identity switcher. `--watch --build`
   replaces the engine-host child process after each successful explicit
   build; modules are never reloaded in process. The contract is recorded in
   `docs/specs/engine-devtools-dev-server.md`.

@@ -167,7 +167,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
         rawResponse.textContent = `HTTP ${String(exchange.status)}\n${exchange.responseBody}`;
         if (exchange.status === 401) {
           feedback.textContent =
-            "Authentication failed (HTTP 401). In Principals, activate a principal with a session token, then try again.";
+            "Authentication failed (HTTP 401). In Test identities, select an identity with a session token, then try again.";
           showResult(
             "HTTP 401",
             exchange.responseBody || "The MCP endpoint returned no body.",

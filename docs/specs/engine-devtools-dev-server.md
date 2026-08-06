@@ -19,7 +19,8 @@ Invokta adds one supporting application, `@invokta/devtools`, exposing the
 The web interface lets an engine developer browse capabilities and their JSON
 Schemas, invoke a capability by editing schema-derived JSON, inspect the raw
 MCP request and response for each invocation, follow a live invocation trace,
-switch between development principals, and read the doctor report.
+switch between test identities backed by development principals, and read the
+doctor report.
 
 Capability execution happens exclusively through an unmodified `serveMcpHttp`
 instance, so every invocation traverses the single `engine.invoke` pipeline
@@ -50,8 +51,9 @@ Building an engine today has no interactive feedback loop:
   the existing MCP HTTP adapter.
 - Reuse the published `describe` JSON Schemas for presentation without adding a
   schema conversion contract.
-- Let the developer define and switch development principals through the HTTP
-  authentication hook, the boundary that already owns principal production.
+- Let the developer define and switch test identities backed by development
+  principals through the HTTP authentication hook, the boundary that already
+  owns principal production.
 - Provide a bounded, in-memory, session-scoped invocation trace.
 - Provide deterministic read-only doctor diagnostics with stable exit codes.
 - Optionally watch the project and restart the engine host after the project's
@@ -178,6 +180,11 @@ principal receives a random token minted with cryptographic randomness. The
 `null` for an unknown or absent token, producing the adapter's own 401 Bearer
 challenge. Tokens and principals never leave process memory and never appear
 in diagnostics.
+
+The interface labels this surface **Test identities**, uses **Act as** for the
+invocation selector and **Add identity** for creation, and retains **Principal
+ID** as the technical field label. These labels do not rename the `Principal`
+contract, `/api/principals` routes, or their wire representations.
 
 ### Devtools interface server
 

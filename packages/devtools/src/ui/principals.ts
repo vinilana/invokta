@@ -179,11 +179,11 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
     } catch {
       if (!active) return;
       clear(panelBody);
-      const heading = el("h2", { tabindex: "-1" }, ["Development principals"]);
+      const heading = el("h2", { tabindex: "-1" }, ["Test identities"]);
       panelBody.append(
         heading,
         el("p", { class: "feedback", role: "alert" }, [
-          "Couldn’t load principals. Check that the dev server is running.",
+          "Couldn’t load test identities. Check that the dev server is running.",
         ]),
       );
       if (pendingCompletion !== null) {
@@ -243,9 +243,9 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           "button",
           {
             type: "button",
-            "aria-label": `Make ${entry.principal.id} active for invocations`,
+            "aria-label": `Act as ${entry.principal.id} for invocations`,
           },
-          ["Make active"],
+          ["Act as"],
         );
         activate.addEventListener("click", () => {
           clearPanelStatus();
@@ -277,7 +277,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         {
           type: "button",
           class: "danger",
-          "aria-label": `Delete principal ${entry.principal.id}`,
+          "aria-label": `Delete test identity ${entry.principal.id}`,
           "aria-describedby": statusId,
         },
         ["Delete…"],
@@ -286,7 +286,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         "button",
         {
           type: "button",
-          "aria-label": `Cancel pending action for principal ${entry.principal.id}`,
+          "aria-label": `Cancel pending action for test identity ${entry.principal.id}`,
         },
         ["Cancel"],
       );
@@ -302,7 +302,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         remove.textContent = "Delete…";
         remove.setAttribute(
           "aria-label",
-          `Delete principal ${entry.principal.id}`,
+          `Delete test identity ${entry.principal.id}`,
         );
         cancelConfirmation.hidden = true;
       };
@@ -325,7 +325,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         remove.textContent = "Confirm delete";
         remove.setAttribute(
           "aria-label",
-          `Confirm deletion of principal ${entry.principal.id}`,
+          `Confirm deletion of test identity ${entry.principal.id}`,
         );
         setActionStatus(
           `Delete “${entry.principal.id}”? Its token will stop working immediately.`,
@@ -336,7 +336,9 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         resetConfirmation();
         setActionsDisabled(true);
         tokenAction.textContent = "Rotating…";
-        setActionStatus("Rotating the token and making this principal active…");
+        setActionStatus(
+          "Rotating the token and making this test identity active…",
+        );
         void api
           .rotatePrincipal(entry.key)
           .then((issued) => {
@@ -376,7 +378,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         resetConfirmation();
         setActionsDisabled(true);
         remove.textContent = "Deleting…";
-        setActionStatus(`Deleting principal “${entry.principal.id}”…`);
+        setActionStatus(`Deleting test identity “${entry.principal.id}”…`);
         void api
           .removePrincipal(entry.key)
           .then(() => {
@@ -395,7 +397,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
             setActionsDisabled(false);
             resetConfirmation();
             setActionStatus(
-              `Principal “${entry.principal.id}” could not be deleted. Try again.`,
+              `Test identity “${entry.principal.id}” could not be deleted. Try again.`,
               "error",
             );
           });
@@ -411,7 +413,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         {
           class: `principal-row${isActive ? " active" : ""}`,
           role: "group",
-          "aria-label": `Principal ${entry.principal.id}`,
+          "aria-label": `Test identity ${entry.principal.id}`,
           tabindex: "-1",
         },
         [
@@ -513,14 +515,14 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
     attributesInput.addEventListener("input", () => {
       clearFieldError(attributesInput);
     });
-    const create = el("button", { type: "button" }, ["Create principal"]);
+    const create = el("button", { type: "button" }, ["Add identity"]);
     create.addEventListener("click", () => {
       clearPanelStatus();
       resetCreateValidation();
       const id = idInput.value.trim();
       if (id === "") {
         idInput.setAttribute("aria-invalid", "true");
-        setCreateFeedback("Enter a principal ID.", "error");
+        setCreateFeedback("Enter a Principal ID.", "error");
         idInput.focus();
         return;
       }
@@ -548,9 +550,9 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         }
       }
       create.disabled = true;
-      create.textContent = "Creating…";
+      create.textContent = "Adding…";
       setCreateFeedback(
-        `Creating “${id}”, minting its token, and making it active…`,
+        `Adding “${id}”, minting its token, and making it active…`,
       );
       void api
         .createPrincipal({
@@ -562,7 +564,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           rememberPrincipal(issued);
           storeToken(issued.key, issued.token);
           pendingCompletion = {
-            message: `Created “${issued.principal.id}”, minted its session token, and made it active.`,
+            message: `Added “${issued.principal.id}”, minted its session token, and made it active.`,
             focus: { kind: "create-action" },
           };
           setActivePrincipal(issued.key);
@@ -571,19 +573,19 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         .catch(() => {
           if (!active) return;
           create.disabled = false;
-          create.textContent = "Create principal";
+          create.textContent = "Add identity";
           setCreateFeedback(
-            "The principal could not be created. Try again.",
+            "The test identity could not be added. Try again.",
             "error",
           );
         });
     });
 
-    const heading = el("h2", { tabindex: "-1" }, ["Development principals"]);
+    const heading = el("h2", { tabindex: "-1" }, ["Test identities"]);
     const createSection = el("details", { class: "principal-create" }, [
-      el("summary", {}, ["Create principal"]),
+      el("summary", {}, ["Add identity"]),
       el("p", { id: createHintId, class: "hint" }, [
-        "Creating a principal also mints its token and makes it active.",
+        "Adding a test identity also mints its token and makes it active.",
       ]),
       el("label", { for: idInputId }, ["Principal ID"]),
       idInput,
@@ -595,15 +597,15 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
     panelBody.append(
       heading,
       el("p", { id: tokenGuidanceId, class: "hint" }, [
-        "The active principal authenticates invocations. The development server ",
-        "keeps principals and tokens in memory; minted bearer tokens are also ",
+        "The selected test identity authenticates invocations as an Invokta Principal. ",
+        "The development server keeps test identities and tokens in memory; minted bearer tokens are also ",
         "kept in this browser session. Token values are not displayed here. ",
         "Rotating a token revokes the previous token immediately.",
       ]),
       ...(principals.length === 0
         ? [
             el("p", { class: "empty" }, [
-              "No principals yet. Create one to authenticate invocations.",
+              "No test identities yet. Add one to authenticate invocations.",
             ]),
           ]
         : []),
@@ -639,8 +641,8 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
   clear(container);
   container.append(panelBody, panelStatus);
   panelBody.append(
-    el("h2", {}, ["Development principals"]),
-    el("p", { class: "hint", role: "status" }, ["Loading principals…"]),
+    el("h2", {}, ["Test identities"]),
+    el("p", { class: "hint", role: "status" }, ["Loading test identities…"]),
   );
   void render();
   return () => {

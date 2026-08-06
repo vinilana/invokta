@@ -230,7 +230,7 @@ describe("principals panel", () => {
     expect(container.textContent).toContain("Active");
     expect(container.textContent).toContain("Inactive");
     expect(container.textContent).toContain("No session token");
-    expect(container.textContent).toContain("Make active");
+    expect(container.textContent).toContain("Act as");
     expect(container.textContent).toContain("Rotate token and use…");
     expect(container.textContent).toContain(
       "Rotating a token revokes the previous token immediately.",
@@ -238,7 +238,10 @@ describe("principals panel", () => {
     const row = walk(container).find(
       (node) => node.getAttribute?.("role") === "group",
     );
-    expect(row.getAttribute("aria-label")).toBe("Principal local-dev");
+    expect(row.getAttribute("aria-label")).toBe("Test identity local-dev");
+    expect(container.textContent).toContain("Test identities");
+    expect(container.textContent).toContain("Principal ID");
+    expect(container.textContent).not.toContain("Development principals");
     const status = walk(row).find(
       (node) => node.getAttribute?.("aria-live") === "polite",
     );
@@ -321,7 +324,7 @@ describe("principals panel", () => {
     const container = new FakeElement("main");
     renderPrincipalsPanel(container);
     await waitFor(() =>
-      expect(container.textContent).toContain("Create principal"),
+      expect(container.textContent).toContain("Add identity"),
     );
 
     const elements = walk(container);
@@ -333,7 +336,7 @@ describe("principals panel", () => {
     );
     const createButton = elements.find(
       (node) =>
-        node.tagName === "BUTTON" && node.textContent === "Create principal",
+        node.tagName === "BUTTON" && node.textContent === "Add identity",
     );
 
     createButton.dispatchEvent(new Event("click"));
@@ -366,17 +369,17 @@ describe("principals panel", () => {
     const { renderPrincipalsPanel } = await import("../src/ui/principals.js");
     const container = new FakeElement("main");
     renderPrincipalsPanel(container);
-    await waitFor(() => expect(container.textContent).toContain("Make active"));
+    await waitFor(() => expect(container.textContent).toContain("Act as"));
 
     const panelStatus = walk(container).find(
       (node) => node.getAttribute?.("id") === "principals-panel-status",
     );
     expect(panelStatus.getAttribute("role")).toBe("status");
     const reviewerRow = walk(container).find(
-      (node) => node.getAttribute?.("aria-label") === "Principal reviewer",
+      (node) => node.getAttribute?.("aria-label") === "Test identity reviewer",
     );
     const activate = walk(reviewerRow).find(
-      (node) => node.tagName === "BUTTON" && node.textContent === "Make active",
+      (node) => node.tagName === "BUTTON" && node.textContent === "Act as",
     );
     activate.dispatchEvent(new Event("click"));
 
@@ -387,7 +390,7 @@ describe("principals panel", () => {
     );
     expect(walk(container)).toContain(panelStatus);
     const refreshedReviewerRow = walk(container).find(
-      (node) => node.getAttribute?.("aria-label") === "Principal reviewer",
+      (node) => node.getAttribute?.("aria-label") === "Test identity reviewer",
     );
     expect(refreshedReviewerRow.getAttribute("tabindex")).toBe("-1");
     expect(refreshedReviewerRow.focused).toBe(true);
@@ -486,7 +489,7 @@ describe("principals panel", () => {
     const container = new FakeElement("main");
     renderPrincipalsPanel(container);
     await waitFor(() =>
-      expect(container.textContent).toContain("Create principal"),
+      expect(container.textContent).toContain("Add identity"),
     );
     const panelStatus = walk(container).find(
       (node) => node.getAttribute?.("id") === "principals-panel-status",
@@ -497,24 +500,24 @@ describe("principals panel", () => {
     idInput.value = "reviewer";
     const create = walk(container).find(
       (node) =>
-        node.tagName === "BUTTON" && node.textContent === "Create principal",
+        node.tagName === "BUTTON" && node.textContent === "Add identity",
     );
     create.dispatchEvent(new Event("click"));
 
     await waitFor(() =>
       expect(panelStatus.textContent).toBe(
-        "Created “reviewer”, minted its session token, and made it active.",
+        "Added “reviewer”, minted its session token, and made it active.",
       ),
     );
     const refreshedCreate = walk(container).find(
       (node) =>
-        node.tagName === "BUTTON" && node.textContent === "Create principal",
+        node.tagName === "BUTTON" && node.textContent === "Add identity",
     );
     expect(refreshedCreate.parentNode.getAttribute("open")).toBe("");
     expect(refreshedCreate.focused).toBe(true);
 
     const reviewerRow = walk(container).find(
-      (node) => node.getAttribute?.("aria-label") === "Principal reviewer",
+      (node) => node.getAttribute?.("aria-label") === "Test identity reviewer",
     );
     const deleteReviewer = walk(reviewerRow).find(
       (node) => node.tagName === "BUTTON" && node.textContent === "Delete…",
@@ -528,7 +531,7 @@ describe("principals panel", () => {
       ),
     );
     const localRow = walk(container).find(
-      (node) => node.getAttribute?.("aria-label") === "Principal local-dev",
+      (node) => node.getAttribute?.("aria-label") === "Test identity local-dev",
     );
     expect(localRow.focused).toBe(true);
 
@@ -543,8 +546,7 @@ describe("principals panel", () => {
       ),
     );
     const heading = walk(container).find(
-      (node) =>
-        node.tagName === "H2" && node.textContent === "Development principals",
+      (node) => node.tagName === "H2" && node.textContent === "Test identities",
     );
     expect(heading.getAttribute("tabindex")).toBe("-1");
     expect(heading.focused).toBe(true);

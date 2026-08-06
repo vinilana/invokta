@@ -604,7 +604,7 @@ The attached navigation contains exactly these primary views:
 - **Connection:** sanitized server identity, transport kind, validation result,
   catalog counts, and Disconnect.
 
-It does not show Capabilities, Principals, Doctor, workspace watch, engine
+It does not show Capabilities, Test identities, Doctor, workspace watch, engine
 events, or an engine trace. Copy uses MCP `tool` and `server` terminology and
 never implies that an attached server is an Invokta engine.
 

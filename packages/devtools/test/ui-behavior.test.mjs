@@ -360,7 +360,7 @@ describe("application tabs", () => {
       "var(--ink-fg)",
     ]);
     await waitFor(() =>
-      expect(shell.textContent).toContain("Run as local-dev"),
+      expect(shell.textContent).toContain("Act as local-dev"),
     );
     expect(shell.textContent).toContain("Connected locally");
     expect(shell.textContent).toContain("No token");
@@ -370,7 +370,7 @@ describe("application tabs", () => {
         node.classList.contains("principal-context"),
     );
     expect(principalContext.getAttribute("aria-label")).toBe(
-      "Run as local-dev, no session token; manage development principals",
+      "Act as local-dev, no session token; manage test identities",
     );
     const principalContextLabel = walk(principalContext).find(
       (node) => node instanceof FakeElement && node.tagName === "SPAN",
@@ -387,11 +387,11 @@ describe("application tabs", () => {
     const diagnostics = buttons.find(
       (button) => button.textContent === "Diagnostics",
     );
-    const principals = buttons.find(
-      (button) => button.textContent === "Principals",
+    const testIdentities = buttons.find(
+      (button) => button.textContent === "Test identities",
     );
     expect(diagnostics).toBeDefined();
-    expect(principals).toBeDefined();
+    expect(testIdentities).toBeDefined();
     const darkTheme = buttons.find(
       (button) => button.getAttribute("aria-label") === "Dark",
     );
@@ -496,10 +496,10 @@ describe("application tabs", () => {
 
     capabilities.dispatchEvent(new Event("click"));
     await waitFor(() => expect(principalCalls).toBe(1));
-    principals.dispatchEvent(new Event("click"));
+    testIdentities.dispatchEvent(new Event("click"));
     await waitFor(() => expect(principalCalls).toBe(2));
     capabilities.dispatchEvent(new Event("click"));
-    principals.dispatchEvent(new Event("click"));
+    testIdentities.dispatchEvent(new Event("click"));
     await waitFor(() => expect(principalCalls).toBe(3));
 
     capabilities.dispatchEvent(new Event("click"));
@@ -595,7 +595,7 @@ describe("browser API failures", () => {
     const { api } = await import("../src/ui/api.js");
 
     await expect(api.removePrincipal("missing")).rejects.toThrow(
-      "The principal could not be deleted.",
+      "The test identity could not be deleted.",
     );
   });
 });

@@ -168,7 +168,7 @@ Invokta supplies the shared runtime mechanics and delivery adapters:
 - `@invokta/devtools` provides a workspace-independent MCP workbench for stdio
   and Streamable HTTP targets, including ephemeral interactive OAuth, plus a
   built-engine inspector with invocation playground, live trace, doctor
-  diagnostics, principal switching, and watch by process replacement;
+  diagnostics, test-identity switching, and watch by process replacement;
 - `@invokta/installer` detects supported local MCP clients, installs local or
   remote Action Engines across selected clients, and manages those entries;
 - `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes

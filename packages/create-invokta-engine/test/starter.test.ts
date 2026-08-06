@@ -543,6 +543,8 @@ describe("createStarterFiles", () => {
       expect(contents).toContain(check);
       expect(contents).toContain(devtools);
       expect(contents).toContain(doctor);
+      expect(contents).toContain("switch test identities");
+      expect(contents).not.toContain("development principals");
       expect(contents).not.toContain(`\`${legacyDev}\``);
       expect(contents).toContain(install);
       expect(contents).toContain(uninstall);

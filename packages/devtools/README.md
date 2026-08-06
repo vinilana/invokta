@@ -116,8 +116,9 @@ protocol failed, and `2` means the command or target descriptor is invalid.
 ## Existing built-engine serve mode
 
 The existing workspace-aware mode remains available for a built Invokta engine.
-Unlike attached inspection, it can show Doctor, development principals,
-Invokta invocation trace, and watch behavior because it owns the engine host.
+Unlike attached inspection, it can show Doctor, test identities backed by
+development `Principal` values, Invokta invocation trace, and watch behavior
+because it owns the engine host.
 
 ```sh
 node packages/devtools/dist/cli.js doctor \
