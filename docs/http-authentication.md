@@ -45,7 +45,8 @@ function readBearerToken(headers: McpHttpHeaderView): string | null {
   const authorization = headers.get("authorization");
   if (authorization === null) return null;
 
-  const match = /^Bearer ([^\s]+)$/.exec(authorization);
+  // RFC 9110 makes the authentication scheme case-insensitive.
+  const match = /^Bearer ([^\s]+)$/iu.exec(authorization);
   return match?.[1] ?? null;
 }
 
