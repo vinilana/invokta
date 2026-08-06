@@ -118,11 +118,12 @@ create-invokta-engine my-engine \
 
 Official short names resolve to `vinilana/invokta` `examples/<name>` on `main`.
 HTTPS `github.com` repository and tree URLs are accepted. `--example-path`
-supplies or overrides the subdirectory. The creator verifies `package.json`,
-downloads from `codeload.github.com` after confirmation, copies only the
-selected subtree, and rewrites `package.json` `name` to the project directory
-name. Private repositories, SSH, tokens, and non-GitHub hosts are unsupported.
-Template dependency completeness belongs to the example author.
+selects the subdirectory and, for tree URLs, recovers slash-containing refs the
+same way `create-next-app` does. The creator verifies `package.json` is a
+regular file, downloads from `codeload.github.com` after confirmation, copies
+only the selected subtree, and rewrites `package.json` `name` to the project
+directory name. Private repositories, SSH, tokens, and non-GitHub hosts are
+unsupported. Template dependency completeness belongs to the example author.
 
 ## Prompt and target safety
 

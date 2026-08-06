@@ -1,4 +1,8 @@
-import { CreatorError, renderCreatorDiagnostic } from "./errors.js";
+import {
+  CreatorError,
+  renderCreatorDiagnostic,
+  sanitizeDiagnosticDetail,
+} from "./errors.js";
 import {
   createExampleProject,
   type ExampleFetch,
@@ -252,7 +256,7 @@ function renderSuccess(
   noInstall: boolean,
 ): string {
   const commands = packageManagerCommands[packageManager];
-  const firstLine = `Created ${projectName} ${sourceLabel}.`;
+  const firstLine = `Created ${sanitizeDiagnosticDetail(projectName)} ${sanitizeDiagnosticDetail(sourceLabel)}.`;
   if (noInstall) {
     return (
       `${firstLine}\n\n` +

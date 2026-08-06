@@ -32,6 +32,7 @@ export const exampleLimits = Object.freeze({
   /** Compressed download bytes from codeload.github.com. */
   maxCompressedArchiveBytes: 52_428_800,
   maxExtractedFiles: 10_000,
+  maxExtractedDirectories: 10_000,
   maxFileBytes: 5_242_880,
 });
 
@@ -39,6 +40,7 @@ export type ExampleRuntimeLimits = Readonly<{
   maxArchiveBytes: number;
   maxCompressedArchiveBytes: number;
   maxExtractedFiles: number;
+  maxExtractedDirectories: number;
   maxFileBytes: number;
   fetchTimeoutMs: number;
 }>;
@@ -107,10 +109,13 @@ function failedExample(details: readonly string[] = []): never {
   throw new CreatorError("EXAMPLE_FAILED", details);
 }
 
+const unsafePathCharacterPattern = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+
 function normalizeExamplePath(path: string): string {
   if (
     path === "" ||
     path.includes("\u0000") ||
+    unsafePathCharacterPattern.test(path) ||
     countScalars(path) > exampleLimits.maxExamplePathScalars
   ) {
     return invalidExample();
@@ -157,7 +162,8 @@ function decodeGithubSegment(segment: string): string | undefined {
     decoded.includes("/") ||
     decoded.includes("\\") ||
     decoded.includes("\u0000") ||
-    decoded.includes("%")
+    decoded.includes("%") ||
+    unsafePathCharacterPattern.test(decoded)
   ) {
     return undefined;
   }
@@ -229,23 +235,41 @@ function parseGithubUrl(
   }
 
   if (treeToken !== "tree" || rest.length === 0) return undefined;
-  const [rawBranch, ...pathSegments] = rest;
-  if (rawBranch === undefined) return undefined;
-  const branch = decodeGithubSegment(rawBranch);
-  if (branch === undefined || !isValidGithubBranch(branch)) return undefined;
-  const urlPath = pathSegments
-    .map((segment) => decodeGithubSegment(segment))
-    .every((segment) => segment !== undefined)
-    ? pathSegments
-        .map((segment) => decodeGithubSegment(segment) as string)
-        .join("/")
-    : undefined;
-  if (urlPath === undefined && pathSegments.length > 0) return undefined;
-  const filePath =
-    overridePath ??
-    (urlPath === undefined || urlPath === ""
-      ? ""
-      : normalizeExamplePath(urlPath));
+  const decodedRest: string[] = [];
+  for (const segment of rest) {
+    const decoded = decodeGithubSegment(segment);
+    if (decoded === undefined) return undefined;
+    decodedRest.push(decoded);
+  }
+  if (decodedRest.length === 0) return undefined;
+
+  let branch: string;
+  let filePath: string;
+  if (overridePath !== undefined) {
+    // create-next-app style: with --example-path, the tree remainder is
+    // branch[/path]; strip a trailing example-path to recover slash-containing refs.
+    const remainder = decodedRest.join("/");
+    if (remainder === overridePath) {
+      return undefined;
+    }
+    if (remainder.endsWith(`/${overridePath}`)) {
+      branch = remainder.slice(0, -(overridePath.length + 1));
+    } else {
+      branch = remainder;
+    }
+    filePath = overridePath;
+  } else {
+    // Without --example-path, the first segment is the ref; the rest is the path.
+    // Slash-containing refs require --example-path.
+    const [first, ...pathSegments] = decodedRest;
+    if (first === undefined) return undefined;
+    branch = first;
+    filePath =
+      pathSegments.length === 0
+        ? ""
+        : normalizeExamplePath(pathSegments.join("/"));
+  }
+  if (!isValidGithubBranch(branch)) return undefined;
   const shortLabel =
     owner === officialExampleSource.owner &&
     repository === officialExampleSource.repository
@@ -320,6 +344,9 @@ function resolveRuntimeLimits(
       exampleLimits.maxCompressedArchiveBytes,
     maxExtractedFiles:
       overrides?.maxExtractedFiles ?? exampleLimits.maxExtractedFiles,
+    maxExtractedDirectories:
+      overrides?.maxExtractedDirectories ??
+      exampleLimits.maxExtractedDirectories,
     maxFileBytes: overrides?.maxFileBytes ?? exampleLimits.maxFileBytes,
     fetchTimeoutMs: overrides?.fetchTimeoutMs ?? exampleLimits.fetchTimeoutMs,
   });
@@ -650,9 +677,33 @@ function readEntrySize(entry: unknown): number {
   return typeof size === "number" && Number.isFinite(size) ? size : 0;
 }
 
+const regularFileEntryTypes = new Set([
+  "File",
+  "OldFile",
+  "ContiguousFile",
+  "0",
+  "",
+]);
+
 function entryIsRegularFile(entry: unknown): boolean {
   const type = readEntryType(entry);
-  return type === "File" || type === "0" || type === "" || type === undefined;
+  return type === undefined || regularFileEntryTypes.has(type);
+}
+
+function entryIsDirectory(entry: unknown): boolean {
+  const type = readEntryType(entry);
+  return type === "Directory" || type === "5";
+}
+
+function isUnsafeArchivePath(posixPath: string): boolean {
+  if (posixPath.includes("\u0000")) return true;
+  if (posixPath.startsWith("/") || posixPath.startsWith("\\")) return true;
+  if (posixPath.startsWith("//") || posixPath.startsWith("\\\\")) return true;
+  if (/^[A-Za-z]:(?:[/\\]|$)/u.test(posixPath)) return true;
+  const segments = posixPath.split(posix.sep);
+  // Absolute POSIX paths split to a leading empty segment.
+  if (segments[0] === "" && segments.length > 1) return true;
+  return segments.some((segment) => segment === "..");
 }
 
 async function extractRepository(
@@ -665,6 +716,7 @@ async function extractRepository(
   let rejected = false;
   let uncompressedBytes = 0;
   let fileCount = 0;
+  let directoryCount = 0;
   const prefix =
     info.filePath === ""
       ? []
@@ -686,11 +738,19 @@ async function extractRepository(
           return;
         }
         const posixPath = entry.path.split(sep).join(posix.sep);
+        if (isUnsafeArchivePath(posixPath)) {
+          markRejected();
+          entry.resume();
+          return;
+        }
+        const entryType = readEntryType(entry);
         if (
-          entry.type === "SymbolicLink" ||
-          entry.type === "Link" ||
-          posixPath.includes("\u0000") ||
-          posixPath.split(posix.sep).some((segment) => segment === "..")
+          !(
+            entryIsDirectory(entry) ||
+            entryIsRegularFile(entry) ||
+            // Root directory markers may arrive before classification settles.
+            entryType === undefined
+          )
         ) {
           markRejected();
           entry.resume();
@@ -703,15 +763,7 @@ async function extractRepository(
       filter(path, entry) {
         if (rejected) return false;
         const posixPath = path.split(sep).join(posix.sep);
-        if (
-          posixPath.includes("\u0000") ||
-          posixPath.split(posix.sep).some((segment) => segment === "..")
-        ) {
-          markRejected();
-          return false;
-        }
-        const entryType = readEntryType(entry);
-        if (entryType === "SymbolicLink" || entryType === "Link") {
+        if (isUnsafeArchivePath(posixPath)) {
           markRejected();
           return false;
         }
@@ -731,6 +783,18 @@ async function extractRepository(
               })();
         if (!inSubtree) return false;
 
+        if (entryIsDirectory(entry)) {
+          // The archive root directory is stripped; count retained dirs only.
+          if (posixPath !== rootPath) {
+            directoryCount += 1;
+            if (directoryCount > limits.maxExtractedDirectories) {
+              markRejected();
+              return false;
+            }
+          }
+          return true;
+        }
+
         if (entryIsRegularFile(entry)) {
           const size = readEntrySize(entry);
           if (size > limits.maxFileBytes) {
@@ -747,8 +811,12 @@ async function extractRepository(
             markRejected();
             return false;
           }
+          return true;
         }
-        return true;
+
+        // Symbolic links, hard links, devices, FIFOs, and unknown types.
+        markRejected();
+        return false;
       },
       strip: prefix.length === 0 ? 1 : prefix.length + 1,
     });
@@ -799,8 +867,10 @@ export async function createExampleProject(
     );
     await extractRepository(archivePath, extractDirectory, info, limits);
 
+    const packageJsonPath = join(extractDirectory, "package.json");
     try {
-      await stat(join(extractDirectory, "package.json"));
+      const packageStatus = await stat(packageJsonPath);
+      if (!packageStatus.isFile()) unavailableExample(["package.json"]);
     } catch {
       unavailableExample(["package.json"]);
     }

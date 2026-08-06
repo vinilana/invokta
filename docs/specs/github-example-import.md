@@ -96,8 +96,18 @@ scheme and the `github.com` host. `http:`, SSH, credentials in the URL, and
 other hosts are `EXAMPLE_INVALID`.
 
 `--example-path` MUST be a relative POSIX path without empty segments, `.`, or
-`..`, at most 1,024 Unicode scalars and 32 segments. When both a tree URL path
-and `--example-path` are present, `--example-path` wins.
+`..`, at most 1,024 Unicode scalars and 32 segments, and MUST NOT contain
+Unicode control, format, line-separator, or paragraph-separator characters.
+
+Tree URL ref grammar:
+
+- Without `--example-path`, the first path segment after `/tree/` is the ref
+  and any remaining segments are the example subdirectory. Slash-containing
+  refs are not expressible in this form.
+- With `--example-path`, the creator treats the full remainder after `/tree/`
+  as `branch[/…]` and, when that remainder ends with `/<example-path>`, strips
+  that suffix to recover the branch (create-next-app style). Otherwise the
+  entire remainder is the branch and `--example-path` is the subdirectory.
 
 ### Planning and mutation
 
@@ -113,9 +123,11 @@ and `--example-path` are present, `--example-path` wins.
    `https://codeload.github.com/<owner>/<repo>/tar.gz/<ref>`, extract only the
    selected subtree into a temporary directory, rewrite `package.json` `name`,
    and copy regular files into the target with exclusive creation.
-6. Archive symbolic links, hard links, absolute entry paths, and `..` segments
-   are rejected. A failure rolls back only target entries created by that
-   invocation and removes the temporary directory.
+6. Archive symbolic links, hard links, absolute entry paths, Windows drive/UNC
+   paths, `..` segments, and non-directory entry types other than regular files
+   (`File`, `OldFile`, `ContiguousFile`) are rejected. The staged `package.json`
+   MUST be a regular file. A failure rolls back only target entries created by
+   that invocation and removes the temporary directory.
 7. Unless `--no-install` is set, exactly one shell-free package-manager install
    runs after the copy completes.
 
@@ -135,6 +147,7 @@ download still require network access.
 | Uncompressed archive bytes retained | 52,428,800 (50 MiB) |
 | Compressed download bytes | 52,428,800 (50 MiB) |
 | Extracted regular files | 10,000 |
+| Extracted directories | 10,000 |
 | Single extracted file bytes | 5,242,880 (5 MiB) |
 
 ### Diagnostics
@@ -156,7 +169,9 @@ Created <project-name> from example <label>.
 ```
 
 followed by the existing next-step install or check guidance. The label is the
-short name, or `<owner>/<repo>` optionally suffixed with `/<path>`.
+short name, or `<owner>/<repo>` optionally suffixed with `/<path>`. Terminal
+control, format, line-separator, and paragraph-separator characters in the
+project name and label are escaped in this output.
 
 ## Acceptance criteria
 

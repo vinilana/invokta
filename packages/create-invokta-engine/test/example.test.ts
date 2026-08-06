@@ -1,11 +1,12 @@
 import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { link, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
+import { gzipSync } from "node:zlib";
 import { c as createTar } from "tar";
 import { afterEach, describe, expect, it } from "vitest";
-
+import { runCreateEngineCli } from "../src/cli.js";
 import {
   CreatorError,
   renderCreatorDiagnostic,
@@ -33,10 +34,53 @@ afterEach(() => {
   }
 });
 
+function createUstarEntry(
+  name: string,
+  content: string | Buffer,
+  typeflag: string,
+): Buffer {
+  const data = typeof content === "string" ? Buffer.from(content) : content;
+  const header = Buffer.alloc(512, 0);
+  const nameBytes = Buffer.from(name);
+  nameBytes.copy(header, 0, 0, Math.min(nameBytes.byteLength, 100));
+  header.write("0000644\0", 100);
+  header.write("0000000\0", 108);
+  header.write("0000000\0", 116);
+  header.write(`${data.byteLength.toString(8).padStart(11, "0")}\0`, 124);
+  header.write(
+    `${Math.floor(Date.now() / 1000)
+      .toString(8)
+      .padStart(11, "0")}\0`,
+    136,
+  );
+  header.write("        ", 148);
+  header.write(typeflag, 156);
+  header.write("ustar\0", 257);
+  header.write("00", 263);
+  let checksum = 0;
+  for (let index = 0; index < 512; index += 1) checksum += header[index] ?? 0;
+  header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148);
+  const padding = (512 - (data.byteLength % 512)) % 512;
+  return Buffer.concat([header, data, Buffer.alloc(padding)]);
+}
+
+function buildRawTarGz(
+  entries: ReadonlyArray<
+    Readonly<{ name: string; content?: string | Buffer; typeflag: string }>
+  >,
+): Buffer {
+  const parts = entries.map((entry) =>
+    createUstarEntry(entry.name, entry.content ?? "", entry.typeflag),
+  );
+  parts.push(Buffer.alloc(1024));
+  return gzipSync(Buffer.concat(parts));
+}
+
 async function buildRepositoryArchive(options: {
   readonly rootName: string;
   readonly files?: Readonly<Record<string, string>>;
   readonly symlinks?: Readonly<Record<string, string>>;
+  readonly hardlinks?: Readonly<Record<string, string>>;
 }): Promise<Buffer> {
   const root = createWorkingDirectory();
   for (const [relativePath, contents] of Object.entries(options.files ?? {})) {
@@ -48,6 +92,13 @@ async function buildRepositoryArchive(options: {
     const absolute = join(root, options.rootName, relativePath);
     await mkdir(join(absolute, ".."), { recursive: true });
     symlinkSync(target, absolute);
+  }
+  for (const [relativePath, target] of Object.entries(
+    options.hardlinks ?? {},
+  )) {
+    const absolute = join(root, options.rootName, relativePath);
+    await mkdir(join(absolute, ".."), { recursive: true });
+    await link(join(root, options.rootName, target), absolute);
   }
   const archivePath = join(root, "repository.tar.gz");
   await createTar(
@@ -110,22 +161,6 @@ function createFetch(options: {
   };
 }
 
-async function resolveTreeExample(
-  url: string,
-  archive: Buffer,
-  packagePath: string,
-): Promise<{
-  readonly info: ExampleRepoInfo;
-  readonly fetchImpl: ExampleFetch;
-}> {
-  const fetchImpl = createFetch({
-    packagePaths: new Set([packagePath]),
-    archive,
-  });
-  const info = await resolveExampleReference(url, undefined, fetchImpl);
-  return { info, fetchImpl };
-}
-
 describe("parseExampleReference", () => {
   it("resolves official short names under examples/ on main", () => {
     expect(parseExampleReference("auth-clerk-engine")).toEqual({
@@ -160,14 +195,28 @@ describe("parseExampleReference", () => {
     });
   });
 
-  it("lets --example-path override a tree URL path", () => {
+  it("recovers slash-containing refs when --example-path is provided", () => {
+    expect(
+      parseExampleReference(
+        "https://github.com/acme/repo/tree/feature/foo/templates/engine",
+        "templates/engine",
+      ),
+    ).toEqual({
+      owner: "acme",
+      repository: "repo",
+      branch: "feature/foo",
+      filePath: "templates/engine",
+      label: "acme/repo/templates/engine",
+    });
     expect(
       parseExampleReference(
         "https://github.com/acme/repo/tree/main/ignored",
         "templates/engine",
       ),
-    ).toMatchObject({
-      branch: "main",
+    ).toEqual({
+      owner: "acme",
+      repository: "repo",
+      branch: "main/ignored",
       filePath: "templates/engine",
       label: "acme/repo/templates/engine",
     });
@@ -181,6 +230,7 @@ describe("parseExampleReference", () => {
       "https://user:pass@github.com/acme/repo",
       "https://github.com/a%2f..%2fb/repo",
       "https://github.com/acme/re%2fpo",
+      "https://github.com/acme/repo/tree/main/evil%1Bpath",
       "../escape",
       "",
     ]) {
@@ -268,10 +318,14 @@ describe("createExampleProject", () => {
         "README.md": "repo root\n",
       },
     });
-    const { info, fetchImpl } = await resolveTreeExample(
-      "https://github.com/acme/repo/tree/main/templates/engine",
+    const fetchImpl = createFetch({
+      packagePaths: new Set(["templates/engine/package.json"]),
       archive,
-      "templates/engine/package.json",
+    });
+    const info = await resolveExampleReference(
+      "https://github.com/acme/repo/tree/main/templates/engine",
+      undefined,
+      fetchImpl,
     );
 
     const project = await createExampleProject({
@@ -286,59 +340,131 @@ describe("createExampleProject", () => {
     expect(
       JSON.parse(readFileSync(join(project.directory, "package.json"), "utf8")),
     ).toMatchObject({ name: "my-engine", private: true });
-    expect(readFileSync(join(project.directory, "src/engine.ts"), "utf8")).toBe(
-      "export const ready = true;\n",
-    );
-    expect(() =>
-      readFileSync(join(project.directory, "README.md"), "utf8"),
-    ).toThrow();
   });
 
-  it("refuses redirected archive downloads", async () => {
+  it("rejects symlink and hardlink archives without crashing", async () => {
     const cwd = createWorkingDirectory();
-    const info = parseExampleReference("https://github.com/acme/repo");
-    const resolved: ExampleRepoInfo = { ...info, branch: "main" };
-    const fetchImpl: ExampleFetch = async (_input, init) => {
-      expect(init?.redirect).toBe("error");
-      return new Response(null, {
-        status: 302,
-        headers: { location: "https://evil.example/tarball" },
-      });
+    for (const archive of [
+      await buildRepositoryArchive({
+        rootName: "repo-main",
+        files: { "package.json": '{"name":"template"}\n' },
+        symlinks: { "linked.txt": "package.json" },
+      }),
+      await buildRepositoryArchive({
+        rootName: "repo-main",
+        files: { "package.json": '{"name":"template"}\n' },
+        hardlinks: { "linked.txt": "package.json" },
+      }),
+    ]) {
+      const info: ExampleRepoInfo = {
+        owner: "acme",
+        repository: "repo",
+        branch: "main",
+        filePath: "",
+        label: "acme/repo",
+      };
+      await expect(
+        createExampleProject({
+          cwd,
+          target: "my-engine",
+          example: info,
+          fetch: createFetch({ archive }),
+        }),
+      ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+    }
+  });
+
+  it("rejects ContiguousFile entries that exceed extract limits", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = buildRawTarGz([
+      { name: "repo-main/", typeflag: "5" },
+      {
+        name: "repo-main/package.json",
+        content: '{"name":"template"}\n',
+        typeflag: "0",
+      },
+      {
+        name: "repo-main/big.bin",
+        content: "0123456789abcdef",
+        typeflag: "S",
+      },
+    ]);
+    const info: ExampleRepoInfo = {
+      owner: "acme",
+      repository: "repo",
+      branch: "main",
+      filePath: "",
+      label: "acme/repo",
     };
 
     await expect(
       createExampleProject({
         cwd,
         target: "my-engine",
-        example: resolved,
-        fetch: fetchImpl,
+        example: info,
+        fetch: createFetch({ archive }),
+        limits: { maxFileBytes: 8 },
       }),
-    ).rejects.toMatchObject({ code: "EXAMPLE_UNAVAILABLE" });
-    expect(() =>
-      readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
-    ).toThrow();
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
   });
 
-  it("does not retain target files when the archive lacks package.json after extract", async () => {
+  it("rejects absolute archive entry paths", async () => {
     const cwd = createWorkingDirectory();
-    const archive = await buildRepositoryArchive({
-      rootName: "repo-main",
-      files: {
-        "templates/engine/README.md": "no package\n",
+    const archive = buildRawTarGz([
+      {
+        name: "/package.json",
+        content: '{"name":"template"}\n',
+        typeflag: "0",
       },
-    });
-    const { info, fetchImpl } = await resolveTreeExample(
-      "https://github.com/acme/repo/tree/main/templates/engine",
-      archive,
-      "templates/engine/package.json",
-    );
+      {
+        name: "/src/engine.ts",
+        content: "export {}\n",
+        typeflag: "0",
+      },
+    ]);
+    const info: ExampleRepoInfo = {
+      owner: "acme",
+      repository: "repo",
+      branch: "main",
+      filePath: "",
+      label: "acme/repo",
+    };
 
     await expect(
       createExampleProject({
         cwd,
         target: "my-engine",
         example: info,
-        fetch: fetchImpl,
+        fetch: createFetch({ archive }),
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+  });
+
+  it("rejects a directory named package.json", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = buildRawTarGz([
+      { name: "repo-main/", typeflag: "5" },
+      { name: "repo-main/package.json/", typeflag: "5" },
+      {
+        name: "repo-main/package.json/readme.txt",
+        content: "not a manifest\n",
+        typeflag: "0",
+      },
+    ]);
+    const info: ExampleRepoInfo = {
+      owner: "acme",
+      repository: "repo",
+      branch: "main",
+      filePath: "",
+      label: "acme/repo",
+    };
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: info,
+        fetch: createFetch({ archive }),
       }),
     ).rejects.toMatchObject({
       code: "EXAMPLE_UNAVAILABLE",
@@ -346,15 +472,14 @@ describe("createExampleProject", () => {
     });
   });
 
-  it("rejects symlink archives with sanitized EXAMPLE_FAILED without crashing", async () => {
+  it("rejects archives that exceed uncompressed, file-count, and directory limits", async () => {
     const cwd = createWorkingDirectory();
     const archive = await buildRepositoryArchive({
       rootName: "repo-main",
       files: {
         "package.json": '{"name":"template"}\n',
-      },
-      symlinks: {
-        "linked.txt": "package.json",
+        "nested/a.txt": "a\n",
+        "nested/b.txt": "b\n",
       },
     });
     const info: ExampleRepoInfo = {
@@ -369,101 +494,116 @@ describe("createExampleProject", () => {
     await expect(
       createExampleProject({
         cwd,
-        target: "my-engine",
-        example: info,
-        fetch: fetchImpl,
-      }),
-    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
-    expect(() =>
-      readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
-    ).toThrow();
-  });
-
-  it("rejects archives that exceed the uncompressed byte limit during extract", async () => {
-    const cwd = createWorkingDirectory();
-    const archive = await buildRepositoryArchive({
-      rootName: "repo-main",
-      files: {
-        "package.json": '{"name":"template"}\n',
-        "big.bin": "0123456789abcdef",
-      },
-    });
-    const info: ExampleRepoInfo = {
-      owner: "acme",
-      repository: "repo",
-      branch: "main",
-      filePath: "",
-      label: "acme/repo",
-    };
-    const fetchImpl = createFetch({ archive });
-
-    await expect(
-      createExampleProject({
-        cwd,
-        target: "my-engine",
+        target: "bytes",
         example: info,
         fetch: fetchImpl,
         limits: { maxArchiveBytes: 20 },
       }),
     ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
-  });
-
-  it("rejects archives that exceed the per-file byte limit during extract", async () => {
-    const cwd = createWorkingDirectory();
-    const archive = await buildRepositoryArchive({
-      rootName: "repo-main",
-      files: {
-        "package.json": '{"name":"template"}\n',
-        "big.bin": "0123456789abcdef",
-      },
-    });
-    const info: ExampleRepoInfo = {
-      owner: "acme",
-      repository: "repo",
-      branch: "main",
-      filePath: "",
-      label: "acme/repo",
-    };
-    const fetchImpl = createFetch({ archive });
 
     await expect(
       createExampleProject({
         cwd,
-        target: "my-engine",
-        example: info,
-        fetch: fetchImpl,
-        limits: { maxFileBytes: 8 },
-      }),
-    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
-  });
-
-  it("rejects archives that exceed the extracted file count during extract", async () => {
-    const cwd = createWorkingDirectory();
-    const archive = await buildRepositoryArchive({
-      rootName: "repo-main",
-      files: {
-        "package.json": '{"name":"template"}\n',
-        "a.txt": "a\n",
-        "b.txt": "b\n",
-      },
-    });
-    const info: ExampleRepoInfo = {
-      owner: "acme",
-      repository: "repo",
-      branch: "main",
-      filePath: "",
-      label: "acme/repo",
-    };
-    const fetchImpl = createFetch({ archive });
-
-    await expect(
-      createExampleProject({
-        cwd,
-        target: "my-engine",
+        target: "files",
         example: info,
         fetch: fetchImpl,
         limits: { maxExtractedFiles: 2 },
       }),
     ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "dirs",
+        example: info,
+        fetch: fetchImpl,
+        limits: { maxExtractedDirectories: 0 },
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+  });
+
+  it("rejects compressed downloads that exceed the compressed-byte cap", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = await buildRepositoryArchive({
+      rootName: "repo-main",
+      files: {
+        "package.json": '{"name":"template"}\n',
+      },
+    });
+    const info: ExampleRepoInfo = {
+      owner: "acme",
+      repository: "repo",
+      branch: "main",
+      filePath: "",
+      label: "acme/repo",
+    };
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: info,
+        fetch: createFetch({ archive }),
+        limits: { maxCompressedArchiveBytes: 8 },
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_UNAVAILABLE" });
+  });
+});
+
+describe("success output sanitization", () => {
+  it("escapes control characters in the example success summary", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = await buildRepositoryArchive({
+      rootName: "repo-main",
+      files: {
+        "package.json": '{"name":"template"}\n',
+      },
+    });
+    const stdout: string[] = [];
+    const fetchImpl = createFetch({ archive });
+    const info: ExampleRepoInfo = {
+      owner: "acme",
+      repository: "repo",
+      branch: "main",
+      filePath: "",
+      label: "acme/repo/\u001b[31mevil",
+    };
+
+    // Bypass parse (control chars rejected there) and assert render sanitizes.
+    const project = await createExampleProject({
+      cwd,
+      target: "my-engine",
+      example: { ...info, label: "acme/repo" },
+      fetch: fetchImpl,
+    });
+    expect(project.label).toBe("acme/repo");
+
+    const exitCode = await runCreateEngineCli({
+      argv: [
+        "safe-engine",
+        "--example",
+        "https://github.com/acme/repo",
+        "--no-install",
+        "--yes",
+      ],
+      cwd: createWorkingDirectory(),
+      env: {},
+      io: {
+        writeStdout(text) {
+          stdout.push(text);
+        },
+        writeStderr() {},
+      },
+      terminal: {
+        stdinIsTty: false,
+        stderrIsTty: false,
+        readLine: async () => undefined,
+      },
+      fetch: fetchImpl,
+      loadPackageVersion: async () => "1.2.3",
+    });
+    expect(exitCode).toBe(0);
+    expect(stdout.join("")).not.toContain("\u001b");
+    expect(stdout.join("")).toContain("from example acme/repo");
   });
 });

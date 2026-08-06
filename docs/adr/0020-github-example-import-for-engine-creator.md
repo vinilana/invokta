@@ -48,10 +48,13 @@ Non-HTTPS, non-`github.com`, credentialed, and SSH references are rejected.
 Before confirmation or write, the creator resolves metadata and verifies that
 `package.json` exists at the example root. After confirmation it downloads the
 repository tarball from `codeload.github.com`, extracts only the selected
-subtree into a temporary directory, rewrites `package.json` `name` to the
-project directory name, and copies regular files into the empty target with
-exclusive creation and the existing rollback rule. Archive symbolic links,
-hard links, absolute paths, and parent-directory segments are rejected.
+subtree into a temporary directory, requires the staged `package.json` to be a
+regular file, rewrites its `name` to the project directory name, and copies
+regular files into the empty target with exclusive creation and the existing
+rollback rule. Archive symbolic links, hard links, absolute paths, Windows
+drive/UNC paths, parent-directory segments, and non-directory entry types other
+than regular files (`File`, `OldFile`, `ContiguousFile`) are rejected.
+Extracted directory and regular-file counts are bounded.
 
 Allowed creator-owned network hosts for example mode are `api.github.com` and
 `codeload.github.com` only. The creator sends no authentication headers and
