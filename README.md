@@ -225,6 +225,12 @@ yarn install --frozen-lockfile
 yarn run check
 ```
 
+The canonical check runs the code-quality, test, coverage, and build gates,
+then audits both independently locked dependency graphs—the framework root and
+`apps/docs`—against the configured registry. Use `yarn check:code` only when
+intentionally validating code offline; pull request and release acceptance
+requires the complete `yarn run check` command.
+
 Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
 
 - [`hello-engine`](./examples/hello-engine/) for the shortest complete path;

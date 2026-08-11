@@ -38,9 +38,6 @@ jobs:
       - name: Run full checks
         run: yarn run check
 
-      - name: Audit dependencies
-        run: yarn audit
-
       - name: Dry-run public packages
         run: |
           for package_directory in ./packages/core ./packages/cli ./packages/mcp ./packages/tooling ./packages/installer ./packages/deploy ./packages/devtools ./packages/create-invokta-engine ./packages/create-invokta-capability ./packages/create-invokta-capability-library; do

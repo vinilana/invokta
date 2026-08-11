@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- `yarn run check` now includes the dependency security audits used by CI for
+  both independently locked projects: the framework root and `apps/docs`. The
+  registry-independent code gate remains available as `yarn check:code`, while
+  both audits are exposed through `yarn check:security`.
 - MCP stdio and HTTP now publish deterministic portable tool aliases that match
   `^[a-zA-Z0-9_-]{1,64}$`, while direct and CLI invocation keep the original
   capability IDs. Tool calls resolve aliases back through the same
@@ -21,6 +25,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Pinned the transitive `nanoid` dependency to 3.3.17 so development and CI
   tooling no longer resolves the vulnerable zero-size custom-generator
   implementation reported through the Vitest dependency chain.
+- Pinned the documentation dependency graph to patched `js-yaml` 4.3.1 and
+  `nanoid` 3.3.17 releases.
 
 ## [0.4.0] - 2026-08-06
 

@@ -35,7 +35,9 @@
     "lint": "biome lint .",
     "format:check": "biome format .",
     "release:verify": "node scripts/verify-release-packages.mjs",
-    "check": "yarn typecheck && yarn lint && yarn format:check && yarn test:coverage && yarn build"
+    "check:code": "yarn typecheck && yarn lint && yarn format:check && yarn test:coverage && yarn build",
+    "check:security": "yarn audit && yarn --cwd apps/docs audit",
+    "check": "yarn check:code && yarn check:security"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.6",
