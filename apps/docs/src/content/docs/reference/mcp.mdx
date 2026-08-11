@@ -27,6 +27,7 @@ The package root exports:
 
 - `serveMcpStdio` and `ServeMcpStdioOptions`;
 - `toMcpToolName`;
+- `validateMcpToolCatalog` and `McpToolNameCollisionError`;
 - `serveMcpHttp` and `ServeMcpHttpOptions`;
 - `McpHttpAuthOptions`;
 - `McpHttpAuthenticationRequest` and `McpHttpHeaderView`;
@@ -62,6 +63,12 @@ before calling `engine.invoke`. If two capability IDs derive the same alias,
 the protocol server fails closed rather than publishing an ambiguous catalog.
 Hosts that need to display or submit the alias outside `tools/list` can derive
 the same value with `toMcpToolName(capabilityId)`.
+
+Build tooling can call `validateMcpToolCatalog(engine)` to construct this exact
+catalog without starting stdio or HTTP. A collision throws
+`McpToolNameCollisionError`, a `TypeError` with code
+`MCP_TOOL_NAME_COLLISION`, the derived `toolName`, and the two
+`capabilityIds`.
 
 A successful call returns the validated result as `structuredContent` plus a
 JSON text fallback. Invocation failures return `isError: true` with one safe JSON

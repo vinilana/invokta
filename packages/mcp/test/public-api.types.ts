@@ -18,14 +18,28 @@ import {
   type McpOAuthAuthorization,
   type McpOAuthAuthorizationOptions,
   type McpOAuthClientTarget,
+  McpToolNameCollisionError,
   type ServeMcpHttpOptions,
   type ServeMcpStdioOptions,
   serveMcpHttp,
   serveMcpStdio,
   toMcpToolName,
+  validateMcpToolCatalog,
 } from "../src/index.js";
 
 expectTypeOf(toMcpToolName("support.classify-ticket")).toEqualTypeOf<string>();
+
+declare const catalogEngine: Engine;
+expectTypeOf(validateMcpToolCatalog(catalogEngine)).toEqualTypeOf<void>();
+const collision = new McpToolNameCollisionError(
+  ["support.echo", "support_echo"],
+  "support_echo",
+);
+expectTypeOf(collision.code).toEqualTypeOf<"MCP_TOOL_NAME_COLLISION">();
+expectTypeOf(collision.capabilityIds).toEqualTypeOf<
+  readonly [string, string]
+>();
+expectTypeOf(collision.toolName).toEqualTypeOf<string>();
 
 const stdioTarget = {
   transport: "stdio",

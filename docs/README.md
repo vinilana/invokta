@@ -36,6 +36,8 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md)
 - Portable MCP tool names —
   [ADR 0025](./adr/0025-portable-mcp-tool-names.md)
+- Generated engine MCP conformance gate —
+  [ADR 0026](./adr/0026-generated-engine-mcp-conformance-gate.md)
 
 ## Guides and examples
 

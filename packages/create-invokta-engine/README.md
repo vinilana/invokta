@@ -93,6 +93,11 @@ CLI adds `src/cli.ts` and `@invokta/cli`. MCP local adds
 `src/mcp-http.ts`, `@invokta/mcp`, `@invokta/deploy`, and its HTTP/package/probe
 scripts. Dependencies are set unions and appear once.
 
+Every MCP profile also adds development-time `@invokta/tooling` and a
+`check:mcp` script. Its canonical `check` builds the engine and validates the
+final published MCP catalog, catching derived tool-name collisions before an
+adapter starts, installs, or deploys. CLI-only projects omit the MCP gate.
+
 HTTP scaffold bytes come from the pure public `@invokta/deploy/scaffold`
 planner. The creator merges the complete plan before writing and never runs the
 deploy CLI. The generated authentication hook fails closed until implemented,
