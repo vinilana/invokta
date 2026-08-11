@@ -33,6 +33,8 @@ const effectiveIds = [
   "reports.archive",
 ] as const;
 
+const effectiveToolNames = effectiveIds.map((id) => id.replaceAll(".", "_"));
+
 const remappedDefaultIds = [
   "support.classify-ticket",
   "reports.summarize",
@@ -295,13 +297,13 @@ function expectNoCompositionLeak(serialized: string): void {
 }
 
 describe("MCP adapter over remapped imported capabilities", () => {
-  it("advertises exactly the effective IDs as tool names", async () => {
+  it("advertises portable MCP names for exactly the effective IDs", async () => {
     const probe = createProbe();
     const { client } = await connect(createComposedEngine(probe));
 
     const listed = await client.listTools();
 
-    expect(listed.tools.map((tool) => tool.name)).toEqual([...effectiveIds]);
+    expect(listed.tools.map((tool) => tool.name)).toEqual(effectiveToolNames);
     expectNoCompositionLeak(JSON.stringify(listed.tools));
   });
 
@@ -367,10 +369,11 @@ describe("MCP adapter over remapped imported capabilities", () => {
       const expected = baseline.describe(effectiveId);
 
       const listed = await client.listTools();
-      const tool = listed.tools.find(({ name }) => name === effectiveId);
+      const toolName = effectiveId.replaceAll(".", "_");
+      const tool = listed.tools.find(({ name }) => name === toolName);
 
       expect(tool).toEqual({
-        name: effectiveId,
+        name: toolName,
         description: expected.description,
         inputSchema: expected.inputSchema,
         outputSchema: expected.outputSchema,
@@ -416,7 +419,7 @@ describe("MCP adapter over remapped imported capabilities", () => {
       const { client } = await connect(createComposedEngine(probe));
 
       const result = await client.callTool({
-        name: effectiveId,
+        name: effectiveId.replaceAll(".", "_"),
         arguments: toolArguments,
       });
 
@@ -470,11 +473,11 @@ describe("MCP adapter over remapped imported capabilities", () => {
     const engine = spyOnInvoke(createComposedEngine(probe), probe);
     const { client } = await connect(engine);
     const calls = [
-      { name: "operations.ping", arguments: {} },
-      { name: "operations.classify-ticket", arguments: { ticketId: "T-2" } },
-      { name: "health.check", arguments: {} },
-      { name: "operations.summarize-report", arguments: { reportId: "R-1" } },
-      { name: "reports.archive", arguments: { reportId: "R-1" } },
+      { name: "operations_ping", arguments: {} },
+      { name: "operations_classify-ticket", arguments: { ticketId: "T-2" } },
+      { name: "health_check", arguments: {} },
+      { name: "operations_summarize-report", arguments: { reportId: "R-1" } },
+      { name: "reports_archive", arguments: { reportId: "R-1" } },
     ];
 
     for (const call of calls) {
@@ -542,16 +545,16 @@ describe("MCP adapter over remapped imported capabilities", () => {
     ];
 
     await client.callTool({
-      name: "operations.classify-ticket",
+      name: "operations_classify-ticket",
       arguments: { ticketId: "T-3" },
     });
     await client.callTool({
-      name: "operations.summarize-report",
+      name: "operations_summarize-report",
       arguments: { reportId: "R-2" },
     });
-    await client.callTool({ name: "health.check", arguments: {} });
+    await client.callTool({ name: "health_check", arguments: {} });
     await client.callTool({
-      name: "reports.archive",
+      name: "reports_archive",
       arguments: { reportId: "R-2" },
     });
 

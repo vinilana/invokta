@@ -559,6 +559,7 @@ describe("application tabs", () => {
           return jsonResponse([
             {
               id: "support.classify",
+              mcpToolName: "support_classify",
               title: "Classify ticket",
               description: "Classifies a support ticket.",
               inputSchema: { type: "object" },

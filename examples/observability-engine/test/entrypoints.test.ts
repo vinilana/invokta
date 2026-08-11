@@ -23,6 +23,7 @@ import {
 
 const exampleRoot = fileURLToPath(new URL("..", import.meta.url));
 const capabilityId = "observability.collect-incident-context";
+const toolName = "observability_collect-incident-context";
 const input = {
   service: "checkout-api",
   from: "2026-07-28T12:00:00.000Z",
@@ -193,10 +194,10 @@ describe("observability engine entrypoints", () => {
     try {
       await client.connect(transport);
       await expect(client.listTools()).resolves.toMatchObject({
-        tools: [{ name: capabilityId }],
+        tools: [{ name: toolName }],
       });
       await expect(
-        client.callTool({ name: capabilityId, arguments: input }),
+        client.callTool({ name: toolName, arguments: input }),
       ).resolves.toMatchObject({ structuredContent: expectedContext() });
     } finally {
       await client.close();
@@ -246,7 +247,7 @@ describe("observability engine entrypoints", () => {
           jsonrpc: "2.0",
           id: "auth-boundary",
           method: "tools/call",
-          params: { name: capabilityId, arguments: input },
+          params: { name: toolName, arguments: input },
         }),
       });
       expect(unauthenticated.status).toBe(401);
@@ -261,7 +262,7 @@ describe("observability engine entrypoints", () => {
       );
       await client.connect(transport as unknown as Transport);
       await expect(
-        client.callTool({ name: capabilityId, arguments: input }),
+        client.callTool({ name: toolName, arguments: input }),
       ).resolves.toMatchObject({ structuredContent: expectedContext() });
     } finally {
       await client?.close().catch(() => undefined);

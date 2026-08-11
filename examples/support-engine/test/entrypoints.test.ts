@@ -10,6 +10,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 const exampleRoot = fileURLToPath(new URL("..", import.meta.url));
 const capabilityId = "support.classify-ticket";
+const toolName = "support_classify-ticket";
 
 beforeAll(() => {
   const build = spawnSync(
@@ -123,11 +124,11 @@ describe("support engine entrypoints", () => {
     try {
       await client.connect(transport);
       await expect(client.listTools()).resolves.toMatchObject({
-        tools: [{ name: capabilityId }],
+        tools: [{ name: toolName }],
       });
       await expect(
         client.callTool({
-          name: capabilityId,
+          name: toolName,
           arguments: { ticketId: "T-123" },
         }),
       ).resolves.toMatchObject({
@@ -179,7 +180,7 @@ describe("support engine entrypoints", () => {
         id: "auth-boundary",
         method: "tools/call",
         params: {
-          name: capabilityId,
+          name: toolName,
           arguments: { ticketId: "T-123" },
         },
       });
@@ -214,7 +215,7 @@ describe("support engine entrypoints", () => {
       await client.connect(transport as unknown as Transport);
       await expect(
         client.callTool({
-          name: capabilityId,
+          name: toolName,
           arguments: { ticketId: "T-123" },
         }),
       ).resolves.toMatchObject({
@@ -225,7 +226,7 @@ describe("support engine entrypoints", () => {
       });
 
       const forbidden = await client.callTool({
-        name: capabilityId,
+        name: toolName,
         arguments: {
           ticketId: "T-999",
           principal: {

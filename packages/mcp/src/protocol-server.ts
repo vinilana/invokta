@@ -16,6 +16,8 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { toMcpToolName } from "./tool-name.js";
+
 interface McpServerOptions {
   readonly principal: Principal | null;
   readonly source: Extract<ExecutionSource, "mcp-stdio" | "mcp-http">;
@@ -107,45 +109,84 @@ function errorResult(error: unknown) {
   };
 }
 
+interface McpToolDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: McpObjectSchema;
+  readonly outputSchema: McpObjectSchema;
+  readonly title?: string;
+  readonly annotations?: ReturnType<typeof mapAnnotations>;
+}
+
+export interface McpToolCatalog<Capabilities extends CapabilityMap> {
+  readonly tools: ReadonlyArray<McpToolDefinition>;
+  capabilityIdForToolName(
+    toolName: string,
+  ): Extract<keyof Capabilities, string> | undefined;
+}
+
+export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
+  engine: Engine<Capabilities>,
+): McpToolCatalog<Capabilities> {
+  type CapabilityId = Extract<keyof Capabilities, string>;
+  const capabilityIdByToolName = new Map<string, CapabilityId>();
+  const tools = engine.list().map((summary) => {
+    const capabilityId = summary.id as CapabilityId;
+    const toolName = toMcpToolName(capabilityId);
+    const existingCapabilityId = capabilityIdByToolName.get(toolName);
+    if (existingCapabilityId !== undefined) {
+      const [firstCapabilityId, secondCapabilityId] = [
+        existingCapabilityId,
+        capabilityId,
+      ].sort();
+      throw new TypeError(
+        `Capabilities ${JSON.stringify(firstCapabilityId)} and ${JSON.stringify(secondCapabilityId)} resolve to duplicate MCP tool name ${JSON.stringify(toolName)}.`,
+      );
+    }
+    capabilityIdByToolName.set(toolName, capabilityId);
+
+    const description = engine.describe(capabilityId);
+    const annotations = mapAnnotations(description.annotations);
+    return Object.freeze({
+      name: toolName,
+      description: description.description,
+      inputSchema: asObjectSchema(description.inputSchema),
+      outputSchema: asObjectSchema(description.outputSchema),
+      ...(description.title === undefined ? {} : { title: description.title }),
+      ...(annotations === undefined ? {} : { annotations }),
+    });
+  });
+  const frozenTools = Object.freeze(tools);
+
+  return Object.freeze({
+    tools: frozenTools,
+    capabilityIdForToolName: (toolName: string) =>
+      capabilityIdByToolName.get(toolName),
+  });
+}
+
 export function createMcpServer<Capabilities extends CapabilityMap>(
   engine: Engine<Capabilities>,
   options: McpServerOptions,
+  catalog: McpToolCatalog<Capabilities> = createMcpToolCatalog(engine),
 ): Server {
-  const capabilityIds = new Set(engine.list().map(({ id }) => id));
   const server = new Server(
     { name: engine.name, version: engine.version },
     { capabilities: { tools: {} } },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: engine.list().map((summary) => {
-      const capabilityId = summary.id as Extract<keyof Capabilities, string>;
-      const description = engine.describe(capabilityId);
-      const annotations = mapAnnotations(description.annotations);
-      return {
-        name: description.id,
-        description: description.description,
-        inputSchema: asObjectSchema(description.inputSchema),
-        outputSchema: asObjectSchema(description.outputSchema),
-        ...(description.title === undefined
-          ? {}
-          : { title: description.title }),
-        ...(annotations === undefined ? {} : { annotations }),
-      };
-    }),
+    tools: Array.from(catalog.tools),
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    if (!capabilityIds.has(request.params.name)) {
+    const capabilityId = catalog.capabilityIdForToolName(request.params.name);
+    if (capabilityId === undefined) {
       throw new McpError(
         ErrorCode.InvalidParams,
         `Tool ${request.params.name} not found`,
       );
     }
-    const capabilityId = request.params.name as Extract<
-      keyof Capabilities,
-      string
-    >;
     try {
       const result = await engine.invoke(
         capabilityId,

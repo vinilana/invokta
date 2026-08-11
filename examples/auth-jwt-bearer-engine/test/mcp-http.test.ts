@@ -124,7 +124,7 @@ describe("protected resource metadata", () => {
         jsonrpc: "2.0",
         id: "unauthenticated",
         method: "tools/call",
-        params: { name: "identity.whoami", arguments: {} },
+        params: { name: "identity_whoami", arguments: {} },
       }),
     });
     await response.arrayBuffer();
@@ -152,7 +152,7 @@ describe("authenticated MCP HTTP requests", () => {
     try {
       await client.connect(transport as unknown as Transport);
       await expect(
-        client.callTool({ name: "identity.whoami", arguments: {} }),
+        client.callTool({ name: "identity_whoami", arguments: {} }),
       ).resolves.toMatchObject({
         structuredContent: {
           principalId: "user-42",
@@ -185,7 +185,7 @@ describe("authenticated MCP HTTP requests", () => {
         jsonrpc: "2.0",
         id: "wrong-audience",
         method: "tools/call",
-        params: { name: "identity.whoami", arguments: {} },
+        params: { name: "identity_whoami", arguments: {} },
       }),
     });
     const body = await response.text();

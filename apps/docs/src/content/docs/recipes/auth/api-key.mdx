@@ -212,14 +212,15 @@ API_KEY_ENGINE_KEYS='[{"keyId":"svc_9f21c4a7","secretHash":"<hex sha256>","servi
   node examples/auth-api-key-engine/dist/mcp-http.js
 ```
 
-Call `identity.whoami` with the key whose secret hashes to that digest:
+Call the `identity.whoami` capability through MCP as `identity_whoami` with the
+key whose secret hashes to that digest:
 
 ```sh
 curl -sS http://127.0.0.1:3000/mcp \
   -H 'authorization: Bearer svc_9f21c4a7.<secret>' \
   -H 'accept: application/json, text/event-stream' \
   -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity_whoami","arguments":{}}}'
 ```
 
 The result reports `principalId: "reports-worker"` and the `keyId` that proved

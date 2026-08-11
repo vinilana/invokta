@@ -34,6 +34,7 @@ export {
   type ServeMcpHttpOptions,
   serveMcpHttp,
 } from "./http.js";
+export { toMcpToolName } from "./tool-name.js";
 
 import { createMcpServer } from "./protocol-server.js";
 import { preserveFalsyRequestIds } from "./request-id-transport.js";

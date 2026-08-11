@@ -7,6 +7,7 @@ export interface EngineInfo {
 
 export interface CapabilityInfo {
   readonly id: string;
+  readonly mcpToolName: string;
   readonly title?: string;
   readonly description: string;
   readonly annotations?: Readonly<Record<string, boolean>>;
@@ -158,7 +159,7 @@ export interface ToolCallRequest {
  * "Copy as curl" action) replay the same exchange byte for byte.
  */
 export function toolCallRequest(
-  capabilityId: string,
+  toolName: string,
   args: unknown,
   token: string | null,
 ): ToolCallRequest {
@@ -175,7 +176,7 @@ export function toolCallRequest(
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
-        params: { name: capabilityId, arguments: args },
+        params: { name: toolName, arguments: args },
       },
       null,
       2,
@@ -185,12 +186,12 @@ export function toolCallRequest(
 
 /** Sends one raw MCP `tools/call` through the same-origin proxy. */
 export async function callTool(
-  capabilityId: string,
+  toolName: string,
   args: unknown,
   token: string | null,
   signal?: AbortSignal,
 ): Promise<McpExchange> {
-  const request = toolCallRequest(capabilityId, args, token);
+  const request = toolCallRequest(toolName, args, token);
   const response = await fetch(request.path, {
     method: request.method,
     headers: request.headers,

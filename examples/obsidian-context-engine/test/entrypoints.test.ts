@@ -14,6 +14,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 const exampleRoot = fileURLToPath(new URL("..", import.meta.url));
 const listRootsId = "knowledge.list-context-roots";
 const openNodeId = "knowledge.open-context-node";
+const listRootsToolName = "knowledge_list-context-roots";
+const openNodeToolName = "knowledge_open-context-node";
 let vaultPath: string;
 
 beforeAll(async () => {
@@ -181,11 +183,11 @@ describe("Obsidian context engine entrypoints", () => {
     try {
       await client.connect(transport);
       await expect(client.listTools()).resolves.toMatchObject({
-        tools: [{ name: listRootsId }, { name: openNodeId }],
+        tools: [{ name: listRootsToolName }, { name: openNodeToolName }],
       });
       await expect(
         client.callTool({
-          name: openNodeId,
+          name: openNodeToolName,
           arguments: { id: "capability-contracts" },
         }),
       ).resolves.toMatchObject({
@@ -242,7 +244,7 @@ describe("Obsidian context engine entrypoints", () => {
           jsonrpc: "2.0",
           id: "auth-boundary",
           method: "tools/call",
-          params: { name: listRootsId, arguments: {} },
+          params: { name: listRootsToolName, arguments: {} },
         }),
       });
       expect(unauthenticated.status).toBe(401);
@@ -257,7 +259,7 @@ describe("Obsidian context engine entrypoints", () => {
       );
       await client.connect(transport as unknown as Transport);
       await expect(
-        client.callTool({ name: listRootsId, arguments: {} }),
+        client.callTool({ name: listRootsToolName, arguments: {} }),
       ).resolves.toMatchObject({
         structuredContent: {
           roots: [{ id: "architecture" }],

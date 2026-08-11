@@ -93,11 +93,11 @@ describe("Cursor agent routing engine entrypoints", () => {
     try {
       await client.connect(transport);
       await expect(client.listTools()).resolves.toMatchObject({
-        tools: [{ name: "developer-work.route-cursor-task" }],
+        tools: [{ name: "developer-work_route-cursor-task" }],
       });
 
       const result = await client.callTool({
-        name: "developer-work.route-cursor-task",
+        name: "developer-work_route-cursor-task",
         arguments: { useCase: "complex-development" },
       });
       expect(structuredContent(result)).toMatchObject({
@@ -155,7 +155,7 @@ describe("Cursor agent routing engine entrypoints", () => {
           id: "auth-boundary",
           method: "tools/call",
           params: {
-            name: "developer-work.route-cursor-task",
+            name: "developer-work_route-cursor-task",
             arguments: { useCase: "simple-development" },
           },
         }),
@@ -173,7 +173,7 @@ describe("Cursor agent routing engine entrypoints", () => {
       await client.connect(transport as unknown as Transport);
 
       const result = await client.callTool({
-        name: "developer-work.route-cursor-task",
+        name: "developer-work_route-cursor-task",
         arguments: { useCase: "simple-development" },
       });
       expect(structuredContent(result)).toMatchObject({
