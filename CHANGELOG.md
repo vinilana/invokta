@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- MCP stdio and HTTP now publish deterministic portable tool aliases that match
+  `^[a-zA-Z0-9_-]{1,64}$`, while direct and CLI invocation keep the original
+  capability IDs. Tool calls resolve aliases back through the same
+  `engine.invoke` path, and ambiguous aliases fail closed before the server
+  connects or listens. MCP clients that hard-code dotted tool names must refresh
+  `tools/list` and use the advertised alias.
+
 ## [0.4.0] - 2026-08-06
 
 ### Added
