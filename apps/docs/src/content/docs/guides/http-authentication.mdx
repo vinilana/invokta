@@ -137,8 +137,10 @@ ending in `/mcp`, the path is:
 
 The `resource` must be the exact `/mcp` URL over HTTPS. Loopback HTTP is allowed
 only for local development. It cannot contain credentials, a query, or a
-fragment. Authorization Server identifiers require HTTPS and may contain issuer
-paths, but no credentials, query, or fragment.
+fragment. Authorization Server identifiers require HTTPS except at the exact
+same loopback HTTP origin as a loopback development resource. They may contain
+issuer paths, but no credentials, query, or fragment. A different loopback port
+is rejected.
 
 The configured resource URL, not `Host` or a forwarded header, determines the
 metadata URL.

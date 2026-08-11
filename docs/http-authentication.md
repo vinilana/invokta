@@ -128,8 +128,10 @@ request, while metadata describes the minimal generally supported set. Omit
 
 The resource must identify the exact `/mcp` path over HTTPS, with loopback HTTP
 allowed only for local development. It cannot contain credentials, a query, or
-a fragment. Authorization Server identifiers must use HTTPS and cannot contain
-credentials, a query, or a fragment; issuer paths are allowed.
+a fragment. Authorization Server identifiers must use HTTPS, except for the
+same loopback HTTP origin as a loopback development resource. They cannot
+contain credentials, a query, or a fragment; issuer paths are allowed. A
+different loopback port is a different origin and is rejected.
 
 The metadata describes this Resource Server and identifies one or more external
 Authorization Servers. It does not turn the framework into an Authorization

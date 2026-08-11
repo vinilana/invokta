@@ -214,7 +214,7 @@ async function clientName(
 
 export function createInteractionHandler(options: {
   readonly provider: Provider;
-  readonly users: OAuthUserStore;
+  readonly users: Pick<OAuthUserStore, "authenticate">;
   readonly csrfKey: string;
 }) {
   return async (

@@ -269,7 +269,7 @@ function toMetadata(metadata: McpHttpProtectedResourceMetadata) {
   }
   validateResourceUrl(metadata.resource);
   for (const authorizationServer of metadata.authorizationServers) {
-    validateAuthorizationServerUrl(authorizationServer);
+    validateAuthorizationServerUrl(authorizationServer, metadata.resource);
   }
   const value = {
     resource: metadata.resource,
@@ -307,7 +307,7 @@ function validateResourceUrl(value: string): void {
   }
 }
 
-function validateAuthorizationServerUrl(value: string): void {
+function validateAuthorizationServerUrl(value: string, resource: string): void {
   let url: URL;
   try {
     url = new URL(value);
@@ -316,15 +316,21 @@ function validateAuthorizationServerUrl(value: string): void {
       "Protected resource metadata has an invalid authorization server URL.",
     );
   }
+  const resourceUrl = new URL(resource);
+  const loopbackDevelopment =
+    url.protocol === "http:" &&
+    isLoopback(url.hostname) &&
+    resourceUrl.protocol === "http:" &&
+    url.origin === resourceUrl.origin;
   if (
-    url.protocol !== "https:" ||
+    (url.protocol !== "https:" && !loopbackDevelopment) ||
     url.username !== "" ||
     url.password !== "" ||
     url.search !== "" ||
     url.hash !== ""
   ) {
     throw new TypeError(
-      "Authorization server URLs require HTTPS and cannot contain credentials, a query, or a fragment.",
+      "Authorization server URLs require HTTPS, except at the same loopback HTTP origin as the resource, and cannot contain credentials, a query, or a fragment.",
     );
   }
 }

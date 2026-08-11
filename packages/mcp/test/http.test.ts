@@ -1649,6 +1649,10 @@ describe("MCP stateless Streamable HTTP", () => {
         authorizationServers: ["http://auth.example.com"] as const,
       },
       {
+        resource: "http://127.0.0.1:3000/mcp",
+        authorizationServers: ["http://127.0.0.1:3001"] as const,
+      },
+      {
         resource: "https://engine.example.com/mcp",
         authorizationServers: ["https://user@auth.example.com"] as const,
       },
@@ -1689,6 +1693,24 @@ describe("MCP stateless Streamable HTTP", () => {
         resourceMetadata: {
           resource: "http://127.0.0.1:3000/mcp",
           authorizationServers: ["https://auth.example.com/tenant"],
+        },
+      },
+    });
+
+    expect(server.address()).toEqual({
+      host: "127.0.0.1",
+      port: expect.any(Number),
+    });
+  });
+
+  it("allows a same-origin loopback HTTP authorization server for development", async () => {
+    const server = await start(createContextEngine(), {
+      auth: {
+        mode: "required",
+        authenticate: () => null,
+        resourceMetadata: {
+          resource: "http://127.0.0.1:3000/mcp",
+          authorizationServers: ["http://127.0.0.1:3000/tenant"],
         },
       },
     });
