@@ -136,6 +136,11 @@ const httpOptions: ServeMcpHttpOptions = {
   maxRequestBodyBytes: 1024,
   auth: {
     mode: "required",
+    challengeScopes: ["engine:invoke"],
+    resourceMetadata: {
+      resource: "https://engine.example.com/mcp",
+      authorizationServers: ["https://identity.example.com"],
+    },
     authenticate(request) {
       expectTypeOf(request.headers.get).toEqualTypeOf<
         (name: string) => string | null

@@ -78,6 +78,7 @@ await serveMcpHttp(engine, {
       authorizationServers: ["https://identity.example.com"],
       scopesSupported: ["engine:invoke"],
     },
+    challengeScopes: ["engine:invoke"],
   },
 });
 ```
@@ -116,6 +117,14 @@ to the Bearer challenge returned by a 401. The URL is derived from the configure
 `resource`, never from `Host`, `X-Forwarded-Host`, or another request header.
 For a resource ending in `/mcp`, the discovery path is
 `/.well-known/oauth-protected-resource/mcp`.
+
+Set `challengeScopes` when the Resource Server knows the scopes required for
+its base MCP request. The adapter validates and snapshots each RFC 6749 scope
+token before listening and serializes the ordered set in the 401 Bearer
+challenge. Challenge scopes require `resourceMetadata`. They are intentionally
+separate from `scopesSupported`: the challenge is authoritative for the current
+request, while metadata describes the minimal generally supported set. Omit
+`challengeScopes` when the authentication policy cannot name a stable base set.
 
 The resource must identify the exact `/mcp` path over HTTPS, with loopback HTTP
 allowed only for local development. It cannot contain credentials, a query, or

@@ -13,6 +13,7 @@ import { preserveFalsyRequestIds } from "./request-id-transport.js";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
 const DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+const MAX_CHALLENGE_SCOPE_BYTES = 4096;
 const MCP_PATH = "/mcp";
 
 export interface McpHttpHeaderView {
@@ -38,6 +39,7 @@ interface RequiredMcpHttpAuth {
   readonly authenticate: (
     request: McpHttpAuthenticationRequest,
   ) => Principal | null | Promise<Principal | null>;
+  readonly challengeScopes?: ReadonlyArray<string>;
   readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
 }
 
@@ -77,6 +79,7 @@ interface HttpResponse {
 interface RequiredMcpHttpAuthSnapshot {
   readonly mode: "required";
   readonly authenticate: RequiredMcpHttpAuth["authenticate"];
+  readonly challengeScopes?: ReadonlyArray<string>;
   readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
 }
 
@@ -87,6 +90,46 @@ interface DangerouslyDisabledMcpHttpAuthSnapshot {
 type McpHttpAuthSnapshot =
   | RequiredMcpHttpAuthSnapshot
   | DangerouslyDisabledMcpHttpAuthSnapshot;
+
+function snapshotChallengeScopes(
+  value: ReadonlyArray<string> | undefined,
+  hasResourceMetadata: boolean,
+): ReadonlyArray<string> | undefined {
+  if (value === undefined) return undefined;
+  if (!hasResourceMetadata) {
+    throw new TypeError("auth.challengeScopes requires auth.resourceMetadata.");
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new TypeError(
+      "auth.challengeScopes must contain at least one scope token.",
+    );
+  }
+  const scopes: string[] = [];
+  const seen = new Set<string>();
+  let serializedBytes = 0;
+  for (const scope of value) {
+    if (
+      typeof scope !== "string" ||
+      !/^[\x21\x23-\x5b\x5d-\x7e]+$/u.test(scope)
+    ) {
+      throw new TypeError(
+        "auth.challengeScopes must contain only RFC 6749 scope tokens.",
+      );
+    }
+    if (seen.has(scope)) {
+      throw new TypeError("auth.challengeScopes must not contain duplicates.");
+    }
+    seen.add(scope);
+    serializedBytes += Buffer.byteLength(scope) + (scopes.length === 0 ? 0 : 1);
+    if (serializedBytes > MAX_CHALLENGE_SCOPE_BYTES) {
+      throw new TypeError(
+        `auth.challengeScopes must serialize to at most ${MAX_CHALLENGE_SCOPE_BYTES} bytes.`,
+      );
+    }
+    scopes.push(scope);
+  }
+  return Object.freeze(scopes);
+}
 
 function snapshotAuthOptions(value: McpHttpAuthOptions): McpHttpAuthSnapshot {
   if (value === null || typeof value !== "object") {
@@ -100,9 +143,14 @@ function snapshotAuthOptions(value: McpHttpAuthOptions): McpHttpAuthSnapshot {
         "auth.authenticate must be a function when auth.mode is required.",
       );
     }
+    const challengeScopes = snapshotChallengeScopes(
+      value.challengeScopes,
+      value.resourceMetadata !== undefined,
+    );
     return Object.freeze({
       mode: "required",
       authenticate: value.authenticate,
+      ...(challengeScopes === undefined ? {} : { challengeScopes }),
       ...(value.resourceMetadata === undefined
         ? {}
         : { resourceMetadata: value.resourceMetadata }),
@@ -114,6 +162,17 @@ function snapshotAuthOptions(value: McpHttpAuthOptions): McpHttpAuthSnapshot {
   throw new TypeError(
     'auth.mode must be either "required" or "dangerously-disabled-for-development".',
   );
+}
+
+function bearerChallenge(
+  metadataUrl: string | undefined,
+  challengeScopes: ReadonlyArray<string> | undefined,
+): string {
+  if (metadataUrl === undefined) return "Bearer";
+  const resourceMetadata = `resource_metadata="${metadataUrl}"`;
+  return challengeScopes === undefined
+    ? `Bearer ${resourceMetadata}`
+    : `Bearer ${resourceMetadata}, scope="${challengeScopes.join(" ")}"`;
 }
 
 function normalizeHostname(authority: string): string | null {
@@ -741,12 +800,12 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         if (authenticatedSnapshot === null) {
           sendBeforeBodyConsumption(request, response, {
             status: 401,
-            headers:
-              metadataUrl === undefined
-                ? { "www-authenticate": "Bearer" }
-                : {
-                    "www-authenticate": `Bearer resource_metadata="${metadataUrl}"`,
-                  },
+            headers: {
+              "www-authenticate": bearerChallenge(
+                metadataUrl,
+                auth.challengeScopes,
+              ),
+            },
             body: { error: "unauthorized" },
           });
           return;
