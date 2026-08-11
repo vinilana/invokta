@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add Invokta Capability"
+  short_description: "Add tested domain capabilities safely"
+  default_prompt: "Use $add-invokta-capability to add a new authenticated domain capability to this engine."

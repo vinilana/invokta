@@ -51,6 +51,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [Scope and maturity matrix](./scope-matrix.md)
 - [`hello-engine`: minimal onboarding example](../examples/hello-engine/)
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)
+- [`auth-self-hosted-oauth-engine`: self-hosted OAuth and production deployment example](../examples/auth-self-hosted-oauth-engine/)
 - [`support-harness`: private MCP consumer](../examples/support-harness/)
 - [`crawl-engine`: outbound provider integration with Firecrawl](../examples/crawl-engine/)
 - [`cursor-agent-routing-engine`: versioned Cursor subagent and model routing policy](../examples/cursor-agent-routing-engine/)

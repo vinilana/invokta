@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy MCP OAuth to VPS"
+  short_description: "Deploy and verify the OAuth stack on a VPS"
+  default_prompt: "Use $deploy-mcp-oauth-vps to deploy this MCP OAuth project to a VPS with a safe rollback."
