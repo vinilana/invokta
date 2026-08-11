@@ -133,7 +133,7 @@ describe("startEngineHost", () => {
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
-        params: { name: "fixture.echo", arguments: args },
+        params: { name: "fixture_echo", arguments: args },
       },
       headers,
     );

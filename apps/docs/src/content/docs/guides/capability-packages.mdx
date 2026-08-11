@@ -198,7 +198,8 @@ const classifyTicket = importCapability(
 
 `as` replaces the default ID; it does not create an alias. Only
 `operations.classify-ticket` appears in `invoke`, `list`, `describe`, access
-rules, events, CLI commands, and MCP tool names.
+rules, events, and CLI commands. MCP publishes its derived portable alias,
+`operations_classify-ticket`, and resolves calls back to the effective ID.
 
 To expose the same atomic capability under two IDs during a deliberate
 migration, declare two imports explicitly:

@@ -22,7 +22,10 @@ import {
   type ServeMcpStdioOptions,
   serveMcpHttp,
   serveMcpStdio,
+  toMcpToolName,
 } from "../src/index.js";
+
+expectTypeOf(toMcpToolName("support.classify-ticket")).toEqualTypeOf<string>();
 
 const stdioTarget = {
   transport: "stdio",

@@ -772,7 +772,7 @@ describe("trace panel", () => {
         mcpMethod: "tools/call",
         capabilityId: "support.classify",
         requestBody:
-          '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"support.classify","arguments":{"ticketId":"T-1"}}}',
+          '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"support_classify","arguments":{"ticketId":"T-1"}}}',
         responseBody: "{}",
       },
     });

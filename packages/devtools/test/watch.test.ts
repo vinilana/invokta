@@ -149,7 +149,7 @@ describe("serve --watch", () => {
           jsonrpc: "2.0",
           id: 1,
           method: "tools/call",
-          params: { name: "fixture.greet", arguments: {} },
+          params: { name: "fixture_greet", arguments: {} },
         }),
       });
     } catch {

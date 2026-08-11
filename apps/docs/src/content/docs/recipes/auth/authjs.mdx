@@ -360,7 +360,7 @@ curl --fail-with-body http://127.0.0.1:3000/mcp \
   --header 'Accept: application/json, text/event-stream' \
   --header "Authorization: Bearer $ENGINE_ACCESS_TOKEN" \
   --header 'Content-Type: application/json' \
-  --data '{"jsonrpc":"2.0","id":"whoami-1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+  --data '{"jsonrpc":"2.0","id":"whoami-1","method":"tools/call","params":{"name":"identity_whoami","arguments":{}}}'
 ```
 
 A missing, malformed, expired, foreign-issuer, foreign-audience, or

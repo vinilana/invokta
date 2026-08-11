@@ -20,6 +20,7 @@ import { type FirecrawlStub, startFirecrawlStub } from "./firecrawl-stub.js";
 
 const exampleRoot = fileURLToPath(new URL("..", import.meta.url));
 const capabilityId = "crawl.scrape-page";
+const toolName = "crawl_scrape-page";
 const apiKey = "test-firecrawl-key";
 const scrapedMarkdown =
   "# Example Domain\n\nThis domain is for use in examples.";
@@ -215,14 +216,14 @@ describe("crawl engine entrypoints", () => {
       await client.connect(transport);
       await expect(client.listTools()).resolves.toMatchObject({
         tools: [
-          { name: "crawl.scrape-page" },
-          { name: "crawl.map-site" },
-          { name: "crawl.crawl-site" },
+          { name: "crawl_scrape-page" },
+          { name: "crawl_map-site" },
+          { name: "crawl_crawl-site" },
         ],
       });
       await expect(
         client.callTool({
-          name: "crawl.crawl-site",
+          name: "crawl_crawl-site",
           arguments: { url: "https://example.com/", limit: 2 },
         }),
       ).resolves.toMatchObject({
@@ -281,7 +282,7 @@ describe("crawl engine entrypoints", () => {
           id: "auth-boundary",
           method: "tools/call",
           params: {
-            name: capabilityId,
+            name: toolName,
             arguments: { url: "https://example.com/" },
           },
         }),
@@ -299,7 +300,7 @@ describe("crawl engine entrypoints", () => {
       await client.connect(transport as unknown as Transport);
       await expect(
         client.callTool({
-          name: capabilityId,
+          name: toolName,
           arguments: { url: "https://example.com/" },
         }),
       ).resolves.toMatchObject({
@@ -307,7 +308,7 @@ describe("crawl engine entrypoints", () => {
       });
 
       const forbidden = await client.callTool({
-        name: capabilityId,
+        name: toolName,
         arguments: {
           url: "https://competitor.test/pricing",
           principal: {

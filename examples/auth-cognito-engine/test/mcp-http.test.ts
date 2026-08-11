@@ -33,7 +33,7 @@ const requestBody = JSON.stringify({
   jsonrpc: "2.0",
   id: "cognito-whoami",
   method: "tools/call",
-  params: { name: "identity.whoami", arguments: {} },
+  params: { name: "identity_whoami", arguments: {} },
 });
 
 beforeAll(async () => {

@@ -24,8 +24,6 @@ import {
 const issuer = "https://app.example.com";
 const audience = "https://app.example.com";
 const keyId = "better-auth-test-key";
-const capabilityId = "identity.whoami";
-
 let signingKey: CryptoKey;
 let keys: JWTVerifyGetKey;
 let validToken: string;
@@ -181,7 +179,7 @@ describe("the served MCP HTTP boundary", () => {
       jsonrpc: "2.0",
       id: "auth-boundary",
       method: "tools/call",
-      params: { name: capabilityId, arguments: {} },
+      params: { name: "identity_whoami", arguments: {} },
     });
 
     const missing = await fetch(url, { method: "POST", headers, body });
@@ -210,7 +208,7 @@ describe("the served MCP HTTP boundary", () => {
     try {
       await client.connect(transport as unknown as Transport);
       await expect(
-        client.callTool({ name: capabilityId, arguments: {} }),
+        client.callTool({ name: "identity_whoami", arguments: {} }),
       ).resolves.toMatchObject({
         structuredContent: {
           principalId: "user_01",

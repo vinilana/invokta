@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-export const supportCapabilityId = "support.classify-ticket";
+export const supportToolName = "support_classify-ticket";
 
 export interface HarnessMessage {
   readonly role: "user" | "assistant";
@@ -116,20 +116,20 @@ export class SupportHarness {
       this.#discoveredTools = tools.tools
         .map(({ name }) => name)
         .sort((left, right) => left.localeCompare(right));
-      if (!this.#discoveredTools.includes(supportCapabilityId)) {
-        throw new Error(`Required MCP tool not found: ${supportCapabilityId}`);
+      if (!this.#discoveredTools.includes(supportToolName)) {
+        throw new Error(`Required MCP tool not found: ${supportToolName}`);
       }
 
       const toolArguments = { ticketId };
       const result = await client.callTool({
-        name: supportCapabilityId,
+        name: supportToolName,
         arguments: toolArguments,
       });
       const isError = result.isError === true;
       const output = isError ? safeToolError(result) : structuredResult(result);
 
       this.#executions.push({
-        toolName: supportCapabilityId,
+        toolName: supportToolName,
         arguments: toolArguments,
         isError,
         result: output,

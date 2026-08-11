@@ -34,6 +34,8 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0022](./adr/0022-mcp-installation-inspection-and-homologation.md),
   extended with ephemeral OAuth by
   [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md)
+- Portable MCP tool names —
+  [ADR 0025](./adr/0025-portable-mcp-tool-names.md)
 
 ## Guides and examples
 

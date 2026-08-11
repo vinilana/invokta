@@ -99,7 +99,7 @@ async function callTool(
       id: options.id ?? crypto.randomUUID(),
       method: "tools/call",
       params: {
-        name: "support.inspect",
+        name: "support_inspect",
         arguments: options.arguments ?? { value: "ok" },
       },
     }),
@@ -141,7 +141,7 @@ async function callToolWithRawHost(
         jsonrpc: "2.0",
         id: "host-test",
         method: "tools/call",
-        params: { name: "support.inspect", arguments: { value: "ok" } },
+        params: { name: "support_inspect", arguments: { value: "ok" } },
       }),
     );
   });
@@ -243,7 +243,7 @@ function toolCallBodyWithValueBytes(
 ): ReadonlyArray<Uint8Array> {
   return [
     Buffer.from(
-      `{"jsonrpc":"2.0","id":"${id}","method":"tools/call","params":{"name":"support.inspect","arguments":{"value":"`,
+      `{"jsonrpc":"2.0","id":"${id}","method":"tools/call","params":{"name":"support_inspect","arguments":{"value":"`,
     ),
     value,
     Buffer.from('"}}}'),
@@ -311,6 +311,37 @@ describe("MCP stateless Streamable HTTP", () => {
         auth: { mode: "required", authenticate: undefined } as never,
       }),
     ).rejects.toThrow("authenticate");
+  });
+
+  it("rejects colliding portable tool names before listening", async () => {
+    const capability = defineCapability({
+      description: "Creates a tool-name collision fixture.",
+      input: z.object({}),
+      output: z.object({ ok: z.boolean() }),
+      access: "public",
+      async run() {
+        return { ok: true };
+      },
+    });
+    const engine = createEngine({
+      name: "colliding-http-tool-name-engine",
+      version: "0.1.0",
+      capabilities: {
+        "support.inspect": capability,
+        support_inspect: capability,
+      },
+    });
+    const authenticate = vi.fn(() => ({ id: "must-not-run" }));
+
+    await expect(
+      serveMcpHttp(engine, {
+        port: 0,
+        auth: { mode: "required", authenticate },
+      }),
+    ).rejects.toThrow(
+      'Capabilities "support.inspect" and "support_inspect" resolve to duplicate MCP tool name "support_inspect".',
+    );
+    expect(authenticate).not.toHaveBeenCalled();
   });
 
   it("snapshots the required authentication hook before listening", async () => {
@@ -486,7 +517,9 @@ describe("MCP stateless Streamable HTTP", () => {
   });
 
   it("interoperates with the official Streamable HTTP client", async () => {
-    const server = await start();
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const server = await start(engine);
     const transport = new StreamableHTTPClientTransport(
       new URL(endpoint(server)),
       { requestInit: { headers: { authorization: "Bearer official" } } },
@@ -498,9 +531,12 @@ describe("MCP stateless Streamable HTTP", () => {
 
     try {
       await client.connect(transport as unknown as Transport);
+      await expect(client.listTools()).resolves.toMatchObject({
+        tools: [{ name: "support_inspect" }],
+      });
       await expect(
         client.callTool({
-          name: "support.inspect",
+          name: "support_inspect",
           arguments: { value: "official-client" },
         }),
       ).resolves.toMatchObject({
@@ -509,6 +545,7 @@ describe("MCP stateless Streamable HTTP", () => {
           principalId: "user:official",
         },
       });
+      expect(invoke.mock.calls[0]?.[0]).toBe("support.inspect");
     } finally {
       await client.close();
     }
@@ -931,7 +968,7 @@ describe("MCP stateless Streamable HTTP", () => {
     try {
       const response = await rawHttpResponseFromBodyChunks(server, [
         Buffer.from(
-          '{"jsonrpc":"2.0","id":"pending-eof","method":"tools/call","params":{"name":"support.inspect","arguments":{"value":"',
+          '{"jsonrpc":"2.0","id":"pending-eof","method":"tools/call","params":{"name":"support_inspect","arguments":{"value":"',
         ),
         Uint8Array.from([0xc3]),
       ]);
@@ -1125,7 +1162,7 @@ describe("MCP stateless Streamable HTTP", () => {
         id: "batch-call",
         method: "tools/call",
         params: {
-          name: "support.inspect",
+          name: "support_inspect",
           arguments: { value: "must-not-run" },
         },
       },
@@ -1671,7 +1708,7 @@ describe("MCP stateless Streamable HTTP", () => {
         jsonrpc: "2.0",
         id: "cancel-http",
         method: "tools/call",
-        params: { name: "support.inspect", arguments: { value: "wait" } },
+        params: { name: "support_inspect", arguments: { value: "wait" } },
       }),
       signal: controller.signal,
     });

@@ -321,7 +321,7 @@ curl -sS http://127.0.0.1:3000/mcp \
   -H 'accept: application/json, text/event-stream' \
   -H "authorization: Bearer $COGNITO_ACCESS_TOKEN" \
   -d '{"jsonrpc":"2.0","id":"1","method":"tools/call",
-       "params":{"name":"identity.whoami","arguments":{}}}'
+       "params":{"name":"identity_whoami","arguments":{}}}'
 ```
 
 The response reports the principal built from `sub`, `client_id`, `scope`, and

@@ -166,16 +166,16 @@ describe("spec engine entrypoints", () => {
       await client.connect(transport);
       await expect(client.listTools()).resolves.toMatchObject({
         tools: [
-          { name: "spec.create-specification" },
-          { name: "spec.plan-implementation" },
-          { name: "spec.break-down-tasks" },
-          { name: "spec.complete-task" },
-          { name: "spec.get-workflow-status" },
+          { name: "spec_create-specification" },
+          { name: "spec_plan-implementation" },
+          { name: "spec_break-down-tasks" },
+          { name: "spec_complete-task" },
+          { name: "spec_get-workflow-status" },
         ],
       });
 
       const planned = await client.callTool({
-        name: "spec.plan-implementation",
+        name: "spec_plan-implementation",
         arguments: { specId: "SPEC-1" },
       });
       expect(structuredContent(planned)).toMatchObject({
@@ -184,7 +184,7 @@ describe("spec engine entrypoints", () => {
       });
 
       const status = await client.callTool({
-        name: "spec.get-workflow-status",
+        name: "spec_get-workflow-status",
         arguments: { specId: "SPEC-1" },
       });
       expect(structuredContent(status)).toMatchObject({
@@ -237,7 +237,7 @@ describe("spec engine entrypoints", () => {
           id: "auth-boundary",
           method: "tools/call",
           params: {
-            name: "spec.get-workflow-status",
+            name: "spec_get-workflow-status",
             arguments: { specId: "SPEC-1" },
           },
         }),
@@ -255,7 +255,7 @@ describe("spec engine entrypoints", () => {
       await client.connect(transport as unknown as Transport);
 
       const created = await client.callTool({
-        name: "spec.create-specification",
+        name: "spec_create-specification",
         arguments: {
           specId: "SPEC-HTTP",
           intent: "Publish a stateless HTTP workflow example",
@@ -267,7 +267,7 @@ describe("spec engine entrypoints", () => {
       });
 
       const status = await client.callTool({
-        name: "spec.get-workflow-status",
+        name: "spec_get-workflow-status",
         arguments: { specId: "SPEC-HTTP" },
       });
       expect(structuredContent(status)).toMatchObject({

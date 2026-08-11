@@ -115,9 +115,10 @@ To use this example from the repository root:
 5. Reload Cursor and verify the tool with
    `agent mcp list-tools cursor-agent-routing`.
 
-The rule classifies work into one of the seven use cases, calls
-`developer-work.route-cursor-task`, and delegates to the custom agent named by
-`agent.invocation`. Custom subagent configuration follows Cursor's
+The rule classifies work into one of the seven use cases, calls the MCP tool
+`developer-work_route-cursor-task` for the
+`developer-work.route-cursor-task` capability, and delegates to the custom
+agent named by `agent.invocation`. Custom subagent configuration follows Cursor's
 [Subagents documentation](https://cursor.com/docs/subagents). Cursor also
 supports general model family names for subagents, but this example intentionally
 pins a dated model to make routing reproducible.

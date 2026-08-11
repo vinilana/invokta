@@ -102,10 +102,10 @@ describe("review engine entrypoints", () => {
     try {
       await client.connect(transport);
       await expect(client.listTools()).resolves.toMatchObject({
-        tools: [{ name: "review.assess-task-readiness" }],
+        tools: [{ name: "review_assess-task-readiness" }],
       });
       const result = await client.callTool({
-        name: "review.assess-task-readiness",
+        name: "review_assess-task-readiness",
         arguments: {
           ...exampleCandidate,
           evidence: exampleCandidate.evidence.filter(
@@ -164,7 +164,7 @@ describe("review engine entrypoints", () => {
           id: "auth-boundary",
           method: "tools/call",
           params: {
-            name: "review.assess-task-readiness",
+            name: "review_assess-task-readiness",
             arguments: exampleCandidate,
           },
         }),
@@ -182,7 +182,7 @@ describe("review engine entrypoints", () => {
       await client.connect(transport as unknown as Transport);
 
       const result = await client.callTool({
-        name: "review.assess-task-readiness",
+        name: "review_assess-task-readiness",
         arguments: exampleCandidate as unknown as Record<string, unknown>,
       });
       expect(structuredContent(result)).toMatchObject({

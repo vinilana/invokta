@@ -11,12 +11,21 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 const exampleRoot = fileURLToPath(new URL("..", import.meta.url));
 const atomicCapabilityId = "operations.classify-ticket";
 const libraryCapabilityId = "operations.draft-reply";
+const atomicToolName = "operations_classify-ticket";
+const libraryToolName = "operations_draft-reply";
 const effectiveIds = [
   "operations.generate-report",
   "community.score-ticket-priority",
   "operations.classify-ticket",
   "community.search-knowledge-base",
   "operations.draft-reply",
+];
+const effectiveToolNames = [
+  "operations_generate-report",
+  "community_score-ticket-priority",
+  "operations_classify-ticket",
+  "community_search-knowledge-base",
+  "operations_draft-reply",
 ];
 const draftReply = {
   subject: "Re: Duplicate invoice",
@@ -143,11 +152,11 @@ describe("composed engine entrypoints", () => {
     try {
       await client.connect(transport);
       const tools = await client.listTools();
-      expect(tools.tools.map((tool) => tool.name)).toEqual(effectiveIds);
+      expect(tools.tools.map((tool) => tool.name)).toEqual(effectiveToolNames);
 
       await expect(
         client.callTool({
-          name: atomicCapabilityId,
+          name: atomicToolName,
           arguments: { ticketId: "T-456" },
         }),
       ).resolves.toMatchObject({
@@ -155,17 +164,17 @@ describe("composed engine entrypoints", () => {
       });
       await expect(
         client.callTool({
-          name: libraryCapabilityId,
+          name: libraryToolName,
           arguments: { ticketId: "T-123" },
         }),
       ).resolves.toMatchObject({ structuredContent: draftReply });
 
       await expect(
         client.callTool({
-          name: "community.draft-reply",
+          name: "community_draft-reply",
           arguments: { ticketId: "T-123" },
         }),
-      ).rejects.toThrowError(/Tool community\.draft-reply not found/u);
+      ).rejects.toThrowError(/Tool community_draft-reply not found/u);
     } finally {
       await client.close();
     }
@@ -216,7 +225,7 @@ describe("composed engine entrypoints", () => {
           id: "auth-boundary",
           method: "tools/call",
           params: {
-            name: libraryCapabilityId,
+            name: libraryToolName,
             arguments: { ticketId: "T-123" },
           },
         }),
@@ -235,7 +244,7 @@ describe("composed engine entrypoints", () => {
 
       await expect(
         client.callTool({
-          name: "community.score-ticket-priority",
+          name: "community_score-ticket-priority",
           arguments: { ticketId: "T-789" },
         }),
       ).resolves.toMatchObject({
@@ -243,13 +252,13 @@ describe("composed engine entrypoints", () => {
       });
       await expect(
         client.callTool({
-          name: libraryCapabilityId,
+          name: libraryToolName,
           arguments: { ticketId: "T-123" },
         }),
       ).resolves.toMatchObject({ structuredContent: draftReply });
 
       const forbidden = await client.callTool({
-        name: atomicCapabilityId,
+        name: atomicToolName,
         arguments: {
           ticketId: "T-999",
           principal: {

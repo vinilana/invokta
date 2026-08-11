@@ -140,7 +140,7 @@ describe("MCP HTTP authentication hook", () => {
       jsonrpc: "2.0",
       id: "whoami-1",
       method: "tools/call",
-      params: { name: "identity.whoami", arguments: {} },
+      params: { name: "identity_whoami", arguments: {} },
     });
     const headers = {
       accept: "application/json, text/event-stream",
