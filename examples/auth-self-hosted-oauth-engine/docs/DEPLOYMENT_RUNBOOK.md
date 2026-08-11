@@ -144,6 +144,7 @@ stored password hash.
 docker compose ps -a
 docker compose logs --tail=100 migrate auth engine
 npm run deploy:probe -- --url https://mcp.example.com/mcp --expect alive
+npm run deploy:inspect-oauth -- --url https://mcp.example.com/mcp
 npm run oauth:probe-dcr -- --url https://mcp.example.com
 ```
 

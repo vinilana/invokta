@@ -45,6 +45,8 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [Getting started: direct, CLI, MCP stdio, and MCP HTTP](./getting-started.md)
 - [File naming and project structure for custom engines](../apps/docs/src/content/docs/guides/file-naming.mdx)
 - [Integrating an identity provider at the HTTP boundary](./http-authentication.md)
+- [Self-hosted OAuth recipe](../apps/docs/src/content/docs/recipes/auth/self-hosted-oauth.mdx)
+- [OAuth client interoperability release checklist](./oauth-client-interoperability-checklist.md)
 - [Integrating a PDP through a capability access rule](./capability-authorization.md)
 - [Authoring and composing community capabilities](./capability-composition.md)
 - [Installing Action Engines in MCP clients](../apps/docs/src/content/docs/reference/installer.mdx)

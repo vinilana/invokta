@@ -27,6 +27,7 @@
 ## OAuth verification
 
 - [ ] Protected-resource and authorization-server metadata are public.
+- [ ] `npm run deploy:inspect-oauth -- --url <mcp-url>` succeeds.
 - [ ] JWKS exposes the ES256 public key.
 - [ ] The DCR probe returns 201 and deletes its temporary client with 204.
 - [ ] Login and consent work in a fresh browser session.
@@ -42,5 +43,5 @@
 - [ ] A database backup exists before deployment.
 - [ ] The previous application image has an explicit rollback tag.
 - [ ] Restore procedures preserve OAuth users, clients, grants, and signing
-      keys together.
+      keys, cookie keys, sessions, and token state together.
 - [ ] Sanitized OAuth logs are monitored during the first real client flow.

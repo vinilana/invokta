@@ -1,0 +1,240 @@
+---
+title: Run a self-hosted OAuth server for MCP
+description: Start from the official PostgreSQL-backed OAuth example, preserve the Resource Server boundary, and deploy it behind Caddy or Traefik.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An OAuth-protected MCP deployment has two distinct security components:
+
+- the Invokta MCP HTTP adapter is the **Resource Server**. It verifies every
+  Bearer token through a host-owned hook and sends the resulting `Principal`
+  through `engine.invoke`;
+- the **Authorization Server** owns users, passwords, login, consent, clients,
+  grants, sessions, signing keys, authorization codes, access tokens, and
+  refresh tokens.
+
+Invokta does not put the second component in `@invokta/core` or
+`@invokta/mcp`. The official
+[`auth-self-hosted-oauth-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-self-hosted-oauth-engine)
+example is a production-oriented host implementation that you import and own.
+Its PostgreSQL, `oidc-provider`, Caddy, and Traefik dependencies remain confined
+to that project.
+
+<Aside type="caution" title="An example is not a universal identity system">
+  The example's one-owner account policy, PostgreSQL schema, password rules,
+  and proxy assets are deliberate host choices. Customize them as application
+  code; do not move them into capability handlers or framework packages.
+</Aside>
+
+## Create the project
+
+<Steps>
+
+1. Import the official example
+
+   ```sh
+   npm create invokta-engine@latest my-mcp-service -- --example auth-self-hosted-oauth-engine
+   cd my-mcp-service
+   npm install
+   ```
+
+   The imported project includes OAuth source, migrations, Compose assets,
+   runbooks, tests, and the project-local `$maintain-mcp-oauth` and
+   `$deploy-mcp-oauth-vps` skills. The default Invokta starters remain
+   provider-neutral and do not carry this identity stack.
+
+2. Replace the example capability
+
+   `identity.whoami` is intentionally small. Add domain capabilities to
+   `src/capabilities/`, compose them in `src/engine.ts`, and keep every direct,
+   CLI, MCP stdio, and MCP HTTP call on `engine.invoke`.
+
+   HTTP authentication belongs in `src/http-auth.ts`; Authorization Server
+   behavior belongs under `src/oauth/`. Neither belongs in a capability.
+
+3. Configure production values
+
+   ```sh
+   cp .env.example .env
+   chmod 600 .env
+   ```
+
+   Set at least:
+
+   ```dotenv
+   APP_PUBLIC_URL=https://mcp.example.com
+   APP_PUBLIC_HOST=mcp.example.com
+   POSTGRES_PASSWORD=replace-with-a-long-random-password
+   DATABASE_URL=postgresql://invokta_app:replace-with-the-same-password@127.0.0.1:5432/invokta_app
+   ```
+
+   `APP_PUBLIC_URL` is the issuer origin. The protected resource is exactly
+   `${APP_PUBLIC_URL}/mcp`, and access tokens are issued only for that audience
+   with `mcp:tools`. Keep the database password identical in the two database
+   variables. Never persist an owner bootstrap password in `.env`.
+
+4. Bootstrap the owner once
+
+   ```sh
+   docker compose run --rm auth node dist/oauth/bootstrap-owner.js
+   ```
+
+   The command prompts over the trusted terminal and stores only a password
+   hash. There is no default password and no public sign-up route. A second
+   bootstrap refuses to replace or reveal the existing owner.
+
+</Steps>
+
+## OAuth behavior included
+
+The example provides:
+
+- Authorization Code with mandatory S256 PKCE and the RFC 8707 `resource`
+  parameter;
+- Dynamic Client Registration (DCR), including confidential defaults needed
+  by hosted MCP clients and explicit public-client registration for Invokta
+  devtools;
+- ES256 resource-specific access tokens, exact issuer/audience/subject/scope
+  verification, and rotating refresh tokens;
+- explicit login and consent with CSRF, callback CSP, exact redirect matching,
+  and consumed-interaction replay rejection;
+- durable users, clients, grants, sessions, tokens, cookie keys, and signing
+  keys in PostgreSQL; and
+- sanitized stage-based diagnostics with no interaction ID, code, token,
+  client secret, password, or provider error detail.
+
+Client ID Metadata Documents (CIMD) are disabled. Supporting CIMD makes the
+Authorization Server fetch a client-controlled URL; syntax checks alone do not
+prevent SSRF. Enable it only after adding a reviewable policy for DNS addresses,
+re-resolution, redirects, schemes, ports, content type, response size, timeout,
+and exact client metadata matching.
+
+## Route the public origin
+
+Clients and Invokta devtools expect the MCP resource and OAuth endpoints on one
+public origin. Give the two Resource Server routes higher priority than the
+Authorization Server catch-all:
+
+| Public route | Service |
+| --- | --- |
+| `/mcp` | Engine on port 3000 |
+| `/.well-known/oauth-protected-resource/mcp` | Engine on port 3000 |
+| `/.well-known/oauth-authorization-server` | Authorization Server on port 3001 |
+| `/.well-known/openid-configuration` | Authorization Server on port 3001 |
+| `/jwks`, `/auth`, `/token`, `/reg`, `/revoke` | Authorization Server on port 3001 |
+| `/interaction/*` | Authorization Server on port 3001 |
+
+The bundled Caddy configuration implements this split. On a host where Traefik
+already owns ports 80 and 443, apply `compose.hostinger.yaml`; it disables the
+bundled proxy and creates higher-priority engine routers before the OAuth
+catch-all. Never start two edge proxies on the same ports.
+
+Only the edge is public. PostgreSQL, engine port 3000, and OAuth port 3001 stay
+on loopback or the private Compose network. The edge forwards the original
+public `Host`, and the engine and OAuth allowlists name that host exactly.
+
+## Preserve OAuth state together
+
+A usable restore needs more than user rows. Back up and restore the same
+PostgreSQL snapshot containing:
+
+- the owner account and password hash;
+- signing keys and cookie keys;
+- registered clients and their authentication metadata;
+- grants, sessions, interactions, authorization codes, access tokens, refresh
+  tokens, and registration tokens.
+
+Do not rotate keys, delete clients, or rewrite OAuth rows as part of an ordinary
+Invokta dependency upgrade. Before a migration or deployment, take one
+consistent database backup and retain the previous application image under an
+explicit rollback tag. Restore the image and database as one compatibility
+unit when rollback requires stored OAuth artifacts.
+
+## Verify three different levels
+
+| Level | Command or client | What it proves |
+| --- | --- | --- |
+| MCP liveness | `npm run deploy:probe -- --url https://mcp.example.com/mcp --expect alive` | The exact MCP route answers with a valid Bearer challenge or initialization result |
+| OAuth discovery readiness | `npm run deploy:inspect-oauth -- --url https://mcp.example.com/mcp` | Challenge, Protected Resource Metadata, OAuth/OIDC discovery, issuer, Authorization Code, S256, DCR/CIMD classification, and optional JWKS |
+| Interactive end to end | Invokta devtools or a release client | DCR/pre-registration, browser login, one consent, callback state, `/token`, authenticated initialization, catalog, and a deliberate tool call |
+
+The discovery inspector is read-only. It sends no credentials, follows no
+redirect, and performs no registration, login, consent, or token exchange. The
+example-local DCR probe is separately opt-in because it creates and deletes one
+temporary client:
+
+```sh
+npm run oauth:probe-dcr -- --url https://mcp.example.com
+```
+
+## Troubleshoot by protocol stage
+
+Find the last completed stage before changing configuration:
+
+| First failing stage | Safe evidence | Common cause |
+| --- | --- | --- |
+| MCP challenge | `deploy:probe`, status, route | `/mcp` routed incorrectly, Host rejected, or authentication not required |
+| Protected Resource Metadata | `deploy:inspect-oauth` stage/reason | Metadata route sent to OAuth, wrong `resource`, or unsafe issuer URL |
+| Authorization Server discovery | Well-known statuses and sanitized OAuth logs | Catch-all routing, issuer mismatch, or missing OAuth/OIDC metadata |
+| Registration | DCR probe status and stable OAuth error code | `/reg` routing or incompatible client defaults |
+| Login | Owner lock state and bootstrap history | Wrong credential, locked/disabled owner, or a different existing owner |
+| Consent | First consent POST status and following authorization redirect | Consumed interaction, CSRF failure, or callback CSP/redirect mismatch |
+| Callback | Redirect origin and client UI | Client state handling or product/account prerequisite outside the server |
+| Token | `/token` status and client auth method | Reused/expired code, PKCE mismatch, redirect mismatch, or Basic/POST mismatch |
+| Authenticated MCP | Verifier outcome category only | Wrong issuer, audience, signature, subject, expiry, or missing `mcp:tools` |
+
+A consent URL is single-use. If the first POST returned a redirect, inspect the
+callback and `/token` stage; do not submit the consumed consent form again or
+extend interaction lifetime to conceal a client-side callback failure.
+
+Never diagnose by dumping discovery documents, cookies, complete client rows,
+authorization codes, access/refresh tokens, registration tokens, or raw JWTs.
+Use route, status, stable error code, counts, expiry/consumed state, client auth
+method, and redirect origin.
+
+## Run it
+
+Validate the project, start the bundled-Caddy topology, migrate, and bootstrap:
+
+```sh
+npm run check
+docker compose config --quiet
+docker compose up -d --build
+docker compose run --rm migrate
+docker compose run --rm auth node dist/oauth/bootstrap-owner.js
+docker compose ps
+```
+
+For an existing Traefik host:
+
+```sh
+docker compose -f compose.yaml -f compose.hostinger.yaml config --quiet
+docker compose -f compose.yaml -f compose.hostinger.yaml up -d --build
+```
+
+The complete source and deployment assets live in
+[`auth-self-hosted-oauth-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-self-hosted-oauth-engine).
+
+## Verify it
+
+```sh
+npm run deploy:probe -- --url https://mcp.example.com/mcp --expect alive
+npm run deploy:inspect-oauth -- --url https://mcp.example.com/mcp
+npm run oauth:probe-dcr -- --url https://mcp.example.com
+```
+
+Then connect Invokta devtools to the MCP URL with OAuth, complete login and
+consent once, confirm `identity.whoami` appears, and invoke it deliberately.
+Before an Invokta release, record fresh Gemini, ChatGPT, and local loopback
+client results with the
+[OAuth client interoperability checklist](https://github.com/vinilana/invokta/blob/main/docs/oauth-client-interoperability-checklist.md).
+
+## Next
+
+- [MCP OAuth discovery](/recipes/auth/mcp-oauth-discovery/) covers only the
+  provider-neutral Resource Server advertisement.
+- [HTTP authentication](/guides/http-authentication/) specifies the verifier,
+  Principal, challenge, Host, and Origin contracts.
+- [`@invokta/deploy`](/reference/deploy/) specifies health and discovery
+  diagnostics.

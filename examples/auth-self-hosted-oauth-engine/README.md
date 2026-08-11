@@ -29,7 +29,9 @@ capabilities after importing it into a standalone project.
 - Read-only containers, dropped capabilities, health checks, ordered
   migrations, and bounded Docker logs.
 - Regression tests for authentication, DCR defaults, callback CSP, password
-  hashing, database configuration, and the shared engine boundary.
+  hashing, database configuration, the shared engine boundary, and a real
+  devtools flow through login, one-click consent, token exchange, and an
+  authenticated tool call.
 
 ## Requirements
 
@@ -54,7 +56,7 @@ without another mechanical rewrite.
 
 ## Project-local agent skills
 
-Every project imported from this example carries three skills under
+Every project imported from this example carries four skills under
 `.agents/skills`:
 
 | Skill | Use it for |
@@ -150,6 +152,7 @@ Check service health and Dynamic Client Registration:
 ```sh
 docker compose ps
 npm run deploy:probe -- --url https://mcp.example.com/mcp --expect alive
+npm run deploy:inspect-oauth -- --url https://mcp.example.com/mcp
 npm run oauth:probe-dcr -- --url https://mcp.example.com
 ```
 

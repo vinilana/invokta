@@ -14,7 +14,7 @@ grants, sessions, authorization codes, access tokens, and refresh tokens.
 | `src/mcp-http.ts` | Serve MCP Streamable HTTP through `engine.invoke` |
 | `src/http-auth.ts` | Verify JWT signature, issuer, audience, subject, and scope |
 | `src/oauth-server.ts` | Host OAuth routes and sanitized request diagnostics |
-| `src/oauth/provider.ts` | Configure oidc-provider, DCR, PKCE, grants, and token policy |
+| `src/oauth/oauth-provider.ts` | Configure oidc-provider, DCR, PKCE, grants, and token policy |
 | `src/oauth/interaction-server.ts` | Render login and consent with CSRF protection |
 | `src/oauth/user-store.ts` | Create and authenticate the single owner |
 | `src/oauth/postgres-adapter.ts` | Persist oidc-provider artifacts |

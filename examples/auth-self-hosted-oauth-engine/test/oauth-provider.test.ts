@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   createOAuthProviderConfiguration,
   formatOAuthRegistrationError,
-} from "../src/oauth/provider.js";
+} from "../src/oauth/oauth-provider.js";
 
 async function testConfiguration() {
   const { privateKey } = await generateKeyPair("ES256", { extractable: true });

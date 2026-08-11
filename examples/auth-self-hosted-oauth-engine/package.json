@@ -32,7 +32,8 @@
     "oauth:bootstrap": "node dist/oauth/bootstrap-owner.js",
     "oauth:probe-dcr": "node scripts/probe-dcr.mjs",
     "deploy:package": "invokta-deploy package",
-    "deploy:probe": "invokta-deploy probe"
+    "deploy:probe": "invokta-deploy probe",
+    "deploy:inspect-oauth": "invokta-deploy inspect-oauth"
   },
   "dependencies": {
     "@invokta/cli": "0.4.0",

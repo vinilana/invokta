@@ -19,7 +19,7 @@ import { createInteractionHandler } from "./oauth/interaction-server.js";
 import {
   createOAuthProvider,
   formatOAuthRegistrationError,
-} from "./oauth/provider.js";
+} from "./oauth/oauth-provider.js";
 import { readOAuthServerConfiguration } from "./oauth/server-config.js";
 
 function requestHostname(request: IncomingMessage): string | null {

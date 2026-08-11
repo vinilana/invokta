@@ -19,7 +19,7 @@ import {
   createOAuthHttpAuth,
 } from "../../../examples/auth-self-hosted-oauth-engine/src/http-auth.js";
 import { createInteractionHandler } from "../../../examples/auth-self-hosted-oauth-engine/src/oauth/interaction-server.js";
-import { createOAuthProviderConfiguration } from "../../../examples/auth-self-hosted-oauth-engine/src/oauth/provider.js";
+import { createOAuthProviderConfiguration } from "../../../examples/auth-self-hosted-oauth-engine/src/oauth/oauth-provider.js";
 import { createAttachedSessionController } from "../src/attached-session.js";
 
 interface ProxyRecord {
