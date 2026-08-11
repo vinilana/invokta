@@ -16,6 +16,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   connects or listens. MCP clients that hard-code dotted tool names must refresh
   `tools/list` and use the advertised alias.
 
+### Security
+
+- Pinned the transitive `nanoid` dependency to 3.3.17 so development and CI
+  tooling no longer resolves the vulnerable zero-size custom-generator
+  implementation reported through the Vitest dependency chain.
+
 ## [0.4.0] - 2026-08-06
 
 ### Added

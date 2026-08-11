@@ -22,6 +22,9 @@
     "packages/*",
     "examples/*"
   ],
+  "resolutions": {
+    "nanoid": "3.3.17"
+  },
   "scripts": {
     "build": "tsc -b --pretty false",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit && tsc -p packages/devtools/tsconfig.test.json --pretty false --noEmit",
