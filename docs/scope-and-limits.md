@@ -36,6 +36,12 @@ dependency lifecycle belong to the engine built by the user.
 evidence across real engines. They are not added because they may eventually be
 useful.
 
+An official example may demonstrate a complete host-owned integration without
+making its identity provider, token issuer, persistence, account policy, or
+deployment topology a framework runtime abstraction. Production MCP OAuth uses
+this boundary: Invokta owns Resource Server conformance and client homologation,
+while the example owns one replaceable Authorization Server implementation.
+
 ## Explicit limits
 
 | Dimension | Limit |
