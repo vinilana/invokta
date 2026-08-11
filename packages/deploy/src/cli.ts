@@ -8,7 +8,7 @@ import {
   writeDiagnostic,
 } from "./io.js";
 
-export type DeployCommandName = "init" | "package" | "probe";
+export type DeployCommandName = "init" | "package" | "probe" | "inspect-oauth";
 
 export interface RunDeployCliOptions {
   readonly argv?: readonly string[];
@@ -25,6 +25,7 @@ const helpText = `Usage:
   invokta-deploy package
   invokta-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
                          [--host-header HOST] [--timeout-ms N]
+  invokta-deploy inspect-oauth --url <url> [--timeout-ms N]
   invokta-deploy --help
   invokta-deploy --version
 `;
@@ -34,7 +35,12 @@ const helpText = `Usage:
 const invalidUsageText = 'Invalid arguments. Run "invokta-deploy --help".\n';
 const unexpectedFailureText = "The command could not be completed.\n";
 
-const commandNames: readonly DeployCommandName[] = ["init", "package", "probe"];
+const commandNames: readonly DeployCommandName[] = [
+  "init",
+  "package",
+  "probe",
+  "inspect-oauth",
+];
 
 function asRecord(
   value: unknown,
@@ -62,7 +68,8 @@ async function loadCommand(name: DeployCommandName): Promise<DeployCommandRun> {
   if (name === "package") {
     return (await import("./package-command.js")).runPackage;
   }
-  return (await import("./probe.js")).runProbe;
+  if (name === "probe") return (await import("./probe.js")).runProbe;
+  return (await import("./inspect-oauth.js")).runInspectOAuth;
 }
 
 function selectCommand(argument: string): DeployCommandName | undefined {

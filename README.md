@@ -171,8 +171,8 @@ Invokta supplies the shared runtime mechanics and delivery adapters:
   diagnostics, test-identity switching, and watch by process replacement;
 - `@invokta/installer` detects supported local MCP clients, installs local or
   remote Action Engines across selected clients, and manages those entries;
-- `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes
-  deployed endpoints;
+- `@invokta/deploy` scaffolds and packages stateless HTTP engines, probes
+  deployed endpoints, and inspects OAuth discovery readiness;
 - `create-invokta-engine` creates a `complete`, `cli`, `mcp-stdio`, or
   `mcp-http` standalone starter; the `complete` profile includes direct, CLI,
   MCP stdio, and MCP HTTP entry points, and `--example` bootstraps a project

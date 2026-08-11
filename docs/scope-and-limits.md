@@ -11,7 +11,7 @@
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
-| `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, and probing |
+| `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
 | `@invokta/devtools` | Development-time engine dev server, doctor diagnostics, and installed MCP inspection and homologation |
 | `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile, or import of one public GitHub example tree |
 | `create-invokta-capability` | Creation of a standalone atomic capability package |
