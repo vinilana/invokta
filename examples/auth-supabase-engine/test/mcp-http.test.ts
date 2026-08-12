@@ -21,8 +21,6 @@ import {
   subject,
 } from "./tokens.js";
 
-const capabilityId = "identity.whoami";
-
 let tokens: SupabaseTokenFactory;
 const servers: McpHttpServerHandle[] = [];
 
@@ -38,7 +36,7 @@ function callBody(): string {
     jsonrpc: "2.0",
     id: "whoami",
     method: "tools/call",
-    params: { name: capabilityId, arguments: {} },
+    params: { name: "identity_whoami", arguments: {} },
   });
 }
 
@@ -123,7 +121,7 @@ describe("Supabase MCP HTTP boundary", () => {
     try {
       await client.connect(transport as unknown as Transport);
       await expect(
-        client.callTool({ name: capabilityId, arguments: {} }),
+        client.callTool({ name: "identity_whoami", arguments: {} }),
       ).resolves.toMatchObject({
         structuredContent: {
           principalId: subject,

@@ -60,7 +60,7 @@ function callWhoami(
       jsonrpc: "2.0",
       id: "whoami",
       method: "tools/call",
-      params: { name: "identity.whoami", arguments: {} },
+      params: { name: "identity_whoami", arguments: {} },
     }),
   });
 }

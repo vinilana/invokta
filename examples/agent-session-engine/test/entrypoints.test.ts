@@ -195,7 +195,7 @@ describe("agent session example entrypoints", () => {
         id: 2,
         method: "tools/call",
         params: {
-          name: "agent-session.get",
+          name: "agent-session_get",
           arguments: { sessionId: "entrypoint-session" },
         },
       });

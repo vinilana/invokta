@@ -150,14 +150,14 @@ it("serves handshake, tools/list, and tools/call over protocol-only stdio", asyn
     await expect(client.listTools()).resolves.toMatchObject({
       tools: [
         {
-          name: "example.inspect-context",
+          name: "example_inspect-context",
           description: "Returns the stdio execution boundary context.",
         },
       ],
     });
     await expect(
       client.callTool({
-        name: "example.inspect-context",
+        name: "example_inspect-context",
         arguments: { value: "wire-ok" },
       }),
     ).resolves.toEqual({
@@ -209,7 +209,7 @@ it("closes on stdin EOF, cancels active work, and exits cleanly", async () => {
     jsonrpc: "2.0",
     id: 2,
     method: "tools/call",
-    params: { name: "example.wait", arguments: {} },
+    params: { name: "example_wait", arguments: {} },
   });
   await stderr.waitFor("started\n");
 
@@ -288,7 +288,7 @@ it("drops a backpressured response when stdin closes and exits cleanly", async (
     jsonrpc: "2.0",
     id: 2,
     method: "tools/call",
-    params: { name: "example.large", arguments: {} },
+    params: { name: "example_large", arguments: {} },
   });
   await stderr.waitFor("large-write-started\n");
   child.stdin.end();
@@ -360,7 +360,7 @@ it("closes cleanly when a stdio frame exceeds the configured read-buffer limit",
     jsonrpc: "2.0",
     id: 2,
     method: "tools/call",
-    params: { name: "example.wait", arguments: {} },
+    params: { name: "example_wait", arguments: {} },
   });
   await stderr.waitFor("started\n");
   child.stdin.write("x".repeat(maxReadBufferBytes + 1));
@@ -418,7 +418,7 @@ it("round trips and cancels concurrent request IDs including falsy IDs", async (
         id,
         method: "tools/call",
         params: {
-          name: "example.concurrent-wait",
+          name: "example_concurrent-wait",
           arguments: { label },
         },
       });

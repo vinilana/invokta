@@ -146,7 +146,7 @@ describe("image engine entrypoints", () => {
       await client.connect(transport);
       await expect(
         client.callTool({
-          name: "image.compose-reference-asset",
+          name: "image_compose-reference-asset",
           arguments: {
             prompt: "Compose a new product scene.",
             referenceImages,
@@ -190,7 +190,7 @@ describe("image engine entrypoints", () => {
           id: "auth-boundary",
           method: "tools/call",
           params: {
-            name: "image.edit-asset",
+            name: "image_edit-asset",
             arguments: {
               prompt: "Change the background.",
               referenceImages: referenceImages.slice(0, 1),
@@ -212,7 +212,7 @@ describe("image engine entrypoints", () => {
       await client.connect(transport as unknown as Transport);
       await expect(
         client.callTool({
-          name: "image.edit-asset",
+          name: "image_edit-asset",
           arguments: {
             prompt: "Change the background.",
             referenceImages: referenceImages.slice(0, 1),

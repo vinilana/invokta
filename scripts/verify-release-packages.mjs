@@ -417,7 +417,7 @@ function writeGeneratedMcpSmoke(projectDirectory, projectName) {
         id: 2,
         method: "tools/call",
         params: {
-          name: "onboarding.create-welcome-message",
+          name: "onboarding_create-welcome-message",
           arguments: { name: "Ada" },
         },
       });
@@ -559,7 +559,7 @@ function writeGeneratedHttpSmoke(projectDirectory, projectName) {
       try {
         await client.connect(transport);
         const result = await client.callTool({
-          name: "onboarding.create-welcome-message",
+          name: "onboarding_create-welcome-message",
           arguments: { name: "Ada" },
         });
         assert.deepEqual(result.structuredContent, {

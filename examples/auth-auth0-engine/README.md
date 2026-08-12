@@ -89,7 +89,7 @@ curl -i --request POST http://127.0.0.1:3000/mcp \
   --header "authorization: Bearer $ACCESS_TOKEN" \
   --header 'accept: application/json, text/event-stream' \
   --header 'content-type: application/json' \
-  --data '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+  --data '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity_whoami","arguments":{}}}'
 ```
 
 Keep the client secret in your shell's secret mechanism. Never paste a token

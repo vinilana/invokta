@@ -122,7 +122,7 @@ describe("hello engine entrypoints", () => {
         id: 2,
         method: "tools/call",
         params: {
-          name: "onboarding.create-welcome-message",
+          name: "onboarding_create-welcome-message",
           arguments: { name: "Ada" },
         },
       });
@@ -182,7 +182,7 @@ describe("hello engine entrypoints", () => {
         id: "hello-http",
         method: "tools/call",
         params: {
-          name: "onboarding.create-welcome-message",
+          name: "onboarding_create-welcome-message",
           arguments: { name: "Ada" },
         },
       });

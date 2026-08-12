@@ -101,7 +101,7 @@ curl -sS http://127.0.0.1:3000/mcp \
   -H 'authorization: Bearer svc_9f21c4a7.<secret>' \
   -H 'accept: application/json, text/event-stream' \
   -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity_whoami","arguments":{}}}'
 ```
 
 An absent, malformed, unknown, or wrong-secret key returns HTTP 401 before

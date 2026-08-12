@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { SupportHarness, supportCapabilityId } from "../src/support-harness.js";
+import { SupportHarness, supportToolName } from "../src/support-harness.js";
 
 const exampleRoot = fileURLToPath(new URL("..", import.meta.url));
 const expectedClassification = {
@@ -40,7 +40,7 @@ describe("the private support harness", () => {
     const snapshot = await harness.classifyTicket("T-123");
 
     expect(snapshot).toEqual({
-      discoveredTools: [supportCapabilityId],
+      discoveredTools: [supportToolName],
       messages: [
         {
           role: "user",
@@ -53,7 +53,7 @@ describe("the private support harness", () => {
       ],
       executions: [
         {
-          toolName: supportCapabilityId,
+          toolName: supportToolName,
           arguments: { ticketId: "T-123" },
           isError: false,
           result: expectedClassification,
@@ -72,7 +72,7 @@ describe("the private support harness", () => {
     const snapshot = await harness.classifyTicket("T-999");
 
     expect(snapshot).toEqual({
-      discoveredTools: [supportCapabilityId],
+      discoveredTools: [supportToolName],
       messages: [
         {
           role: "user",
@@ -85,7 +85,7 @@ describe("the private support harness", () => {
       ],
       executions: [
         {
-          toolName: supportCapabilityId,
+          toolName: supportToolName,
           arguments: { ticketId: "T-999" },
           isError: true,
           result: safeError,

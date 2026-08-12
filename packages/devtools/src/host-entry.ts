@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 import type { Principal } from "@invokta/core";
+import { toMcpToolName } from "@invokta/mcp";
 
 import { readThrownValueInfo } from "./diagnostics.js";
 import { doctorReportToJson, inspectEngine } from "./doctor.js";
@@ -109,9 +110,10 @@ async function main(): Promise<number> {
 
   let describedCapabilities: unknown = [];
   try {
-    describedCapabilities = loaded.engine
-      .list()
-      .map(({ id }) => loaded.engine.describe(id));
+    describedCapabilities = loaded.engine.list().map(({ id }) => ({
+      ...loaded.engine.describe(id),
+      mcpToolName: toMcpToolName(id),
+    }));
   } catch {
     describedCapabilities = [];
   }

@@ -10,8 +10,9 @@ or an Invokta package. It can launch the engine's stdio entry point with the
 official MCP client, discover tools, call one, and own its own conversation or
 workflow state.
 
-This recipe follows `support-harness`, a private one-shot consumer of
-`support.classify-ticket`.
+This recipe follows `support-harness`, a private one-shot consumer of the
+`support.classify-ticket` capability published as
+`support_classify-ticket` over MCP.
 
 ## Build the consumer
 
@@ -57,7 +58,7 @@ This recipe follows `support-harness`, a private one-shot consumer of
    const tools = await client.listTools();
    const toolNames = tools.tools.map(({ name }) => name);
 
-   if (!toolNames.includes("support.classify-ticket")) {
+   if (!toolNames.includes("support_classify-ticket")) {
      throw new Error("Required support tool was not found.");
    }
    ```
@@ -69,7 +70,7 @@ This recipe follows `support-harness`, a private one-shot consumer of
 
    ```ts
    const result = await client.callTool({
-     name: "support.classify-ticket",
+     name: "support_classify-ticket",
      arguments: { ticketId: "T-123" },
    });
 

@@ -36,7 +36,7 @@ describe("the Cursor project configuration", () => {
       "utf8",
     );
 
-    expect(rule).toContain("developer-work.route-cursor-task");
+    expect(rule).toContain("developer-work_route-cursor-task");
     for (const useCase of cursorUseCases) {
       expect(rule).toContain(`\`${useCase}\``);
     }

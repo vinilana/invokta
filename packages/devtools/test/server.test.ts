@@ -138,7 +138,7 @@ describe("startServe", () => {
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
-        params: { name: "fixture.echo", arguments: { message: "hi" } },
+        params: { name: "fixture_echo", arguments: { message: "hi" } },
       }),
     });
   }
@@ -161,11 +161,13 @@ describe("startServe", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as ReadonlyArray<{
       readonly id: string;
+      readonly mcpToolName: string;
       readonly inputSchema: unknown;
       readonly outputSchema: unknown;
     }>;
     expect(body).toHaveLength(1);
     expect(body[0]?.id).toBe("fixture.echo");
+    expect(body[0]?.mcpToolName).toBe("fixture_echo");
     expect(body[0]?.inputSchema).toEqual({ type: "object" });
     expect(body[0]?.outputSchema).toEqual({ type: "object" });
   });
@@ -430,7 +432,7 @@ describe("startServe trace capacity", () => {
             jsonrpc: "2.0",
             id: index + 1,
             method: "tools/call",
-            params: { name: "fixture.echo", arguments: { message: "hi" } },
+            params: { name: "fixture_echo", arguments: { message: "hi" } },
           }),
         });
         await response.arrayBuffer();

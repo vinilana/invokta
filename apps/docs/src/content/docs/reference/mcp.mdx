@@ -26,6 +26,7 @@ transport types are not part of its public API.
 The package root exports:
 
 - `serveMcpStdio` and `ServeMcpStdioOptions`;
+- `toMcpToolName`;
 - `serveMcpHttp` and `ServeMcpHttpOptions`;
 - `McpHttpAuthOptions`;
 - `McpHttpAuthenticationRequest` and `McpHttpHeaderView`;
@@ -36,7 +37,7 @@ The package root exports:
 
 | Capability | MCP tool |
 | --- | --- |
-| Engine map key | `name` |
+| Engine map key | Portable `name` alias |
 | `title` | `title` |
 | `description` | `description` |
 | Input JSON Schema | `inputSchema` |
@@ -48,6 +49,19 @@ The package root exports:
 
 Engine name and version become the MCP server identity. Omitted tool arguments
 default to `{}` before input validation.
+
+Tool names always match `^[a-zA-Z0-9_-]{1,64}$`. Each unsupported character in
+the capability ID becomes `_`. A name longer than 64 characters uses its first
+51 portable characters, `_`, and the first 12 lowercase hexadecimal characters
+of the original ID's SHA-256 digest. An empty ID becomes `_`; an already
+compatible ID remains unchanged. For example,
+`support.classify-ticket` is published as `support_classify-ticket`.
+
+`tools/call` resolves the published alias back to the original capability ID
+before calling `engine.invoke`. If two capability IDs derive the same alias,
+the protocol server fails closed rather than publishing an ambiguous catalog.
+Hosts that need to display or submit the alias outside `tools/list` can derive
+the same value with `toMcpToolName(capabilityId)`.
 
 A successful call returns the validated result as `structuredContent` plus a
 JSON text fallback. Invocation failures return `isError: true` with one safe JSON
@@ -61,6 +75,12 @@ An unknown tool is a protocol `InvalidParams` error rather than an invocation
 `CAPABILITY_NOT_FOUND`. Valid request IDs such as numeric `0` and the empty
 string retain their wire identity, and cancellation reaches only its matching
 request.
+
+<Aside type="caution" title="Migration from dotted MCP tool names">
+  Refresh `tools/list` after upgrading and replace hard-coded MCP tool names
+  with the published aliases. Direct calls, CLI commands, composition, access
+  rules, and events continue to use the original dotted capability IDs.
+</Aside>
 
 ## `serveMcpStdio`
 

@@ -14,7 +14,7 @@ cases:
 - `prototype-development`
 - `simple-development`
 
-Call the MCP tool `developer-work.route-cursor-task` with that `useCase`. Invoke
+Call the MCP tool `developer-work_route-cursor-task` with that `useCase`. Invoke
 the custom subagent named by `agent.invocation` and give it a self-contained
 task. Keep read-only agents read-only. Use `fallbackModel` only when the primary
 model is unavailable for the current account, region, or organization policy.

@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { toMcpToolName } from "@invokta/mcp";
+
 import type { ThrownValueInfo } from "./diagnostics.js";
 import type { DoctorReport } from "./doctor.js";
 import { doctorReportToJson, inspectEngine } from "./doctor.js";
@@ -105,9 +107,10 @@ async function startWithEngine(
     if (cachedView !== undefined) return cachedView;
     let capabilities: EngineView["capabilities"] = [];
     try {
-      capabilities = options.engine
-        .list()
-        .map(({ id }) => options.engine.describe(id));
+      capabilities = options.engine.list().map(({ id }) => ({
+        ...options.engine.describe(id),
+        mcpToolName: toMcpToolName(id),
+      }));
     } catch {
       capabilities = [];
     }
