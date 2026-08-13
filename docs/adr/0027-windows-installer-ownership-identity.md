@@ -1,4 +1,4 @@
-# ADR 0026: Windows installer ownership identity
+# ADR 0027: Windows installer ownership identity
 
 - Status: Accepted
 - Date: 2026-08-13

@@ -173,7 +173,10 @@ MUST fail closed if two keys map to the same tool name. Success returns
 error; all other capability errors return `isError: true`. Error serialization
 is atomic: if the adapter cannot safely read or serialize the structured
 `EngineError`, it MUST return the generic `EXECUTION_FAILED` tool error and MUST
-NOT let the SDK convert the failure into an internal protocol error.
+NOT let the SDK convert the failure into an internal protocol error. Generated
+profiles that include MCP MUST run the same catalog construction as a build-time
+preflight from their canonical check, without starting an adapter or invoking a
+capability.
 
 **AE-MCP-02 — Isolated SDK.** `@invokta/mcp` encapsulates the official SDK and
 MUST NOT leak its types through the public API or copy it into the core. The
@@ -307,7 +310,7 @@ confirmation authorizes its complete ordered removable set.
 Creating a missing configuration requires installed-client evidence. Project,
 profile, remote-workspace, and organization-managed configuration mutation are
 not provided by this profile. On Windows, mutation uses the ownership identity
-of ADR 0026 and covers only targets whose default user configuration resolves
+of ADR 0027 and covers only targets whose default user configuration resolves
 inside the home directory.
 
 **AE-INSTALL-03 — Managed lifecycle.** New ownership records persist the

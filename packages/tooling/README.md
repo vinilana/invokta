@@ -1,9 +1,9 @@
 # @invokta/tooling
 
-Development-time command line tooling for Invokta. This package
-contributes no runtime contract, capability, adapter, or transport. It depends
-only on the public composition API of `@invokta/core` and Node built-ins, and
-no runtime package depends on it.
+Development-time command line tooling for Invokta. This package contributes no
+runtime capability, adapter, or transport. It delegates composition validation
+to `@invokta/core` and MCP catalog validation to `@invokta/mcp`; no runtime
+package depends on it.
 
 ## invokta check-capabilities
 
@@ -68,6 +68,27 @@ application has been built:
 invokta check-capabilities dist/capabilities.js
 ```
 
+## invokta check-mcp
+
+```text
+invokta check-mcp <esm-module> [--export <name>]
+```
+
+The build-time MCP catalog preflight. It imports a built ESM module, selects the
+`engine` export by default, and runs the same catalog construction used by MCP
+stdio and HTTP without starting an adapter or invoking a capability.
+
+Domain IDs such as `tasks.create` remain valid. The command validates their
+derived public aliases and exits `1` when two IDs collide, for example
+`support.echo` and `support_echo` both becoming `support_echo`. The diagnostic
+contains only the stable issue code, tool name, and colliding capability IDs.
+Usage, loading, export, and invalid-engine failures exit `2`; success is silent.
+
+```bash
+invokta check-mcp dist/engine.js
+invokta check-mcp dist/application.js --export supportEngine
+```
+
 ## Programmatic API
 
 ```ts
@@ -81,3 +102,15 @@ const exitCode = await checkCapabilities({
 
 `checkCapabilities` resolves with the exit code and writes diagnostics through
 the injectable `io.writeStderr` sink. It never terminates the process.
+
+The package also exports `checkMcp`, `CheckMcpIo`, and `CheckMcpOptions` with the
+same process-free calling convention:
+
+```ts
+import { checkMcp } from "@invokta/tooling";
+
+const exitCode = await checkMcp({
+  argv: ["check-mcp", "dist/engine.js"],
+  cwd: process.cwd(),
+});
+```

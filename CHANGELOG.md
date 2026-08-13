@@ -7,10 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added `invokta check-mcp` and `validateMcpToolCatalog` as a build-time
+  conformance gate for the actual published MCP catalog. Newly generated MCP
+  profiles include the gate in their canonical `check`, so ambiguous derived
+  tool names fail before adapter startup, installation, or deployment.
+
 ### Fixed
 
 - The engine installer no longer rejects every local Action Engine path on
-  Windows with `ENGINE_PATH_UNSAFE` (ADR 0026). Ownership validation now uses
+  Windows with `ENGINE_PATH_UNSAFE` (ADR 0027). Ownership validation now uses
   a platform-aware identity: POSIX platforms keep exact uid and private-mode
   checks, while Windows — where Node exposes no `process.getuid()` and reports
   a constant file owner — relies on the unchanged no-follow, path-identity,

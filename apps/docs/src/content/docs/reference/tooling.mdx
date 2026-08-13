@@ -1,13 +1,13 @@
 ---
 title: '@invokta/tooling'
-description: Command and API reference for validating composed capabilities during development and CI.
+description: Command and API reference for validating capability composition and MCP catalogs during development and CI.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-`@invokta/tooling` is the development-time build gate for capability
-composition. It imports a built ESM module and confirms that the selected export
-is the tracked value returned by `composeCapabilities`.
+`@invokta/tooling` provides development-time build gates for capability
+composition and the final MCP tool catalog. Each command imports a built ESM
+module and delegates validation to the same framework boundary used at runtime.
 
 The package adds no runtime contract, adapter, or transport. It never invokes a
 capability or starts an engine.
@@ -21,11 +21,13 @@ yarn add --dev @invokta/tooling
 ```
 
 The package is native ESM and requires Node.js 22.20.0 or later. It exposes the
-`invokta` binary and one package-root programmatic API.
+`invokta` binary and two package-root programmatic APIs.
 
 ## Commands
 
-The package provides one command:
+The package provides two commands.
+
+### `check-capabilities`
 
 ```text
 invokta check-capabilities <esm-module> [--export <name>]
@@ -95,6 +97,26 @@ credentials.
   messages.
 </Aside>
 
+### `check-mcp`
+
+```text
+invokta check-mcp <esm-module> [--export <name>]
+```
+
+The selected export defaults to `engine`. The command constructs the same MCP
+tool catalog used by stdio and HTTP, without starting an adapter or invoking a
+capability. Dotted domain IDs remain valid because the check applies to their
+derived public aliases.
+
+```sh
+invokta check-mcp ./dist/engine.js
+invokta check-mcp ./dist/application.js --export supportEngine
+```
+
+Success is silent. A duplicate derived alias exits `1` with
+`MCP_TOOL_NAME_COLLISION`, the public tool name, and both capability IDs. Usage,
+module loading, export selection, or invalid-engine failures exit `2`.
+
 ## CI setup
 
 Add the gate after the engine build:
@@ -104,7 +126,8 @@ Add the gate after the engine build:
   "scripts": {
     "build": "tsc -b --pretty false",
     "check:capabilities":
-      "invokta check-capabilities ./dist/capabilities.js"
+      "invokta check-capabilities ./dist/capabilities.js",
+    "check:mcp": "invokta check-mcp ./dist/engine.js"
   }
 }
 ```
@@ -112,6 +135,7 @@ Add the gate after the engine build:
 ```sh
 yarn build
 yarn check:capabilities
+yarn check:mcp
 ```
 
 Run it for every engine that composes imported capabilities. Literal IDs also
@@ -120,13 +144,16 @@ or computed at runtime.
 
 ## API
 
-The package root exports one function and its option types:
+The package root exports both functions and their option types:
 
 ```ts
 import {
   checkCapabilities,
   type CheckCapabilitiesIo,
   type CheckCapabilitiesOptions,
+  checkMcp,
+  type CheckMcpIo,
+  type CheckMcpOptions,
 } from "@invokta/tooling";
 ```
 
@@ -137,15 +164,25 @@ interface CheckCapabilitiesIo {
   ) => void | Promise<void>;
 }
 
+type CheckMcpIo = CheckCapabilitiesIo;
+
 interface CheckCapabilitiesOptions {
   readonly argv?: readonly string[];
   readonly cwd?: string;
   readonly io?: Partial<CheckCapabilitiesIo>;
 }
 
+interface CheckMcpOptions {
+  readonly argv?: readonly string[];
+  readonly cwd?: string;
+  readonly io?: Partial<CheckMcpIo>;
+}
+
 function checkCapabilities(
   options?: CheckCapabilitiesOptions,
 ): Promise<number>;
+
+function checkMcp(options?: CheckMcpOptions): Promise<number>;
 ```
 
 `argv` defaults to `process.argv.slice(2)`. `cwd` defaults to `process.cwd()` and
@@ -165,6 +202,6 @@ const exitCode = await checkCapabilities({
 process.exitCode = exitCode;
 ```
 
-The function returns the numeric exit code and never terminates the process.
+Both functions return a numeric exit code and never terminate the process.
 Read [Capability packages](/guides/capability-packages/) for the complete
 authoring and importing flow.

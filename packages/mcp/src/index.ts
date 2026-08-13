@@ -35,6 +35,10 @@ export {
   serveMcpHttp,
 } from "./http.js";
 export { toMcpToolName } from "./tool-name.js";
+export {
+  McpToolNameCollisionError,
+  validateMcpToolCatalog,
+} from "./protocol-server.js";
 
 import { createMcpServer } from "./protocol-server.js";
 import { preserveFalsyRequestIds } from "./request-id-transport.js";
