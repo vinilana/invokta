@@ -164,13 +164,16 @@ selected for the original outcome.
 
 ## MCP
 
-**AE-MCP-01 — One capability, one tool.** Key, title, description, schemas, and
-annotations map directly to the tool. Success returns `structuredContent` and a
-JSON text fallback. A nonexistent tool is a protocol error; all other capability
-errors return `isError: true`. Error serialization is atomic: if the adapter
-cannot safely read or serialize the structured `EngineError`, it MUST return the
-generic `EXECUTION_FAILED` tool error and MUST NOT let the SDK convert the failure
-into an internal protocol error.
+**AE-MCP-01 — One capability, one tool.** Title, description, schemas, and
+annotations map directly to the tool. The capability key maps deterministically
+to a portable tool name matching `^[a-zA-Z0-9_-]{1,64}$`, and `tools/call`
+resolves that name back to the original key before `engine.invoke`. The adapter
+MUST fail closed if two keys map to the same tool name. Success returns
+`structuredContent` and a JSON text fallback. A nonexistent tool is a protocol
+error; all other capability errors return `isError: true`. Error serialization
+is atomic: if the adapter cannot safely read or serialize the structured
+`EngineError`, it MUST return the generic `EXECUTION_FAILED` tool error and MUST
+NOT let the SDK convert the failure into an internal protocol error.
 
 **AE-MCP-02 — Isolated SDK.** `@invokta/mcp` encapsulates the official SDK and
 MUST NOT leak its types through the public API or copy it into the core. The

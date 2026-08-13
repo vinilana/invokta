@@ -36,6 +36,8 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md)
 - Production MCP OAuth integration boundary —
   [ADR 0024](./adr/0024-production-mcp-oauth-integration-boundary.md)
+- Portable MCP tool names —
+  [ADR 0025](./adr/0025-portable-mcp-tool-names.md)
 
 ## Guides and examples
 

@@ -26,8 +26,6 @@ const clientId = "client_01JTESTCLIENTID";
 const issuer = "https://api.workos.com/";
 const audience = "https://engine.example.com/mcp";
 const keyId = "workos-test-key";
-const capabilityId = "identity.whoami";
-
 const signing = await generateKeyPair("RS256", { extractable: true });
 const publicJwk: JWK = {
   ...(await exportJWK(signing.publicKey)),
@@ -171,7 +169,7 @@ describe("WorkOS MCP HTTP boundary", () => {
     try {
       await client.connect(transport as unknown as Transport);
       await expect(
-        client.callTool({ name: capabilityId, arguments: {} }),
+        client.callTool({ name: "identity_whoami", arguments: {} }),
       ).resolves.toMatchObject({
         structuredContent: {
           principalId: "user_01JTESTUSER",
@@ -198,7 +196,7 @@ describe("WorkOS MCP HTTP boundary", () => {
       jsonrpc: "2.0",
       id: "auth-boundary",
       method: "tools/call",
-      params: { name: capabilityId, arguments: {} },
+      params: { name: "identity_whoami", arguments: {} },
     });
 
     const missing = await fetch(url, { method: "POST", headers, body });
@@ -230,7 +228,7 @@ describe("WorkOS MCP HTTP boundary", () => {
         jsonrpc: "2.0",
         id: "auth-boundary",
         method: "tools/call",
-        params: { name: capabilityId, arguments: {} },
+        params: { name: "identity_whoami", arguments: {} },
       }),
     });
     const text = await response.text();

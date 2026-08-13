@@ -7,7 +7,7 @@ import type { WebStandardStreamableHTTPServerTransportOptions } from "@modelcont
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { OAuthProtectedResourceMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
 
-import { createMcpServer } from "./protocol-server.js";
+import { createMcpServer, createMcpToolCatalog } from "./protocol-server.js";
 import { preserveFalsyRequestIds } from "./request-id-transport.js";
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -674,6 +674,7 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
       : getOAuthProtectedResourceMetadataUrl(new URL(metadata.resource));
   const metadataPath =
     metadataUrl === undefined ? undefined : new URL(metadataUrl).pathname;
+  const toolCatalog = createMcpToolCatalog(engine);
   const activeRequests = new Set<AbortController>();
 
   const httpServer = createServer((request, response) => {
@@ -860,11 +861,15 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         return;
       }
 
-      const protocolServer = createMcpServer(engine, {
-        principal,
-        source: "mcp-http",
-        requestSignal: abortController.signal,
-      });
+      const protocolServer = createMcpServer(
+        engine,
+        {
+          principal,
+          source: "mcp-http",
+          requestSignal: abortController.signal,
+        },
+        toolCatalog,
+      );
       const statelessTransportOptions: WebStandardStreamableHTTPServerTransportOptions =
         {
           enableJsonResponse: true,

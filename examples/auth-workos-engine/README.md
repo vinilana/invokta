@@ -60,7 +60,7 @@ curl -sS http://127.0.0.1:3000/mcp \
   -H "authorization: Bearer $WORKOS_ACCESS_TOKEN" \
   -H 'accept: application/json, text/event-stream' \
   -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity_whoami","arguments":{}}}'
 ```
 
 A missing or invalid token answers HTTP 401 before `engine.invoke` runs.

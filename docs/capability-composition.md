@@ -7,9 +7,10 @@ it explicitly at its composition root.
 
 Every published capability carries a **default ID** chosen by its author. The
 importing engine may keep that ID or replace it with an **effective ID**. The
-effective ID is the only identity the framework exposes: `invoke`, `list`,
-`describe`, `capabilityId` in access rules, invocation events, CLI selection,
-and MCP tool names all use it. Default IDs and source metadata never reach
+effective ID is the only domain identity the framework exposes: `invoke`,
+`list`, `describe`, `capabilityId` in access rules, invocation events, and CLI
+selection all use it. MCP derives its portable tool name from that effective ID
+and resolves calls back to it. Default IDs and source metadata never reach
 `ExecutionContext`, business inputs, outputs, or events.
 
 Composition is eager and synchronous. It performs no I/O, starts no adapter,

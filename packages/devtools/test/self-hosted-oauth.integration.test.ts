@@ -356,9 +356,9 @@ describe("official self-hosted OAuth devtools homologation", () => {
       toolCount: 1,
     });
     expect(controller.tools(owner).map((tool) => tool.name)).toEqual([
-      "identity.whoami",
+      "identity_whoami",
     ]);
-    const result = await controller.call(owner, "identity.whoami", {});
+    const result = await controller.call(owner, "identity_whoami", {});
     expect(result.response.structuredContent).toMatchObject({
       principalId: account.id,
       scopes: expect.arrayContaining(["mcp:tools"]),

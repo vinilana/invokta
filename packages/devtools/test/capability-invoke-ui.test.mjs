@@ -198,6 +198,7 @@ async function waitFor(assertion) {
 
 const classify = {
   id: "support.classify-ticket",
+  mcpToolName: "support_classify-ticket",
   title: "Classify ticket",
   description: "Classifies a support ticket by urgency.",
   annotations: { readOnlyHint: true, destructiveHint: false },
@@ -258,6 +259,7 @@ describe("capability discovery", () => {
           {
             ...classify,
             id: "support.summarize-ticket",
+            mcpToolName: "support_summarize-ticket",
             title: undefined,
             description: "Summarizes a support ticket.",
           },
@@ -424,6 +426,7 @@ describe("capability discovery", () => {
           {
             ...classify,
             id: "support.create-brief",
+            mcpToolName: "support_create-brief",
             title: "Create brief",
             description: "Produces a concise overview for an account.",
           },
@@ -580,6 +583,7 @@ describe("capability discovery", () => {
           {
             ...classify,
             id: "support.summarize-ticket",
+            mcpToolName: "support_summarize-ticket",
             title: "Summarize ticket",
             description: "Summarizes a support ticket.",
           },
@@ -640,6 +644,7 @@ describe("capability discovery", () => {
           {
             ...classify,
             id: "support.summarize",
+            mcpToolName: "support_summarize",
             title: "Summarize ticket",
             description: "Summarizes a support ticket.",
           },
@@ -803,7 +808,7 @@ describe("capability invocation", () => {
     expect(JSON.parse(options.body)).toMatchObject({
       method: "tools/call",
       params: {
-        name: "support.classify-ticket",
+        name: "support_classify-ticket",
         arguments: { ticketId: "T-123" },
       },
     });
@@ -964,7 +969,7 @@ describe("capability invocation", () => {
     );
     expect(command).not.toContain("authorization");
     expect(command).toContain('"method": "tools/call"');
-    expect(command).toContain('"name": "support.classify-ticket"');
+    expect(command).toContain('"name": "support_classify-ticket"');
     expect(command).toContain('"ticketId": "T-9"');
   });
 

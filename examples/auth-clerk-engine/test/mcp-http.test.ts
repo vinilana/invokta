@@ -22,8 +22,6 @@ import { startClerkMcpHttp } from "../src/mcp-http.js";
 const frontendApiUrl = "https://clean-mayfly-62.clerk.accounts.dev";
 const authorizedParties = ["https://app.example.com"] as const;
 const signingKeyId = "ins_test_signing_key";
-const capabilityId = "identity.whoami";
-
 let signingKey: CryptoKey;
 let keys: JWTVerifyGetKey;
 let sessionToken: string;
@@ -41,7 +39,7 @@ function toolCallBody(): string {
     jsonrpc: "2.0",
     id: "auth-boundary",
     method: "tools/call",
-    params: { name: capabilityId, arguments: {} },
+    params: { name: "identity_whoami", arguments: {} },
   });
 }
 
@@ -113,7 +111,7 @@ describe("clerk MCP HTTP boundary", () => {
     try {
       await client.connect(transport as unknown as Transport);
       await expect(
-        client.callTool({ name: capabilityId, arguments: {} }),
+        client.callTool({ name: "identity_whoami", arguments: {} }),
       ).resolves.toMatchObject({
         structuredContent: {
           principalId: "user_2abcDEF",

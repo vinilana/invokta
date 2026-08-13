@@ -69,7 +69,7 @@ curl --fail-with-body http://127.0.0.1:3000/mcp \
   --header 'Accept: application/json, text/event-stream' \
   --header 'Authorization: Bearer replace-with-a-local-secret' \
   --header 'Content-Type: application/json' \
-  --data '{"jsonrpc":"2.0","id":"hello-1","method":"tools/call","params":{"name":"onboarding.create-welcome-message","arguments":{"name":"Ada"}}}'
+  --data '{"jsonrpc":"2.0","id":"hello-1","method":"tools/call","params":{"name":"onboarding_create-welcome-message","arguments":{"name":"Ada"}}}'
 ```
 
 The response contains the validated result in `result.structuredContent`:

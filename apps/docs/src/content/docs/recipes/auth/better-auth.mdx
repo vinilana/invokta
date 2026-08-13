@@ -301,7 +301,7 @@ curl -sS http://127.0.0.1:3000/mcp \
   -H "authorization: Bearer $BETTER_AUTH_JWT" \
   -H "accept: application/json, text/event-stream" \
   -H "content-type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity_whoami","arguments":{}}}'
 ```
 
 Without the header, or with an expired token, the adapter answers HTTP 401

@@ -16,8 +16,6 @@ import {
 } from "./support/auth0-tokens.js";
 
 const resource = "https://engine.example.com/mcp";
-const capabilityId = "identity.whoami";
-
 let tokens: Auth0TokenFactory;
 let healthy: McpHttpServerHandle;
 let unavailable: McpHttpServerHandle;
@@ -38,7 +36,7 @@ function callToolRequest(): RequestInit {
       jsonrpc: "2.0",
       id: "whoami",
       method: "tools/call",
-      params: { name: capabilityId, arguments: {} },
+      params: { name: "identity_whoami", arguments: {} },
     }),
   };
 }
@@ -92,7 +90,7 @@ describe("auth0 MCP HTTP boundary", () => {
     try {
       await client.connect(transport as unknown as Transport);
       await expect(
-        client.callTool({ name: capabilityId, arguments: {} }),
+        client.callTool({ name: "identity_whoami", arguments: {} }),
       ).resolves.toMatchObject({
         structuredContent: {
           principalId: "auth0|64f0c0ffee0000000000abcd",

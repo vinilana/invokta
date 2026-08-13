@@ -63,7 +63,7 @@ curl -sS http://127.0.0.1:3010/mcp \
   -H "authorization: Bearer $CLERK_SESSION_TOKEN" \
   -H 'accept: application/json, text/event-stream' \
   -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity.whoami","arguments":{}}}'
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"identity_whoami","arguments":{}}}'
 ```
 
 Clerk session tokens are short-lived, so an old token returns HTTP 401. So does

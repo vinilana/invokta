@@ -61,7 +61,7 @@ async function callWhoami(
       jsonrpc: "2.0",
       id: "whoami",
       method: "tools/call",
-      params: { name: "identity.whoami", arguments: toolArguments },
+      params: { name: "identity_whoami", arguments: toolArguments },
     }),
   });
 }

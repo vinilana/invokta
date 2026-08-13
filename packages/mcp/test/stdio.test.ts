@@ -103,7 +103,7 @@ describe("MCP stdio protocol adapter", () => {
     },
   );
 
-  it("negotiates the baseline protocol and maps each capability to one tool", async () => {
+  it("negotiates the baseline protocol and maps each capability to one portable tool", async () => {
     expect(LATEST_PROTOCOL_VERSION).toBe("2025-11-25");
     const engine = createEchoEngine();
     const { client } = await connect(engine);
@@ -116,7 +116,7 @@ describe("MCP stdio protocol adapter", () => {
 
     expect(listed.tools).toEqual([
       {
-        name: "support.echo",
+        name: "support_echo",
         title: "Echo support text",
         description: "Returns normalized support text.",
         inputSchema: engine.describe("support.echo").inputSchema,
@@ -136,7 +136,7 @@ describe("MCP stdio protocol adapter", () => {
     const { client } = await connect(createEchoEngine(observeContext));
 
     const result = await client.callTool({
-      name: "support.echo",
+      name: "support_echo",
       arguments: { text: "  hello  " },
     });
 
@@ -156,11 +156,105 @@ describe("MCP stdio protocol adapter", () => {
     );
   });
 
-  it("returns a protocol error for an unknown tool", async () => {
+  it("normalizes unsupported characters and bounds long MCP tool names", async () => {
+    const longCapabilityId = "a".repeat(65);
+    const engine = createEngine({
+      name: "portable-tool-name-engine",
+      version: "0.1.0",
+      capabilities: {
+        "": defineCapability({
+          description: "Uses an empty capability ID.",
+          input: z.object({}),
+          output: z.object({ id: z.string() }),
+          access: "public",
+          async run() {
+            return { id: "" };
+          },
+        }),
+        "already-compatible_1": defineCapability({
+          description: "Uses an already portable capability ID.",
+          input: z.object({}),
+          output: z.object({ id: z.string() }),
+          access: "public",
+          async run() {
+            return { id: "already-compatible_1" };
+          },
+        }),
+        "knowledge/ação": defineCapability({
+          description: "Uses non-ASCII and separator characters.",
+          input: z.object({}),
+          output: z.object({ id: z.string() }),
+          access: "public",
+          async run() {
+            return { id: "knowledge/ação" };
+          },
+        }),
+        [longCapabilityId]: defineCapability({
+          description: "Uses a capability ID longer than the MCP limit.",
+          input: z.object({}),
+          output: z.object({ id: z.string() }),
+          access: "public",
+          async run() {
+            return { id: longCapabilityId };
+          },
+        }),
+      },
+    });
+    const { client } = await connect(engine);
+
+    const listed = await client.listTools();
+
+    expect(listed.tools.map(({ name }) => name)).toEqual([
+      "_",
+      "already-compatible_1",
+      "knowledge_a__o",
+      `${"a".repeat(51)}_635361c48bb9`,
+    ]);
+    for (const { name } of listed.tools) {
+      expect(name).toMatch(/^[a-zA-Z0-9_-]{1,64}$/u);
+    }
+    await expect(
+      client.callTool({ name: "knowledge_a__o", arguments: {} }),
+    ).resolves.toMatchObject({ structuredContent: { id: "knowledge/ação" } });
+  });
+
+  it("rejects capability IDs that resolve to the same MCP tool name", () => {
+    const capability = defineCapability({
+      description: "Creates a tool-name collision fixture.",
+      input: z.object({}),
+      output: z.object({ ok: z.boolean() }),
+      access: "public",
+      async run() {
+        return { ok: true };
+      },
+    });
+    const engine = createEngine({
+      name: "colliding-tool-name-engine",
+      version: "0.1.0",
+      capabilities: {
+        "support.echo": capability,
+        support_echo: capability,
+      },
+    });
+
+    expect(() =>
+      createMcpServer(engine, {
+        principal: null,
+        source: "mcp-stdio",
+      }),
+    ).toThrow(
+      'Capabilities "support.echo" and "support_echo" resolve to duplicate MCP tool name "support_echo".',
+    );
+  });
+
+  it("rejects domain IDs and unknown names not published by tools/list", async () => {
     const { client } = await connect(createEchoEngine());
 
     await expect(
-      client.callTool({ name: "support.missing", arguments: {} }),
+      client.callTool({ name: "support.echo", arguments: {} }),
+    ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+    await expect(
+      client.callTool({ name: "support_missing", arguments: {} }),
     ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
   });
 
@@ -188,7 +282,7 @@ describe("MCP stdio protocol adapter", () => {
     const { client } = await connect(engine);
 
     const result = await client.callTool({
-      name: "support.fail",
+      name: "support_fail",
       arguments: { ticketId: "T-1" },
     });
 
@@ -327,7 +421,7 @@ describe("MCP stdio protocol adapter", () => {
       const { client } = await connect(engine);
 
       const result = await client.callTool({
-        name: "support.echo",
+        name: "support_echo",
         arguments: { text: "hello" },
       });
 
@@ -351,7 +445,7 @@ describe("MCP stdio protocol adapter", () => {
     const invalidInputClient = (await connect(createEchoEngine())).client;
 
     const inputResult = await invalidInputClient.callTool({
-      name: "support.echo",
+      name: "support_echo",
       arguments: { text: "   " },
     });
     expect(inputResult.isError).toBe(true);
@@ -378,7 +472,7 @@ describe("MCP stdio protocol adapter", () => {
     const invalidOutputClient = (await connect(invalidOutputEngine)).client;
 
     const outputResult = await invalidOutputClient.callTool({
-      name: "support.invalid-output",
+      name: "support_invalid-output",
       arguments: {},
     });
     expect(outputResult.isError).toBe(true);
@@ -406,7 +500,7 @@ describe("MCP stdio protocol adapter", () => {
     const { client } = await connect(engine, null);
 
     const result = await client.callTool({
-      name: "support.authenticated",
+      name: "support_authenticated",
       arguments: {},
     });
     expect(result.isError).toBe(true);
@@ -436,7 +530,7 @@ describe("MCP stdio protocol adapter", () => {
     const { client } = await connect(engine);
 
     const result = await client.callTool({
-      name: "support.unsafe",
+      name: "support_unsafe",
       arguments: {},
     });
 
@@ -473,7 +567,7 @@ describe("MCP stdio protocol adapter", () => {
     const { client } = await connect(engine);
 
     const result = await client.callTool({
-      name: "support.protected",
+      name: "support_protected",
       arguments: {},
     });
 
@@ -526,7 +620,7 @@ describe("MCP stdio protocol adapter", () => {
     const controller = new AbortController();
 
     const invocation = client.callTool(
-      { name: "support.wait", arguments: {} },
+      { name: "support_wait", arguments: {} },
       undefined,
       { signal: controller.signal },
     );

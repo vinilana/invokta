@@ -432,7 +432,12 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
       timedOut = true;
       controller.abort();
     }, clientTimeoutMs);
-    void callTool(capability.id, args, getActiveToken(), controller.signal)
+    void callTool(
+      capability.mcpToolName,
+      args,
+      getActiveToken(),
+      controller.signal,
+    )
       .then((exchange) => {
         const elapsedMs = performance.now() - startedAt;
         rawSection.hidden = false;
@@ -585,7 +590,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     }
     // The session token is never copied: the command references an
     // environment variable so the clipboard never carries a live credential.
-    const request = toolCallRequest(capability.id, args, null);
+    const request = toolCallRequest(capability.mcpToolName, args, null);
     const origin = (globalThis as { location?: { origin?: unknown } }).location
       ?.origin;
     const target = `${typeof origin === "string" ? origin : ""}${request.path}`;

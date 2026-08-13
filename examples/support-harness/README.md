@@ -2,8 +2,9 @@
 
 This private example is a consumer of the support engine, not a fourth framework
 package. It starts the existing support engine MCP stdio process with the
-official MCP client, discovers `support.classify-ticket`, calls it once, and
-records its own message and tool-execution history.
+official MCP client, discovers `support_classify-ticket`, calls it once, and
+records its own message and tool-execution history. The engine keeps
+`support.classify-ticket` as its domain capability ID.
 
 The harness does not import the engine, capability, core runtime, or MCP server
 adapter. It does not contain an autonomous loop: the requested ticket maps to one

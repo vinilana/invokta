@@ -26,6 +26,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- MCP stdio and HTTP now publish deterministic portable tool aliases that match
+  `^[a-zA-Z0-9_-]{1,64}$`, while direct and CLI invocation keep the original
+  capability IDs. Tool calls resolve aliases back through the same
+  `engine.invoke` path, and ambiguous aliases fail closed before the server
+  connects or listens. MCP clients that hard-code dotted tool names must refresh
+  `tools/list` and use the advertised alias.
 - Official example imports now rewrite npm lockfile package names together with
   `package.json`, and malformed lockfiles roll back the import.
 - MCP Protected Resource Metadata accepts an HTTP Authorization Server only at
@@ -34,6 +40,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
+- Pinned the transitive `nanoid` dependency to 3.3.17 so development and CI
+  tooling no longer resolves the vulnerable zero-size custom-generator
+  implementation reported through the Vitest dependency chain.
 - Self-hosted Client ID Metadata Documents remain disabled until the example
   has an SSRF-resistant fetch policy. Discovery inspection never accepts
   credentials, follows redirects, prints raw metadata, or mutates the remote

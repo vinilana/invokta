@@ -182,7 +182,7 @@ safe integer as `maxReadBufferBytes`. Crossing the boundary closes the protocol
 connection and rejects `serveMcpStdio`; input exactly at the boundary remains
 accepted.
 
-An MCP client will discover `onboarding.create-welcome-message` as one tool with
+An MCP client will discover `onboarding_create-welcome-message` as one tool with
 the capability's original input schema, output schema, description, and optional
 annotations.
 

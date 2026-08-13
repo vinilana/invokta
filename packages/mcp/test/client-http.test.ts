@@ -154,20 +154,20 @@ describe("plain MCP client facade over Streamable HTTP", () => {
     });
     await expect(connection.listTools()).resolves.toMatchObject({
       tools: [
-        { name: "fixture.echo", title: "Echo fixture" },
-        { name: "fixture.error" },
-        { name: "fixture.wait" },
+        { name: "fixture_echo", title: "Echo fixture" },
+        { name: "fixture_error" },
+        { name: "fixture_wait" },
       ],
     });
     await expect(
-      connection.callTool("fixture.echo", { value: "hello" }),
+      connection.callTool("fixture_echo", { value: "hello" }),
     ).resolves.toMatchObject({
       response: {
         structuredContent: { value: "hello", principalId: "bearer-user" },
       },
     });
     await expect(
-      connection.callTool("fixture.error", {}),
+      connection.callTool("fixture_error", {}),
     ).resolves.toMatchObject({
       response: { isError: true },
     });
@@ -185,7 +185,7 @@ describe("plain MCP client facade over Streamable HTTP", () => {
     });
 
     await expect(
-      connection.callTool("fixture.echo", { value: "custom" }),
+      connection.callTool("fixture_echo", { value: "custom" }),
     ).resolves.toMatchObject({
       response: {
         structuredContent: { value: "custom", principalId: "header-user" },
@@ -218,7 +218,7 @@ describe("plain MCP client facade over Streamable HTTP", () => {
       url: fixture.url,
       authentication: { type: "bearer", token: "correct" },
     });
-    const call = connection.callTool("fixture.wait", {});
+    const call = connection.callTool("fixture_wait", {});
     const closing = connection.close();
 
     await expect(call).rejects.toMatchObject({ code: "CANCELLED" });
