@@ -11,6 +11,7 @@ import { join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Principal } from "@invokta/core";
+import { inspectMcpOAuth } from "@invokta/mcp";
 
 import type {
   AdapterInvocationResult,
@@ -270,14 +271,19 @@ function readCapabilityView(value: unknown): CapabilityView | undefined {
 /**
  * Renders what the adapter exchanged into the two strings the trace shows.
  * Each adapter carries a different shape, and the trace stays one readable
- * feed rather than four.
+ * feed rather than four. The identity the call acted as travels with it, so
+ * the interface can report what each test identity managed to do.
  */
-function toAdapterCapture(result: AdapterInvocationResult): AdapterCallCapture {
+function toAdapterCapture(
+  result: AdapterInvocationResult,
+  principalId: string | null,
+): AdapterCallCapture {
   const shared = {
     adapter: result.adapter,
     capabilityId: result.capabilityId,
     outcome: result.outcome,
     durationMs: result.durationMs,
+    principalId,
     ...(result.error === undefined ? {} : { errorCode: result.error.code }),
   };
   if (result.exchange.kind === "http") {
@@ -429,6 +435,24 @@ export async function startDevtoolsServer(
       sendJson(response, 400, { error: "invalid_principal" });
       return;
     }
+    if (request.method === "PUT") {
+      if (
+        body === undefined ||
+        typeof body.key !== "string" ||
+        !isPrincipalInput(body.principal)
+      ) {
+        sendJson(response, 400, { error: "invalid_principal" });
+        return;
+      }
+      const updated = options.principals.update(body.key, body.principal);
+      if (updated === null) {
+        sendJson(response, 404, { error: "unknown_principal" });
+        return;
+      }
+      // An update keeps the existing token, so none is minted or echoed.
+      sendJson(response, 200, principalBody(updated));
+      return;
+    }
     if (request.method === "DELETE") {
       if (body === undefined || typeof body.key !== "string") {
         sendJson(response, 400, { error: "invalid_principal" });
@@ -445,7 +469,7 @@ export async function startDevtoolsServer(
       response,
       405,
       { error: "method_not_allowed" },
-      { allow: "GET, POST, DELETE" },
+      { allow: "GET, POST, PUT, DELETE" },
     );
   };
 
@@ -473,6 +497,42 @@ export async function startDevtoolsServer(
    * a credential: only the kind, the URL, the authentication type, and header
    * or environment-variable names leave this process.
    */
+  /**
+   * Runs the read-only OAuth discovery check against the selected endpoint.
+   * It authorizes nothing and sends no credential: the point is to attribute a
+   * failure to the leg that produced it, instead of to authentication as a
+   * whole.
+   */
+  const handleHttpTargetCheck = async (
+    response: ServerResponse,
+  ): Promise<void> => {
+    const target = options.httpTarget.current();
+    if (target.kind !== "external") {
+      sendJson(response, 400, {
+        error: "not_an_external_endpoint",
+        message:
+          "The devtools host authenticates with its own session tokens; there is no OAuth chain to check.",
+      });
+      return;
+    }
+    try {
+      const inspection = await inspectMcpOAuth({
+        transport: "http",
+        url: target.url,
+        authentication: { type: "oauth" },
+      });
+      sendJson(response, 200, inspection);
+    } catch (error) {
+      sendJson(response, 400, {
+        error: "invalid_target",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The endpoint could not be checked.",
+      });
+    }
+  };
+
   const handleHttpTarget = async (
     request: IncomingMessage,
     response: ServerResponse,
@@ -750,7 +810,9 @@ export async function startDevtoolsServer(
       }
       throw error;
     }
-    options.trace.appendAdapterCall(toAdapterCapture(result));
+    options.trace.appendAdapterCall(
+      toAdapterCapture(result, identity?.principal.id ?? null),
+    );
     sendJson(response, 200, result);
   };
 
@@ -866,6 +928,19 @@ export async function startDevtoolsServer(
     }
     if (path === "/api/http-target") {
       await handleHttpTarget(request, response);
+      return;
+    }
+    if (path === "/api/http-target/check") {
+      if (method !== "POST") {
+        sendJson(
+          response,
+          405,
+          { error: "method_not_allowed" },
+          { allow: "POST" },
+        );
+        return;
+      }
+      await handleHttpTargetCheck(response);
       return;
     }
     if (path === "/api/entry-target") {

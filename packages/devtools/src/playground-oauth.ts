@@ -7,8 +7,9 @@ import type { OAuthSession } from "./server.js";
  * The interactive authorization of one external MCP endpoint for the
  * playground, chartered by ADR 0028. It reuses the attached-mode session
  * controller accepted by ADR 0022 and ADR 0023, so the Authorization Code with
- * PKCE flow, the refusal of a cross-origin identity provider, and the
- * in-memory lifetime of every token are exactly the ones already accepted.
+ * PKCE flow and the in-memory lifetime of every token are exactly the ones
+ * already accepted — including ADR 0030's amendment, which follows the
+ * authorization servers the resource's own metadata advertises.
  *
  * OAuth is the one authentication type that cannot be per call: the
  * authorization is a session. Every other type connects and closes with the

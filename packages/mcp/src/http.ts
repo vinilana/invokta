@@ -208,9 +208,9 @@ function toMetadata(metadata: McpHttpProtectedResourceMetadata) {
   if (urls.some(hasUnsafeUrlCharacter)) {
     throw new TypeError("Protected resource metadata contains an unsafe URL.");
   }
-  validateResourceUrl(metadata.resource);
+  const loopbackResource = validateResourceUrl(metadata.resource);
   for (const authorizationServer of metadata.authorizationServers) {
-    validateAuthorizationServerUrl(authorizationServer);
+    validateAuthorizationServerUrl(authorizationServer, loopbackResource);
   }
   const value = {
     resource: metadata.resource,
@@ -222,7 +222,7 @@ function toMetadata(metadata: McpHttpProtectedResourceMetadata) {
   return OAuthProtectedResourceMetadataSchema.parse(value);
 }
 
-function validateResourceUrl(value: string): void {
+function validateResourceUrl(value: string): boolean {
   let url: URL;
   try {
     url = new URL(value);
@@ -246,9 +246,13 @@ function validateResourceUrl(value: string): void {
       "Protected resource metadata requires an HTTPS /mcp resource URL, except for loopback HTTP development.",
     );
   }
+  return loopbackDevelopment;
 }
 
-function validateAuthorizationServerUrl(value: string): void {
+function validateAuthorizationServerUrl(
+  value: string,
+  loopbackResource: boolean,
+): void {
   let url: URL;
   try {
     url = new URL(value);
@@ -257,15 +261,18 @@ function validateAuthorizationServerUrl(value: string): void {
       "Protected resource metadata has an invalid authorization server URL.",
     );
   }
+  const secure = url.protocol === "https:";
+  const loopbackDevelopment =
+    loopbackResource && url.protocol === "http:" && isLoopback(url.hostname);
   if (
-    url.protocol !== "https:" ||
+    (!secure && !loopbackDevelopment) ||
     url.username !== "" ||
     url.password !== "" ||
     url.search !== "" ||
     url.hash !== ""
   ) {
     throw new TypeError(
-      "Authorization server URLs require HTTPS and cannot contain credentials, a query, or a fragment.",
+      "Authorization server URLs require HTTPS and cannot contain credentials, a query, or a fragment, except for loopback HTTP development behind a loopback HTTP resource.",
     );
   }
 }

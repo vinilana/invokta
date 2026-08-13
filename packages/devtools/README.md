@@ -88,10 +88,14 @@ through the provider in the new tab and return to the workbench after the
 loopback callback completes. Invokta uses Authorization Code with PKCE, the
 server's advertised MCP OAuth metadata, and its advertised dynamic client
 registration endpoint. It does not accept a preconfigured client ID or client
-secret. OAuth endpoints must remain on the MCP resource's exact origin; a
-cross-origin identity provider is rejected. Tokens, PKCE material, client
-registration data, and discovery documents remain in process memory and are
-cleared on disconnect or process exit.
+secret. The authorization servers the resource's own Protected Resource
+Metadata advertises are followed, including ones on another origin — which is
+what every hosted identity provider is. That document is still read only from
+the resource's own origin, so the resource stays the authority on who may issue
+tokens for it, and a loopback HTTP authorization server is accepted only behind
+a loopback HTTP resource. Tokens, PKCE material, client registration data, and
+discovery documents remain in process memory and are cleared on disconnect or
+process exit.
 
 OAuth is intentionally interactive and UI-only. The `verify` command supports
 none, bearer, and custom-header authentication so it remains deterministic for
@@ -320,6 +324,20 @@ hook in `src/http-auth.ts` — runs against the same arguments the other three
 paths use. The principal then comes from *that server's* hook, not from the
 devtools identity. Plain HTTP is accepted only for loopback; every other
 endpoint must use HTTPS.
+
+With **OAuth** selected, **Check** runs the discovery chain against the endpoint
+and reports it leg by leg: the `401` challenge and whether it advertises
+`resource_metadata`, the Protected Resource Metadata document, the Authorization
+Server's RFC 8414 metadata, and whether dynamic client registration is
+advertised. A leg that could not run says what it was waiting for rather than
+reporting a failure it never attempted, and **Authorize** stays disabled until
+the chain resolves. The check authorizes nothing and sends no credential.
+
+An Authorization Server on a different origin than the engine — which is what
+every hosted identity provider is — is reached as long as the engine's own
+Protected Resource Metadata advertises it. That document is still read only
+from the engine's own origin, so the engine remains the authority on who may
+issue tokens for it.
 
 A credential value starting with `$` names an environment variable the dev
 server reads, so the secret stays in the dev server's environment instead of

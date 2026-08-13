@@ -1,4 +1,4 @@
-import { api, type HttpTargetView } from "./api.js";
+import { api, type HttpTargetView, type OAuthInspection } from "./api.js";
 import { el } from "./dom.js";
 
 /**
@@ -177,6 +177,15 @@ export function createHttpAuthControl(owner: string): HttpAuthControl {
     "Use endpoint",
   ]);
   const cancel = el("button", { type: "button" }, ["Cancel"]);
+  const check = el("button", { type: "button", class: "auth-check" }, [
+    "Check",
+  ]);
+  const checkReport = el(
+    "div",
+    { class: "auth-check-report", role: "status", "aria-live": "polite" },
+    [],
+  );
+  checkReport.hidden = true;
   const form = el("div", { class: "auth-form" }, [
     el("label", { class: "field-label" }, ["Endpoint URL"]),
     url,
@@ -187,7 +196,8 @@ export function createHttpAuthControl(owner: string): HttpAuthControl {
     bearer,
     headerList,
     addHeader,
-    el("div", { class: "auth-form-actions" }, [apply, cancel]),
+    el("div", { class: "auth-form-actions" }, [apply, check, cancel]),
+    checkReport,
     el("p", { class: "hint" }, [
       "Plain HTTP is accepted only for loopback. A value starting with $ names an environment variable the dev server reads, so the secret never leaves it.",
     ]),
@@ -235,8 +245,61 @@ export function createHttpAuthControl(owner: string): HttpAuthControl {
     headerList.append(createHeaderRow().row);
   });
 
+  /**
+   * Renders the discovery chain leg by leg. A failure names the leg that
+   * produced it, which is the whole reason the check exists: authentication as
+   * a whole failing says nothing a developer can act on.
+   */
+  const showCheck = (inspection: OAuthInspection): void => {
+    while (checkReport.firstChild) checkReport.firstChild.remove();
+    for (const step of inspection.steps) {
+      const tone =
+        step.outcome === "ok"
+          ? "ok"
+          : step.outcome === "failed"
+            ? "error"
+            : "warn";
+      checkReport.append(
+        el("div", { class: "auth-check-step" }, [
+          el("span", { class: `badge ${tone}` }, [step.outcome]),
+          el("div", { class: "auth-check-copy" }, [
+            el("p", { class: "auth-check-summary" }, [step.summary]),
+            step.hint === undefined
+              ? null
+              : el("p", { class: "hint" }, [step.hint]),
+          ]),
+        ]),
+      );
+    }
+    checkReport.hidden = false;
+    // Authorizing before the chain resolves only reproduces the failure the
+    // report already explains.
+    apply.disabled = externalType.value === "oauth" && !inspection.ready;
+  };
+
+  check.addEventListener("click", () => {
+    feedback.textContent = "";
+    check.disabled = true;
+    void api
+      .checkHttpTarget()
+      .then(showCheck)
+      .catch((error: unknown) => {
+        feedback.textContent =
+          error instanceof Error
+            ? error.message
+            : "The endpoint could not be checked.";
+      })
+      .finally(() => {
+        check.disabled = false;
+      });
+  });
+
   const paintFormFields = (): void => {
     const type = externalType.value;
+    // The check reads the endpoint the dev server already holds, so it is
+    // offered once an endpoint is selected rather than while one is drafted.
+    check.hidden = type !== "oauth" || current.kind !== "external";
+    if (type !== "oauth") apply.disabled = false;
     bearer.hidden = type !== "bearer";
     headerList.hidden = type !== "headers";
     addHeader.hidden = type !== "headers";
@@ -339,7 +402,10 @@ export function createHttpAuthControl(owner: string): HttpAuthControl {
 
   // The selection belongs to the session, not to this panel: the shell loads
   // it once at boot and every panel follows the published value.
-  listeners.set(owner, paint);
+  listeners.set(owner, (target) => {
+    paint(target);
+    paintFormFields();
+  });
   paint(current);
 
   const element = el("div", { class: "auth-control" }, [

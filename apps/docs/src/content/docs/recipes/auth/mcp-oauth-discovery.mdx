@@ -103,7 +103,9 @@ discovery layer is new here.
      loopback HTTP allowed only for local development;
    - `resource` cannot contain credentials, a query, or a fragment;
    - every entry in `authorizationServers` must be an HTTPS identifier without
-     credentials, query, or fragment; an issuer path is allowed;
+     credentials, query, or fragment; an issuer path is allowed, and loopback
+     HTTP is accepted only when `resource` is itself loopback HTTP, so a
+     deployed engine can never advertise a plain-HTTP Authorization Server;
    - at least one Authorization Server is required.
 
    For the example above, `AUTH_JWT_ISSUER` doubles as the Authorization Server
@@ -161,7 +163,9 @@ receives is audience-bound to your engine — which is exactly what the verifier
 ## Run it
 
 Build the repository and start the engine with a resource identifier
-configured. A loopback HTTP resource is accepted for local development:
+configured. A loopback HTTP resource is accepted for local development, and it
+may advertise a loopback HTTP Authorization Server, so an identity provider
+running on your machine can be used without a certificate:
 
 ```sh
 yarn build
@@ -192,6 +196,27 @@ curl -si http://127.0.0.1:3000/mcp \
 Point an OAuth-capable MCP client at `http://127.0.0.1:3000/mcp` and it will
 follow the same two steps on its own before running the authorization flow with
 your provider.
+
+## Check the chain
+
+`curl` shows the two documents; it does not tell you whether a client can get
+from one to the other. The devtools runs the whole discovery chain and reports
+it leg by leg:
+
+```sh
+npx @invokta/devtools serve dist/engine.js
+```
+
+In Playground, set **Auth** to an external endpoint with **OAuth**, enter your
+engine's `/mcp` URL, and press **Check**. Each leg reports on its own — the
+`401` challenge and whether it advertises `resource_metadata`, the Protected
+Resource Metadata document, the Authorization Server's RFC 8414 metadata, and
+whether dynamic client registration is advertised. A leg that could not run
+says what it was waiting for instead of reporting a failure it never attempted,
+and **Authorize** stays disabled until the chain resolves.
+
+The check authorizes nothing and sends no credential: it is the discovery half
+only, which is the half your engine is responsible for.
 
 ## Verify it
 

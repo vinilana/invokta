@@ -1628,6 +1628,10 @@ describe("MCP stateless Streamable HTTP", () => {
         resource: "https://engine.example.com/mcp",
         authorizationServers: ["https://auth.example.com#fragment"] as const,
       },
+      {
+        resource: "https://engine.example.com/mcp",
+        authorizationServers: ["http://127.0.0.1:9000"] as const,
+      },
     ];
 
     for (const resourceMetadata of invalidCases) {
@@ -1664,6 +1668,28 @@ describe("MCP stateless Streamable HTTP", () => {
     expect(server.address()).toEqual({
       host: "127.0.0.1",
       port: expect.any(Number),
+    });
+  });
+
+  it("lets a loopback HTTP resource advertise a loopback HTTP authorization server", async () => {
+    const server = await start(createContextEngine(), {
+      auth: {
+        mode: "required",
+        authenticate: () => null,
+        resourceMetadata: {
+          resource: "http://127.0.0.1:3000/mcp",
+          authorizationServers: ["http://127.0.0.1:9000"],
+        },
+      },
+    });
+
+    const metadata = await fetch(
+      endpoint(server, "/.well-known/oauth-protected-resource/mcp"),
+    );
+
+    expect(await json(metadata)).toEqual({
+      resource: "http://127.0.0.1:3000/mcp",
+      authorization_servers: ["http://127.0.0.1:9000"],
     });
   });
 

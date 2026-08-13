@@ -9,6 +9,7 @@ import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 export {
   beginMcpOAuthAuthorization,
   connectMcpClient,
+  inspectMcpOAuth,
   type McpClientConnection,
   McpClientError,
   type McpClientErrorCode,
@@ -22,6 +23,9 @@ export {
   type McpOAuthAuthorization,
   type McpOAuthAuthorizationOptions,
   type McpOAuthClientTarget,
+  type McpOAuthInspection,
+  type McpOAuthStep,
+  type McpOAuthStepName,
 } from "./client.js";
 
 export {

@@ -54,10 +54,14 @@ continue through the provider in the new tab; the workbench resumes after the
 loopback callback completes. The flow uses Authorization Code with PKCE, the
 server's advertised MCP OAuth metadata, and its advertised dynamic client
 registration endpoint — a preconfigured client ID or client secret is never
-accepted. OAuth endpoints must remain on the MCP resource's exact origin; a
-cross-origin identity provider is rejected. Tokens, PKCE material, client
-registration data, and discovery documents stay in process memory and are
-cleared on disconnect or process exit. OAuth is intentionally interactive and
+accepted. The authorization servers the resource's own Protected Resource
+Metadata advertises are followed, including ones on another origin — which is
+what every hosted identity provider is. That document is still read only from
+the resource's own origin, so the resource stays the authority on who may issue
+tokens for it, and a loopback HTTP authorization server is accepted only behind
+a loopback HTTP resource. Tokens, PKCE material, client registration data, and
+discovery documents stay in process memory and are cleared on disconnect or
+process exit. OAuth is intentionally interactive and
 UI-only; `verify` supports none, bearer, and custom-header authentication so
 automation stays deterministic.
 
@@ -234,7 +238,20 @@ credentials, query, or fragment.
 OAuth reuses the ephemeral Authorization Code with PKCE flow of attached
 inspection: the server's advertised MCP OAuth metadata, its advertised dynamic
 client registration, a loopback callback, and no preconfigured client ID or
-secret.
+secret. An Authorization Server on a different origin than the engine — which
+is what every hosted identity provider is — is reached as long as the engine's
+own Protected Resource Metadata advertises it; that document is still read only
+from the engine's own origin, so the engine remains the authority on who may
+issue tokens for it.
+
+**Check** runs the discovery chain and reports it leg by leg: the `401`
+challenge and whether it advertises `resource_metadata`, the Protected Resource
+Metadata document, the Authorization Server's RFC 8414 metadata, and whether
+dynamic client registration is advertised. A leg that could not run says what it
+was waiting for rather than reporting a failure it never attempted, and
+**Authorize** stays disabled until the chain resolves. The check authorizes
+nothing and sends no credential — it exercises the discovery half, which is the
+half the engine is responsible for.
 
 A credential value starting with `$` names an environment variable the dev
 server reads, matching how `verify` keeps a token out of an argument vector.
@@ -245,8 +262,11 @@ authentication type, and header or variable names only.
 
 #### Test identities
 
-**Test identities** is where the identities themselves are created, rotated,
-and removed; the Playground selects among them. Each one maps to an in-memory
+**Test identities** is where the identities themselves are created, edited,
+rotated, and removed; the Playground selects among them. Each one lists what it
+recently managed to do — the capability, the adapter, and the outcome of the
+last emulated calls made as it — so an `access` rule can be attributed to the
+identity that met it rather than guessed at. Each one maps to an in-memory
 development `Principal` and receives an opaque bearer token. The engine host
 resolves presented tokens through its authentication hook, so `access` rules
 run against real principals, and a request without a valid token receives the

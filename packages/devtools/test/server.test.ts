@@ -269,6 +269,81 @@ describe("startServe", () => {
     expect(removedAgain.status).toBe(404);
   });
 
+  it("updates a principal in place through the API", async () => {
+    const issued = await fetch(`${base}/api/principals`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ principal: { id: "editable" } }),
+    });
+    const created = (await issued.json()) as {
+      readonly key: string;
+      readonly token: string;
+    };
+
+    const updated = await fetch(`${base}/api/principals`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        key: created.key,
+        principal: {
+          id: "editable",
+          attributes: { permissions: ["ticket:read"] },
+        },
+      }),
+    });
+    expect(updated.status).toBe(200);
+    const updatedBody = (await updated.json()) as Readonly<
+      Record<string, unknown>
+    >;
+    // An update mints nothing, so it answers without a credential.
+    expect(Object.keys(updatedBody).sort()).toEqual(["key", "principal"]);
+    expect(updatedBody.principal).toEqual({
+      id: "editable",
+      attributes: { permissions: ["ticket:read"] },
+    });
+
+    const listed = (await (
+      await fetch(`${base}/api/principals`)
+    ).json()) as ReadonlyArray<{
+      readonly key: string;
+      readonly principal: unknown;
+    }>;
+    expect(listed.find(({ key }) => key === created.key)?.principal).toEqual({
+      id: "editable",
+      attributes: { permissions: ["ticket:read"] },
+    });
+
+    const unknownKey = await fetch(`${base}/api/principals`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        key: "p_absent",
+        principal: { id: "editable" },
+      }),
+    });
+    expect(unknownKey.status).toBe(404);
+    expect((await unknownKey.json()) as unknown).toMatchObject({
+      error: "unknown_principal",
+    });
+
+    const invalidPrincipal = await fetch(`${base}/api/principals`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: created.key, principal: { id: "" } }),
+    });
+    expect(invalidPrincipal.status).toBe(400);
+    expect((await invalidPrincipal.json()) as unknown).toMatchObject({
+      error: "invalid_principal",
+    });
+
+    const removed = await fetch(`${base}/api/principals`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: created.key }),
+    });
+    expect(removed.status).toBe(200);
+  });
+
   it("proxies an authenticated tools/call to the engine host", async () => {
     const response = await callTool({ authorization: `Bearer ${token}` });
 
@@ -409,6 +484,7 @@ describe("adapter emulation over /api/invoke", () => {
   let handles: ServeHandles;
   let base = "";
   let principalKey = "";
+  let principalId = "";
   /** The same engine the dev server loaded, for the external-endpoint test. */
   let fixtureEngine: Parameters<typeof serveMcpHttp>[0];
   /** Four child processes and one HTTP round trip need room to settle. */
@@ -441,8 +517,12 @@ describe("adapter emulation over /api/invoke", () => {
     base = `http://127.0.0.1:${String(handles.devtoolsAddress.port)}`;
     const principals = (await (
       await fetch(`${base}/api/principals`)
-    ).json()) as ReadonlyArray<{ readonly key: string }>;
+    ).json()) as ReadonlyArray<{
+      readonly key: string;
+      readonly principal: { readonly id: string };
+    }>;
     principalKey = principals[0]?.key ?? "";
+    principalId = principals[0]?.principal.id ?? "";
   }, emulationTimeoutMs);
 
   afterAll(async () => {
@@ -513,6 +593,34 @@ describe("adapter emulation over /api/invoke", () => {
       expect(text).toContain('"kind":"adapter"');
       expect(text).toContain('"adapter":"direct"');
       expect(text).toContain('"capabilityId":"fixture.report"');
+    },
+    emulationTimeoutMs,
+  );
+
+  it(
+    "records the identity an emulated call acted as",
+    async () => {
+      // A cleared buffer keeps the replay empty, so the stream carries only
+      // the two emulations this test provokes.
+      await (await fetch(`${base}/api/trace/clear`, { method: "POST" })).json();
+      const text = await readSse(`${base}/api/events`, 2, async () => {
+        const named = await invoke({
+          adapter: "direct",
+          capabilityId: "fixture.report",
+          arguments: {},
+          principalKey,
+        });
+        await named.arrayBuffer();
+        const anonymous = await invoke({
+          adapter: "direct",
+          capabilityId: "fixture.report",
+          arguments: {},
+        });
+        await anonymous.arrayBuffer();
+      });
+
+      expect(text).toContain(`"principalId":${JSON.stringify(principalId)}`);
+      expect(text).toContain('"principalId":null');
     },
     emulationTimeoutMs,
   );

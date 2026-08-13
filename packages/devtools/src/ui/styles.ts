@@ -885,6 +885,29 @@ nav.tabs button.selected {
   color: var(--accent-text);
 }
 
+.auth-check[hidden] { display: none; }
+
+.auth-check-report {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.auth-check-report[hidden] { display: none; }
+
+.auth-check-step {
+  display: grid;
+  align-items: start;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.auth-check-copy { min-width: 0; }
+.auth-check-summary { margin: 0; font-size: 0.75rem; overflow-wrap: anywhere; }
+.auth-check-copy .hint { margin: 0.1rem 0 0; font-size: 0.6875rem; }
+
 .auth-feedback {
   flex: 1 1 100%;
   margin: 0.2rem 0 0;
@@ -1606,7 +1629,7 @@ details.trace-row--adapter { margin: 0; padding: 0; }
   gap: 0.4rem 0.55rem;
   grid-template-columns:
     minmax(5.5rem, 0.65fr) max-content max-content minmax(0, 2fr)
-    max-content 0.75rem;
+    max-content max-content 0.75rem;
   width: auto;
   padding: 0.5rem 0.65rem;
   list-style: none;
@@ -1634,6 +1657,18 @@ details.trace-row--adapter { margin: 0; padding: 0; }
 }
 .trace-entry-kind { flex: 0 0 auto; color: var(--muted); font-size: 0.6875rem; }
 .trace-entry-message { min-width: 0; overflow-wrap: anywhere; }
+
+.trace-entry-identity {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+.trace-entry-identity code { color: var(--muted); font-size: inherit; }
 
 .trace-row code {
   min-width: 0;
@@ -2044,6 +2079,36 @@ details.trace-row--adapter { margin: 0; padding: 0; }
 }
 
 .principal-state-grid .badge { max-width: 100%; margin: 0; }
+.principal-credential-note { margin: 0; font-size: 0.6875rem; }
+
+.principal-recent {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: baseline;
+  gap: 0.4rem 0.6rem;
+  min-width: 0;
+  margin-top: 0.3rem;
+}
+
+.principal-recent-calls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.8rem;
+  min-width: 0;
+}
+
+.principal-recent-call {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.principal-recent-call code { color: var(--muted); font-size: inherit; }
 
 .principal-status {
   grid-column: 1 / -1;

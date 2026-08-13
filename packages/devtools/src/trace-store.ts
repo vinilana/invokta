@@ -15,6 +15,8 @@ export interface AdapterCallCapture {
   readonly errorCode?: string;
   readonly request: string;
   readonly response: string;
+  /** The identity the call acted as; `null` when it ran anonymously. */
+  readonly principalId?: string | null;
   /** The HTTP status, when the MCP HTTP adapter carried the call. */
   readonly status?: number;
   /** The exit code, when a child process carried the call. */

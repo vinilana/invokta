@@ -758,6 +758,7 @@ describe("trace panel", () => {
         outcome: "capability-error",
         durationMs: 42.5,
         errorCode: "INPUT_INVALID",
+        principalId: "local:operations-analyst",
         request: 'engine run support.classify --input \'{"ticketId":"T-1"}\'',
         response: '{"error":{"code":"INPUT_INVALID"}}',
         exitCode: 1,
@@ -775,6 +776,7 @@ describe("trace panel", () => {
         capabilityId: "support.classify",
         outcome: "success",
         durationMs: 8,
+        principalId: null,
         request: '{"method":"tools/call"}',
         response: '{"structuredContent":{}}',
       },
@@ -787,6 +789,8 @@ describe("trace panel", () => {
     expect(log.textContent).toContain("Capability error · INPUT_INVALID");
     expect(log.textContent).toContain("cli");
     expect(log.textContent).toContain("mcp-stdio");
+    expect(log.textContent).toContain("as local:operations-analyst");
+    expect(log.textContent).toContain("anonymous");
     expect(
       walk(log).find((node) => node.textContent === "Emulated call"),
     ).toBeDefined();
@@ -807,6 +811,16 @@ describe("trace panel", () => {
     );
     expect(visible).toHaveLength(1);
     expect(visible[0].textContent).toContain("mcp-stdio");
+
+    search.value = "operations-analyst";
+    search.dispatchEvent(new Event("input"));
+    const byIdentity = walk(log).filter(
+      (node) =>
+        node.getAttribute?.("class")?.includes("trace-row--adapter") === true &&
+        node.hidden !== true,
+    );
+    expect(byIdentity).toHaveLength(1);
+    expect(byIdentity[0].textContent).toContain("cli");
 
     dispose();
   });

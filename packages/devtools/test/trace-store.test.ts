@@ -109,6 +109,31 @@ describe("createTraceStore", () => {
     expect(entry.responseTruncated).toBe(false);
   });
 
+  it("records the identity an emulated call acted as, including anonymous", () => {
+    const store = createTraceStore();
+    const shared = {
+      adapter: "direct",
+      capabilityId: "fixture.echo",
+      outcome: "success",
+      durationMs: 3,
+      request: "{}",
+      response: "{}",
+    } as const;
+
+    const named = store.appendAdapterCall({
+      ...shared,
+      principalId: "local:operations-analyst",
+    });
+    const anonymous = store.appendAdapterCall({ ...shared, principalId: null });
+
+    expect(named.kind).toBe("adapter");
+    if (named.kind !== "adapter") return;
+    expect(named.call.principalId).toBe("local:operations-analyst");
+    expect(anonymous.kind).toBe("adapter");
+    if (anonymous.kind !== "adapter") return;
+    expect(anonymous.call.principalId).toBeNull();
+  });
+
   it("clears buffered entries while keeping ids monotonic", () => {
     const store = createTraceStore();
     store.appendInvocation(record(1));

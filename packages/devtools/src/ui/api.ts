@@ -116,6 +116,25 @@ async function failWithDetail(
   throw new ApiError(message, detail.code);
 }
 
+/** One leg of the OAuth discovery chain, as `inspectMcpOAuth` reports it. */
+export interface OAuthStep {
+  readonly name:
+    | "challenge"
+    | "resource-metadata"
+    | "authorization-server-metadata"
+    | "registration";
+  readonly outcome: "ok" | "failed" | "skipped";
+  readonly summary: string;
+  readonly hint?: string;
+  readonly detail?: unknown;
+}
+
+export interface OAuthInspection {
+  readonly steps: readonly OAuthStep[];
+  /** Whether an interactive authorization can be attempted. */
+  readonly ready: boolean;
+}
+
 export interface HttpTargetView {
   readonly kind: "devtools" | "external";
   readonly url?: string;
@@ -140,6 +159,16 @@ export type EntryPointView = Readonly<{
 export const api = {
   engine: () => getJson<EngineInfo>("/api/engine"),
   httpTarget: () => getJson<HttpTargetView>("/api/http-target"),
+  /**
+   * Runs the read-only OAuth discovery check against the selected endpoint.
+   * Nothing is authorized and no credential is sent.
+   */
+  checkHttpTarget: async (): Promise<OAuthInspection> => {
+    const response = await fetch("/api/http-target/check", { method: "POST" });
+    if (!response.ok)
+      await failWithDetail(response, "The endpoint could not be checked.");
+    return (await response.json()) as OAuthInspection;
+  },
   entryPoints: () => getJson<EntryPointView>("/api/entry-target"),
   /** Replaces which composition root runs one adapter's emulation. */
   setEntryPoint: async (selection: unknown): Promise<EntryPointView> => {
@@ -193,6 +222,23 @@ export const api = {
     if (!response.ok)
       await failWithDetail(response, "The test identity could not be added.");
     return (await response.json()) as IssuedPrincipal;
+  },
+  /** Replaces a test identity in place; its key and its token are kept. */
+  updatePrincipal: async (
+    key: string,
+    principal: {
+      readonly id: string;
+      readonly attributes?: Readonly<Record<string, unknown>>;
+    },
+  ): Promise<PrincipalInfo> => {
+    const response = await fetch("/api/principals", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key, principal }),
+    });
+    if (!response.ok)
+      await failWithDetail(response, "The test identity could not be updated.");
+    return (await response.json()) as PrincipalInfo;
   },
   rotatePrincipal: async (key: string): Promise<IssuedPrincipal> => {
     const response = await fetch("/api/principals", {

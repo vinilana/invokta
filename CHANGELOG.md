@@ -31,6 +31,28 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   against the same arguments the other paths use. A credential may name an
   environment variable the dev server reads; every credential stays in process
   memory and is never persisted or echoed back.
+- `@invokta/mcp` now reaches an OAuth Authorization Server on a different origin
+  than the MCP resource, provided the resource's own Protected Resource Metadata
+  advertises it (ADR 0030, amending ADR 0023). That document is still read only
+  from the resource's own origin over HTTPS, so the resource remains the
+  authority on who may issue tokens for it; the loopback-only redirect,
+  mandatory PKCE, audience binding, `state` validation, and in-memory-only
+  credentials are unchanged. Hosted identity providers, which every
+  `examples/auth-*` engine demonstrates, were previously refused outright.
+  `serveMcpHttp` correspondingly accepts a loopback Authorization Server in
+  `auth.resourceMetadata`, but only when the resource is itself loopback HTTP,
+  so a deployed engine can never advertise a plain-HTTP one.
+- `@invokta/mcp` exposes `inspectMcpOAuth`, a read-only diagnostic that runs the
+  OAuth discovery chain — the `401` challenge, Protected Resource Metadata, the
+  Authorization Server's RFC 8414 metadata, and whether dynamic client
+  registration is advertised — and reports each leg with its own outcome and
+  remediation. It authorizes nothing and sends no credential. The devtools
+  Playground renders it behind a **Check** action and keeps **Authorize**
+  disabled until the chain resolves, so a broken setup names the leg that broke
+  instead of failing as authentication as a whole.
+- Devtools test identities can now be edited in place, list what each one
+  recently managed to do, and present the session token as the MCP HTTP
+  credential it is rather than as a missing prerequisite for every adapter.
 - The CLI and MCP stdio emulations can run the engine's own built entry point
   instead of the devtools child (ADR 0029), so the composition root that
   decides the principal is the project's — including the `principal: null` the

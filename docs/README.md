@@ -33,7 +33,9 @@ Each delivered change is normative through its accepted architecture decision:
 - MCP installation inspection and homologation —
   [ADR 0022](./adr/0022-mcp-installation-inspection-and-homologation.md),
   extended with ephemeral OAuth by
-  [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md)
+  [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md) and
+  amended with advertised authorization servers and discovery inspection by
+  [ADR 0030](./adr/0030-oauth-discovery-inspection-and-advertised-servers.md)
 - Portable MCP tool names —
   [ADR 0025](./adr/0025-portable-mcp-tool-names.md)
 - Generated engine MCP conformance gate —

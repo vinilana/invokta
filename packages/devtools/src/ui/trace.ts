@@ -12,6 +12,8 @@ interface TraceEntryView {
     readonly outcome: "success" | "capability-error" | "adapter-error";
     readonly durationMs: number;
     readonly errorCode?: string;
+    /** The identity the call acted as; `null` when it ran anonymously. */
+    readonly principalId?: string | null;
     readonly request: string;
     readonly response: string;
     readonly status?: number;
@@ -142,6 +144,14 @@ function entrySubject(kind: string, value: string): HTMLElement {
   ]);
 }
 
+/** The identity an emulated call acted as, which is what an `access` rule saw. */
+function actingIdentity(principalId: string | null): HTMLElement {
+  return el("span", { class: "trace-entry-identity" }, [
+    principalId === null ? "anonymous" : "as ",
+    principalId === null ? null : el("code", {}, [principalId]),
+  ]);
+}
+
 /** Extracts `params.arguments` from a traced JSON-RPC request body. */
 function playgroundPrefill(requestBody: string): string {
   try {
@@ -266,6 +276,9 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
         el("span", { class: `badge ${tone}` }, [outcomeLabel]),
         el("span", { class: "badge" }, [call.adapter]),
         entrySubject("Emulated call", call.capabilityId),
+        call.principalId === undefined
+          ? null
+          : actingIdentity(call.principalId),
         duration(call.durationMs),
       ]),
       el("div", { class: "trace-row-actions" }, [playground]),
@@ -341,6 +354,9 @@ function searchTextOf(entry: TraceEntryView): string {
       entry.call.capabilityId,
       entry.call.outcome,
       entry.call.errorCode ?? "",
+      entry.call.principalId === undefined
+        ? ""
+        : (entry.call.principalId ?? "anonymous"),
       entry.call.status === undefined
         ? ""
         : `http ${String(entry.call.status)}`,

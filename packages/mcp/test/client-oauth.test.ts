@@ -588,57 +588,7 @@ describe("plain MCP OAuth client facade", () => {
           state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
         },
       ),
-    ).rejects.toMatchObject({ code: "CONNECTION_FAILED" });
-    expect(loopbackFetches).toBe(0);
-  });
-
-  it("rejects cross-origin OAuth endpoints before requesting them", async () => {
-    const requestedUrls: string[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const value =
-        input instanceof Request
-          ? input.url
-          : input instanceof URL
-            ? input.href
-            : input;
-      const url = new URL(value);
-      requestedUrls.push(url.href);
-      if (url.pathname === "/mcp" && init?.method === "POST") {
-        return new Response(null, {
-          status: 401,
-          headers: {
-            "www-authenticate":
-              'Bearer resource_metadata="https://resource.example.test/.well-known/oauth-protected-resource/mcp"',
-          },
-        });
-      }
-      if (
-        url.href ===
-        "https://resource.example.test/.well-known/oauth-protected-resource/mcp"
-      ) {
-        return Response.json({
-          resource: "https://resource.example.test/mcp",
-          authorization_servers: ["https://identity.example.test"],
-        });
-      }
-      throw new Error(`Unexpected fixture request to ${url.href}`);
-    });
-
-    await expect(
-      beginMcpOAuthAuthorization(
-        {
-          transport: "http",
-          url: "https://resource.example.test/mcp",
-          authentication: { type: "oauth" },
-        },
-        {
-          redirectUrl: "http://127.0.0.1:4100/oauth/callback",
-          state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
-        },
-      ),
     ).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
-    expect(requestedUrls).not.toContain(
-      "https://identity.example.test/.well-known/oauth-authorization-server",
-    );
+    expect(loopbackFetches).toBe(0);
   });
 });
