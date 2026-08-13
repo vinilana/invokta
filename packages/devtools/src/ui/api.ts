@@ -12,6 +12,10 @@ export interface EngineInfo {
   readonly version: string;
   readonly capabilityCount: number;
   readonly engineHost: { readonly host: string; readonly port: number };
+  readonly module?: {
+    readonly specifier: string;
+    readonly exportName: string;
+  };
   readonly adapters?: readonly AdapterInfo[];
   readonly maxConcurrentInvocations?: number;
 }
@@ -112,8 +116,68 @@ async function failWithDetail(
   throw new ApiError(message, detail.code);
 }
 
+export interface HttpTargetView {
+  readonly kind: "devtools" | "external";
+  readonly url?: string;
+  readonly authentication: {
+    readonly type: "session-token" | "none" | "bearer" | "headers" | "oauth";
+    readonly headerNames?: readonly string[];
+    readonly environmentVariables?: readonly string[];
+    readonly authorized?: boolean;
+  };
+}
+
+export interface EntryPointSummary {
+  readonly kind: "devtools" | "project";
+  readonly path?: string;
+}
+
+export type EntryPointView = Readonly<{
+  cli: EntryPointSummary;
+  "mcp-stdio": EntryPointSummary;
+}>;
+
 export const api = {
   engine: () => getJson<EngineInfo>("/api/engine"),
+  httpTarget: () => getJson<HttpTargetView>("/api/http-target"),
+  entryPoints: () => getJson<EntryPointView>("/api/entry-target"),
+  /** Replaces which composition root runs one adapter's emulation. */
+  setEntryPoint: async (selection: unknown): Promise<EntryPointView> => {
+    const response = await fetch("/api/entry-target", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(selection),
+    });
+    if (!response.ok)
+      await failWithDetail(response, "The entry point could not be selected.");
+    return (await response.json()) as EntryPointView;
+  },
+  /**
+   * Replaces where MCP HTTP sends a call. An OAuth target answers with the
+   * authorization URL to continue in; every other target is ready at once.
+   */
+  setHttpTarget: async (
+    target: unknown,
+  ): Promise<{
+    readonly target: HttpTargetView;
+    readonly authorizationUrl?: string;
+  }> => {
+    const response = await fetch("/api/http-target", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(target),
+    });
+    if (!response.ok)
+      await failWithDetail(response, "The endpoint could not be selected.");
+    const body = (await response.json()) as HttpTargetView & {
+      readonly authorizationUrl?: string;
+    };
+    const { authorizationUrl, ...view } = body;
+    return {
+      target: view,
+      ...(authorizationUrl === undefined ? {} : { authorizationUrl }),
+    };
+  },
   capabilities: () => getJson<readonly CapabilityInfo[]>("/api/capabilities"),
   doctor: () => getJson<DoctorInfo>("/api/doctor"),
   principals: () => getJson<readonly PrincipalInfo[]>("/api/principals"),

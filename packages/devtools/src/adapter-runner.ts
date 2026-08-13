@@ -4,9 +4,13 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import type { Principal } from "@invokta/core";
+import type { McpClientToolResult } from "@invokta/mcp";
 import { connectMcpClient, McpClientError } from "@invokta/mcp";
 
 import { principalEnvironmentName } from "./adapters/child-context.js";
+import type { EntryAdapter, EntryPoint } from "./entry-target.js";
+import type { HttpTargetResolution } from "./http-target.js";
+import { HttpTargetError } from "./http-target.js";
 
 /**
  * Emulates one capability call through a caller-selected adapter, chartered by
@@ -98,8 +102,11 @@ export type AdapterExchange =
       readonly responseBody: string;
     }
   | {
-      readonly kind: "stdio";
-      readonly command: string;
+      /** One call through the MCP client facade, which frames it for us. */
+      readonly kind: "mcp";
+      readonly transport: "stdio" | "http";
+      /** The spawned server command, or the endpoint that was called. */
+      readonly target: string;
       readonly request: string;
       readonly response: string;
     }
@@ -130,11 +137,30 @@ export interface AdapterRunnerModule {
   readonly exportName: string;
 }
 
+/** Calls the tool over an interactively authorized OAuth session. */
+export type OAuthToolCall = (
+  toolName: string,
+  input: unknown,
+  signal: AbortSignal,
+) => Promise<McpClientToolResult>;
+
 export interface CreateAdapterRunnerOptions {
   readonly module: AdapterRunnerModule;
   readonly cwd: string;
   /** The running engine host endpoint, re-read per call because watch mode moves it. */
   readonly mcpEndpoint: () => string;
+  /**
+   * Where MCP HTTP sends the call and how it authenticates. Defaults to the
+   * devtools host with the selected identity's session token.
+   */
+  readonly httpTarget?: () => HttpTargetResolution;
+  /** Required only when a target selects interactive OAuth. */
+  readonly oauthCall?: OAuthToolCall;
+  /**
+   * Which composition root runs the CLI and MCP stdio emulations. Defaults to
+   * the devtools child, which supplies the selected identity.
+   */
+  readonly entryPoint?: (adapter: EntryAdapter) => EntryPoint;
   /** Concurrent emulations allowed at once. Defaults to 4. */
   readonly maxConcurrent?: number;
   /** Deadline applied when the caller supplies none. Defaults to 30000. */
@@ -529,13 +555,41 @@ export function createAdapterRunner(
     ...rest,
   ];
 
+  const selectedEntry = (adapter: EntryAdapter): EntryPoint =>
+    options.entryPoint?.(adapter) ?? { kind: "devtools" };
+
+  /**
+   * The command that runs one emulated call. The devtools child imports the
+   * built module and supplies the selected identity; the engine's own entry
+   * point is spawned as it is, so its composition root decides the principal.
+   */
+  const commandFor = (
+    adapter: EntryAdapter,
+    devtoolsEntryName: string,
+    rest: readonly string[],
+  ): {
+    readonly argv: readonly string[];
+    readonly identityApplies: boolean;
+  } => {
+    const entry = selectedEntry(adapter);
+    return entry.kind === "project"
+      ? {
+          argv: [process.execPath, entry.resolvedPath, ...rest],
+          identityApplies: false,
+        }
+      : {
+          argv: childArguments(devtoolsEntryName, rest),
+          identityApplies: true,
+        };
+  };
+
   const runProcessAdapter = async (
     invocation: AdapterInvocation,
-    entry: string,
+    argv: readonly string[],
     rest: readonly string[],
+    identityApplies: boolean,
     adapterLabel: string,
   ): Promise<Omit<AdapterInvocationResult, "durationMs">> => {
-    const argv = childArguments(entry, rest);
     // A command-line adapter carries its arguments in the argument vector,
     // which the operating system bounds per argument. Refusing here names the
     // real constraint instead of surfacing a spawn failure.
@@ -564,7 +618,9 @@ export function createAdapterRunner(
     }
     const outcome = await runChildProcess(argv, {
       cwd: options.cwd,
-      env: childEnvironment(invocation.identity),
+      // A project entry point is its own composition root, so it is spawned
+      // without the devtools principal: only its own root decides identity.
+      env: childEnvironment(identityApplies ? invocation.identity : null),
       timeoutMs: resolveTimeout(invocation.timeoutMs, fallbackTimeoutMs),
       ...(invocation.signal === undefined ? {} : { signal: invocation.signal }),
     });
@@ -587,26 +643,73 @@ export function createAdapterRunner(
     };
   };
 
-  const runStdioAdapter = async (
+  const runStdioAdapter = (
     invocation: AdapterInvocation,
   ): Promise<Omit<AdapterInvocationResult, "durationMs">> => {
-    const argv = childArguments("stdio-entry", []);
+    const { argv, identityApplies } = commandFor(
+      "mcp-stdio",
+      "stdio-entry",
+      [],
+    );
     const [command, ...args] = argv;
+    return runFacadeCall(
+      invocation,
+      "stdio",
+      renderCommand(argv),
+      "MCP stdio",
+      async (signal) => {
+        const connection = await connectMcpClient(
+          {
+            transport: "stdio",
+            command: command as string,
+            args,
+            cwd: options.cwd,
+            env: childEnvironment(identityApplies ? invocation.identity : null),
+          },
+          { signal },
+        );
+        return {
+          call: (callSignal) =>
+            connection.callTool(
+              invocation.mcpToolName,
+              invocation.input as Readonly<Record<string, never>>,
+              { signal: callSignal },
+            ),
+          close: () => connection.close(),
+        };
+      },
+    );
+  };
+
+  /**
+   * One MCP call through the client facade — a spawned stdio server or an
+   * external endpoint. The facade owns the framing, so the exchange records the
+   * `tools/call` request we asked for and the result it returned.
+   */
+  const runFacadeCall = async (
+    invocation: AdapterInvocation,
+    transport: "stdio" | "http",
+    target: string,
+    adapterLabel: string,
+    open: (signal: AbortSignal) => Promise<{
+      call: (signal: AbortSignal) => Promise<McpClientToolResult>;
+      close: () => Promise<void>;
+    }>,
+  ): Promise<Omit<AdapterInvocationResult, "durationMs">> => {
     const request = toolCallRequestBody(
       invocation.mcpToolName,
       invocation.input,
     );
     const exchange = (response: unknown): AdapterExchange => ({
-      kind: "stdio",
-      command: renderCommand(argv),
+      kind: "mcp",
+      transport,
+      target,
       request,
       response:
         typeof response === "string"
           ? response
           : JSON.stringify(response, null, 2),
     });
-
-    // The client facade takes a signal only, so the deadline becomes one.
     const deadline = AbortSignal.timeout(
       resolveTimeout(invocation.timeoutMs, fallbackTimeoutMs),
     );
@@ -615,23 +718,11 @@ export function createAdapterRunner(
         ? deadline
         : AbortSignal.any([deadline, invocation.signal]);
 
-    let connection: Awaited<ReturnType<typeof connectMcpClient>> | undefined;
+    let close: (() => Promise<void>) | undefined;
     try {
-      connection = await connectMcpClient(
-        {
-          transport: "stdio",
-          command: command as string,
-          args,
-          cwd: options.cwd,
-          env: childEnvironment(invocation.identity),
-        },
-        { signal },
-      );
-      const called = await connection.callTool(
-        invocation.mcpToolName,
-        invocation.input as Readonly<Record<string, never>>,
-        { signal },
-      );
+      const session = await open(signal);
+      close = session.close;
+      const called = await session.call(signal);
       const mapped = readMcpToolResult(called.response as McpToolResult);
       return {
         adapter: invocation.adapter,
@@ -649,10 +740,10 @@ export function createAdapterRunner(
       const timedOut = clientCode === "CANCELLED" && deadline.aborted;
       const code = timedOut ? "TIMEOUT" : clientCode;
       const message = timedOut
-        ? "The MCP stdio adapter did not answer before the deadline."
+        ? `The ${adapterLabel} adapter did not answer before the deadline.`
         : error instanceof McpClientError
           ? error.message
-          : "The MCP stdio adapter failed.";
+          : `The ${adapterLabel} adapter failed.`;
       return {
         adapter: invocation.adapter,
         capabilityId: invocation.capabilityId,
@@ -661,19 +752,69 @@ export function createAdapterRunner(
         exchange: exchange({ error: { code, message } }),
       };
     } finally {
-      await connection?.close().catch(() => undefined);
+      await close?.().catch(() => undefined);
     }
   };
 
-  const runHttpAdapter = async (
+  const runExternalHttpAdapter = (
     invocation: AdapterInvocation,
+    resolution: Extract<HttpTargetResolution, { kind: "external" }>,
+  ): Promise<Omit<AdapterInvocationResult, "durationMs">> =>
+    runFacadeCall(
+      invocation,
+      "http",
+      resolution.url,
+      "MCP HTTP",
+      async (signal) => {
+        const connection = await connectMcpClient(
+          {
+            transport: "http",
+            url: resolution.url,
+            authentication: resolution.authentication,
+          },
+          { signal },
+        );
+        return {
+          call: (callSignal) =>
+            connection.callTool(
+              invocation.mcpToolName,
+              invocation.input as Readonly<Record<string, never>>,
+              { signal: callSignal },
+            ),
+          close: () => connection.close(),
+        };
+      },
+    );
+
+  const runOAuthHttpAdapter = (
+    invocation: AdapterInvocation,
+    url: string,
+  ): Promise<Omit<AdapterInvocationResult, "durationMs">> =>
+    runFacadeCall(invocation, "http", url, "MCP HTTP", async () => {
+      const oauthCall = options.oauthCall;
+      if (oauthCall === undefined) {
+        throw new McpClientError(
+          "AUTHENTICATION_FAILED",
+          "Authorize the endpoint before invoking it.",
+        );
+      }
+      return {
+        call: (callSignal) =>
+          oauthCall(invocation.mcpToolName, invocation.input, callSignal),
+        close: () => Promise.resolve(),
+      };
+    });
+
+  const runDevtoolsHostAdapter = async (
+    invocation: AdapterInvocation,
+    useSessionToken: boolean,
   ): Promise<Omit<AdapterInvocationResult, "durationMs">> => {
     const endpoint = options.mcpEndpoint();
     const requestBody = toolCallRequestBody(
       invocation.mcpToolName,
       invocation.input,
     );
-    const identity = invocation.identity;
+    const identity = useSessionToken ? invocation.identity : null;
     const timeoutMs = resolveTimeout(invocation.timeoutMs, fallbackTimeoutMs);
     const deadline = AbortSignal.timeout(timeoutMs);
     const signal =
@@ -749,7 +890,9 @@ export function createAdapterRunner(
           code: response.status === 401 ? "UNAUTHENTICATED" : "HTTP_ERROR",
           message:
             response.status === 401
-              ? "The engine host rejected the session token."
+              ? useSessionToken
+                ? "The engine host rejected the session token."
+                : "The engine host requires a credential; no Authorization header was sent."
               : `The engine host answered HTTP ${String(response.status)}.`,
         },
       };
@@ -782,6 +925,56 @@ export function createAdapterRunner(
     };
   };
 
+  /**
+   * Sends the call wherever the selected HTTP target points. The devtools host
+   * is the default; an external endpoint is the developer's own server, whose
+   * authentication is whatever that server implements.
+   */
+  const runHttpAdapter = async (
+    invocation: AdapterInvocation,
+  ): Promise<Omit<AdapterInvocationResult, "durationMs">> => {
+    let resolution: HttpTargetResolution;
+    try {
+      resolution = options.httpTarget?.() ?? {
+        kind: "devtools",
+        useSessionToken: true,
+      };
+    } catch (error) {
+      // A named environment variable that is unset must not silently become an
+      // anonymous call, which would misreport what the endpoint accepts.
+      const failure: AdapterError =
+        error instanceof HttpTargetError
+          ? { code: error.code, message: error.message }
+          : {
+              code: "ADAPTER_FAILED",
+              message: "The HTTP target could not be resolved.",
+            };
+      return {
+        adapter: invocation.adapter,
+        capabilityId: invocation.capabilityId,
+        outcome: "adapter-error",
+        error: failure,
+        exchange: {
+          kind: "mcp",
+          transport: "http",
+          target: "",
+          request: toolCallRequestBody(
+            invocation.mcpToolName,
+            invocation.input,
+          ),
+          response: JSON.stringify({ error: failure }, null, 2),
+        },
+      };
+    }
+    if (resolution.kind === "devtools") {
+      return runDevtoolsHostAdapter(invocation, resolution.useSessionToken);
+    }
+    if (resolution.kind === "external-oauth") {
+      return runOAuthHttpAdapter(invocation, resolution.url);
+    }
+    return runExternalHttpAdapter(invocation, resolution);
+  };
+
   return {
     maxConcurrent,
     active: () => active,
@@ -793,22 +986,36 @@ export function createAdapterRunner(
         const encodedInput = JSON.stringify(invocation.input ?? null);
         let settled: Omit<AdapterInvocationResult, "durationMs">;
         switch (invocation.adapter) {
-          case "cli":
+          case "cli": {
+            const rest = [
+              "run",
+              invocation.capabilityId,
+              "--input",
+              encodedInput,
+            ];
+            const command = commandFor("cli", "cli-entry", rest);
             settled = await runProcessAdapter(
               invocation,
-              "cli-entry",
-              ["run", invocation.capabilityId, "--input", encodedInput],
+              command.argv,
+              rest,
+              command.identityApplies,
               "CLI",
             );
             break;
-          case "direct":
+          }
+          case "direct": {
+            // A direct entry point has no invocation contract to reuse, so the
+            // direct emulation is always the devtools child.
+            const rest = [invocation.capabilityId, encodedInput];
             settled = await runProcessAdapter(
               invocation,
-              "direct-entry",
-              [invocation.capabilityId, encodedInput],
+              childArguments("direct-entry", rest),
+              rest,
+              true,
               "direct",
             );
             break;
+          }
           case "mcp-stdio":
             settled = await runStdioAdapter(invocation);
             break;

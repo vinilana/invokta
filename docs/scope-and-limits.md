@@ -54,6 +54,8 @@ useful.
 | Concurrent attached devtools targets | 1 |
 | Concurrent attached devtools tool calls | 1, explicitly initiated |
 | Concurrent devtools adapter emulations | 4, each in its own process |
+| Devtools playground HTTP targets | 1: the devtools host or one external endpoint |
+| Devtools playground entry points | 1 per adapter: the devtools child or one project entry inside the served directory |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,

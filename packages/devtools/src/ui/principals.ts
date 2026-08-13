@@ -53,8 +53,18 @@ function writeTokens(tokens: Record<string, string>): void {
   }
 }
 
+/**
+ * Acting anonymously is a deliberate choice, not a missing selection: it is
+ * how an `access` rule gets denied on purpose. It is stored under a reserved
+ * value, because a real principal key is always minted as `p_…`.
+ */
+const anonymousSelection = "anonymous";
+
 const tokens = readTokens();
-let activeKey: string | null = readActiveKey();
+const storedSelection = readActiveKey();
+let activeKey: string | null =
+  storedSelection === anonymousSelection ? null : storedSelection;
+let selectionIsExplicit = storedSelection !== null;
 let knownPrincipals = new Map<string, PrincipalInfo>();
 const changeListeners = new Set<() => void>();
 
@@ -84,9 +94,9 @@ function forgetToken(key: string): void {
 
 export function setActivePrincipal(key: string | null): void {
   activeKey = key;
+  selectionIsExplicit = true;
   try {
-    if (key === null) sessionStorage.removeItem(activeStorageKey);
-    else sessionStorage.setItem(activeStorageKey, key);
+    sessionStorage.setItem(activeStorageKey, key ?? anonymousSelection);
   } catch {
     // Session storage is a convenience only.
   }
@@ -130,9 +140,25 @@ export function onPrincipalChange(listener: () => void): () => void {
  * Reconciles browser-session state with the listed principals and selects a
  * valid principal. Initialization never issues, rotates, or revokes a token.
  */
+/** The principals the interface has seen, for the invocation identity picker. */
+export function listKnownPrincipals(): readonly PrincipalInfo[] {
+  return [...knownPrincipals.values()];
+}
+
 export async function ensureActiveToken(): Promise<void> {
   const principals = await api.principals();
   rememberPrincipals(principals);
+  if (selectionIsExplicit && activeKey === null) {
+    // The developer chose to act anonymously; do not undo it on reload.
+    for (const listener of changeListeners) {
+      try {
+        listener();
+      } catch {
+        // One interface listener cannot prevent the remaining updates.
+      }
+    }
+    return;
+  }
   const knownKeys = new Set(principals.map(({ key }) => key));
   let tokensChanged = false;
   for (const key of Object.keys(tokens)) {

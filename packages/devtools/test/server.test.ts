@@ -9,6 +9,7 @@ import {
   defineCapability,
   type EngineSchema,
 } from "@invokta/core";
+import { serveMcpHttp } from "@invokta/mcp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { loadEngineModule } from "../src/load-engine.js";
@@ -159,6 +160,9 @@ describe("startServe", () => {
       version: "0.1.0",
       capabilityCount: 1,
       engineHost: { host: "127.0.0.1", port: handles.engineAddress.port },
+      // The served module is published so the interface can propose the
+      // conventional sibling path for a project entry point.
+      module: fixtureModule,
       maxConcurrentInvocations: 4,
       adapters: [
         {
@@ -405,6 +409,8 @@ describe("adapter emulation over /api/invoke", () => {
   let handles: ServeHandles;
   let base = "";
   let principalKey = "";
+  /** The same engine the dev server loaded, for the external-endpoint test. */
+  let fixtureEngine: Parameters<typeof serveMcpHttp>[0];
   /** Four child processes and one HTTP round trip need room to settle. */
   const emulationTimeoutMs = 60_000;
 
@@ -417,6 +423,9 @@ describe("adapter emulation over /api/invoke", () => {
     if (loaded.kind !== "loaded") {
       throw new Error(`The adapter fixture failed to load: ${loaded.kind}`);
     }
+    fixtureEngine = loaded.engine as unknown as Parameters<
+      typeof serveMcpHttp
+    >[0];
     const result = await startOnAvailablePort((port) =>
       startServe({
         engine: loaded.engine,
@@ -480,7 +489,7 @@ describe("adapter emulation over /api/invoke", () => {
           adapter === "mcp-http"
             ? "http"
             : adapter === "mcp-stdio"
-              ? "stdio"
+              ? "mcp"
               : "process",
         );
       }
@@ -507,6 +516,375 @@ describe("adapter emulation over /api/invoke", () => {
     },
     emulationTimeoutMs,
   );
+
+  it(
+    "sends MCP HTTP wherever the selected target points",
+    async () => {
+      // A second engine host stands in for the developer's own HTTP entry
+      // point: a real endpoint with its own authentication hook.
+      const external = await serveMcpHttp(fixtureEngine, {
+        host: "127.0.0.1",
+        port: 0,
+        allowedOrigins: ["http://127.0.0.1:4100"],
+        auth: {
+          mode: "required",
+          authenticate: (authRequest) =>
+            authRequest.headers.get("x-api-key") === "external-key"
+              ? { id: "external:client" }
+              : null,
+        },
+      });
+      const url = `http://127.0.0.1:${String(external.address().port)}/mcp`;
+      try {
+        const selected = await fetch(`${base}/api/http-target`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            kind: "external",
+            url,
+            authentication: {
+              type: "headers",
+              headers: [
+                {
+                  name: "X-API-Key",
+                  value: { kind: "literal", value: "external-key" },
+                },
+              ],
+            },
+          }),
+        });
+        expect(selected.status).toBe(200);
+        // The credential never comes back out of the dev server.
+        const view = await selected.text();
+        expect(view).not.toContain("external-key");
+        expect(JSON.parse(view) as unknown).toEqual({
+          kind: "external",
+          url,
+          authentication: { type: "headers", headerNames: ["X-API-Key"] },
+        });
+
+        const response = await invoke({
+          adapter: "mcp-http",
+          capabilityId: "fixture.report",
+          arguments: { marker: "external" },
+          principalKey,
+        });
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as {
+          readonly outcome: string;
+          readonly result: unknown;
+          readonly exchange: {
+            readonly kind: string;
+            readonly target?: string;
+          };
+        };
+        expect(body.outcome).toBe("success");
+        // The endpoint's own hook decided the principal, not the devtools
+        // identity: that is what an external boundary means.
+        expect(body.result).toEqual({
+          input: { marker: "external" },
+          source: "mcp-http",
+          principalId: "external:client",
+        });
+        expect(body.exchange.kind).toBe("mcp");
+        expect(body.exchange.target).toBe(url);
+
+        // A wrong credential is the endpoint's own rejection, not ours.
+        await fetch(`${base}/api/http-target`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            kind: "external",
+            url,
+            authentication: { type: "none" },
+          }),
+        });
+        const rejected = await invoke({
+          adapter: "mcp-http",
+          capabilityId: "fixture.report",
+          arguments: {},
+          principalKey,
+        });
+        expect(
+          ((await rejected.json()) as { readonly outcome: string }).outcome,
+        ).toBe("adapter-error");
+      } finally {
+        await fetch(`${base}/api/http-target`, { method: "DELETE" });
+        await external.close();
+      }
+    },
+    emulationTimeoutMs,
+  );
+
+  it(
+    "keeps the devtools host reachable without a credential ceremony",
+    async () => {
+      const anonymous = await fetch(`${base}/api/http-target`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "devtools",
+          authentication: { type: "none" },
+        }),
+      });
+      expect(anonymous.status).toBe(200);
+      try {
+        // No Authorization header reaches the host, so it answers its own
+        // fail-closed challenge before the engine runs.
+        const overHttp = await invoke({
+          adapter: "mcp-http",
+          capabilityId: "fixture.report",
+          arguments: {},
+          principalKey,
+        });
+        const body = (await overHttp.json()) as {
+          readonly outcome: string;
+          readonly error: { readonly code: string };
+          readonly exchange: { readonly status: number };
+        };
+        expect(body.outcome).toBe("adapter-error");
+        expect(body.error.code).toBe("UNAUTHENTICATED");
+        expect(body.exchange.status).toBe(401);
+
+        // The three process adapters never had a credential to withhold.
+        for (const adapter of ["direct", "cli", "mcp-stdio"] as const) {
+          const response = await invoke({
+            adapter,
+            capabilityId: "fixture.report",
+            arguments: {},
+            principalKey,
+          });
+          expect(
+            ((await response.json()) as { readonly outcome: string }).outcome,
+            `${adapter} outcome`,
+          ).toBe("success");
+        }
+      } finally {
+        await fetch(`${base}/api/http-target`, { method: "DELETE" });
+      }
+    },
+    emulationTimeoutMs,
+  );
+
+  it(
+    "runs the project's own composition root when its entry point is selected",
+    async () => {
+      // The devtools child supplies the identity the interface selected; a
+      // project entry point supplies whatever its own root decides. The same
+      // call answers differently, and selecting the entry point is what makes
+      // that visible instead of surprising.
+      const asDevtools = await invoke({
+        adapter: "cli",
+        capabilityId: "fixture.report",
+        arguments: {},
+        principalKey,
+      });
+      expect(
+        (
+          (await asDevtools.json()) as {
+            readonly result: { principalId: string };
+          }
+        ).result.principalId,
+      ).toBe("local-dev");
+
+      const selected = await fetch(`${base}/api/entry-target`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          adapter: "cli",
+          entryPoint: {
+            kind: "project",
+            path: "packages/devtools/test/fixtures/adapter-cli-entry.js",
+          },
+        }),
+      });
+      expect(selected.status).toBe(200);
+      expect((await selected.json()) as unknown).toEqual({
+        cli: {
+          kind: "project",
+          path: "packages/devtools/test/fixtures/adapter-cli-entry.js",
+        },
+        "mcp-stdio": { kind: "devtools" },
+      });
+
+      try {
+        const asProject = await invoke({
+          adapter: "cli",
+          capabilityId: "fixture.report",
+          arguments: {},
+          principalKey,
+        });
+        const body = (await asProject.json()) as {
+          readonly outcome: string;
+          readonly result: { readonly principalId: string };
+          readonly exchange: { readonly command: string };
+        };
+        expect(body.outcome).toBe("success");
+        expect(body.result.principalId).toBe("project:composition-root");
+        // The reproduction command is the command the developer would type.
+        expect(body.exchange.command).toContain(
+          "adapter-cli-entry.js run fixture.report",
+        );
+        expect(body.exchange.command).not.toContain("adapters/cli-entry.js");
+
+        // MCP stdio still runs the devtools child until it is selected too.
+        const stdio = await invoke({
+          adapter: "mcp-stdio",
+          capabilityId: "fixture.report",
+          arguments: {},
+          principalKey,
+        });
+        expect(
+          ((await stdio.json()) as { readonly result: { principalId: string } })
+            .result.principalId,
+        ).toBe("local-dev");
+      } finally {
+        await fetch(`${base}/api/entry-target`, { method: "DELETE" });
+      }
+    },
+    emulationTimeoutMs,
+  );
+
+  it(
+    "requires no credential when the project's root supplies none",
+    async () => {
+      await fetch(`${base}/api/entry-target`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          adapter: "mcp-stdio",
+          entryPoint: {
+            kind: "project",
+            path: "packages/devtools/test/fixtures/adapter-stdio-entry.js",
+          },
+        }),
+      });
+      try {
+        // The generated starter serves stdio with `principal: null`, so an
+        // authenticated capability is denied however the identity is set —
+        // which is the behavior the developer ships.
+        const guarded = await invoke({
+          adapter: "mcp-stdio",
+          capabilityId: "fixture.guarded",
+          arguments: {},
+          principalKey,
+        });
+        const body = (await guarded.json()) as {
+          readonly outcome: string;
+          readonly error: { readonly code: string };
+        };
+        expect(body.outcome).toBe("capability-error");
+        expect(body.error.code).toBe("UNAUTHENTICATED");
+
+        // A public capability needs no credential on that same path.
+        const open = await invoke({
+          adapter: "mcp-stdio",
+          capabilityId: "fixture.report",
+          arguments: {},
+          principalKey,
+        });
+        const reported = (await open.json()) as {
+          readonly outcome: string;
+          readonly result: { readonly principalId: string | null };
+        };
+        expect(reported.outcome).toBe("success");
+        expect(reported.result.principalId).toBeNull();
+      } finally {
+        await fetch(`${base}/api/entry-target`, { method: "DELETE" });
+      }
+    },
+    emulationTimeoutMs,
+  );
+
+  it("keeps an entry point inside the project it serves", async () => {
+    const outside = await fetch(`${base}/api/entry-target`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        adapter: "cli",
+        entryPoint: { kind: "project", path: "../../etc/passwd" },
+      }),
+    });
+    expect(outside.status).toBe(400);
+    expect((await outside.json()) as unknown).toMatchObject({
+      error: "invalid_entry_point",
+    });
+
+    const unknownAdapter = await fetch(`${base}/api/entry-target`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        adapter: "direct",
+        entryPoint: { kind: "project", path: "dist/direct.js" },
+      }),
+    });
+    // A direct entry point has no invocation contract to reuse.
+    expect(unknownAdapter.status).toBe(400);
+    expect((await unknownAdapter.json()) as unknown).toMatchObject({
+      error: "invalid_adapter",
+    });
+
+    const wrongMethod = await fetch(`${base}/api/entry-target`, {
+      method: "POST",
+    });
+    expect(wrongMethod.status).toBe(405);
+
+    const view = await fetch(`${base}/api/entry-target`);
+    expect((await view.json()) as unknown).toEqual({
+      cli: { kind: "devtools" },
+      "mcp-stdio": { kind: "devtools" },
+    });
+  });
+
+  it("refuses a target the devtools host could never honor", async () => {
+    const unknownKind = await fetch(`${base}/api/http-target`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "smtp" }),
+    });
+    expect(unknownKind.status).toBe(400);
+    expect((await unknownKind.json()) as unknown).toMatchObject({
+      error: "invalid_target",
+    });
+
+    const impossible = await fetch(`${base}/api/http-target`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "devtools",
+        authentication: { type: "oauth" },
+      }),
+    });
+    expect(impossible.status).toBe(400);
+    expect((await impossible.json()) as unknown).toMatchObject({
+      error: "invalid_authentication",
+    });
+
+    const wrongMethod = await fetch(`${base}/api/http-target`, {
+      method: "PATCH",
+    });
+    expect(wrongMethod.status).toBe(405);
+
+    const foreignOrigin = await fetch(`${base}/api/http-target`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://attacker.example",
+      },
+      body: JSON.stringify({
+        kind: "devtools",
+        authentication: { type: "none" },
+      }),
+    });
+    expect(foreignOrigin.status).toBe(403);
+
+    // The selection is unchanged by every refusal above.
+    const view = await fetch(`${base}/api/http-target`);
+    expect((await view.json()) as unknown).toEqual({
+      kind: "devtools",
+      authentication: { type: "session-token" },
+    });
+  });
 
   it("names what is wrong with an unusable invocation request", async () => {
     const unknownAdapter = await invoke({

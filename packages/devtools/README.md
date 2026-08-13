@@ -275,14 +275,58 @@ bodies and HTTP status, the `tools/call` frames, or the command with its
 streams and exit code. A capability error arrives with the same code from all
 four paths.
 
-The acting identity follows each adapter's own contract: MCP HTTP
-authenticates every request with the selected identity's session token, and
-the three process adapters start as the selected identity the way a
-composition root supplies it.
-
 Direct and CLI carry the arguments in the command line, so a payload beyond
 what the operating system allows in one argument is refused with
 `ARGUMENTS_TOO_LARGE`; the MCP adapters carry the same payload in the protocol.
+
+### Identity and authentication
+
+The adapter bar separates the two, because the framework does:
+
+**Identity** is the development `Principal` the call acts as. It applies to
+every adapter — it is what an `access` rule sees — and includes an explicit
+**Anonymous** choice so a rule can be denied on purpose. The three process
+adapters start as the selected identity, the way a composition root supplies
+it; there is no credential and no authentication step, so nothing else is
+asked of you.
+
+**Entry** appears for CLI and MCP stdio, and decides which composition root
+runs the call:
+
+| Entry point | Who supplies the principal |
+| --- | --- |
+| **Devtools** (default) | the identity selected here, so an `access` rule can be exercised as different actors |
+| **Project** | your own built entry point, spawned as it is — its root decides, including `principal: null`, which is what the generated starter passes |
+
+Selecting your entry point is how you see what the shipped command actually
+does: the identity control turns off and says so, and the reproduction command
+becomes the command you would type. Name the path yourself — the devtools
+proposes the conventional sibling of the served module and discovers nothing —
+and it must stay inside the directory `serve` runs in. A direct call has no
+project entry point: a generated `src/direct.ts` is a demonstration script
+bound to one capability, not an adapter with an invocation contract.
+
+**Authentication** appears only for MCP HTTP, which is the only path that
+authenticates. It selects where the call goes and how it presents itself:
+
+| Target | Authentication |
+| --- | --- |
+| **Devtools host** (default) | the selected identity's session token, or no credential — which exercises the adapter's own fail-closed `401` |
+| **External endpoint** | none, bearer, custom headers, or interactive OAuth |
+
+An external endpoint is a Streamable HTTP MCP URL you run yourself, typically
+your own built HTTP entry point, so the authentication you actually ship — the
+hook in `src/http-auth.ts` — runs against the same arguments the other three
+paths use. The principal then comes from *that server's* hook, not from the
+devtools identity. Plain HTTP is accepted only for loopback; every other
+endpoint must use HTTPS.
+
+A credential value starting with `$` names an environment variable the dev
+server reads, so the secret stays in the dev server's environment instead of
+travelling through the browser. Whatever you supply is held in process memory
+for as long as the endpoint stays selected: it is never persisted, never
+written to your project, and never echoed back — reading the selection returns
+the URL, the authentication type, and header or variable names only.
 
 The arguments, result, adapter command, raw MCP request, raw MCP response, and
 each JSON Schema carry a copy control. `Ctrl`/`⌘` + `Enter` invokes from the

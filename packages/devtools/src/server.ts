@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type {
   IncomingMessage,
@@ -20,9 +21,33 @@ import {
   AdapterBusyError,
   isAdapterId,
 } from "./adapter-runner.js";
+import type { EntryTargetStore } from "./entry-target.js";
+import {
+  EntryTargetError,
+  isEntryAdapter,
+  parseEntryPoint,
+} from "./entry-target.js";
 import { faviconLink, faviconSvg } from "./favicon.js";
+import type { HttpTargetStore } from "./http-target.js";
+import { HttpTargetError, parseHttpTarget } from "./http-target.js";
 import type { PrincipalStore } from "./principal-store.js";
 import type { AdapterCallCapture, TraceStore } from "./trace-store.js";
+
+/**
+ * The interactive OAuth authorization of an external MCP endpoint, chartered
+ * by ADR 0023 and reused here by ADR 0028. The devtools server only starts the
+ * flow and completes it from the loopback callback; every token, PKCE value,
+ * and registration artifact stays inside the session.
+ */
+export interface OAuthSession {
+  begin(
+    url: string,
+    options: { readonly redirectUrl: string; readonly state: string },
+  ): Promise<{ readonly authorizationUrl: string }>;
+  complete(state: string, authorizationCode: string): Promise<void>;
+  reject(state: string): Promise<void>;
+  disconnect(): Promise<void>;
+}
 
 export interface DevtoolsServerAddress {
   readonly host: string;
@@ -49,6 +74,16 @@ export interface DevtoolsServerOptions {
   readonly trace: TraceStore;
   /** Runs one capability call through the adapter the caller selected. */
   readonly adapters: AdapterRunner;
+  /** Where MCP HTTP sends a call, and how it authenticates. */
+  readonly httpTarget: HttpTargetStore;
+  /** Which composition root runs the CLI and MCP stdio emulations. */
+  readonly entryTarget: EntryTargetStore;
+  /** The directory a project entry point is resolved against. */
+  readonly cwd: string;
+  /** The served module, published so the interface can propose a sibling. */
+  readonly module: { readonly specifier: string; readonly exportName: string };
+  /** Drives the interactive OAuth authorization of an external endpoint. */
+  readonly oauth?: OAuthSession;
   /** The engine host's current MCP endpoint port on loopback. */
   readonly enginePort: () => number;
   /** Defaults to 4100. */
@@ -93,6 +128,35 @@ try {
 </body>
 </html>
 `;
+
+const oauthCallbackCopy: Readonly<
+  Record<"success" | "rejected" | "error", readonly [string, string]>
+> = {
+  success: [
+    "Authorization complete",
+    "Return to Invokta devtools. You can close this tab.",
+  ],
+  rejected: [
+    "Authorization was not completed",
+    "Return to Invokta devtools to try again.",
+  ],
+  error: [
+    "Authorization failed",
+    "Return to Invokta devtools to review the endpoint.",
+  ],
+};
+
+function oauthCallbackPage(outcome: "success" | "rejected" | "error"): string {
+  const [title, hint] = oauthCallbackCopy[outcome];
+  return `<!doctype html>
+<html lang="en" data-theme="dark">
+<head><meta charset="utf-8"><title>${title}</title>${faviconLink}
+<style>html{background:#09090b;color-scheme:dark;color:#e4e4e7;font:15px/1.5 system-ui,sans-serif}
+main{max-width:32rem;margin:6rem auto;padding:0 1.5rem}h1{font-size:1.25rem;margin:0 0 .5rem}
+p{color:#a1a1aa;margin:0}</style></head>
+<body><main><h1>${title}</h1><p>${hint}</p></main></body></html>
+`;
+}
 
 const staticContentTypes: Readonly<Record<string, string>> = {
   ".css": "text/css; charset=utf-8",
@@ -224,12 +288,12 @@ function toAdapterCapture(result: AdapterInvocationResult): AdapterCallCapture {
       status: result.exchange.status,
     };
   }
-  if (result.exchange.kind === "stdio") {
+  if (result.exchange.kind === "mcp") {
     return {
       ...shared,
       request: result.exchange.request,
       response: result.exchange.response,
-      command: result.exchange.command,
+      command: result.exchange.target,
     };
   }
   return {
@@ -402,6 +466,200 @@ export async function startDevtoolsServer(
     request.once("close", () => {
       sseClients.delete(response);
     });
+  };
+
+  /**
+   * Reads or replaces where MCP HTTP sends a call. The response never carries
+   * a credential: only the kind, the URL, the authentication type, and header
+   * or environment-variable names leave this process.
+   */
+  const handleHttpTarget = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
+    if (request.method === "GET") {
+      sendJson(response, 200, options.httpTarget.view());
+      return;
+    }
+    if (request.method === "DELETE") {
+      await options.oauth?.disconnect().catch(() => undefined);
+      options.httpTarget.reset();
+      sendJson(response, 200, options.httpTarget.view());
+      return;
+    }
+    if (request.method !== "PUT" && request.method !== "POST") {
+      sendJson(
+        response,
+        405,
+        { error: "method_not_allowed" },
+        { allow: "GET, PUT, POST, DELETE" },
+      );
+      return;
+    }
+    const read = await readBody(request, apiBodyLimitBytes);
+    if (!read.ok) {
+      sendJson(response, 413, { error: "payload_too_large" });
+      return;
+    }
+    let target: ReturnType<typeof parseHttpTarget>;
+    try {
+      target = parseHttpTarget(parseJson(read.body));
+    } catch (error) {
+      if (error instanceof HttpTargetError) {
+        sendJson(response, 400, {
+          error: error.code.toLowerCase(),
+          message: error.message,
+        });
+        return;
+      }
+      throw error;
+    }
+
+    // A previous authorization belongs to the previous target.
+    await options.oauth?.disconnect().catch(() => undefined);
+    options.httpTarget.set(target);
+
+    if (target.kind === "external" && target.authentication.type === "oauth") {
+      const oauth = options.oauth;
+      if (oauth === undefined) {
+        sendJson(response, 400, {
+          error: "oauth_unavailable",
+          message: "This dev server cannot run an interactive authorization.",
+        });
+        return;
+      }
+      const state = randomBytes(32).toString("base64url");
+      try {
+        const authorization = await oauth.begin(target.url, {
+          redirectUrl: `${ownOrigin}/oauth/callback`,
+          state,
+        });
+        sendJson(response, 202, {
+          ...options.httpTarget.view(),
+          authorizationUrl: authorization.authorizationUrl,
+        });
+      } catch (error) {
+        sendJson(response, 400, {
+          error: "authorization_failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "The authorization could not be started.",
+        });
+      }
+      return;
+    }
+    sendJson(response, 200, options.httpTarget.view());
+  };
+
+  /**
+   * Reads or replaces which composition root runs an emulated CLI or MCP
+   * stdio call: the devtools child, which supplies the selected identity, or
+   * the engine's own entry point, which supplies whatever its root decides.
+   */
+  const handleEntryTarget = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
+    if (request.method === "GET") {
+      sendJson(response, 200, options.entryTarget.view());
+      return;
+    }
+    if (request.method === "DELETE") {
+      options.entryTarget.reset();
+      sendJson(response, 200, options.entryTarget.view());
+      return;
+    }
+    if (request.method !== "PUT") {
+      sendJson(
+        response,
+        405,
+        { error: "method_not_allowed" },
+        { allow: "GET, PUT, DELETE" },
+      );
+      return;
+    }
+    const read = await readBody(request, apiBodyLimitBytes);
+    if (!read.ok) {
+      sendJson(response, 413, { error: "payload_too_large" });
+      return;
+    }
+    const body = parseJson(read.body) as
+      | { readonly adapter?: unknown; readonly entryPoint?: unknown }
+      | undefined;
+    if (body === undefined || !isEntryAdapter(body.adapter)) {
+      sendJson(response, 400, {
+        error: "invalid_adapter",
+        message: "Only the CLI and MCP stdio adapters have an entry point.",
+      });
+      return;
+    }
+    try {
+      options.entryTarget.set(
+        body.adapter,
+        parseEntryPoint(body.entryPoint, options.cwd),
+      );
+    } catch (error) {
+      if (error instanceof EntryTargetError) {
+        sendJson(response, 400, {
+          error: error.code.toLowerCase(),
+          message: error.message,
+        });
+        return;
+      }
+      throw error;
+    }
+    sendJson(response, 200, options.entryTarget.view());
+  };
+
+  /**
+   * Completes the loopback leg of an interactive authorization. The provider
+   * redirects the developer's browser here; the page it renders only tells
+   * them to go back to the workbench.
+   */
+  const handleOAuthCallback = async (
+    response: ServerResponse,
+    url: URL,
+  ): Promise<void> => {
+    const finish = (outcome: "success" | "rejected" | "error"): void => {
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end(oauthCallbackPage(outcome));
+    };
+    const oauth = options.oauth;
+    const states = url.searchParams.getAll("state");
+    const codes = url.searchParams.getAll("code");
+    const errors = url.searchParams.getAll("error");
+    const state = states[0];
+    if (
+      oauth === undefined ||
+      states.length !== 1 ||
+      state === undefined ||
+      !/^[A-Za-z0-9_-]{43}$/u.test(state) ||
+      !(
+        (codes.length === 1 && errors.length === 0) ||
+        (codes.length === 0 && errors.length === 1)
+      )
+    ) {
+      await oauth?.reject(state ?? "").catch(() => undefined);
+      finish("error");
+      return;
+    }
+    const code = codes[0];
+    if (code === undefined || code.length === 0 || code.length > 4_096) {
+      await oauth.reject(state).catch(() => undefined);
+      finish("rejected");
+      return;
+    }
+    try {
+      await oauth.complete(state, code);
+      options.httpTarget.markAuthorized(true);
+      finish("success");
+    } catch {
+      finish("error");
+    }
   };
 
   /**
@@ -606,6 +864,27 @@ export async function startDevtoolsServer(
       await handleMcpProxy(request, response);
       return;
     }
+    if (path === "/api/http-target") {
+      await handleHttpTarget(request, response);
+      return;
+    }
+    if (path === "/api/entry-target") {
+      await handleEntryTarget(request, response);
+      return;
+    }
+    if (path === "/oauth/callback") {
+      if (method !== "GET") {
+        sendJson(
+          response,
+          405,
+          { error: "method_not_allowed" },
+          { allow: "GET" },
+        );
+        return;
+      }
+      await handleOAuthCallback(response, url);
+      return;
+    }
     if (path === "/api/invoke") {
       if (method !== "POST") {
         sendJson(
@@ -669,6 +948,7 @@ export async function startDevtoolsServer(
         version: view.version,
         capabilityCount: view.capabilities.length,
         engineHost: { host: "127.0.0.1", port: options.enginePort() },
+        module: options.module,
         adapters: adapterDescriptors,
         maxConcurrentInvocations: options.adapters.maxConcurrent,
       });

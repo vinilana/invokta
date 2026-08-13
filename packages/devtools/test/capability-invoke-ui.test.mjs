@@ -979,6 +979,321 @@ describe("capability invocation", () => {
     resetAdapterSelection();
   });
 
+  it("asks for a credential only on the path that authenticates", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    installGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse([])),
+    );
+
+    const { resetAdapterSelection } = await import("../src/ui/adapters.js");
+    const { resetHttpTarget } = await import("../src/ui/http-auth.js");
+    resetAdapterSelection();
+    resetHttpTarget();
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const elements = walk(panel);
+    const choices = elements.filter(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("adapter-choice"),
+    );
+    const identity = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("identity-control"),
+    );
+    const auth = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("auth-control"),
+    );
+
+    // MCP HTTP is the default, and it is the only path with a credential.
+    expect(identity.hidden).not.toBe(true);
+    expect(auth.hidden).toBe(false);
+
+    choices[0].dispatchEvent(new Event("click"));
+    expect(auth.hidden).toBe(true);
+    expect(identity.hidden).not.toBe(true);
+
+    choices[1].dispatchEvent(new Event("click"));
+    expect(auth.hidden).toBe(true);
+
+    choices[3].dispatchEvent(new Event("click"));
+    expect(auth.hidden).toBe(false);
+    resetAdapterSelection();
+    resetHttpTarget();
+  });
+
+  it("offers the project's own entry point to CLI and MCP stdio only", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    const fetch = vi.fn(async (path, options) => {
+      if (path === "/api/entry-target" && options?.method === "PUT") {
+        return jsonResponse({
+          cli: { kind: "project", path: "dist/cli.js" },
+          "mcp-stdio": { kind: "devtools" },
+        });
+      }
+      return jsonResponse({
+        cli: { kind: "devtools" },
+        "mcp-stdio": { kind: "devtools" },
+      });
+    });
+    installGlobal("fetch", fetch);
+
+    const { resetAdapterSelection } = await import("../src/ui/adapters.js");
+    const { resetEntryPoints, rememberServedModule } = await import(
+      "../src/ui/entry-point.js"
+    );
+    const { resetIdentitySelects } = await import("../src/ui/identity.js");
+    resetAdapterSelection();
+    resetEntryPoints();
+    resetIdentitySelects();
+    rememberServedModule("examples/hello-engine/dist/engine.js");
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const elements = walk(panel);
+    const choices = elements.filter(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("adapter-choice"),
+    );
+    const entry = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("entry-control"),
+    );
+    const entryChoice = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("entry-choice"),
+    );
+    const entryPath = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("entry-path"),
+    );
+    const identity = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("identity-control"),
+    );
+    const note = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("identity-note"),
+    );
+
+    // MCP HTTP is the default and has no entry point; a direct call has none
+    // either, because a direct entry has no invocation contract.
+    expect(entry.hidden).toBe(true);
+    choices[0].dispatchEvent(new Event("click"));
+    expect(entry.hidden).toBe(true);
+
+    choices[1].dispatchEvent(new Event("click"));
+    expect(entry.hidden).toBe(false);
+    expect(entryChoice.value).toBe("devtools");
+    expect(note.hidden).toBe(true);
+
+    entryChoice.value = "project";
+    entryChoice.dispatchEvent(new Event("change"));
+    // The conventional sibling of the served module is proposed, not read.
+    expect(entryPath.value).toBe("examples/hello-engine/dist/cli.js");
+
+    entryPath.value = "dist/cli.js";
+    const use = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("entry-apply"),
+    );
+    use.dispatchEvent(new Event("click"));
+
+    await waitFor(() => expect(note.hidden).toBe(false));
+    expect(JSON.parse(fetch.mock.calls.at(-1)[1].body)).toEqual({
+      adapter: "cli",
+      entryPoint: { kind: "project", path: "dist/cli.js" },
+    });
+    // The identity belongs to the project's composition root now.
+    expect(note.textContent).toContain(
+      "composition root supplies the principal",
+    );
+    const select = walk(identity).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("identity-select"),
+    );
+    expect(select.disabled).toBe(true);
+
+    // MCP stdio still runs the devtools child, so the identity applies there.
+    choices[2].dispatchEvent(new Event("click"));
+    expect(entry.hidden).toBe(false);
+    expect(note.hidden).toBe(true);
+    expect(select.disabled).toBe(false);
+
+    resetEntryPoints();
+    resetIdentitySelects();
+    resetAdapterSelection();
+  });
+
+  it("acts anonymously when the identity says so", async () => {
+    installDocument();
+    const storage = new MemoryStorage();
+    installGlobal("sessionStorage", storage);
+    const fetch = vi.fn(async (path) =>
+      path === "/api/principals"
+        ? jsonResponse([{ key: "p_1", principal: { id: "local-dev" } }])
+        : jsonResponse(httpInvocation()),
+    );
+    installGlobal("fetch", fetch);
+
+    const { resetAdapterSelection } = await import("../src/ui/adapters.js");
+    const { resetIdentitySelects } = await import("../src/ui/identity.js");
+    const { ensureActiveToken } = await import("../src/ui/principals.js");
+    resetAdapterSelection();
+    resetIdentitySelects();
+    await ensureActiveToken();
+
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const elements = walk(panel);
+    const select = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("identity-select"),
+    );
+    const invoke = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Invoke capability",
+    );
+
+    expect(
+      walk(select)
+        .filter(
+          (node) => node instanceof FakeElement && node.tagName === "OPTION",
+        )
+        .map((option) => option.textContent),
+    ).toEqual(["local-dev", "Anonymous (no principal)"]);
+    expect(select.value).toBe("p_1");
+
+    select.value = "__anonymous__";
+    select.dispatchEvent(new Event("change"));
+    invoke.dispatchEvent(new Event("click"));
+    await waitFor(() =>
+      expect(panel.textContent).toContain("Result · success"),
+    );
+
+    const body = JSON.parse(
+      fetch.mock.calls.find(([path]) => path === "/api/invoke")[1].body,
+    );
+    expect(body.principalKey).toBeUndefined();
+    // The choice survives a reload instead of silently reverting.
+    expect(storage.getItem("invokta-devtools.active")).toBe("anonymous");
+    resetIdentitySelects();
+    resetAdapterSelection();
+  });
+
+  it("selects an external endpoint and keeps its credential out of the browser", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    const fetch = vi.fn(async (path, options) => {
+      if (path === "/api/http-target" && options?.method === "PUT") {
+        return jsonResponse({
+          kind: "external",
+          url: "https://mcp.example.com/mcp",
+          authentication: { type: "headers", headerNames: ["X-API-Key"] },
+        });
+      }
+      return jsonResponse({
+        kind: "devtools",
+        authentication: { type: "session-token" },
+      });
+    });
+    installGlobal("fetch", fetch);
+
+    const { resetAdapterSelection } = await import("../src/ui/adapters.js");
+    const { resetHttpTarget } = await import("../src/ui/http-auth.js");
+    resetAdapterSelection();
+    resetHttpTarget();
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const elements = walk(panel);
+    const choice = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("auth-choice"),
+    );
+    const form = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("auth-form"),
+    );
+    const url = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("auth-url"),
+    );
+    const type = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("auth-external-type"),
+    );
+    const apply = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Use endpoint",
+    );
+
+    expect(form.hidden).toBe(true);
+    choice.value = "external";
+    choice.dispatchEvent(new Event("change"));
+    expect(form.hidden).toBe(false);
+
+    url.value = "https://mcp.example.com/mcp";
+    type.value = "headers";
+    type.dispatchEvent(new Event("change"));
+    const headerName = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("auth-header-name"),
+    );
+    const headerValue = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("auth-header-value"),
+    );
+    headerName.value = "X-API-Key";
+    // A value starting with $ names an environment variable the dev server
+    // reads, so the secret never travels through the browser.
+    headerValue.value = "$MCP_API_KEY";
+    apply.dispatchEvent(new Event("click"));
+
+    await waitFor(() =>
+      expect(
+        fetch.mock.calls.some(([, options]) => options?.method === "PUT"),
+      ).toBe(true),
+    );
+    const [, put] = fetch.mock.calls.find(
+      ([, options]) => options?.method === "PUT",
+    );
+    expect(JSON.parse(put.body)).toEqual({
+      kind: "external",
+      url: "https://mcp.example.com/mcp",
+      authentication: {
+        type: "headers",
+        headers: [
+          {
+            name: "X-API-Key",
+            value: { kind: "environment", name: "MCP_API_KEY" },
+          },
+        ],
+      },
+    });
+    await waitFor(() =>
+      expect(panel.textContent).toContain("https://mcp.example.com/mcp"),
+    );
+    expect(panel.textContent).toContain("Custom headers");
+    resetHttpTarget();
+    resetAdapterSelection();
+  });
+
   it("reports an adapter that could not complete the call", async () => {
     installDocument();
     installGlobal("sessionStorage", new MemoryStorage());

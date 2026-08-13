@@ -39,7 +39,11 @@ Each delivered change is normative through its accepted architecture decision:
 - Generated engine MCP conformance gate —
   [ADR 0026](./adr/0026-generated-engine-mcp-conformance-gate.md)
 - Adapter emulation in the engine devtools —
-  [ADR 0027](./adr/0027-adapter-emulation-in-engine-devtools.md)
+  [ADR 0027](./adr/0027-adapter-emulation-in-engine-devtools.md), extended with
+  selectable HTTP authentication by
+  [ADR 0028](./adr/0028-selectable-http-authentication-in-devtools.md) and with
+  project entry points by
+  [ADR 0029](./adr/0029-project-entry-points-in-devtools-emulation.md)
 
 ## Guides and examples
 

@@ -20,6 +20,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   child process that imports the same built module and exits with the call,
   while MCP HTTP reuses the running engine host. `@invokta/devtools` therefore
   depends on `@invokta/cli` as well as `@invokta/core` and `@invokta/mcp`.
+- The devtools playground now separates identity from authentication
+  (ADR 0028). The acting development `Principal`, including an explicit
+  anonymous choice, is selected next to the adapter switch and applies to every
+  path; the global `Act as` status is gone. Authentication is shown only for
+  MCP HTTP, which additionally gains a target: the devtools host, with the
+  identity's session token or no credential, or an external Streamable HTTP
+  endpoint the developer runs, with none, bearer, custom-header, or interactive
+  OAuth authentication — so the hook an engine actually ships can be exercised
+  against the same arguments the other paths use. A credential may name an
+  environment variable the dev server reads; every credential stays in process
+  memory and is never persisted or echoed back.
+- The CLI and MCP stdio emulations can run the engine's own built entry point
+  instead of the devtools child (ADR 0029), so the composition root that
+  decides the principal is the project's — including the `principal: null` the
+  generated starter passes. The devtools child remains the default and keeps
+  the selected identity; choosing a project entry point turns the identity
+  control off and says why, and the reproduction command becomes the command
+  the developer would type. The path is named explicitly and must stay inside
+  the directory `serve` runs in.
 - Added `invokta check-mcp` and `validateMcpToolCatalog` as a build-time
   conformance gate for the actual published MCP catalog. Newly generated MCP
   profiles include the gate in their canonical `check`, so ambiguous derived

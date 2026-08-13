@@ -696,11 +696,201 @@ nav.tabs button.selected {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.3rem 0.6rem;
+  gap: 0.35rem 0.75rem;
   margin: 0.5rem 0 0.6rem;
 }
 
 .adapter-bar .field-label { margin: 0; }
+
+.adapter-control,
+.identity-control,
+.entry-control,
+.auth-control {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.35rem;
+}
+
+.auth-control[hidden],
+.entry-control[hidden] { display: none; }
+
+.entry-control { flex-wrap: wrap; }
+.identity-control--inactive { opacity: 0.6; }
+
+.identity-note {
+  color: var(--faint);
+  font-size: 0.6875rem;
+}
+
+.identity-note[hidden] { display: none; }
+
+.entry-choice {
+  min-height: 1.75rem;
+  max-width: 16rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  color: var(--body);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.entry-choice:disabled { cursor: default; opacity: 0.55; }
+
+.entry-form {
+  display: flex;
+  align-items: center;
+  flex: 1 1 100%;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+}
+
+.entry-form[hidden] { display: none; }
+
+.entry-path {
+  flex: 1 1 18rem;
+  min-height: 1.85rem;
+  max-width: 32rem;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  color: var(--body);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.entry-apply,
+.entry-cancel {
+  min-height: 1.85rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  color: var(--body);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.entry-apply { border-color: var(--accent); color: var(--accent-text); }
+
+.entry-feedback {
+  flex: 1 1 100%;
+  margin: 0.2rem 0 0;
+  color: var(--warning);
+  font-size: 0.6875rem;
+}
+
+.entry-feedback:empty { display: none; }
+
+.identity-select,
+.auth-choice,
+.auth-external-type {
+  min-height: 1.75rem;
+  max-width: 16rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  color: var(--body);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.identity-select:disabled,
+.auth-choice:disabled { cursor: default; opacity: 0.55; }
+
+.auth-summary {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--faint);
+  font-size: 0.6875rem;
+}
+
+.auth-summary[hidden] { display: none; }
+
+.auth-control {
+  flex-wrap: wrap;
+}
+
+.auth-form {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface);
+}
+
+.auth-form[hidden] { display: none; }
+.auth-form .hint { margin: 0; font-size: 0.6875rem; }
+
+.auth-form-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.auth-form input {
+  min-height: 1.85rem;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  color: var(--body);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.auth-form input[hidden],
+.auth-headers[hidden],
+.auth-add-header[hidden] { display: none; }
+
+.auth-headers { display: flex; flex-direction: column; gap: 0.3rem; }
+
+.auth-header-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) max-content;
+  gap: 0.3rem;
+}
+
+.auth-add-header,
+.auth-remove-header,
+.auth-form-actions button {
+  min-height: 1.85rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.375rem;
+  background: var(--raised);
+  color: var(--body);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-add-header { align-self: flex-start; }
+
+.auth-form-actions { display: flex; gap: 0.35rem; }
+
+.auth-form-actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent-low);
+  color: var(--accent-text);
+}
+
+.auth-feedback {
+  flex: 1 1 100%;
+  margin: 0.2rem 0 0;
+  color: var(--warning);
+  font-size: 0.6875rem;
+}
 
 .adapter-switch {
   display: flex;

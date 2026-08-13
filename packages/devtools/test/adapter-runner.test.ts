@@ -211,9 +211,10 @@ describe("what each adapter exchanged", () => {
       const result = await invoke("mcp-stdio", "fixture.report", {
         marker: "stdio",
       });
-      expect(result.exchange.kind).toBe("stdio");
-      if (result.exchange.kind !== "stdio") return;
-      expect(result.exchange.command).toContain("stdio-entry.js");
+      expect(result.exchange.kind).toBe("mcp");
+      if (result.exchange.kind !== "mcp") return;
+      expect(result.exchange.transport).toBe("stdio");
+      expect(result.exchange.target).toContain("stdio-entry.js");
       expect(JSON.parse(result.exchange.request) as unknown).toMatchObject({
         method: "tools/call",
         params: { name: "fixture_report" },

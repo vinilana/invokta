@@ -8,6 +8,9 @@ import type { ThrownValueInfo } from "./diagnostics.js";
 import type { DoctorReport } from "./doctor.js";
 import { doctorReportToJson, inspectEngine } from "./doctor.js";
 import { startEngineHost } from "./engine-host.js";
+import { createEntryTargetStore } from "./entry-target.js";
+import { createHttpTargetStore } from "./http-target.js";
+import { createPlaygroundOAuth } from "./playground-oauth.js";
 import type { LoadedEngine } from "./load-engine.js";
 import { createPrincipalStore } from "./principal-store.js";
 import type { DevtoolsServerAddress, EngineView } from "./server.js";
@@ -133,11 +136,17 @@ async function startWithEngine(
     return cachedView;
   };
 
+  const httpTarget = createHttpTargetStore();
+  const entryTarget = createEntryTargetStore();
+  const oauth = createPlaygroundOAuth();
   const adapters = createAdapterRunner({
     module: options.module,
     cwd: options.cwd,
     mcpEndpoint: () =>
       `http://127.0.0.1:${String(engineHost.address().port)}/mcp`,
+    httpTarget: () => httpTarget.resolve(),
+    oauthCall: oauth.call,
+    entryPoint: (adapter) => entryTarget.for(adapter),
   });
 
   let devtools: Awaited<ReturnType<typeof startDevtoolsServer>>;
@@ -147,6 +156,11 @@ async function startWithEngine(
       principals,
       trace,
       adapters,
+      httpTarget,
+      entryTarget,
+      oauth,
+      cwd: options.cwd,
+      module: options.module,
       enginePort: () => engineHost.address().port,
       port: devtoolsPort,
       ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
@@ -163,6 +177,7 @@ async function startWithEngine(
       engineAddress: engineHost.address(),
       close: async () => {
         await devtools.close();
+        await oauth.close();
         await engineHost.close();
       },
     },
@@ -211,6 +226,9 @@ async function startWithWatch(
     return { kind: "refused", report: watch.doctor as DoctorReport };
   }
 
+  const httpTarget = createHttpTargetStore();
+  const entryTarget = createEntryTargetStore();
+  const oauth = createPlaygroundOAuth();
   const adapters = createAdapterRunner({
     module: {
       specifier: options.watch.moduleSpecifier,
@@ -219,6 +237,9 @@ async function startWithWatch(
     cwd: options.cwd,
     mcpEndpoint: () =>
       `http://127.0.0.1:${String(watch.handles.enginePort())}/mcp`,
+    httpTarget: () => httpTarget.resolve(),
+    oauthCall: oauth.call,
+    entryPoint: (adapter) => entryTarget.for(adapter),
   });
 
   let devtools: Awaited<ReturnType<typeof startDevtoolsServer>>;
@@ -228,6 +249,14 @@ async function startWithWatch(
       principals,
       trace,
       adapters,
+      httpTarget,
+      entryTarget,
+      oauth,
+      cwd: options.cwd,
+      module: {
+        specifier: options.watch.moduleSpecifier,
+        exportName: options.watch.exportName,
+      },
       enginePort: watch.handles.enginePort,
       port: devtoolsPort,
       ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
@@ -244,6 +273,7 @@ async function startWithWatch(
       engineAddress: { host: "127.0.0.1", port: watch.handles.enginePort() },
       close: async () => {
         await devtools.close();
+        await oauth.close();
         await watch.handles.close();
       },
     },

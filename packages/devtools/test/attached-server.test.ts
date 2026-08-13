@@ -1061,12 +1061,15 @@ describe("attached devtools server", () => {
     });
     expect(wrongType.status).toBe(400);
 
+    // The server answers before consuming the declared body, so the client
+    // either reads the refusal or has its unsent write reset. Both are the
+    // same refusal; only never reaching the controller is asserted here.
     const oversized = await fetch(`${base}/api/connection`, {
       method: "POST",
       headers: mutationHeaders(base, cookie, csrf),
       body: JSON.stringify({ padding: "x".repeat(1024 * 1024) }),
-    });
-    expect(oversized.status).toBe(413);
+    }).catch(() => undefined);
+    if (oversized !== undefined) expect(oversized.status).toBe(413);
     expect(controller.connect).not.toHaveBeenCalled();
   });
 

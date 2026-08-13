@@ -15,6 +15,9 @@ import {
 import { createCopyButton, formatDuration } from "./clipboard.js";
 import { el, pretty } from "./dom.js";
 import { exampleFromSchema } from "./example-from-schema.js";
+import { createEntryPointControl } from "./entry-point.js";
+import { createHttpAuthControl } from "./http-auth.js";
+import { createIdentitySelect } from "./identity.js";
 import { prefillKeyFor } from "./playground-handoff.js";
 import { getActivePrincipalKey, getActiveToken } from "./principals.js";
 
@@ -652,6 +655,34 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     { class: "adapter-note", "aria-live": "polite" },
     [],
   );
+  const identityNote = el(
+    "span",
+    { class: "identity-note", "aria-live": "polite" },
+    [],
+  );
+  identityNote.hidden = true;
+  const identity = createIdentitySelect(capability.id);
+  const httpAuth = createHttpAuthControl(capability.id);
+  const entryPoint = createEntryPointControl(capability.id, () => {
+    paintIdentity();
+  });
+
+  /**
+   * The identity applies only when the devtools is the composition root. A
+   * project entry point supplies its own principal, so the selection here
+   * would describe something that does not run.
+   */
+  const paintIdentity = (): void => {
+    const applies =
+      adapter === "mcp-http" ? true : entryPoint.identityApplies();
+    identity.setDisabled(!applies || pending);
+    identity.element.classList.toggle("identity-control--inactive", !applies);
+    identityNote.textContent = applies
+      ? ""
+      : "Your entry point's composition root supplies the principal.";
+    identityNote.hidden = applies;
+  };
+
   const applyAdapter = (next: AdapterId): void => {
     adapter = next;
     const presentation = presentationFor(next);
@@ -659,9 +690,21 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     adapterNote.textContent = `${presentation.summary} ${presentation.identity}`;
     curlCopy.hidden = next !== "mcp-http";
     commandCopy.hidden = next === "mcp-http";
+    // Only the HTTP boundary authenticates. The other three paths receive the
+    // identity when the process starts, so there is nothing to select.
+    httpAuth.element.hidden = next !== "mcp-http";
+    entryPoint.show(
+      next === "cli" ? "cli" : next === "mcp-stdio" ? "mcp-stdio" : undefined,
+    );
+    paintIdentity();
   };
   const selector = createAdapterSelector(capability.id, applyAdapter);
-  lockAdapterSwitch = selector.setDisabled;
+  lockAdapterSwitch = (disabled) => {
+    selector.setDisabled(disabled);
+    httpAuth.setDisabled(disabled);
+    entryPoint.setDisabled(disabled);
+    paintIdentity();
+  };
   applyAdapter(adapter);
 
   const requestPane = el("section", { class: "invoke-request" }, [
@@ -708,8 +751,14 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   return el("div", { class: "invoke-panel" }, [
     el("div", { class: "invoke-heading" }, [el("h3", {}, ["Invoke"]), route]),
     el("div", { class: "adapter-bar" }, [
-      el("span", { class: "field-label" }, ["Adapter"]),
-      selector.element,
+      el("div", { class: "adapter-control" }, [
+        el("span", { class: "field-label" }, ["Adapter"]),
+        selector.element,
+      ]),
+      entryPoint.element,
+      identity.element,
+      identityNote,
+      httpAuth.element,
       adapterNote,
     ]),
     el("div", { class: "invoke-workspace" }, [requestPane, resultPane]),
