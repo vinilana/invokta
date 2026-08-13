@@ -10,7 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - `invokta-devtools serve` now emulates a capability call through the execution
-  path you select (ADR 0026): direct, CLI, MCP stdio, or MCP HTTP. Playground
+  path you select (ADR 0027): direct, CLI, MCP stdio, or MCP HTTP. Playground
   keeps one argument editor and one result view for all four, with an
   adapter-specific record of what was exchanged — request and response bodies
   with the HTTP status, `tools/call` frames, or the command with its standard
@@ -20,6 +20,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   child process that imports the same built module and exits with the call,
   while MCP HTTP reuses the running engine host. `@invokta/devtools` therefore
   depends on `@invokta/cli` as well as `@invokta/core` and `@invokta/mcp`.
+- Added `invokta check-mcp` and `validateMcpToolCatalog` as a build-time
+  conformance gate for the actual published MCP catalog. Newly generated MCP
+  profiles include the gate in their canonical `check`, so ambiguous derived
+  tool names fail before adapter startup, installation, or deployment.
 
 ### Changed
 

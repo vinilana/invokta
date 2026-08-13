@@ -125,6 +125,25 @@ export interface McpToolCatalog<Capabilities extends CapabilityMap> {
   ): Extract<keyof Capabilities, string> | undefined;
 }
 
+export class McpToolNameCollisionError extends TypeError {
+  readonly code = "MCP_TOOL_NAME_COLLISION" as const;
+  readonly capabilityIds: readonly [string, string];
+
+  constructor(
+    capabilityIds: readonly [string, string],
+    readonly toolName: string,
+  ) {
+    super(
+      `Capabilities ${JSON.stringify(capabilityIds[0])} and ${JSON.stringify(capabilityIds[1])} resolve to duplicate MCP tool name ${JSON.stringify(toolName)}.`,
+    );
+    this.name = "McpToolNameCollisionError";
+    this.capabilityIds = Object.freeze([...capabilityIds]) as readonly [
+      string,
+      string,
+    ];
+  }
+}
+
 export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
   engine: Engine<Capabilities>,
 ): McpToolCatalog<Capabilities> {
@@ -135,12 +154,17 @@ export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
     const toolName = toMcpToolName(capabilityId);
     const existingCapabilityId = capabilityIdByToolName.get(toolName);
     if (existingCapabilityId !== undefined) {
-      const [firstCapabilityId, secondCapabilityId] = [
-        existingCapabilityId,
-        capabilityId,
-      ].sort();
-      throw new TypeError(
-        `Capabilities ${JSON.stringify(firstCapabilityId)} and ${JSON.stringify(secondCapabilityId)} resolve to duplicate MCP tool name ${JSON.stringify(toolName)}.`,
+      const firstCapabilityId =
+        existingCapabilityId < capabilityId
+          ? existingCapabilityId
+          : capabilityId;
+      const secondCapabilityId =
+        existingCapabilityId < capabilityId
+          ? capabilityId
+          : existingCapabilityId;
+      throw new McpToolNameCollisionError(
+        [firstCapabilityId, secondCapabilityId],
+        toolName,
       );
     }
     capabilityIdByToolName.set(toolName, capabilityId);
@@ -163,6 +187,13 @@ export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
     capabilityIdForToolName: (toolName: string) =>
       capabilityIdByToolName.get(toolName),
   });
+}
+
+/** Validates the exact MCP tool catalog without starting an adapter. */
+export function validateMcpToolCatalog<Capabilities extends CapabilityMap>(
+  engine: Engine<Capabilities>,
+): void {
+  createMcpToolCatalog(engine);
 }
 
 export function createMcpServer<Capabilities extends CapabilityMap>(

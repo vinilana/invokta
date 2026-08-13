@@ -149,6 +149,15 @@ ${runScript("deploy:probe")}
 \`\`\`
 `
     : "";
+  const mcpCheckNote =
+    features.mcpStdio || features.mcpHttp
+      ? `
+The generated check builds the engine and validates its final MCP tool catalog
+without starting an adapter. It fails when capability IDs resolve to ambiguous
+public tool names, so naming collisions are caught before installation or
+deployment.
+`
+      : "";
   return `# ${projectName}
 
 A standalone [Invokta](https://docs.invokta.dev/) Action Engine with one
@@ -159,6 +168,7 @@ deterministic capability shared by ${channelSummary} entry points.
 \`\`\`sh
 ${commands.check}
 \`\`\`
+${mcpCheckNote}
 
 ## Invoke directly
 
@@ -304,13 +314,15 @@ function renderPackageManifest(
     'tsc -p tsconfig.json --pretty false && invokta-devtools serve dist/engine.js --watch --build "tsc -p tsconfig.json --pretty false"';
   const devtoolsDoctor =
     "tsc -p tsconfig.json --pretty false && invokta-devtools doctor dist/engine.js";
+  const hasMcp = features.mcpStdio || features.mcpHttp;
+  const checkMcp = "invokta check-mcp ./dist/engine.js";
   const scripts = {
     build: "tsc -p tsconfig.json --pretty false",
     typecheck:
       "tsc -p tsconfig.json --pretty false --noEmit && tsc -p tsconfig.test.json --pretty false --noEmit",
     test: "vitest run",
-    check:
-      "tsc -p tsconfig.json --pretty false --noEmit && tsc -p tsconfig.test.json --pretty false --noEmit && vitest run && tsc -p tsconfig.json --pretty false",
+    check: `tsc -p tsconfig.json --pretty false --noEmit && tsc -p tsconfig.test.json --pretty false --noEmit && vitest run && tsc -p tsconfig.json --pretty false${hasMcp ? ` && ${checkMcp}` : ""}`,
+    ...(hasMcp ? { "check:mcp": checkMcp } : {}),
     direct: "node dist/direct.js",
     devtools: devtoolsServe,
     "devtools:doctor": devtoolsDoctor,
@@ -343,6 +355,7 @@ function renderPackageManifest(
   const devDependencies = {
     ...(features.mcpHttp ? { "@invokta/deploy": invoktaVersion } : {}),
     "@invokta/devtools": invoktaVersion,
+    ...(hasMcp ? { "@invokta/tooling": invoktaVersion } : {}),
     "@types/node": "26.1.2",
     typescript: "7.0.2",
     vitest: "4.1.10",
