@@ -108,6 +108,7 @@ yarn workspace @invokta/example-hello devtools
 ```
 
 The inspector on `http://127.0.0.1:4100/` invokes
-`onboarding.create-welcome-message` from a schema-seeded editor, shows the raw
-MCP exchange and a live invocation trace, and switches between test identities
-backed by development `Principal` values.
+`onboarding.create-welcome-message` from a schema-seeded editor through any of
+the four adapters above, shows what each one exchanged alongside a live
+invocation trace, and switches between test identities backed by development
+`Principal` values.

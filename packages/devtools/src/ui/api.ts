@@ -1,8 +1,19 @@
+import type { AdapterId } from "./adapters.js";
+
+export interface AdapterInfo {
+  readonly id: AdapterId;
+  readonly source: string;
+  readonly label: string;
+  readonly identity: "per-request" | "process";
+}
+
 export interface EngineInfo {
   readonly name: string;
   readonly version: string;
   readonly capabilityCount: number;
   readonly engineHost: { readonly host: string; readonly port: number };
+  readonly adapters?: readonly AdapterInfo[];
+  readonly maxConcurrentInvocations?: number;
 }
 
 export interface CapabilityInfo {
@@ -182,6 +193,85 @@ export function toolCallRequest(
       2,
     ),
   };
+}
+
+export type AdapterOutcome = "success" | "capability-error" | "adapter-error";
+
+export interface AdapterErrorInfo {
+  readonly code: string;
+  readonly message: string;
+  readonly publicDetails?: unknown;
+}
+
+/** What the selected adapter actually exchanged with the engine. */
+export type AdapterExchange =
+  | {
+      readonly kind: "http";
+      readonly method: "POST";
+      readonly url: string;
+      readonly status: number;
+      readonly requestBody: string;
+      readonly responseBody: string;
+    }
+  | {
+      readonly kind: "stdio";
+      readonly command: string;
+      readonly request: string;
+      readonly response: string;
+    }
+  | {
+      readonly kind: "process";
+      readonly command: string;
+      readonly argv: readonly string[];
+      readonly exitCode: number | null;
+      readonly signal: string | null;
+      readonly stdout: string;
+      readonly stderr: string;
+    };
+
+export interface AdapterInvocationResult {
+  readonly adapter: AdapterId;
+  readonly capabilityId: string;
+  readonly outcome: AdapterOutcome;
+  readonly durationMs: number;
+  readonly result?: unknown;
+  readonly error?: AdapterErrorInfo;
+  readonly exchange: AdapterExchange;
+}
+
+export interface AdapterInvocationRequest {
+  readonly adapter: AdapterId;
+  readonly capabilityId: string;
+  readonly arguments: unknown;
+  readonly principalKey: string | null;
+}
+
+/**
+ * Runs one capability call through the selected adapter. The dev server owns
+ * the adapter, so the browser sends the same request whichever path carries
+ * it and reads back one normalized outcome.
+ */
+export async function invokeCapability(
+  request: AdapterInvocationRequest,
+  signal?: AbortSignal,
+): Promise<AdapterInvocationResult> {
+  const response = await fetch("/api/invoke", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      adapter: request.adapter,
+      capabilityId: request.capabilityId,
+      arguments: request.arguments,
+      ...(request.principalKey === null
+        ? {}
+        : { principalKey: request.principalKey }),
+    }),
+    ...(signal === undefined ? {} : { signal }),
+  });
+  if (!response.ok) {
+    await failWithDetail(response, "The capability could not be invoked.");
+  }
+  return (await response.json()) as AdapterInvocationResult;
 }
 
 /** Sends one raw MCP `tools/call` through the same-origin proxy. */

@@ -692,6 +692,57 @@ nav.tabs button.selected {
   font-size: 0.6875rem;
 }
 
+.adapter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.6rem;
+  margin: 0.5rem 0 0.6rem;
+}
+
+.adapter-bar .field-label { margin: 0; }
+
+.adapter-switch {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.125rem;
+  padding: 0.125rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--raised);
+}
+
+.adapter-choice {
+  flex: 0 0 auto;
+  min-height: 1.7rem;
+  padding: 0.22rem 0.65rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 580;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.adapter-choice:hover { color: var(--fg); }
+.adapter-choice:disabled { cursor: default; opacity: 0.55; }
+
+.adapter-choice[aria-checked="true"] {
+  background: var(--accent-low);
+  color: var(--accent-text);
+}
+
+.adapter-note {
+  flex: 1 1 16rem;
+  min-width: 0;
+  margin: 0;
+  color: var(--faint);
+  font-size: 0.6875rem;
+}
+
 .invoke-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1356,6 +1407,34 @@ details.trace-row--exchange {
   border-radius: 0;
 }
 .trace-row--exchange[open] > summary::after { transform: rotate(90deg); }
+
+details.trace-row--adapter { margin: 0; padding: 0; }
+
+.trace-row--adapter > summary {
+  display: grid;
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+  grid-template-columns:
+    minmax(5.5rem, 0.65fr) max-content max-content minmax(0, 2fr)
+    max-content 0.75rem;
+  width: auto;
+  padding: 0.5rem 0.65rem;
+  list-style: none;
+}
+
+.trace-row--adapter > summary::-webkit-details-marker { display: none; }
+.trace-row--adapter > summary::after {
+  color: var(--muted);
+  content: "›";
+  font-size: 1rem;
+  line-height: 1;
+  transition: transform 150ms ease;
+}
+.trace-row--adapter[open] > summary {
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+.trace-row--adapter[open] > summary::after { transform: rotate(90deg); }
 
 .trace-entry-subject {
   display: flex;
@@ -2173,6 +2252,10 @@ a.trace-toolbar-button {
 }
 
 .invoke-cancel[hidden] { display: none; }
+
+.adapter-exchange[hidden] { display: none; }
+.adapter-exchange .exchange-pane + .exchange-pane { margin-top: 0.35rem; }
+.copy-button[hidden] { display: none; }
 
 .capability-retry { margin-top: 0.5rem; }
 `;

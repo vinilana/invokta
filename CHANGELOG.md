@@ -7,6 +7,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `invokta-devtools serve` now emulates a capability call through the execution
+  path you select (ADR 0026): direct, CLI, MCP stdio, or MCP HTTP. Playground
+  keeps one argument editor and one result view for all four, with an
+  adapter-specific record of what was exchanged — request and response bodies
+  with the HTTP status, `tools/call` frames, or the command with its standard
+  streams and exit code — and Activity tags every emulated call with the
+  adapter that carried it. Each emulation performs a real call through the
+  published adapter: direct, CLI, and MCP stdio each run in a devtools-owned
+  child process that imports the same built module and exits with the call,
+  while MCP HTTP reuses the running engine host. `@invokta/devtools` therefore
+  depends on `@invokta/cli` as well as `@invokta/core` and `@invokta/mcp`.
+
 ### Changed
 
 - MCP stdio and HTTP now publish deterministic portable tool aliases that match

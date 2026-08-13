@@ -83,6 +83,32 @@ describe("createTraceStore", () => {
     expect(entry.responseOriginalSize).toBeUndefined();
   });
 
+  it("records an emulated call with its adapter and truncates its bodies", () => {
+    const store = createTraceStore({ maxCapturedBodyLength: 4 });
+    const entry = store.appendAdapterCall({
+      adapter: "cli",
+      capabilityId: "fixture.echo",
+      outcome: "capability-error",
+      durationMs: 12,
+      errorCode: "INPUT_INVALID",
+      request: "engine run fixture.echo",
+      response: "ok",
+      exitCode: 1,
+      command: "engine run fixture.echo",
+    });
+
+    expect(entry.kind).toBe("adapter");
+    if (entry.kind !== "adapter") return;
+    expect(entry.call.adapter).toBe("cli");
+    expect(entry.call.outcome).toBe("capability-error");
+    expect(entry.call.errorCode).toBe("INPUT_INVALID");
+    expect(entry.call.exitCode).toBe(1);
+    expect(entry.call.request).toBe("engi");
+    expect(entry.requestTruncated).toBe(true);
+    expect(entry.call.response).toBe("ok");
+    expect(entry.responseTruncated).toBe(false);
+  });
+
   it("clears buffered entries while keeping ids monotonic", () => {
     const store = createTraceStore();
     store.appendInvocation(record(1));

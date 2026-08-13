@@ -437,6 +437,7 @@ describe("trace panel", () => {
 
     expect(kinds.map((button) => button.textContent)).toEqual([
       "All",
+      "Emulated calls",
       "Invocations",
       "Exchanges",
       "Lifecycle",
@@ -477,8 +478,9 @@ describe("trace panel", () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(count.textContent).toBe("3 entries");
 
-    click(kinds[1]);
-    expect(kinds[1].getAttribute("aria-checked")).toBe("true");
+    // Index 2 is "Invocations"; index 1 narrows to emulated calls.
+    click(kinds[2]);
+    expect(kinds[2].getAttribute("aria-checked")).toBe("true");
     expect(kinds[0].getAttribute("aria-checked")).toBe("false");
     expect(count.textContent).toBe("1 of 3 entries");
     expect(log.childNodes.filter((node) => !node.hidden)).toHaveLength(1);
@@ -730,6 +732,83 @@ describe("trace panel", () => {
 
     dispose();
     expect(sources[0].closed).toBe(true);
+  });
+
+  it("shows which adapter carried an emulated call and filters by it", async () => {
+    vi.useFakeTimers();
+    const sources = installTraceEnvironment();
+    const { renderTracePanel } = await import("../src/ui/trace.js");
+    const container = new FakeElement("main");
+    const dispose = renderTracePanel(container);
+    const log = walk(container).find(
+      (node) => node.getAttribute?.("role") === "log",
+    );
+    const search = walk(container).find(
+      (node) => node.getAttribute?.("id") === "trace-search",
+    );
+
+    sources[0].dispatchEvent(new Event("open"));
+    dispatchTrace(sources[0], {
+      kind: "adapter",
+      id: 1,
+      at: "2026-08-06T12:00:00.000Z",
+      call: {
+        adapter: "cli",
+        capabilityId: "support.classify",
+        outcome: "capability-error",
+        durationMs: 42.5,
+        errorCode: "INPUT_INVALID",
+        request: 'engine run support.classify --input \'{"ticketId":"T-1"}\'',
+        response: '{"error":{"code":"INPUT_INVALID"}}',
+        exitCode: 1,
+        command: "engine run support.classify",
+      },
+      requestTruncated: false,
+      responseTruncated: false,
+    });
+    dispatchTrace(sources[0], {
+      kind: "adapter",
+      id: 2,
+      at: "2026-08-06T12:00:01.000Z",
+      call: {
+        adapter: "mcp-stdio",
+        capabilityId: "support.classify",
+        outcome: "success",
+        durationMs: 8,
+        request: '{"method":"tools/call"}',
+        response: '{"structuredContent":{}}',
+      },
+      requestTruncated: false,
+      responseTruncated: false,
+    });
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(log.childElementCount).toBe(2);
+    expect(log.textContent).toContain("Capability error · INPUT_INVALID");
+    expect(log.textContent).toContain("cli");
+    expect(log.textContent).toContain("mcp-stdio");
+    expect(
+      walk(log).find((node) => node.textContent === "Emulated call"),
+    ).toBeDefined();
+    // Every emulated call can be reopened in the Playground, whichever
+    // adapter carried it.
+    expect(
+      walk(log).filter(
+        (node) => node.getAttribute?.("class") === "trace-open-playground",
+      ),
+    ).toHaveLength(2);
+
+    search.value = "mcp-stdio";
+    search.dispatchEvent(new Event("input"));
+    const visible = walk(log).filter(
+      (node) =>
+        node.getAttribute?.("class")?.includes("trace-row--adapter") === true &&
+        node.hidden !== true,
+    );
+    expect(visible).toHaveLength(1);
+    expect(visible[0].textContent).toContain("mcp-stdio");
+
+    dispose();
   });
 
   it("stages playground prefill, routes, and notifies on Open in Playground", async () => {

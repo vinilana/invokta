@@ -1,0 +1,851 @@
+import type { ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import type { Principal } from "@invokta/core";
+import { connectMcpClient, McpClientError } from "@invokta/mcp";
+
+import { principalEnvironmentName } from "./adapters/child-context.js";
+
+/**
+ * Emulates one capability call through a caller-selected adapter, chartered by
+ * ADR 0026. MCP HTTP reuses the running engine host; the other three adapters
+ * run in a devtools-owned child process that imports the same built module and
+ * calls the published adapter. A child never outlives the call that spawned it.
+ */
+
+export type AdapterId = "direct" | "cli" | "mcp-stdio" | "mcp-http";
+
+export const adapterIds: readonly AdapterId[] = Object.freeze([
+  "direct",
+  "cli",
+  "mcp-stdio",
+  "mcp-http",
+]);
+
+export interface AdapterDescriptor {
+  readonly id: AdapterId;
+  /** The `ExecutionContext.source` the emulated call reaches the engine with. */
+  readonly source: AdapterId;
+  readonly label: string;
+  /** How the adapter establishes the principal, in one phrase. */
+  readonly identity: "per-request" | "process";
+}
+
+export const adapterDescriptors: readonly AdapterDescriptor[] = Object.freeze([
+  Object.freeze({
+    id: "direct",
+    source: "direct",
+    label: "Direct",
+    identity: "process",
+  }),
+  Object.freeze({
+    id: "cli",
+    source: "cli",
+    label: "CLI",
+    identity: "process",
+  }),
+  Object.freeze({
+    id: "mcp-stdio",
+    source: "mcp-stdio",
+    label: "MCP stdio",
+    identity: "process",
+  }),
+  Object.freeze({
+    id: "mcp-http",
+    source: "mcp-http",
+    label: "MCP HTTP",
+    identity: "per-request",
+  }),
+] as const satisfies readonly AdapterDescriptor[]);
+
+export function isAdapterId(value: unknown): value is AdapterId {
+  return typeof value === "string" && adapterIds.includes(value as AdapterId);
+}
+
+export interface AdapterIdentity {
+  readonly principal: Principal;
+  /** The minted bearer token, used by the per-request MCP HTTP adapter. */
+  readonly token: string;
+}
+
+export interface AdapterInvocation {
+  readonly adapter: AdapterId;
+  readonly capabilityId: string;
+  /** The portable tool name the MCP adapters publish for this capability. */
+  readonly mcpToolName: string;
+  readonly input: unknown;
+  readonly identity?: AdapterIdentity | null;
+  readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
+}
+
+export interface AdapterError {
+  readonly code: string;
+  readonly message: string;
+  readonly publicDetails?: unknown;
+}
+
+/** The record of what the selected adapter actually exchanged. */
+export type AdapterExchange =
+  | {
+      readonly kind: "http";
+      readonly method: "POST";
+      readonly url: string;
+      readonly status: number;
+      readonly requestBody: string;
+      readonly responseBody: string;
+    }
+  | {
+      readonly kind: "stdio";
+      readonly command: string;
+      readonly request: string;
+      readonly response: string;
+    }
+  | {
+      readonly kind: "process";
+      readonly command: string;
+      readonly argv: readonly string[];
+      readonly exitCode: number | null;
+      readonly signal: string | null;
+      readonly stdout: string;
+      readonly stderr: string;
+    };
+
+export type AdapterOutcome = "success" | "capability-error" | "adapter-error";
+
+export interface AdapterInvocationResult {
+  readonly adapter: AdapterId;
+  readonly capabilityId: string;
+  readonly outcome: AdapterOutcome;
+  readonly durationMs: number;
+  readonly result?: unknown;
+  readonly error?: AdapterError;
+  readonly exchange: AdapterExchange;
+}
+
+export interface AdapterRunnerModule {
+  readonly specifier: string;
+  readonly exportName: string;
+}
+
+export interface CreateAdapterRunnerOptions {
+  readonly module: AdapterRunnerModule;
+  readonly cwd: string;
+  /** The running engine host endpoint, re-read per call because watch mode moves it. */
+  readonly mcpEndpoint: () => string;
+  /** Concurrent emulations allowed at once. Defaults to 4. */
+  readonly maxConcurrent?: number;
+  /** Deadline applied when the caller supplies none. Defaults to 30000. */
+  readonly defaultTimeoutMs?: number;
+}
+
+export interface AdapterRunner {
+  run(invocation: AdapterInvocation): Promise<AdapterInvocationResult>;
+  /** Emulations currently in flight; the interface reports the cap from it. */
+  active(): number;
+  readonly maxConcurrent: number;
+}
+
+export class AdapterBusyError extends Error {
+  constructor(readonly limit: number) {
+    super("Too many capability emulations are already running.");
+    this.name = "AdapterBusyError";
+  }
+}
+
+const defaultMaxConcurrent = 4;
+const defaultTimeoutMs = 30_000;
+const maximumTimeoutMs = 300_000;
+const maximumCapturedStreamLength = 262_144;
+/** Linux bounds one argument at 128 KiB; this stays clear of that ceiling. */
+const maximumArgumentBytes = 98_304;
+const killTimeoutMs = 3_000;
+const environmentName = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function entryPath(name: string): string {
+  const sibling = fileURLToPath(
+    new URL(`./adapters/${name}.js`, import.meta.url),
+  );
+  if (existsSync(sibling)) return sibling;
+  // Running from TypeScript sources (tests): use the built package output.
+  return fileURLToPath(new URL(`../dist/adapters/${name}.js`, import.meta.url));
+}
+
+/**
+ * Wraps a value as a POSIX single-quoted shell word so the displayed command
+ * stays copy-pasteable when an argument carries JSON or an apostrophe.
+ */
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_./:@-]+$/.test(value) && value !== ""
+    ? value
+    : `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function renderCommand(argv: readonly string[]): string {
+  return argv.map(shellQuote).join(" ");
+}
+
+function cap(text: string): string {
+  return text.length > maximumCapturedStreamLength
+    ? text.slice(0, maximumCapturedStreamLength)
+    : text;
+}
+
+function resolveTimeout(
+  requested: number | undefined,
+  fallback: number,
+): number {
+  if (
+    requested === undefined ||
+    !Number.isFinite(requested) ||
+    requested <= 0
+  ) {
+    return fallback;
+  }
+  return Math.min(Math.trunc(requested), maximumTimeoutMs);
+}
+
+/**
+ * The environment an adapter child runs with: the dev server's own environment
+ * plus the selected development principal, so an engine that reads a
+ * credential from the environment behaves as it does in a terminal.
+ */
+function childEnvironment(
+  identity: AdapterIdentity | null | undefined,
+): Record<string, string> {
+  const environment: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (typeof value !== "string" || value === "") continue;
+    if (!environmentName.test(name)) continue;
+    environment[name] = value;
+  }
+  if (identity == null) {
+    delete environment[principalEnvironmentName];
+    return environment;
+  }
+  environment[principalEnvironmentName] = JSON.stringify(identity.principal);
+  return environment;
+}
+
+function killChild(child: ChildProcess): void {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  child.kill("SIGTERM");
+  const timeout = setTimeout(() => {
+    child.kill("SIGKILL");
+  }, killTimeoutMs);
+  timeout.unref?.();
+  child.once("exit", () => {
+    clearTimeout(timeout);
+  });
+}
+
+interface ProcessOutcome {
+  readonly exitCode: number | null;
+  readonly signal: string | null;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly failure?: "timeout" | "aborted" | "spawn-failed";
+  readonly failureMessage?: string;
+}
+
+async function runChildProcess(
+  argv: readonly string[],
+  options: {
+    readonly cwd: string;
+    readonly env: Record<string, string>;
+    readonly timeoutMs: number;
+    readonly signal?: AbortSignal;
+  },
+): Promise<ProcessOutcome> {
+  const [command, ...args] = argv;
+  return new Promise<ProcessOutcome>((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let failure: ProcessOutcome["failure"];
+    let failureMessage: string | undefined;
+    let settled = false;
+
+    const child = spawn(command as string, args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const timeout = setTimeout(() => {
+      failure = "timeout";
+      killChild(child);
+    }, options.timeoutMs);
+    const onAbort = (): void => {
+      failure ??= "aborted";
+      killChild(child);
+    };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+
+    const settle = (outcome: ProcessOutcome): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      options.signal?.removeEventListener("abort", onAbort);
+      resolve(outcome);
+    };
+
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      if (stdout.length < maximumCapturedStreamLength) stdout += chunk;
+    });
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      if (stderr.length < maximumCapturedStreamLength) stderr += chunk;
+    });
+    child.once("error", (error: Error) => {
+      failure = "spawn-failed";
+      failureMessage = error.message;
+      settle({
+        exitCode: null,
+        signal: null,
+        stdout: cap(stdout),
+        stderr: cap(stderr),
+        failure,
+        ...(failureMessage === undefined ? {} : { failureMessage }),
+      });
+    });
+    child.once(
+      "close",
+      (code: number | null, signal: NodeJS.Signals | null) => {
+        settle({
+          exitCode: code,
+          signal,
+          stdout: cap(stdout),
+          stderr: cap(stderr),
+          ...(failure === undefined ? {} : { failure }),
+          ...(failureMessage === undefined ? {} : { failureMessage }),
+        });
+      },
+    );
+  });
+}
+
+function parseJson(text: string): { readonly value?: unknown } {
+  try {
+    return { value: JSON.parse(text) as unknown };
+  } catch {
+    return {};
+  }
+}
+
+function asRecord(
+  value: unknown,
+): Readonly<Record<string, unknown>> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Reads the structured engine error both child adapters serialize: the CLI
+ * wraps it in `error`, and the MCP adapters publish the bare record as tool
+ * result text.
+ */
+function readEngineError(value: unknown): AdapterError | undefined {
+  const record = asRecord(value);
+  if (record === undefined) return undefined;
+  const wrapped = asRecord(record.error);
+  const source = wrapped ?? record;
+  if (typeof source.code !== "string" || typeof source.message !== "string") {
+    return undefined;
+  }
+  return {
+    code: source.code,
+    message: source.message,
+    ...(source.publicDetails === undefined
+      ? {}
+      : { publicDetails: source.publicDetails }),
+  };
+}
+
+function processFailureError(
+  outcome: ProcessOutcome,
+  adapterLabel: string,
+): AdapterError | undefined {
+  if (outcome.failure === "timeout") {
+    return {
+      code: "TIMEOUT",
+      message: `The ${adapterLabel} adapter did not answer before the deadline.`,
+    };
+  }
+  if (outcome.failure === "aborted") {
+    return {
+      code: "CANCELLED",
+      message: `The ${adapterLabel} emulation was cancelled.`,
+    };
+  }
+  if (outcome.failure === "spawn-failed") {
+    return {
+      code: "SPAWN_FAILED",
+      message:
+        outcome.failureMessage ??
+        `The ${adapterLabel} adapter process could not start.`,
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Maps the settled child process of a stdout-reporting adapter — the CLI and
+ * the direct call — onto the normalized outcome. A structured engine error on
+ * stderr is the capability's own failure; anything else failed the emulation.
+ */
+function readProcessOutcome(
+  outcome: ProcessOutcome,
+  adapterLabel: string,
+): {
+  readonly outcome: AdapterOutcome;
+  readonly result?: unknown;
+  readonly error?: AdapterError;
+} {
+  const failure = processFailureError(outcome, adapterLabel);
+  if (failure !== undefined) {
+    return { outcome: "adapter-error", error: failure };
+  }
+  if (outcome.exitCode === 0) {
+    const parsed = parseJson(outcome.stdout.trim());
+    if (parsed.value === undefined && outcome.stdout.trim() !== "") {
+      return {
+        outcome: "adapter-error",
+        error: {
+          code: "ADAPTER_FAILED",
+          message: `The ${adapterLabel} adapter wrote output that is not JSON.`,
+        },
+      };
+    }
+    return { outcome: "success", result: parsed.value };
+  }
+  const engineError = readEngineError(parseJson(outcome.stderr.trim()).value);
+  if (engineError === undefined) {
+    return {
+      outcome: "adapter-error",
+      error: {
+        code: "ADAPTER_FAILED",
+        message:
+          outcome.stderr.trim() === ""
+            ? `The ${adapterLabel} adapter exited with code ${String(outcome.exitCode)}.`
+            : outcome.stderr.trim(),
+      },
+    };
+  }
+  // INVALID_USAGE is the adapter refusing the request, not the capability
+  // failing; every other code came out of the invocation pipeline.
+  return engineError.code === "INVALID_USAGE"
+    ? { outcome: "adapter-error", error: engineError }
+    : { outcome: "capability-error", error: engineError };
+}
+
+interface McpToolResult {
+  readonly isError?: unknown;
+  readonly structuredContent?: unknown;
+  readonly content?: unknown;
+}
+
+function readToolResultText(result: McpToolResult): string | undefined {
+  if (!Array.isArray(result.content)) return undefined;
+  const first = asRecord(result.content[0]);
+  return typeof first?.text === "string" ? first.text : undefined;
+}
+
+/** Maps a `tools/call` result onto the normalized outcome. */
+function readMcpToolResult(result: McpToolResult): {
+  readonly outcome: AdapterOutcome;
+  readonly result?: unknown;
+  readonly error?: AdapterError;
+} {
+  if (result.isError === true) {
+    const text = readToolResultText(result);
+    const engineError =
+      text === undefined ? undefined : readEngineError(parseJson(text).value);
+    return {
+      outcome: "capability-error",
+      error: engineError ?? {
+        code: "EXECUTION_FAILED",
+        message: text ?? "The capability failed.",
+      },
+    };
+  }
+  if (result.structuredContent !== undefined) {
+    return { outcome: "success", result: result.structuredContent };
+  }
+  const text = readToolResultText(result);
+  if (text === undefined) return { outcome: "success", result };
+  const parsed = parseJson(text);
+  return { outcome: "success", result: parsed.value ?? text };
+}
+
+function toolCallRequestBody(toolName: string, input: unknown): string {
+  return JSON.stringify(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: toolName, arguments: input },
+    },
+    null,
+    2,
+  );
+}
+
+/**
+ * Parses an MCP Streamable HTTP response body. The engine host answers with
+ * plain JSON, and the transport contract also permits SSE framing, so the last
+ * `data:` payload is read when the body is an event stream.
+ */
+function readHttpMessage(contentType: string | null, body: string): unknown {
+  if (contentType?.includes("text/event-stream") === true) {
+    let lastData: string | undefined;
+    for (const line of body.split(/\r?\n/)) {
+      if (line.startsWith("data:")) lastData = line.slice(5).trim();
+    }
+    return lastData === undefined ? undefined : parseJson(lastData).value;
+  }
+  return parseJson(body).value;
+}
+
+export function createAdapterRunner(
+  options: CreateAdapterRunnerOptions,
+): AdapterRunner {
+  const maxConcurrent = options.maxConcurrent ?? defaultMaxConcurrent;
+  const fallbackTimeoutMs = options.defaultTimeoutMs ?? defaultTimeoutMs;
+  let active = 0;
+
+  const childArguments = (
+    entry: string,
+    rest: readonly string[],
+  ): readonly string[] => [
+    process.execPath,
+    entryPath(entry),
+    options.module.specifier,
+    options.module.exportName,
+    ...rest,
+  ];
+
+  const runProcessAdapter = async (
+    invocation: AdapterInvocation,
+    entry: string,
+    rest: readonly string[],
+    adapterLabel: string,
+  ): Promise<Omit<AdapterInvocationResult, "durationMs">> => {
+    const argv = childArguments(entry, rest);
+    // A command-line adapter carries its arguments in the argument vector,
+    // which the operating system bounds per argument. Refusing here names the
+    // real constraint instead of surfacing a spawn failure.
+    const oversized = rest.find(
+      (value) => Buffer.byteLength(value, "utf8") > maximumArgumentBytes,
+    );
+    if (oversized !== undefined) {
+      return {
+        adapter: invocation.adapter,
+        capabilityId: invocation.capabilityId,
+        outcome: "adapter-error",
+        error: {
+          code: "ARGUMENTS_TOO_LARGE",
+          message: `The ${adapterLabel} adapter passes arguments on the command line, which this system bounds at ${String(maximumArgumentBytes)} bytes. Use an MCP adapter for a payload this size.`,
+        },
+        exchange: {
+          kind: "process",
+          command: renderCommand(argv),
+          argv,
+          exitCode: null,
+          signal: null,
+          stdout: "",
+          stderr: "",
+        },
+      };
+    }
+    const outcome = await runChildProcess(argv, {
+      cwd: options.cwd,
+      env: childEnvironment(invocation.identity),
+      timeoutMs: resolveTimeout(invocation.timeoutMs, fallbackTimeoutMs),
+      ...(invocation.signal === undefined ? {} : { signal: invocation.signal }),
+    });
+    const mapped = readProcessOutcome(outcome, adapterLabel);
+    return {
+      adapter: invocation.adapter,
+      capabilityId: invocation.capabilityId,
+      outcome: mapped.outcome,
+      ...(mapped.result === undefined ? {} : { result: mapped.result }),
+      ...(mapped.error === undefined ? {} : { error: mapped.error }),
+      exchange: {
+        kind: "process",
+        command: renderCommand(argv),
+        argv,
+        exitCode: outcome.exitCode,
+        signal: outcome.signal,
+        stdout: outcome.stdout,
+        stderr: outcome.stderr,
+      },
+    };
+  };
+
+  const runStdioAdapter = async (
+    invocation: AdapterInvocation,
+  ): Promise<Omit<AdapterInvocationResult, "durationMs">> => {
+    const argv = childArguments("stdio-entry", []);
+    const [command, ...args] = argv;
+    const request = toolCallRequestBody(
+      invocation.mcpToolName,
+      invocation.input,
+    );
+    const exchange = (response: unknown): AdapterExchange => ({
+      kind: "stdio",
+      command: renderCommand(argv),
+      request,
+      response:
+        typeof response === "string"
+          ? response
+          : JSON.stringify(response, null, 2),
+    });
+
+    // The client facade takes a signal only, so the deadline becomes one.
+    const deadline = AbortSignal.timeout(
+      resolveTimeout(invocation.timeoutMs, fallbackTimeoutMs),
+    );
+    const signal =
+      invocation.signal === undefined
+        ? deadline
+        : AbortSignal.any([deadline, invocation.signal]);
+
+    let connection: Awaited<ReturnType<typeof connectMcpClient>> | undefined;
+    try {
+      connection = await connectMcpClient(
+        {
+          transport: "stdio",
+          command: command as string,
+          args,
+          cwd: options.cwd,
+          env: childEnvironment(invocation.identity),
+        },
+        { signal },
+      );
+      const called = await connection.callTool(
+        invocation.mcpToolName,
+        invocation.input as Readonly<Record<string, never>>,
+        { signal },
+      );
+      const mapped = readMcpToolResult(called.response as McpToolResult);
+      return {
+        adapter: invocation.adapter,
+        capabilityId: invocation.capabilityId,
+        outcome: mapped.outcome,
+        ...(mapped.result === undefined ? {} : { result: mapped.result }),
+        ...(mapped.error === undefined ? {} : { error: mapped.error }),
+        exchange: exchange(called.response),
+      };
+    } catch (error) {
+      const clientCode =
+        error instanceof McpClientError ? error.code : "ADAPTER_FAILED";
+      // The facade reports a deadline the same way it reports a cancellation,
+      // so the timer decides which of the two the developer is told about.
+      const timedOut = clientCode === "CANCELLED" && deadline.aborted;
+      const code = timedOut ? "TIMEOUT" : clientCode;
+      const message = timedOut
+        ? "The MCP stdio adapter did not answer before the deadline."
+        : error instanceof McpClientError
+          ? error.message
+          : "The MCP stdio adapter failed.";
+      return {
+        adapter: invocation.adapter,
+        capabilityId: invocation.capabilityId,
+        outcome: "adapter-error",
+        error: { code, message },
+        exchange: exchange({ error: { code, message } }),
+      };
+    } finally {
+      await connection?.close().catch(() => undefined);
+    }
+  };
+
+  const runHttpAdapter = async (
+    invocation: AdapterInvocation,
+  ): Promise<Omit<AdapterInvocationResult, "durationMs">> => {
+    const endpoint = options.mcpEndpoint();
+    const requestBody = toolCallRequestBody(
+      invocation.mcpToolName,
+      invocation.input,
+    );
+    const identity = invocation.identity;
+    const timeoutMs = resolveTimeout(invocation.timeoutMs, fallbackTimeoutMs);
+    const deadline = AbortSignal.timeout(timeoutMs);
+    const signal =
+      invocation.signal === undefined
+        ? deadline
+        : AbortSignal.any([deadline, invocation.signal]);
+
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          ...(identity == null
+            ? {}
+            : { authorization: `Bearer ${identity.token}` }),
+        },
+        body: requestBody,
+        signal,
+      });
+    } catch {
+      const failed: AdapterError = deadline.aborted
+        ? {
+            code: "TIMEOUT",
+            message: "The engine host did not answer before the deadline.",
+          }
+        : invocation.signal?.aborted === true
+          ? {
+              code: "CANCELLED",
+              message: "The MCP HTTP emulation was cancelled.",
+            }
+          : {
+              code: "ENGINE_HOST_UNREACHABLE",
+              message: "The engine host did not accept the request.",
+            };
+      return {
+        adapter: invocation.adapter,
+        capabilityId: invocation.capabilityId,
+        outcome: "adapter-error",
+        error: failed,
+        exchange: {
+          kind: "http",
+          method: "POST",
+          url: endpoint,
+          status: 0,
+          requestBody,
+          responseBody: "",
+        },
+      };
+    }
+
+    const responseBody = cap(await response.text());
+    const exchange: AdapterExchange = {
+      kind: "http",
+      method: "POST",
+      url: endpoint,
+      status: response.status,
+      requestBody,
+      responseBody,
+    };
+    const base = {
+      adapter: invocation.adapter,
+      capabilityId: invocation.capabilityId,
+      exchange,
+    } as const;
+
+    if (!response.ok) {
+      return {
+        ...base,
+        outcome: "adapter-error",
+        error: {
+          code: response.status === 401 ? "UNAUTHENTICATED" : "HTTP_ERROR",
+          message:
+            response.status === 401
+              ? "The engine host rejected the session token."
+              : `The engine host answered HTTP ${String(response.status)}.`,
+        },
+      };
+    }
+
+    const message = asRecord(
+      readHttpMessage(response.headers.get("content-type"), responseBody),
+    );
+    const result = asRecord(message?.result);
+    if (result === undefined) {
+      const protocolError = asRecord(message?.error);
+      return {
+        ...base,
+        outcome: "adapter-error",
+        error: {
+          code: "PROTOCOL_ERROR",
+          message:
+            typeof protocolError?.message === "string"
+              ? protocolError.message
+              : "The engine host answered with an unreadable MCP message.",
+        },
+      };
+    }
+    const mapped = readMcpToolResult(result as McpToolResult);
+    return {
+      ...base,
+      outcome: mapped.outcome,
+      ...(mapped.result === undefined ? {} : { result: mapped.result }),
+      ...(mapped.error === undefined ? {} : { error: mapped.error }),
+    };
+  };
+
+  return {
+    maxConcurrent,
+    active: () => active,
+    async run(invocation) {
+      if (active >= maxConcurrent) throw new AdapterBusyError(maxConcurrent);
+      active += 1;
+      const startedAtMs = performance.now();
+      try {
+        const encodedInput = JSON.stringify(invocation.input ?? null);
+        let settled: Omit<AdapterInvocationResult, "durationMs">;
+        switch (invocation.adapter) {
+          case "cli":
+            settled = await runProcessAdapter(
+              invocation,
+              "cli-entry",
+              ["run", invocation.capabilityId, "--input", encodedInput],
+              "CLI",
+            );
+            break;
+          case "direct":
+            settled = await runProcessAdapter(
+              invocation,
+              "direct-entry",
+              [invocation.capabilityId, encodedInput],
+              "direct",
+            );
+            break;
+          case "mcp-stdio":
+            settled = await runStdioAdapter(invocation);
+            break;
+          default:
+            settled = await runHttpAdapter(invocation);
+            break;
+        }
+        return {
+          ...settled,
+          durationMs: Math.max(0, performance.now() - startedAtMs),
+        };
+      } catch (error) {
+        return {
+          adapter: invocation.adapter,
+          capabilityId: invocation.capabilityId,
+          outcome: "adapter-error",
+          error: {
+            code: "ADAPTER_FAILED",
+            message:
+              error instanceof Error
+                ? error.message
+                : "The adapter emulation failed.",
+          },
+          durationMs: Math.max(0, performance.now() - startedAtMs),
+          exchange: {
+            kind: "process",
+            command: "",
+            argv: [],
+            exitCode: null,
+            signal: null,
+            stdout: "",
+            stderr: "",
+          },
+        };
+      } finally {
+        active -= 1;
+      }
+    },
+  };
+}

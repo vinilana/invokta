@@ -11,9 +11,18 @@ import { fileURLToPath } from "node:url";
 
 import type { Principal } from "@invokta/core";
 
+import type {
+  AdapterInvocationResult,
+  AdapterRunner,
+} from "./adapter-runner.js";
+import {
+  adapterDescriptors,
+  AdapterBusyError,
+  isAdapterId,
+} from "./adapter-runner.js";
 import { faviconLink, faviconSvg } from "./favicon.js";
 import type { PrincipalStore } from "./principal-store.js";
-import type { TraceStore } from "./trace-store.js";
+import type { AdapterCallCapture, TraceStore } from "./trace-store.js";
 
 export interface DevtoolsServerAddress {
   readonly host: string;
@@ -38,6 +47,8 @@ export interface DevtoolsServerOptions {
   readonly engineView: () => EngineView;
   readonly principals: PrincipalStore;
   readonly trace: TraceStore;
+  /** Runs one capability call through the adapter the caller selected. */
+  readonly adapters: AdapterRunner;
   /** The engine host's current MCP endpoint port on loopback. */
   readonly enginePort: () => number;
   /** Defaults to 4100. */
@@ -165,6 +176,76 @@ function isPrincipalInput(value: unknown): value is Principal {
   }
   return true;
 }
+
+interface CapabilityView {
+  readonly id: string;
+  readonly mcpToolName: string;
+  readonly timeoutMs?: number;
+}
+
+function readCapabilityView(value: unknown): CapabilityView | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as {
+    readonly id?: unknown;
+    readonly mcpToolName?: unknown;
+    readonly timeoutMs?: unknown;
+  };
+  if (typeof record.id !== "string" || typeof record.mcpToolName !== "string") {
+    return undefined;
+  }
+  return {
+    id: record.id,
+    mcpToolName: record.mcpToolName,
+    ...(typeof record.timeoutMs === "number" &&
+    Number.isFinite(record.timeoutMs)
+      ? { timeoutMs: record.timeoutMs }
+      : {}),
+  };
+}
+
+/**
+ * Renders what the adapter exchanged into the two strings the trace shows.
+ * Each adapter carries a different shape, and the trace stays one readable
+ * feed rather than four.
+ */
+function toAdapterCapture(result: AdapterInvocationResult): AdapterCallCapture {
+  const shared = {
+    adapter: result.adapter,
+    capabilityId: result.capabilityId,
+    outcome: result.outcome,
+    durationMs: result.durationMs,
+    ...(result.error === undefined ? {} : { errorCode: result.error.code }),
+  };
+  if (result.exchange.kind === "http") {
+    return {
+      ...shared,
+      request: result.exchange.requestBody,
+      response: result.exchange.responseBody,
+      status: result.exchange.status,
+    };
+  }
+  if (result.exchange.kind === "stdio") {
+    return {
+      ...shared,
+      request: result.exchange.request,
+      response: result.exchange.response,
+      command: result.exchange.command,
+    };
+  }
+  return {
+    ...shared,
+    request: result.exchange.command,
+    response:
+      result.exchange.stderr === ""
+        ? result.exchange.stdout
+        : `${result.exchange.stdout}${result.exchange.stderr}`,
+    exitCode: result.exchange.exitCode,
+    command: result.exchange.command,
+  };
+}
+
+/** Extra time an emulated call may take on top of the capability deadline. */
+const adapterStartupSlackMs = 10_000;
 
 function defaultUiRoot(): string {
   return join(fileURLToPath(new URL(".", import.meta.url)), "ui");
@@ -323,6 +404,98 @@ export async function startDevtoolsServer(
     });
   };
 
+  /**
+   * Runs one capability call through the selected adapter. Every adapter the
+   * engine publishes is reachable here, and the answer is normalized so the
+   * interface reads one outcome regardless of which path carried the call.
+   */
+  const handleInvoke = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
+    const read = await readBody(request, mcpBodyLimitBytes);
+    if (!read.ok) {
+      sendJson(response, 413, { error: "payload_too_large" });
+      return;
+    }
+    const body = parseJson(read.body) as
+      | {
+          readonly adapter?: unknown;
+          readonly capabilityId?: unknown;
+          readonly arguments?: unknown;
+          readonly principalKey?: unknown;
+        }
+      | undefined;
+    if (body === undefined || !isAdapterId(body.adapter)) {
+      sendJson(response, 400, {
+        error: "unknown_adapter",
+        message: "Select one of the adapters the engine publishes.",
+      });
+      return;
+    }
+    const capability = options
+      .engineView()
+      .capabilities.map(readCapabilityView)
+      .find((entry) => entry?.id === body.capabilityId);
+    if (capability === undefined) {
+      sendJson(response, 400, {
+        error: "unknown_capability",
+        message: "The engine publishes no capability with that ID.",
+      });
+      return;
+    }
+    let identity: {
+      readonly principal: Principal;
+      readonly token: string;
+    } | null = null;
+    if (typeof body.principalKey === "string" && body.principalKey !== "") {
+      const record = options.principals
+        .list()
+        .find((entry) => entry.key === body.principalKey);
+      if (record === undefined) {
+        sendJson(response, 400, {
+          error: "unknown_principal",
+          message: "The selected test identity no longer exists.",
+        });
+        return;
+      }
+      identity = { principal: record.principal, token: record.token };
+    }
+
+    // A closed browser connection ends the emulation, so an adapter child is
+    // never left running for a caller that stopped listening.
+    const controller = new AbortController();
+    request.once("close", () => {
+      if (!response.writableEnded) controller.abort();
+    });
+
+    let result: AdapterInvocationResult;
+    try {
+      result = await options.adapters.run({
+        adapter: body.adapter,
+        capabilityId: capability.id,
+        mcpToolName: capability.mcpToolName,
+        input: body.arguments ?? {},
+        identity,
+        signal: controller.signal,
+        ...(capability.timeoutMs === undefined
+          ? {}
+          : { timeoutMs: capability.timeoutMs + adapterStartupSlackMs }),
+      });
+    } catch (error) {
+      if (error instanceof AdapterBusyError) {
+        sendJson(response, 429, {
+          error: "adapter_busy",
+          message: `Wait for one of the ${String(error.limit)} running emulations to finish.`,
+        });
+        return;
+      }
+      throw error;
+    }
+    options.trace.appendAdapterCall(toAdapterCapture(result));
+    sendJson(response, 200, result);
+  };
+
   const handleMcpProxy = async (
     request: IncomingMessage,
     response: ServerResponse,
@@ -433,6 +606,19 @@ export async function startDevtoolsServer(
       await handleMcpProxy(request, response);
       return;
     }
+    if (path === "/api/invoke") {
+      if (method !== "POST") {
+        sendJson(
+          response,
+          405,
+          { error: "method_not_allowed" },
+          { allow: "POST" },
+        );
+        return;
+      }
+      await handleInvoke(request, response);
+      return;
+    }
     if (path === "/api/principals") {
       await handlePrincipals(request, response);
       return;
@@ -483,6 +669,8 @@ export async function startDevtoolsServer(
         version: view.version,
         capabilityCount: view.capabilities.length,
         engineHost: { host: "127.0.0.1", port: options.enginePort() },
+        adapters: adapterDescriptors,
+        maxConcurrentInvocations: options.adapters.maxConcurrent,
       });
       return;
     }

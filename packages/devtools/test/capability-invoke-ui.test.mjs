@@ -716,20 +716,33 @@ describe("capability discovery", () => {
   });
 });
 
+/** One normalized MCP HTTP emulation, as the dev server answers it. */
+function httpInvocation(overrides = {}) {
+  return {
+    adapter: "mcp-http",
+    capabilityId: "support.classify-ticket",
+    outcome: "success",
+    durationMs: 12.5,
+    result: { urgency: "high" },
+    exchange: {
+      kind: "http",
+      method: "POST",
+      url: "http://127.0.0.1:4101/mcp",
+      status: 200,
+      requestBody: '{"method":"tools/call"}',
+      responseBody: '{"result":{"structuredContent":{"urgency":"high"}}}',
+    },
+    ...overrides,
+  };
+}
+
 describe("capability invocation", () => {
-  it("communicates input and response states while sending one MCP tools/call", async () => {
+  it("communicates input and response states while emulating one adapter call", async () => {
     installDocument();
     installGlobal("sessionStorage", new MemoryStorage());
     const fetch = vi.fn(async (path) => {
-      expect(path).toBe("/mcp");
-      return jsonResponse({
-        jsonrpc: "2.0",
-        id: 1,
-        result: {
-          content: [{ type: "text", text: '{"urgency":"high"}' }],
-          structuredContent: { urgency: "high" },
-        },
-      });
+      expect(path).toBe("/api/invoke");
+      return jsonResponse(httpInvocation());
     });
     installGlobal("fetch", fetch);
 
@@ -778,7 +791,7 @@ describe("capability invocation", () => {
           node.classList.contains("invoke-workspace"),
       ),
     ).toBeDefined();
-    expect(panel.textContent).toContain("Raw MCP exchange");
+    expect(panel.textContent).toContain("Adapter exchange");
 
     editor.value = "{";
     invoke.dispatchEvent(new Event("click"));
@@ -806,11 +819,9 @@ describe("capability invocation", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     const [, options] = fetch.mock.calls[0];
     expect(JSON.parse(options.body)).toMatchObject({
-      method: "tools/call",
-      params: {
-        name: "support_classify-ticket",
-        arguments: { ticketId: "T-123" },
-      },
+      adapter: "mcp-http",
+      capabilityId: "support.classify-ticket",
+      arguments: { ticketId: "T-123" },
     });
     expect(editor.getAttribute("aria-invalid")).toBe("false");
     expect(result.getAttribute("aria-busy")).toBe("false");
@@ -837,11 +848,190 @@ describe("capability invocation", () => {
     ).toEqual([
       "Copy arguments",
       "Copy curl command (reads the token from $INVOKTA_DEV_TOKEN)",
+      "Copy adapter command",
       "Copy capability result",
       "Copy raw MCP request",
       "Copy raw MCP response",
     ]);
+    // The command copy belongs to the adapters the dev server runs as a
+    // process; MCP HTTP keeps the curl command instead.
+    const commandCopy = copyButtons.find(
+      (button) => button.getAttribute("aria-label") === "Copy adapter command",
+    );
+    expect(commandCopy.hidden).toBe(true);
     expect(panel.textContent).toContain("invokes from the editor");
+  });
+
+  it("keeps one editor while switching the adapter that carries the call", async () => {
+    installDocument();
+    const storage = new MemoryStorage();
+    installGlobal("sessionStorage", storage);
+    const fetch = vi.fn(async () =>
+      jsonResponse({
+        adapter: "cli",
+        capabilityId: "support.classify-ticket",
+        outcome: "success",
+        durationMs: 210,
+        result: { urgency: "high" },
+        exchange: {
+          kind: "process",
+          command: "node cli-entry.js run support.classify-ticket",
+          argv: ["node", "cli-entry.js", "run", "support.classify-ticket"],
+          exitCode: 0,
+          signal: null,
+          stdout: '{"urgency":"high"}\n',
+          stderr: "",
+        },
+      }),
+    );
+    installGlobal("fetch", fetch);
+
+    const { resetAdapterSelection } = await import("../src/ui/adapters.js");
+    resetAdapterSelection();
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const elements = walk(panel);
+    const choices = elements.filter(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("adapter-choice"),
+    );
+    const route = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("invoke-route"),
+    );
+    const note = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("adapter-note"),
+    );
+    const editor = elements.find(
+      (node) => node instanceof FakeElement && node.tagName === "TEXTAREA",
+    );
+    const invoke = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Invoke capability",
+    );
+
+    expect(choices.map((choice) => choice.textContent)).toEqual([
+      "Direct",
+      "CLI",
+      "MCP stdio",
+      "MCP HTTP",
+    ]);
+    // MCP HTTP is the default, matching the adapter the dev server hosts.
+    expect(choices[3].getAttribute("aria-checked")).toBe("true");
+    expect(route.textContent).toBe("tools/call → engine.invoke");
+
+    editor.value = '{"ticketId":"T-7"}';
+    choices[1].dispatchEvent(new Event("click"));
+
+    expect(choices[1].getAttribute("aria-checked")).toBe("true");
+    expect(choices[3].getAttribute("aria-checked")).toBe("false");
+    expect(route.textContent).toBe("engine run → engine.invoke");
+    expect(note.textContent).toContain("exit code");
+    // The selection is shared across panels and survives a reload.
+    expect(storage.getItem("invokta-devtools:adapter")).toBe("cli");
+    expect(editor.value).toBe('{"ticketId":"T-7"}');
+
+    invoke.dispatchEvent(new Event("click"));
+    await waitFor(() =>
+      expect(panel.textContent).toContain("Result · success"),
+    );
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({
+      adapter: "cli",
+      capabilityId: "support.classify-ticket",
+      arguments: { ticketId: "T-7" },
+    });
+
+    // A process adapter reports its command, streams, and exit code instead
+    // of an HTTP status.
+    expect(panel.textContent).toContain("Command");
+    expect(panel.textContent).toContain("exit 0");
+    const command = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("aria-label") === "Adapter command",
+    );
+    expect(command.textContent).toBe(
+      "node cli-entry.js run support.classify-ticket",
+    );
+    const stdout = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("aria-label") === "Adapter standard output",
+    );
+    expect(stdout.textContent).toBe('{"urgency":"high"}\n');
+    expect(
+      walk(panel).find(
+        (node) =>
+          node instanceof FakeElement &&
+          node.getAttribute("aria-label") === "Adapter standard error",
+      ),
+    ).toBeUndefined();
+    const commandCopy = walk(panel).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.getAttribute("aria-label") === "Copy adapter command",
+    );
+    expect(commandCopy.hidden).toBe(false);
+    resetAdapterSelection();
+  });
+
+  it("reports an adapter that could not complete the call", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    installGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          adapter: "mcp-stdio",
+          capabilityId: "support.classify-ticket",
+          outcome: "adapter-error",
+          durationMs: 90,
+          error: { code: "SPAWN_FAILED", message: "The server did not start." },
+          exchange: {
+            kind: "stdio",
+            command: "node stdio-entry.js",
+            request: '{"method":"tools/call"}',
+            response: '{"error":{"code":"SPAWN_FAILED"}}',
+          },
+        }),
+      ),
+    );
+
+    const { resetAdapterSelection, setSelectedAdapter } = await import(
+      "../src/ui/adapters.js"
+    );
+    resetAdapterSelection();
+    setSelectedAdapter("mcp-stdio");
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const elements = walk(panel);
+    const invoke = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Invoke capability",
+    );
+    const feedback = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("feedback"),
+    );
+    const result = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("result"),
+    );
+
+    invoke.dispatchEvent(new Event("click"));
+    await waitFor(() =>
+      expect(feedback.textContent).toContain("MCP stdio adapter"),
+    );
+    expect(panel.textContent).toContain("Result · adapter error");
+    expect(result.textContent).toContain("SPAWN_FAILED");
+    expect(panel.textContent).toContain("Server command");
+    resetAdapterSelection();
   });
 
   it("distinguishes authentication failures from engine errors", async () => {
@@ -849,21 +1039,34 @@ describe("capability invocation", () => {
     installGlobal("sessionStorage", new MemoryStorage());
     const fetch = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ error: "unauthorized" }, 401))
       .mockResolvedValueOnce(
-        jsonResponse({
-          jsonrpc: "2.0",
-          id: 1,
-          result: {
-            isError: true,
-            content: [
-              {
-                type: "text",
-                text: '{"code":"FORBIDDEN","message":"Access denied."}',
-              },
-            ],
-          },
-        }),
+        jsonResponse(
+          httpInvocation({
+            outcome: "adapter-error",
+            result: undefined,
+            error: {
+              code: "UNAUTHENTICATED",
+              message: "The engine host rejected the session token.",
+            },
+            exchange: {
+              kind: "http",
+              method: "POST",
+              url: "http://127.0.0.1:4101/mcp",
+              status: 401,
+              requestBody: '{"method":"tools/call"}',
+              responseBody: '{"error":"unauthorized"}',
+            },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          httpInvocation({
+            outcome: "capability-error",
+            result: undefined,
+            error: { code: "FORBIDDEN", message: "Access denied." },
+          }),
+        ),
       );
     installGlobal("fetch", fetch);
 
@@ -887,12 +1090,11 @@ describe("capability invocation", () => {
 
     invoke.dispatchEvent(new Event("click"));
     await waitFor(() =>
-      expect(feedback.textContent).toContain(
-        "Authentication failed (HTTP 401)",
-      ),
+      expect(feedback.textContent).toContain("Authentication failed"),
     );
     expect(feedback.textContent).toContain("In Test identities");
-    expect(panel.textContent).toContain("Result · HTTP 401");
+    expect(panel.textContent).toContain("Result · unauthenticated");
+    expect(panel.textContent).toContain("HTTP 401");
 
     invoke.dispatchEvent(new Event("click"));
     await waitFor(() =>
@@ -1125,9 +1327,18 @@ describe("capability invocation", () => {
     );
     expect(cancel.hidden).toBe(true);
 
+    const choices = elements.filter(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("adapter-choice"),
+    );
+
     invoke.dispatchEvent(new Event("click"));
     expect(cancel.hidden).toBe(false);
     expect(invoke.getAttribute("aria-disabled")).toBe("true");
+    // The adapter cannot change mid-call, so the shown exchange always
+    // belongs to the adapter the switch shows.
+    expect(choices.every((choice) => choice.disabled === true)).toBe(true);
 
     cancel.dispatchEvent(new Event("click"));
     await waitFor(() =>
@@ -1135,6 +1346,7 @@ describe("capability invocation", () => {
     );
     expect(panel.textContent).toContain("Result · cancelled");
     expect(cancel.hidden).toBe(true);
+    expect(choices.every((choice) => choice.disabled === false)).toBe(true);
     expect(invoke.getAttribute("aria-disabled")).toBe("false");
   });
 
@@ -1261,12 +1473,20 @@ describe("capability invocation", () => {
     });
     installGlobal(
       "fetch",
-      vi.fn(
-        async () =>
-          new Response(body, {
-            status: 200,
-            headers: { "content-type": "application/json" },
+      vi.fn(async () =>
+        jsonResponse(
+          httpInvocation({
+            result: { ok: true },
+            exchange: {
+              kind: "http",
+              method: "POST",
+              url: "http://127.0.0.1:4101/mcp",
+              status: 200,
+              requestBody: '{"method":"tools/call"}',
+              responseBody: body,
+            },
           }),
+        ),
       ),
     );
 
@@ -1285,7 +1505,9 @@ describe("capability invocation", () => {
       expect(panel.textContent).toContain("Result · success"),
     );
 
-    const rawResponse = elements.find(
+    // The exchange panes are built per invocation, so they are found after
+    // the call settles rather than in the initial walk.
+    const rawResponse = walk(panel).find(
       (node) =>
         node instanceof FakeElement &&
         node.getAttribute("aria-label") === "Raw MCP response body",

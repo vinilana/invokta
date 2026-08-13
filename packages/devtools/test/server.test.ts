@@ -11,12 +11,18 @@ import {
 } from "@invokta/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { loadEngineModule } from "../src/load-engine.js";
 import type { ServeHandles } from "../src/serve.js";
 import { startServe } from "../src/serve.js";
 import { startOnAvailablePort } from "./available-port.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const uiRoot = fileURLToPath(new URL("./fixtures/ui", import.meta.url));
+/** The module adapter emulation children import, resolved against the cwd. */
+const fixtureModule = {
+  specifier: "packages/devtools/test/fixtures/adapter-engine.js",
+  exportName: "engine",
+} as const;
 
 type FixtureValue = Readonly<Record<string, unknown>>;
 
@@ -104,6 +110,7 @@ describe("startServe", () => {
       startServe({
         engine,
         cwd: repositoryRoot,
+        module: fixtureModule,
         composedCapabilitiesExport: false,
         port,
         uiRoot,
@@ -143,7 +150,7 @@ describe("startServe", () => {
     });
   }
 
-  it("describes the engine on /api/engine", async () => {
+  it("describes the engine and its adapters on /api/engine", async () => {
     const response = await fetch(`${base}/api/engine`);
 
     expect(response.status).toBe(200);
@@ -152,6 +159,28 @@ describe("startServe", () => {
       version: "0.1.0",
       capabilityCount: 1,
       engineHost: { host: "127.0.0.1", port: handles.engineAddress.port },
+      maxConcurrentInvocations: 4,
+      adapters: [
+        {
+          id: "direct",
+          source: "direct",
+          label: "Direct",
+          identity: "process",
+        },
+        { id: "cli", source: "cli", label: "CLI", identity: "process" },
+        {
+          id: "mcp-stdio",
+          source: "mcp-stdio",
+          label: "MCP stdio",
+          identity: "process",
+        },
+        {
+          id: "mcp-http",
+          source: "mcp-http",
+          label: "MCP HTTP",
+          identity: "per-request",
+        },
+      ],
     });
   });
 
@@ -372,6 +401,164 @@ describe("startServe", () => {
   });
 });
 
+describe("adapter emulation over /api/invoke", () => {
+  let handles: ServeHandles;
+  let base = "";
+  let principalKey = "";
+  /** Four child processes and one HTTP round trip need room to settle. */
+  const emulationTimeoutMs = 60_000;
+
+  beforeAll(async () => {
+    const loaded = await loadEngineModule({
+      moduleSpecifier: fixtureModule.specifier,
+      exportName: fixtureModule.exportName,
+      cwd: repositoryRoot,
+    });
+    if (loaded.kind !== "loaded") {
+      throw new Error(`The adapter fixture failed to load: ${loaded.kind}`);
+    }
+    const result = await startOnAvailablePort((port) =>
+      startServe({
+        engine: loaded.engine,
+        cwd: repositoryRoot,
+        module: fixtureModule,
+        composedCapabilitiesExport: false,
+        port,
+        uiRoot,
+      }),
+    );
+    if (result.kind !== "started") throw new Error("serve was refused");
+    handles = result.handles;
+    base = `http://127.0.0.1:${String(handles.devtoolsAddress.port)}`;
+    const principals = (await (
+      await fetch(`${base}/api/principals`)
+    ).json()) as ReadonlyArray<{ readonly key: string }>;
+    principalKey = principals[0]?.key ?? "";
+  }, emulationTimeoutMs);
+
+  afterAll(async () => {
+    await handles.close();
+  });
+
+  function invoke(body: unknown): Promise<Response> {
+    return fetch(`${base}/api/invoke`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it(
+    "runs the same capability through every adapter",
+    async () => {
+      for (const adapter of [
+        "direct",
+        "cli",
+        "mcp-stdio",
+        "mcp-http",
+      ] as const) {
+        const response = await invoke({
+          adapter,
+          capabilityId: "fixture.report",
+          arguments: { marker: adapter },
+          principalKey,
+        });
+
+        expect(response.status, `${adapter} status`).toBe(200);
+        const body = (await response.json()) as {
+          readonly adapter: string;
+          readonly outcome: string;
+          readonly durationMs: number;
+          readonly result: { readonly source: string };
+          readonly exchange: { readonly kind: string };
+        };
+        expect(body.adapter).toBe(adapter);
+        expect(body.outcome, `${adapter} outcome`).toBe("success");
+        expect(body.result.source).toBe(adapter);
+        expect(body.durationMs).toBeGreaterThanOrEqual(0);
+        expect(body.exchange.kind).toBe(
+          adapter === "mcp-http"
+            ? "http"
+            : adapter === "mcp-stdio"
+              ? "stdio"
+              : "process",
+        );
+      }
+    },
+    emulationTimeoutMs,
+  );
+
+  it(
+    "records one adapter entry per emulation in the trace",
+    async () => {
+      const text = await readSse(`${base}/api/events`, 1, async () => {
+        const response = await invoke({
+          adapter: "direct",
+          capabilityId: "fixture.report",
+          arguments: {},
+          principalKey,
+        });
+        await response.arrayBuffer();
+      });
+
+      expect(text).toContain('"kind":"adapter"');
+      expect(text).toContain('"adapter":"direct"');
+      expect(text).toContain('"capabilityId":"fixture.report"');
+    },
+    emulationTimeoutMs,
+  );
+
+  it("names what is wrong with an unusable invocation request", async () => {
+    const unknownAdapter = await invoke({
+      adapter: "grpc",
+      capabilityId: "fixture.report",
+      arguments: {},
+    });
+    expect(unknownAdapter.status).toBe(400);
+    expect((await unknownAdapter.json()) as unknown).toMatchObject({
+      error: "unknown_adapter",
+    });
+
+    const unknownCapability = await invoke({
+      adapter: "direct",
+      capabilityId: "fixture.absent",
+      arguments: {},
+    });
+    expect(unknownCapability.status).toBe(400);
+    expect((await unknownCapability.json()) as unknown).toMatchObject({
+      error: "unknown_capability",
+    });
+
+    const unknownPrincipal = await invoke({
+      adapter: "direct",
+      capabilityId: "fixture.report",
+      arguments: {},
+      principalKey: "p_absent",
+    });
+    expect(unknownPrincipal.status).toBe(400);
+    expect((await unknownPrincipal.json()) as unknown).toMatchObject({
+      error: "unknown_principal",
+    });
+
+    const wrongMethod = await fetch(`${base}/api/invoke`);
+    expect(wrongMethod.status).toBe(405);
+
+    const foreignOrigin = await fetch(`${base}/api/invoke`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://attacker.example",
+      },
+      body: JSON.stringify({
+        adapter: "direct",
+        capabilityId: "fixture.report",
+        arguments: {},
+      }),
+    });
+    expect(foreignOrigin.status).toBe(403);
+  });
+});
+
 describe("startServe preflight", () => {
   it("refuses an engine that fails the doctor checks", async () => {
     const brokenEngine = {
@@ -387,6 +574,7 @@ describe("startServe preflight", () => {
     const result = await startServe({
       engine: brokenEngine,
       cwd: repositoryRoot,
+      module: fixtureModule,
       composedCapabilitiesExport: false,
       uiRoot,
     });
@@ -404,6 +592,7 @@ describe("startServe trace capacity", () => {
       startServe({
         engine: buildEngine(),
         cwd: repositoryRoot,
+        module: fixtureModule,
         composedCapabilitiesExport: false,
         port,
         uiRoot,

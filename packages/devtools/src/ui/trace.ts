@@ -3,9 +3,21 @@ import { el } from "./dom.js";
 import { openCapabilityInPlayground } from "./playground-handoff.js";
 
 interface TraceEntryView {
-  readonly kind: "invocation" | "exchange" | "notice";
+  readonly kind: "invocation" | "exchange" | "adapter" | "notice";
   readonly id: number;
   readonly at: string;
+  readonly call?: {
+    readonly adapter: string;
+    readonly capabilityId: string;
+    readonly outcome: "success" | "capability-error" | "adapter-error";
+    readonly durationMs: number;
+    readonly errorCode?: string;
+    readonly request: string;
+    readonly response: string;
+    readonly status?: number;
+    readonly exitCode?: number | null;
+    readonly command?: string;
+  };
   readonly invocation?: {
     readonly capabilityId: string;
     readonly durationMs: number;
@@ -219,6 +231,60 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
       ]),
     ]);
   }
+  if (entry.kind === "adapter" && entry.call !== undefined) {
+    const call = entry.call;
+    const playground = el(
+      "button",
+      {
+        type: "button",
+        class: "trace-open-playground",
+        title: "Edit and re-run this call in the Playground",
+      },
+      ["Open in Playground"],
+    );
+    playground.addEventListener("click", () => {
+      openCapabilityInPlayground(
+        call.capabilityId,
+        playgroundPrefill(call.request),
+      );
+    });
+    const tone =
+      call.outcome === "success"
+        ? "ok"
+        : call.outcome === "capability-error"
+          ? "error"
+          : "warn";
+    const outcomeLabel =
+      call.outcome === "success"
+        ? "Success"
+        : call.errorCode === undefined
+          ? sentenceCase(call.outcome)
+          : `${sentenceCase(call.outcome)} · ${call.errorCode}`;
+    return el("details", { class: "trace-row adapter trace-row--adapter" }, [
+      el("summary", { title: "Show what the adapter exchanged" }, [
+        timestamp(entry),
+        el("span", { class: `badge ${tone}` }, [outcomeLabel]),
+        el("span", { class: "badge" }, [call.adapter]),
+        entrySubject("Emulated call", call.capabilityId),
+        duration(call.durationMs),
+      ]),
+      el("div", { class: "trace-row-actions" }, [playground]),
+      el("div", { class: "trace-payload-grid" }, [
+        exchangeBody(
+          "Request",
+          call.request,
+          entry.requestTruncated === true,
+          entry.requestOriginalSize,
+        ),
+        exchangeBody(
+          "Response",
+          call.response,
+          entry.responseTruncated === true,
+          entry.responseOriginalSize,
+        ),
+      ]),
+    ]);
+  }
   const notice = sentenceCase(entry.notice ?? "notice");
   if (entry.detail !== undefined && entry.detail !== "") {
     return el("details", { class: "trace-row notice trace-row--notice" }, [
@@ -244,6 +310,7 @@ const kindFilters: ReadonlyArray<{
   readonly label: string;
 }> = [
   { value: "all", label: "All" },
+  { value: "adapter", label: "Emulated calls" },
   { value: "invocation", label: "Invocations" },
   { value: "exchange", label: "Exchanges" },
   { value: "notice", label: "Lifecycle" },
@@ -266,6 +333,19 @@ function searchTextOf(entry: TraceEntryView): string {
       entry.exchange.capabilityId ?? "",
       entry.exchange.requestBody,
       entry.exchange.responseBody,
+    );
+  }
+  if (entry.call !== undefined) {
+    parts.push(
+      entry.call.adapter,
+      entry.call.capabilityId,
+      entry.call.outcome,
+      entry.call.errorCode ?? "",
+      entry.call.status === undefined
+        ? ""
+        : `http ${String(entry.call.status)}`,
+      entry.call.request,
+      entry.call.response,
     );
   }
   if (entry.notice !== undefined) parts.push(entry.notice);
@@ -524,9 +604,17 @@ export function renderTracePanel(container: HTMLElement): () => void {
 
   const admit = (key: string, entry: TraceEntryView): void => {
     const capabilityId =
-      entry.invocation?.capabilityId ?? entry.exchange?.capabilityId;
-    const outcome = entry.invocation?.outcome;
-    const status = entry.exchange?.status;
+      entry.invocation?.capabilityId ??
+      entry.exchange?.capabilityId ??
+      entry.call?.capabilityId;
+    const outcome =
+      entry.invocation?.outcome ??
+      (entry.call === undefined
+        ? undefined
+        : entry.call.outcome === "success"
+          ? "completed"
+          : "failed");
+    const status = entry.exchange?.status ?? entry.call?.status;
     const record: TraceRecord = {
       key,
       kind: entry.kind,

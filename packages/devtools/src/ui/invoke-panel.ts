@@ -1,14 +1,28 @@
-import { type CapabilityInfo, callTool, toolCallRequest } from "./api.js";
+import {
+  type AdapterExchange,
+  type AdapterInvocationResult,
+  ApiError,
+  type CapabilityInfo,
+  invokeCapability,
+  toolCallRequest,
+} from "./api.js";
+import {
+  type AdapterId,
+  createAdapterSelector,
+  getSelectedAdapter,
+  presentationFor,
+} from "./adapters.js";
 import { createCopyButton, formatDuration } from "./clipboard.js";
 import { el, pretty } from "./dom.js";
 import { exampleFromSchema } from "./example-from-schema.js";
-import { parseMcpResponse } from "./mcp-response.js";
 import { prefillKeyFor } from "./playground-handoff.js";
-import { getActiveToken } from "./principals.js";
+import { getActivePrincipalKey, getActiveToken } from "./principals.js";
 
 const emptyResult = "Invoke the capability to see its result.";
 
-const timeoutSlackMs = 2_000;
+/** Extra client patience for an adapter the dev server runs as a process. */
+const processSlackMs = 12_000;
+const httpSlackMs = 2_000;
 const defaultTimeoutMs = 28_000;
 const elapsedTickMs = 100;
 
@@ -187,8 +201,8 @@ export function validateArguments(
 
 /**
  * The invocation playground for one capability: a schema-seeded JSON editor,
- * the invoke action, and the raw MCP request and response of each attempt —
- * exactly what any MCP client would exchange with the engine.
+ * the adapter switch, the invoke action, and the record of what the selected
+ * adapter exchanged with the engine.
  */
 export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   const safeId = capability.id.replaceAll(/[^A-Za-z0-9_-]/g, "-");
@@ -251,44 +265,106 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
         : el("span", { class: "code-window-actions" }, actions),
     ]);
 
-  const rawRequest = el(
-    "pre",
-    { class: "raw", "aria-label": "Raw MCP request body" },
-    [],
-  );
-  const rawResponse = el(
-    "pre",
-    { class: "raw", "aria-label": "Raw MCP response body" },
-    [],
-  );
-  // The status lives outside the <pre> so copying the response yields the
-  // pure, still-parsable body.
-  const rawResponseStatus = el("span", { class: "raw-response-status" }, []);
-  const rawHeading = (
+  let lastExchange: AdapterExchange | undefined;
+  const exchangeBody = el("div", { class: "exchange-body" }, []);
+  const exchangeSection = el("details", { class: "adapter-exchange" }, [
+    el("summary", {}, ["Adapter exchange"]),
+    exchangeBody,
+  ]);
+  exchangeSection.hidden = true;
+
+  const pane = (
     heading: string | HTMLElement,
     copyLabel: string,
-    read: () => string,
-  ): HTMLElement =>
-    el("div", { class: "raw-heading" }, [
-      typeof heading === "string" ? el("h4", {}, [heading]) : heading,
-      createCopyButton(copyLabel, read),
+    ariaLabel: string,
+    text: string,
+  ): HTMLElement => {
+    const view = el("pre", { class: "raw", "aria-label": ariaLabel }, [text]);
+    return el("div", { class: "exchange-pane" }, [
+      el("div", { class: "raw-heading" }, [
+        typeof heading === "string" ? el("h4", {}, [heading]) : heading,
+        createCopyButton(copyLabel, () => view.textContent ?? ""),
+      ]),
+      view,
     ]);
-  const rawSection = el("details", {}, [
-    el("summary", {}, ["Raw MCP exchange"]),
-    rawHeading(
-      "Request · POST /mcp",
-      "raw MCP request",
-      () => rawRequest.textContent ?? "",
-    ),
-    rawRequest,
-    rawHeading(
-      el("h4", {}, ["Response", rawResponseStatus]),
-      "raw MCP response",
-      () => rawResponse.textContent ?? "",
-    ),
-    rawResponse,
-  ]);
-  rawSection.hidden = true;
+  };
+
+  /**
+   * Renders what the adapter exchanged. Each adapter carries a different
+   * shape — bodies and a status, protocol frames, or a command and its
+   * streams — so the panes are rebuilt per invocation instead of hidden.
+   */
+  const showExchange = (exchange: AdapterExchange): void => {
+    lastExchange = exchange;
+    while (exchangeBody.firstChild) exchangeBody.firstChild.remove();
+    if (exchange.kind === "http") {
+      exchangeBody.append(
+        pane(
+          `Request · ${exchange.method} /mcp`,
+          "raw MCP request",
+          "Raw MCP request body",
+          exchange.requestBody,
+        ),
+        // The status lives outside the <pre> so copying the response yields
+        // the pure, still-parsable body.
+        pane(
+          el("h4", {}, [
+            "Response",
+            el("span", { class: "raw-response-status" }, [
+              ` · HTTP ${String(exchange.status)}`,
+            ]),
+          ]),
+          "raw MCP response",
+          "Raw MCP response body",
+          exchange.responseBody,
+        ),
+      );
+    } else if (exchange.kind === "stdio") {
+      exchangeBody.append(
+        pane("Server command", "command", "Adapter command", exchange.command),
+        pane(
+          "Request · tools/call",
+          "tools/call request",
+          "Raw MCP request body",
+          exchange.request,
+        ),
+        pane(
+          "Response · tools/call result",
+          "tools/call response",
+          "Raw MCP response body",
+          exchange.response,
+        ),
+      );
+    } else {
+      exchangeBody.append(
+        pane("Command", "command", "Adapter command", exchange.command),
+        pane(
+          el("h4", {}, [
+            "Standard output",
+            el("span", { class: "raw-response-status" }, [
+              exchange.exitCode === null
+                ? " · no exit code"
+                : ` · exit ${String(exchange.exitCode)}`,
+            ]),
+          ]),
+          "standard output",
+          "Adapter standard output",
+          exchange.stdout,
+        ),
+      );
+      if (exchange.stderr !== "") {
+        exchangeBody.append(
+          pane(
+            "Standard error",
+            "standard error",
+            "Adapter standard error",
+            exchange.stderr,
+          ),
+        );
+      }
+    }
+    exchangeSection.hidden = false;
+  };
 
   const showResult = (
     state: string,
@@ -325,16 +401,18 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   let elapsedHandle: ReturnType<typeof setInterval> | undefined;
   let cancelledByUser = false;
   let timedOut = false;
-  const clientTimeoutMs =
-    (capability.timeoutMs ?? defaultTimeoutMs) + timeoutSlackMs;
+
+  let adapter: AdapterId = getSelectedAdapter();
+  const clientTimeoutMs = (): number =>
+    (capability.timeoutMs ?? defaultTimeoutMs) +
+    (adapter === "mcp-http" ? httpSlackMs : processSlackMs);
 
   const resetOutput = (): void => {
     feedback.textContent = "";
     showResult("not run", emptyResult);
-    rawRequest.textContent = "";
-    rawResponse.textContent = "";
-    rawResponseStatus.textContent = "";
-    rawSection.hidden = true;
+    lastExchange = undefined;
+    while (exchangeBody.firstChild) exchangeBody.firstChild.remove();
+    exchangeSection.hidden = true;
   };
 
   reset.addEventListener("click", () => {
@@ -376,12 +454,19 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     resetOutput();
   });
 
+  // Assigned once the switch exists; the panel is built top-down and the
+  // pending state is established before it.
+  let lockAdapterSwitch: (disabled: boolean) => void = () => undefined;
+
   const setPending = (next: boolean): void => {
     pending = next;
     invoke.setAttribute("aria-disabled", String(next));
     cancel.hidden = !next;
     reset.disabled = next;
     format.disabled = next;
+    // The adapter cannot change mid-call, so the exchange on screen always
+    // belongs to the adapter the switch shows.
+    lockAdapterSwitch(next);
     invoke.textContent = next ? "Invoking…" : "Invoke capability";
     resultView.setAttribute("aria-busy", String(next));
   };
@@ -392,14 +477,43 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     activeController?.abort();
   });
 
+  /** Turns one normalized outcome into the result bar and its feedback. */
+  const applyResult = (settled: AdapterInvocationResult): void => {
+    showExchange(settled.exchange);
+    if (settled.outcome === "success") {
+      showResult("success", pretty(settled.result), false, settled.durationMs);
+      return;
+    }
+    const error = settled.error;
+    if (settled.outcome === "capability-error") {
+      feedback.textContent = "The capability returned an engine error.";
+      showResult(
+        "engine error",
+        pretty(error ?? settled.result),
+        true,
+        settled.durationMs,
+      );
+      return;
+    }
+    if (error?.code === "UNAUTHENTICATED") {
+      feedback.textContent =
+        "Authentication failed. In Test identities, select an identity with a session token, then try again.";
+      showResult("unauthenticated", pretty(error), true, settled.durationMs);
+      return;
+    }
+    feedback.textContent = `The ${presentationFor(settled.adapter).label} adapter could not complete the call. Expand “Adapter exchange” for details.`;
+    showResult(
+      error?.code === "TIMEOUT" ? "timeout" : "adapter error",
+      pretty(error ?? "The adapter reported no detail."),
+      true,
+      settled.durationMs,
+    );
+  };
+
   const runInvocation = (): void => {
     if (pending) return;
     feedback.textContent = "";
     editor.setAttribute("aria-invalid", "false");
-    rawRequest.textContent = "";
-    rawResponse.textContent = "";
-    rawResponseStatus.textContent = "";
-    rawSection.hidden = true;
     let args: unknown;
     try {
       args = JSON.parse(editor.value);
@@ -425,119 +539,25 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     timedOut = false;
     const controller = new AbortController();
     activeController = controller;
+    const deadlineMs = clientTimeoutMs();
     elapsedHandle = setInterval(() => {
       resultState.textContent = `Result · running · ${formatDuration(performance.now() - startedAt)}`;
     }, elapsedTickMs);
     timeoutHandle = setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, clientTimeoutMs);
-    void callTool(
-      capability.mcpToolName,
-      args,
-      getActiveToken(),
+    }, deadlineMs);
+    void invokeCapability(
+      {
+        adapter,
+        capabilityId: capability.id,
+        arguments: args,
+        principalKey: getActivePrincipalKey(),
+      },
       controller.signal,
     )
-      .then((exchange) => {
-        const elapsedMs = performance.now() - startedAt;
-        rawSection.hidden = false;
-        rawRequest.textContent = exchange.requestBody;
-        rawResponseStatus.textContent = ` · HTTP ${String(exchange.status)}`;
-        rawResponse.textContent = exchange.responseBody;
-        if (exchange.status === 401) {
-          feedback.textContent =
-            "Authentication failed (HTTP 401). In Test identities, select an identity with a session token, then try again.";
-          showResult(
-            "HTTP 401",
-            exchange.responseBody || "The MCP endpoint returned no body.",
-            true,
-            elapsedMs,
-          );
-          return;
-        }
-        if (exchange.status < 200 || exchange.status >= 300) {
-          feedback.textContent = `MCP request failed (HTTP ${String(exchange.status)}). Expand “Raw MCP exchange” for details.`;
-          showResult(
-            `HTTP ${String(exchange.status)}`,
-            exchange.responseBody || "The MCP endpoint returned no body.",
-            true,
-            elapsedMs,
-          );
-          return;
-        }
-        const parsed = parseMcpResponse(
-          exchange.contentType,
-          exchange.responseBody,
-        );
-        const message = parsed.message as
-          | {
-              readonly result?: {
-                readonly isError?: boolean;
-                readonly structuredContent?: unknown;
-                readonly content?: ReadonlyArray<{ readonly text?: string }>;
-              };
-              readonly error?: unknown;
-            }
-          | undefined;
-        const result = message?.result;
-        if (result === undefined) {
-          if (message?.error !== undefined) {
-            feedback.textContent =
-              "MCP returned a protocol error. Expand “Raw MCP exchange” for details.";
-            showResult(
-              "protocol error",
-              pretty(message.error),
-              true,
-              elapsedMs,
-            );
-            return;
-          }
-          feedback.textContent =
-            "Couldn’t parse the MCP response. Expand “Raw MCP exchange” for details.";
-          showResult(
-            "unreadable",
-            exchange.responseBody || "The MCP endpoint returned no body.",
-            true,
-            elapsedMs,
-          );
-          return;
-        }
-        if (result.isError === true) {
-          feedback.textContent = "The capability returned an engine error.";
-          showResult(
-            "engine error",
-            pretty(
-              ((): unknown => {
-                const text = result.content?.[0]?.text;
-                if (typeof text !== "string") return result;
-                try {
-                  return JSON.parse(text);
-                } catch {
-                  return text;
-                }
-              })(),
-            ),
-            true,
-            elapsedMs,
-          );
-          return;
-        }
-        let output = result.structuredContent;
-        if (output === undefined) {
-          const text = result.content?.[0]?.text;
-          if (typeof text === "string") {
-            try {
-              output = JSON.parse(text);
-            } catch {
-              output = text;
-            }
-          } else {
-            output = result;
-          }
-        }
-        showResult("success", pretty(output), false, elapsedMs);
-      })
-      .catch(() => {
+      .then(applyResult)
+      .catch((error: unknown) => {
         const elapsedMs = performance.now() - startedAt;
         if (cancelledByUser) {
           feedback.textContent = "Invocation cancelled.";
@@ -550,7 +570,7 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
           return;
         }
         if (timedOut) {
-          const seconds = Math.max(1, Math.round(clientTimeoutMs / 1_000));
+          const seconds = Math.max(1, Math.round(deadlineMs / 1_000));
           feedback.textContent = `No response within ${String(seconds)} s — the capability may be stuck.`;
           showResult(
             "timeout",
@@ -560,8 +580,16 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
           );
           return;
         }
+        if (error instanceof ApiError) {
+          feedback.textContent =
+            error.code === "adapter_busy"
+              ? `${error.message} Emulations run one process each, so the dev server bounds how many run at once.`
+              : error.message;
+          showResult("not run", error.message, true, elapsedMs);
+          return;
+        }
         feedback.textContent =
-          "Couldn’t reach the MCP endpoint. Check that the dev server is running, then try again.";
+          "Couldn’t reach the dev server. Check that it is running, then try again.";
         showResult("no response", "No response received.", true, elapsedMs);
       })
       .finally(() => {
@@ -606,16 +634,44 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     return lines.join(" \\\n");
   };
 
+  const curlCopy = createCopyButton(
+    `curl command (reads the token from $${tokenVariableName})`,
+    readCurlCommand,
+  );
+  const commandCopy = createCopyButton("adapter command", () =>
+    lastExchange === undefined || lastExchange.kind === "http"
+      ? ""
+      : lastExchange.command,
+  );
+
+  const route = el("code", { class: "invoke-route" }, [
+    presentationFor(adapter).route,
+  ]);
+  const adapterNote = el(
+    "p",
+    { class: "adapter-note", "aria-live": "polite" },
+    [],
+  );
+  const applyAdapter = (next: AdapterId): void => {
+    adapter = next;
+    const presentation = presentationFor(next);
+    route.textContent = presentation.route;
+    adapterNote.textContent = `${presentation.summary} ${presentation.identity}`;
+    curlCopy.hidden = next !== "mcp-http";
+    commandCopy.hidden = next === "mcp-http";
+  };
+  const selector = createAdapterSelector(capability.id, applyAdapter);
+  lockAdapterSwitch = selector.setDisabled;
+  applyAdapter(adapter);
+
   const requestPane = el("section", { class: "invoke-request" }, [
     el("label", { for: editorId, class: "field-label" }, ["Arguments (JSON)"]),
     el("div", { class: "code-window" }, [
       windowBar(
-        "tools/call arguments",
+        "Capability arguments",
         createCopyButton("arguments", () => editor.value),
-        createCopyButton(
-          `curl command (reads the token from $${tokenVariableName})`,
-          readCurlCommand,
-        ),
+        curlCopy,
+        commandCopy,
       ),
       editor,
     ]),
@@ -650,11 +706,13 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   ]);
 
   return el("div", { class: "invoke-panel" }, [
-    el("div", { class: "invoke-heading" }, [
-      el("h3", {}, ["Invoke"]),
-      el("code", { class: "invoke-route" }, ["tools/call → engine.invoke"]),
+    el("div", { class: "invoke-heading" }, [el("h3", {}, ["Invoke"]), route]),
+    el("div", { class: "adapter-bar" }, [
+      el("span", { class: "field-label" }, ["Adapter"]),
+      selector.element,
+      adapterNote,
     ]),
     el("div", { class: "invoke-workspace" }, [requestPane, resultPane]),
-    rawSection,
+    exchangeSection,
   ]);
 }

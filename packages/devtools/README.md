@@ -224,9 +224,10 @@ invokta-devtools serve <esm-module> [--export <name>] [--port <number>]
 ```
 
 The workspace-aware mode for a built Invokta engine. Unlike attached
-inspection, it can show Doctor, test identities backed by development
-`Principal` values, Invokta invocation trace, and watch behavior because it
-owns the engine host.
+inspection, it can run a capability through every adapter the engine
+publishes, show Doctor, offer test identities backed by development
+`Principal` values, keep the Invokta invocation trace, and apply watch
+behavior, because it owns the engine module.
 
 ```sh
 npx @invokta/devtools doctor \
@@ -250,20 +251,49 @@ export.
 The built-engine interface uses one compact workbench surface across
 Playground, Activity, Diagnostics, and Test identities. Playground summarizes
 top-level input and output fields for scanning and keeps each complete JSON
-Schema available under **Raw JSON Schema**. Invocations still use the
-schema-seeded JSON editor and the same MCP HTTP path to `engine.invoke`.
+Schema available under **Raw JSON Schema**. Invocations use the schema-seeded
+JSON editor and always reach `engine.invoke`.
 
-Playground reports each invocation's outcome and elapsed time in the result
-bar, and the arguments, result, raw MCP request, raw MCP response, and each
-JSON Schema carry a copy control. `Ctrl`/`⌘` + `Enter` invokes from the editor,
-and `/` returns focus to the capability filter from anywhere outside a text
-field.
+### Adapters
 
-Activity adds a toolbar: filter entries by text across capability IDs, MCP
-methods, HTTP status, and captured payloads; narrow the feed to invocations,
-MCP exchanges, or lifecycle notices; and **Hold** stops new entries from
-arriving while you read one, releasing the held entries as soon as you resume.
-Filtering and holding act on the browser view only.
+Playground runs one capability call through the execution path you select, so
+the same arguments can be compared across every path the engine publishes:
+
+| Adapter | What runs | `ExecutionContext.source` |
+| --- | --- | --- |
+| **Direct** | `engine.invoke`, the way an embedding application calls it | `direct` |
+| **CLI** | the `@invokta/cli` adapter as a process, with its exit code and streams | `cli` |
+| **MCP stdio** | the `serveMcpStdio` server, called the way an MCP client calls it | `mcp-stdio` |
+| **MCP HTTP** | one Streamable HTTP request to the running engine host | `mcp-http` |
+
+Every emulation performs a real call through the published adapter. Direct,
+CLI, and MCP stdio each run in a child process that imports the same built
+module you passed to `serve`, started per call and ended with it; MCP HTTP
+reuses the running engine host. The result bar reads the same for every
+adapter, and **Adapter exchange** shows what that path actually carried — the
+bodies and HTTP status, the `tools/call` frames, or the command with its
+streams and exit code. A capability error arrives with the same code from all
+four paths.
+
+The acting identity follows each adapter's own contract: MCP HTTP
+authenticates every request with the selected identity's session token, and
+the three process adapters start as the selected identity the way a
+composition root supplies it.
+
+Direct and CLI carry the arguments in the command line, so a payload beyond
+what the operating system allows in one argument is refused with
+`ARGUMENTS_TOO_LARGE`; the MCP adapters carry the same payload in the protocol.
+
+The arguments, result, adapter command, raw MCP request, raw MCP response, and
+each JSON Schema carry a copy control. `Ctrl`/`⌘` + `Enter` invokes from the
+editor, and `/` returns focus to the capability filter from anywhere outside a
+text field.
+
+Activity adds a toolbar: filter entries by text across capability IDs,
+adapters, MCP methods, HTTP status, and captured payloads; narrow the feed to
+emulated calls, invocations, MCP exchanges, or lifecycle notices; and **Hold**
+stops new entries from arriving while you read one, releasing the held entries
+as soon as you resume. Filtering and holding act on the browser view only.
 
 **Clear view** is different: it empties the visible list *and* the dev
 server's in-memory buffer, so the entries do not come back on the next
@@ -308,7 +338,9 @@ node packages/devtools/dist/cli.js serve examples/hello-engine/dist/engine.js
 ```
 
 The built-engine contract is chartered by
-[ADR 0021](../../docs/adr/0021-engine-devtools-dev-server.md).
+[ADR 0021](../../docs/adr/0021-engine-devtools-dev-server.md), extended for
+adapter emulation by
+[ADR 0026](../../docs/adr/0026-adapter-emulation-in-engine-devtools.md).
 Installed-target inspection is chartered by
 [ADR 0022](../../docs/adr/0022-mcp-installation-inspection-and-homologation.md),
 with interactive OAuth accepted by

@@ -154,6 +154,43 @@ the watch status accompany it on standard error. Terminate with `SIGINT` or
 `SIGTERM` for a clean shutdown. If the default port is already in use, the
 start failure names `EADDRINUSE` and suggests `--port`.
 
+#### Adapters
+
+Playground runs one capability call through the execution path you select, so
+the same arguments can be compared across every path the engine publishes:
+
+| Adapter | What runs | `ExecutionContext.source` |
+| --- | --- | --- |
+| **Direct** | `engine.invoke`, the way an embedding application calls it | `direct` |
+| **CLI** | the `@invokta/cli` adapter as a process, with its exit code and streams | `cli` |
+| **MCP stdio** | the `serveMcpStdio` server, called the way an MCP client calls it | `mcp-stdio` |
+| **MCP HTTP** | one Streamable HTTP request to the running engine host | `mcp-http` |
+
+Every emulation performs a real call through the published adapter. Direct,
+CLI, and MCP stdio each run in a child process that imports the same built
+module you passed to `serve`; the process is started per call and exits with
+it. MCP HTTP reuses the running engine host. The dev server bounds how many
+emulations run at once and answers `429` beyond that.
+
+The result pane reads the same for every adapter — a result, an engine error,
+or an adapter failure, with the elapsed time — while **Adapter exchange**
+shows what that path actually carried: the request and response bodies with
+the HTTP status, the `tools/call` frames, or the command with its standard
+output, standard error, and exit code. A capability error arrives with the
+same code from all four paths, which is what the single execution path looks
+like from the outside.
+
+The acting identity follows each adapter's own contract. MCP HTTP
+authenticates every request with the selected identity's session token; the
+three process adapters start as the selected identity, the way a composition
+root supplies it. An anonymous MCP HTTP call is therefore refused with `401`
+before it reaches the engine, while the other three reach the invocation
+pipeline and fail its access check.
+
+Direct and CLI carry the arguments in the command line, so a payload beyond
+what the operating system allows in one argument is refused with
+`ARGUMENTS_TOO_LARGE`; the MCP adapters carry the same payload in the protocol.
+
 #### Test identities
 
 The interface calls this surface **Test identities** and uses **Act as** to
@@ -168,10 +205,11 @@ session that minted them; the insecure
 #### Trace
 
 The interface receives one trace entry per invocation — capability, outcome,
-error code, and duration — plus the raw MCP request and response of every
-exchange the interface itself sent. The trace is a bounded in-memory buffer
-scoped to the dev-server process; `--trace-capacity <n>` resizes the buffer.
-Nothing is persisted or exported.
+error code, and duration — one entry per emulated call, tagged with the adapter
+that carried it, and the raw MCP request and response of every exchange the
+interface itself sent. The trace is a bounded in-memory buffer scoped to the
+dev-server process; `--trace-capacity <n>` resizes the buffer. Nothing is
+persisted or exported.
 
 #### Watch mode
 
@@ -197,5 +235,7 @@ invokta-devtools serve dist/engine.js --watch --build "tsc -p tsconfig.json"
 The devtools binds only `127.0.0.1`, allows exactly its own origin at the
 engine host, emits no `Access-Control-*` headers, and validates the `Host`
 header of every request. It discovers nothing: the module path is always
-explicit. The normative contract lives in the engine devtools dev server
-specification and ADR 0021 in the repository.
+explicit. Adapter emulation adds no execution path of its own: each adapter is
+the published one, reached through `engine.invoke`, and no adapter process
+survives the call that started it. The normative contract lives in the engine
+devtools dev server specification, ADR 0021, and ADR 0026 in the repository.

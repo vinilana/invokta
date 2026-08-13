@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { toMcpToolName } from "@invokta/mcp";
 
+import { createAdapterRunner } from "./adapter-runner.js";
 import type { ThrownValueInfo } from "./diagnostics.js";
 import type { DoctorReport } from "./doctor.js";
 import { doctorReportToJson, inspectEngine } from "./doctor.js";
@@ -30,6 +31,15 @@ interface ServeCommonOptions {
 
 export interface ServeEngineOptions extends ServeCommonOptions {
   readonly engine: LoadedEngine;
+  /**
+   * The module the engine was loaded from. Adapter emulation spawns children
+   * that import it themselves, so the path is required even though the parent
+   * already holds the engine.
+   */
+  readonly module: {
+    readonly specifier: string;
+    readonly exportName: string;
+  };
   /** Whether the module also exposes a tracked composed `capabilities` export. */
   readonly composedCapabilitiesExport: boolean;
 }
@@ -123,12 +133,20 @@ async function startWithEngine(
     return cachedView;
   };
 
+  const adapters = createAdapterRunner({
+    module: options.module,
+    cwd: options.cwd,
+    mcpEndpoint: () =>
+      `http://127.0.0.1:${String(engineHost.address().port)}/mcp`,
+  });
+
   let devtools: Awaited<ReturnType<typeof startDevtoolsServer>>;
   try {
     devtools = await startDevtoolsServer({
       engineView,
       principals,
       trace,
+      adapters,
       enginePort: () => engineHost.address().port,
       port: devtoolsPort,
       ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
@@ -193,12 +211,23 @@ async function startWithWatch(
     return { kind: "refused", report: watch.doctor as DoctorReport };
   }
 
+  const adapters = createAdapterRunner({
+    module: {
+      specifier: options.watch.moduleSpecifier,
+      exportName: options.watch.exportName,
+    },
+    cwd: options.cwd,
+    mcpEndpoint: () =>
+      `http://127.0.0.1:${String(watch.handles.enginePort())}/mcp`,
+  });
+
   let devtools: Awaited<ReturnType<typeof startDevtoolsServer>>;
   try {
     devtools = await startDevtoolsServer({
       engineView: watch.handles.engineView,
       principals,
       trace,
+      adapters,
       enginePort: watch.handles.enginePort,
       port: devtoolsPort,
       ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
