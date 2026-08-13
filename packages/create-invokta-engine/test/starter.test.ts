@@ -135,6 +135,7 @@ describe("createStarterFiles", () => {
       [
         "@invokta/deploy",
         "@invokta/devtools",
+        "@invokta/tooling",
         "@types/node",
         "typescript",
         "vitest",
@@ -142,6 +143,7 @@ describe("createStarterFiles", () => {
       [
         "build",
         "check",
+        "check:mcp",
         "cli",
         "deploy:package",
         "deploy:probe",
@@ -159,10 +161,17 @@ describe("createStarterFiles", () => {
     [
       "mcp-stdio",
       ["@invokta/core", "@invokta/installer", "@invokta/mcp", "zod"],
-      ["@invokta/devtools", "@types/node", "typescript", "vitest"],
+      [
+        "@invokta/devtools",
+        "@invokta/tooling",
+        "@types/node",
+        "typescript",
+        "vitest",
+      ],
       [
         "build",
         "check",
+        "check:mcp",
         "devtools",
         "devtools:doctor",
         "direct",
@@ -179,6 +188,7 @@ describe("createStarterFiles", () => {
       [
         "@invokta/deploy",
         "@invokta/devtools",
+        "@invokta/tooling",
         "@types/node",
         "typescript",
         "vitest",
@@ -186,6 +196,7 @@ describe("createStarterFiles", () => {
       [
         "build",
         "check",
+        "check:mcp",
         "deploy:package",
         "deploy:probe",
         "devtools",
@@ -260,6 +271,60 @@ describe("createStarterFiles", () => {
       );
     },
   );
+
+  it.each(["complete", "mcp-stdio", "mcp-http"] as const)(
+    "runs MCP catalog conformance from the generated %s check",
+    (profile) => {
+      const packageFile = createFiles(profile).find(
+        (file) => file.path === "package.json",
+      );
+      const manifest = JSON.parse(
+        packageFile && "contents" in packageFile ? packageFile.contents : "",
+      ) as {
+        readonly devDependencies: Readonly<Record<string, string>>;
+        readonly scripts: Readonly<Record<string, string>>;
+      };
+
+      expect(manifest.devDependencies["@invokta/tooling"]).toBe("1.2.3");
+      expect(manifest.scripts["check:mcp"]).toBe(
+        "invokta check-mcp ./dist/engine.js",
+      );
+      expect(manifest.scripts.check).toContain(
+        "tsc -p tsconfig.json --pretty false && invokta check-mcp ./dist/engine.js",
+      );
+    },
+  );
+
+  it("does not add MCP conformance tooling to the CLI-only profile", () => {
+    const packageFile = createFiles("cli").find(
+      (file) => file.path === "package.json",
+    );
+    const manifest = JSON.parse(
+      packageFile && "contents" in packageFile ? packageFile.contents : "",
+    ) as {
+      readonly devDependencies: Readonly<Record<string, string>>;
+      readonly scripts: Readonly<Record<string, string>>;
+    };
+
+    expect(manifest.devDependencies["@invokta/tooling"]).toBeUndefined();
+    expect(manifest.scripts["check:mcp"]).toBeUndefined();
+    expect(manifest.scripts.check).not.toContain("check-mcp");
+  });
+
+  it("documents MCP preflight only for profiles that publish MCP tools", () => {
+    for (const profile of Object.keys(
+      expectedPaths,
+    ) as EngineStarterProfile[]) {
+      const readme = createFiles(profile).find(
+        (file) => file.path === "README.md",
+      );
+      const contents = readme && "contents" in readme ? readme.contents : "";
+
+      expect(contents.includes("validates its final MCP tool catalog")).toBe(
+        profile !== "cli",
+      );
+    }
+  });
 
   it.each([
     ["cli", ["MCP", "mcp:", "serveMcp"]],

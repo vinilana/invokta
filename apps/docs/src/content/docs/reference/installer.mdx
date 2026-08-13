@@ -248,7 +248,7 @@ Linux and Windows, and VS Code mutation is unsupported on Windows because both
 clients use platform-specific configuration locations there.
 
 On Windows, where no POSIX user id exists, the installer validates paths with
-a Windows ownership identity (ADR 0026): symbolic links and junctions are
+a Windows ownership identity (ADR 0027): symbolic links and junctions are
 rejected, path identities are captured and revalidated before every write, and
 containment inside the user profile is preserved, so a globally installed
 engine package such as one under the npm global root installs and removes
