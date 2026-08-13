@@ -5,6 +5,11 @@ import {
   type InstallerTransactionFileSystem,
   isInstallerFileSystemError,
 } from "./file-system.js";
+import {
+  enforcesPosixFileModes,
+  type InstallerOwnershipIdentity,
+  validOwnershipIdentity,
+} from "./ownership-identity.js";
 
 export type InstallerPathIdentityErrorCode =
   | "INVALID_PATH"
@@ -49,6 +54,7 @@ export interface InstallerPathNodeIdentity extends InstallerFileStat {
 export interface InstallerPathRootIdentity extends InstallerPathNodeIdentity {
   readonly kind: "directory";
   readonly rootKind: InstallerPathRootKind;
+  readonly ownership: InstallerOwnershipIdentity;
 }
 
 export interface InstallerPathIdentity {
@@ -62,7 +68,7 @@ export interface InstallerPathIdentity {
 export interface CapturePathRootOptions {
   readonly rootKind: InstallerPathRootKind;
   readonly rootPath: string;
-  readonly currentUserId: number;
+  readonly ownership: InstallerOwnershipIdentity | undefined;
 }
 
 export interface CapturePathIdentityOptions {
@@ -170,17 +176,22 @@ export async function capturePathRoot(
 ): Promise<InstallerPathRootIdentity> {
   if (
     !validAbsolutePath(options.rootPath) ||
-    !validUserId(options.currentUserId)
+    options.ownership === undefined ||
+    !validOwnershipIdentity(options.ownership)
   ) {
     throw new InstallerPathIdentityError("INVALID_PATH");
   }
   const rootPath = resolve(options.rootPath);
   const stat = await inspect(fileSystem, rootPath);
-  if (stat.kind !== "directory" || stat.uid !== options.currentUserId) {
+  if (
+    stat.kind !== "directory" ||
+    stat.uid !== options.ownership.reportedOwnerId
+  ) {
     throw new InstallerPathIdentityError("ROOT_UNSAFE");
   }
   return Object.freeze({
     rootKind: options.rootKind,
+    ownership: options.ownership,
     path: rootPath,
     kind: "directory",
     dev: stat.dev,
@@ -335,7 +346,9 @@ export async function bootstrapPrivateDirectory(
     if (
       stat.kind !== "directory" ||
       stat.uid !== current.root.uid ||
-      (created && (stat.mode & 0o7777) !== 0o700)
+      (created &&
+        enforcesPosixFileModes(current.root.ownership) &&
+        (stat.mode & 0o7777) !== 0o700)
     ) {
       throw new InstallerPathIdentityError("COMPONENT_UNSAFE");
     }

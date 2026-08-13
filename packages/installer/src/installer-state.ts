@@ -8,6 +8,10 @@ import type {
 import { InstallerError } from "./installer-error.js";
 import type { ToggleStrategy } from "./jcs-fingerprint.js";
 import {
+  type InstallerOwnershipIdentity,
+  validOwnershipIdentity,
+} from "./ownership-identity.js";
+import {
   type ConfigurationTargetId,
   configurationTargetIds,
   type StdioTransport,
@@ -95,7 +99,7 @@ export type InstallerStateValidationResult =
 
 export interface LoadInstallerStateOptions {
   readonly allowUnavailableTargetContracts?: boolean;
-  readonly currentUserId: number | undefined;
+  readonly ownership: InstallerOwnershipIdentity | undefined;
   readonly environment: InstallerEnvironment;
   readonly fileSystem: InstallerFileSystem;
   readonly homeDirectory: string;
@@ -1101,7 +1105,7 @@ type StatePathInspection = "missing" | "present";
 
 async function inspectStatePath(
   fileSystem: InstallerFileSystem,
-  currentUserId: number,
+  reportedOwnerId: number,
   basePath: string,
   statePath: string,
   requireExactBaseRealPath: boolean,
@@ -1124,7 +1128,7 @@ async function inspectStatePath(
     }
     if (inspection.kind === "missing") return "missing";
     if (
-      inspection.ownerId !== currentUserId ||
+      inspection.ownerId !== reportedOwnerId ||
       inspection.kind === "symbolic-link" ||
       inspection.kind === "other"
     ) {
@@ -1160,9 +1164,8 @@ export async function loadInstallerState(
   options: LoadInstallerStateOptions,
 ): Promise<LoadedInstallerState> {
   if (
-    options.currentUserId === undefined ||
-    !Number.isSafeInteger(options.currentUserId) ||
-    options.currentUserId < 0 ||
+    options.ownership === undefined ||
+    !validOwnershipIdentity(options.ownership) ||
     !isAbsolute(options.homeDirectory) ||
     options.homeDirectory.includes("\0")
   ) {
@@ -1194,7 +1197,7 @@ export async function loadInstallerState(
   const path = join(basePath, "invokta", "installer.json");
   const inspection = await inspectStatePath(
     options.fileSystem,
-    options.currentUserId,
+    options.ownership.reportedOwnerId,
     inspectionBase,
     path,
     usesXdg,

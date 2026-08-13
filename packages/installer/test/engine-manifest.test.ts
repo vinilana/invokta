@@ -16,6 +16,11 @@ import {
   validateEngineInstallManifestBytes,
 } from "../src/engine-manifest.js";
 import { createNodeFileSystem } from "../src/node-file-system.js";
+import { captureProcessOwnershipIdentity } from "../src/ownership-identity.js";
+import {
+  createWindowsLikeFileSystem,
+  windowsPrincipal,
+} from "./windows-file-system.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -65,7 +70,7 @@ describe("loadEngineInstallManifest", () => {
     const nodeExecutable = process.execPath;
 
     const source = await loadEngineInstallManifest({
-      currentUserId: process.getuid?.() ?? 0,
+      ownership: captureProcessOwnershipIdentity(),
       fileSystem: createNodeFileSystem(),
       nodeExecutable,
       projectDirectory,
@@ -129,7 +134,7 @@ describe("loadEngineInstallManifest", () => {
 
     await expect(
       loadEngineInstallManifest({
-        currentUserId: process.getuid?.() ?? 0,
+        ownership: captureProcessOwnershipIdentity(),
         fileSystem: createNodeFileSystem(),
         nodeExecutable: process.execPath,
         projectDirectory,
@@ -145,7 +150,7 @@ describe("loadEngineInstallManifest", () => {
 
     await expect(
       loadEngineInstallManifest({
-        currentUserId: process.getuid?.() ?? 0,
+        ownership: captureProcessOwnershipIdentity(),
         fileSystem: createNodeFileSystem(),
         nodeExecutable: process.execPath,
         projectDirectory,
@@ -160,7 +165,7 @@ describe("loadEngineRemovalManifest", () => {
     rmSync(join(projectDirectory, "dist/mcp-stdio.js"));
 
     const source = await loadEngineRemovalManifest({
-      currentUserId: process.getuid?.() ?? 0,
+      ownership: captureProcessOwnershipIdentity(),
       fileSystem: createNodeFileSystem(),
       projectDirectory,
     });
@@ -184,10 +189,70 @@ describe("loadEngineRemovalManifest", () => {
 
     await expect(
       loadEngineRemovalManifest({
-        currentUserId: process.getuid?.() ?? 0,
+        ownership: captureProcessOwnershipIdentity(),
         fileSystem: createNodeFileSystem(),
         projectDirectory,
       }),
     ).rejects.toMatchObject({ code: "ENGINE_MANIFEST_INVALID" });
+  });
+});
+
+describe("Windows principal engine sources", () => {
+  function windowsFileSystem() {
+    return createWindowsLikeFileSystem(
+      createNodeFileSystem({ ownership: windowsPrincipal }),
+    );
+  }
+
+  it("loads install and removal manifests from a globally installed package path", async () => {
+    const projectDirectory = createProject();
+    const fileSystem = windowsFileSystem();
+
+    const source = await loadEngineInstallManifest({
+      ownership: windowsPrincipal,
+      fileSystem,
+      nodeExecutable: process.execPath,
+      projectDirectory,
+    });
+    expect(source.descriptor.id).toBe("support-engine");
+    expect(source.entrypointPath).toBe(
+      join(projectDirectory, "dist/mcp-stdio.js"),
+    );
+
+    const removal = await loadEngineRemovalManifest({
+      ownership: windowsPrincipal,
+      fileSystem,
+      projectDirectory,
+    });
+    expect(removal.serverName).toBe("support-engine");
+  });
+
+  it("still rejects a symbolic-link entry point", async () => {
+    const projectDirectory = createProject();
+    const entrypoint = join(projectDirectory, "dist/mcp-stdio.js");
+    rmSync(entrypoint);
+    symlinkSync(join(projectDirectory, "invokta.mcp.json"), entrypoint);
+
+    await expect(
+      loadEngineInstallManifest({
+        ownership: windowsPrincipal,
+        fileSystem: windowsFileSystem(),
+        nodeExecutable: process.execPath,
+        projectDirectory,
+      }),
+    ).rejects.toMatchObject({ code: "ENGINE_PATH_UNSAFE" });
+  });
+
+  it("fails closed when no ownership identity could be captured", async () => {
+    const projectDirectory = createProject();
+
+    await expect(
+      loadEngineInstallManifest({
+        ownership: undefined,
+        fileSystem: createNodeFileSystem(),
+        nodeExecutable: process.execPath,
+        projectDirectory,
+      }),
+    ).rejects.toMatchObject({ code: "ENGINE_PATH_UNSAFE" });
   });
 });

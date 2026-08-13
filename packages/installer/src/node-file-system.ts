@@ -20,8 +20,27 @@ import {
   type InstallerWriteHandle,
   maximumInstallerFileBytes,
 } from "./file-system.js";
+import {
+  captureProcessOwnershipIdentity,
+  enforcesPosixFileModes,
+  type InstallerOwnershipIdentity,
+} from "./ownership-identity.js";
 
 const readChunkBytes = 65_536;
+
+/** Windows exposes none of these open flags; a missing flag contributes zero. */
+const platformOpenFlags: {
+  readonly O_DIRECTORY?: number;
+  readonly O_NOFOLLOW?: number;
+  readonly O_NONBLOCK?: number;
+} = constants;
+const directoryFlag = platformOpenFlags.O_DIRECTORY ?? 0;
+const noFollowFlag = platformOpenFlags.O_NOFOLLOW ?? 0;
+const nonBlockFlag = platformOpenFlags.O_NONBLOCK ?? 0;
+
+export interface CreateNodeFileSystemOptions {
+  readonly ownership?: InstallerOwnershipIdentity;
+}
 
 function errorCode(error: unknown): unknown {
   return typeof error === "object" && error !== null && "code" in error
@@ -90,13 +109,18 @@ function validateId(id: number): void {
   }
 }
 
-function currentUserId(): number {
-  if (process.getuid === undefined) {
+/** The Windows principal skips the comparison: Node reports one constant owner id. */
+function verifyCreatedOwner(
+  ownership: InstallerOwnershipIdentity | undefined,
+  created: InstallerFileStat,
+): void {
+  if (
+    ownership === undefined ||
+    (ownership.kind === "posix-user" &&
+      created.uid !== ownership.reportedOwnerId)
+  ) {
     throw new InstallerFileSystemError("IO_FAILED");
   }
-  const uid = process.getuid();
-  validateId(uid);
-  return uid;
 }
 
 function sameObjectIdentity(
@@ -265,7 +289,44 @@ function writeHandle(handle: FileHandle): InstallerWriteHandle {
   });
 }
 
-export function createNodeFileSystem(): InstallerTransactionFileSystem {
+/**
+ * Opens without following a terminal symbolic link on platforms that cannot
+ * enforce `O_NOFOLLOW` in the kernel: the link kind is rejected before the
+ * open, and any object swapped in between inspection and open is rejected by
+ * comparing the opened descriptor's identity against the inspection.
+ */
+async function openReadNoFollowEmulated(path: string): Promise<FileHandle> {
+  const before = toFileStat(await lstat(path, { bigint: true }));
+  if (before.kind === "symbolic-link") {
+    throw new InstallerFileSystemError("SYMBOLIC_LINK");
+  }
+  const handle = await open(
+    path,
+    constants.O_RDONLY | noFollowFlag | nonBlockFlag,
+  );
+  try {
+    const opened = await handleStat(handle);
+    if (
+      opened.kind !== before.kind ||
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino
+    ) {
+      throw new InstallerFileSystemError("SYMBOLIC_LINK");
+    }
+  } catch (error) {
+    await closeAfterSetupFailure(handle);
+    throw error;
+  }
+  return handle;
+}
+
+export function createNodeFileSystem(
+  options: CreateNodeFileSystemOptions = {},
+): InstallerTransactionFileSystem {
+  const ownership = options.ownership ?? captureProcessOwnershipIdentity();
+  const strictPosixModes =
+    ownership === undefined || enforcesPosixFileModes(ownership);
+  const emulateNoFollow = ownership?.kind === "windows-principal";
   return {
     readFile: async (path) => readFile(path),
     inspectPath: async (path) => {
@@ -305,10 +366,12 @@ export function createNodeFileSystem(): InstallerTransactionFileSystem {
     openReadNoFollow: async (path) =>
       normalized(async () =>
         readHandle(
-          await open(
-            path,
-            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-          ),
+          emulateNoFollow
+            ? await openReadNoFollowEmulated(path)
+            : await open(
+                path,
+                constants.O_RDONLY | noFollowFlag | nonBlockFlag,
+              ),
         ),
       ),
     createExclusiveNoFollow: async (path, mode) => {
@@ -319,23 +382,21 @@ export function createNodeFileSystem(): InstallerTransactionFileSystem {
           constants.O_WRONLY |
             constants.O_CREAT |
             constants.O_EXCL |
-            constants.O_NOFOLLOW,
+            noFollowFlag,
           mode,
         );
         let created: InstallerFileStat | undefined;
         try {
           created = await handleStat(handle);
-          if (
-            created.kind !== "regular-file" ||
-            created.uid !== currentUserId()
-          ) {
+          if (created.kind !== "regular-file") {
             throw new InstallerFileSystemError("IO_FAILED");
           }
+          verifyCreatedOwner(ownership, created);
           await handle.chmod(mode);
           const configured = await handleStat(handle);
           if (
             !sameObjectIdentity(created, configured) ||
-            (configured.mode & 0o7777) !== mode
+            (strictPosixModes && (configured.mode & 0o7777) !== mode)
           ) {
             throw new InstallerFileSystemError("IO_FAILED");
           }
@@ -356,40 +417,45 @@ export function createNodeFileSystem(): InstallerTransactionFileSystem {
         let created: InstallerFileStat | undefined;
         try {
           const initial = await lstatIdentity(path);
-          if (
-            initial === undefined ||
-            initial.kind !== "directory" ||
-            initial.uid !== currentUserId()
-          ) {
+          if (initial === undefined || initial.kind !== "directory") {
             throw new InstallerFileSystemError("IO_FAILED");
           }
+          verifyCreatedOwner(ownership, initial);
           created = initial;
           await chmod(path, mode);
           const configured = await lstatIdentity(path);
           if (
             configured === undefined ||
             !sameObjectIdentity(created, configured) ||
-            (configured.mode & 0o7777) !== mode
+            (strictPosixModes && (configured.mode & 0o7777) !== mode)
           ) {
             throw new InstallerFileSystemError("IO_FAILED");
           }
-          const handle = await open(
-            path,
-            constants.O_RDONLY |
-              constants.O_DIRECTORY |
-              constants.O_NOFOLLOW |
-              constants.O_NONBLOCK,
-          );
-          try {
-            const descriptor = await handleStat(handle);
+          if (strictPosixModes) {
+            const handle = await open(
+              path,
+              constants.O_RDONLY | directoryFlag | noFollowFlag | nonBlockFlag,
+            );
+            try {
+              const descriptor = await handleStat(handle);
+              if (
+                !sameObjectIdentity(created, descriptor) ||
+                (descriptor.mode & 0o7777) !== mode
+              ) {
+                throw new InstallerFileSystemError("IO_FAILED");
+              }
+            } finally {
+              await handle.close();
+            }
+          } else {
+            // Windows cannot open a directory descriptor; reinspect the path.
+            const reinspected = await lstatIdentity(path);
             if (
-              !sameObjectIdentity(created, descriptor) ||
-              (descriptor.mode & 0o7777) !== mode
+              reinspected === undefined ||
+              !sameObjectIdentity(created, reinspected)
             ) {
               throw new InstallerFileSystemError("IO_FAILED");
             }
-          } finally {
-            await handle.close();
           }
         } catch (error) {
           if (created !== undefined) {

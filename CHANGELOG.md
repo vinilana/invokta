@@ -14,6 +14,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   profiles include the gate in their canonical `check`, so ambiguous derived
   tool names fail before adapter startup, installation, or deployment.
 
+### Fixed
+
+- The engine installer no longer rejects every local Action Engine path on
+  Windows with `ENGINE_PATH_UNSAFE` (ADR 0027). Ownership validation now uses
+  a platform-aware identity: POSIX platforms keep exact uid and private-mode
+  checks, while Windows — where Node exposes no `process.getuid()` and reports
+  a constant file owner — relies on the unchanged no-follow, path-identity,
+  and home-containment protections, with no-follow opens emulated where the
+  kernel flag does not exist. Installing and removing a globally installed
+  engine package, such as one under the npm global root, now works on Windows
+  for home-relative targets; VS Code and Claude Desktop keep their documented
+  platform scope.
+
 ### Changed
 
 - MCP stdio and HTTP now publish deterministic portable tool aliases that match
@@ -25,7 +38,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
-- Pinned the transitive `nanoid` dependency to 3.3.17 so development and CI
+- Pinned the transitive `nanoid` dependency to 3.3.18 so development and CI
   tooling no longer resolves the vulnerable zero-size custom-generator
   implementation reported through the Vitest dependency chain.
 

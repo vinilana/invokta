@@ -9,6 +9,10 @@ import {
 } from "./file-system.js";
 import { InstallerError } from "./installer-error.js";
 import {
+  type InstallerOwnershipIdentity,
+  validOwnershipIdentity,
+} from "./ownership-identity.js";
+import {
   capturePathIdentity,
   capturePathRoot,
   type InstallerPathIdentity,
@@ -51,14 +55,14 @@ interface ValidatedEngineManifest {
 }
 
 export interface LoadEngineInstallManifestOptions {
-  readonly currentUserId: number;
+  readonly ownership: InstallerOwnershipIdentity | undefined;
   readonly fileSystem: InstallerTransactionFileSystem;
   readonly nodeExecutable: string;
   readonly projectDirectory: string;
 }
 
 export interface LoadEngineRemovalManifestOptions {
-  readonly currentUserId: number;
+  readonly ownership: InstallerOwnershipIdentity | undefined;
   readonly fileSystem: InstallerTransactionFileSystem;
   readonly projectDirectory: string;
 }
@@ -317,8 +321,8 @@ async function loadOwnedEngineManifest(
   options: LoadEngineRemovalManifestOptions,
 ): Promise<LoadedEngineManifest> {
   if (
-    !Number.isSafeInteger(options.currentUserId) ||
-    options.currentUserId < 0 ||
+    options.ownership === undefined ||
+    !validOwnershipIdentity(options.ownership) ||
     !isAbsolute(resolve(options.projectDirectory)) ||
     options.projectDirectory.includes("\0")
   ) {
@@ -331,7 +335,7 @@ async function loadOwnedEngineManifest(
     root = await capturePathRoot(options.fileSystem, {
       rootKind: "engine",
       rootPath: projectDirectory,
-      currentUserId: options.currentUserId,
+      ownership: options.ownership,
     });
     manifestIdentity = await capturePathIdentity(options.fileSystem, {
       root,

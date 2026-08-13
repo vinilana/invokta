@@ -25,6 +25,7 @@ import {
   applyInstallerStatePlan,
   serializeInstallerState,
 } from "./installer-state-transition.js";
+import type { InstallerOwnershipIdentity } from "./ownership-identity.js";
 import {
   type InstallerAction,
   planInstallerAction,
@@ -50,7 +51,7 @@ import type { InstallerEnvironment } from "./target-config-evidence.js";
 
 export interface MutationCoordinatorDependencies {
   readonly adapters: Readonly<Record<ConfigurationTargetId, TargetAdapter>>;
-  readonly currentUserId: number;
+  readonly ownership: InstallerOwnershipIdentity | undefined;
   readonly environment: InstallerEnvironment;
   readonly fileSystem: InstallerTransactionFileSystem;
   readonly lock: Omit<InstallerLockDependencies, "fileSystem">;
@@ -358,7 +359,7 @@ async function mutateTarget(
       : contracts;
 
   const loadedBeforeLock = await loadInstallerState({
-    currentUserId: dependencies.currentUserId,
+    ownership: dependencies.ownership,
     environment: dependencies.environment,
     fileSystem: dependencies.fileSystem,
     homeDirectory: snapshot.homeDirectory,
@@ -370,7 +371,7 @@ async function mutateTarget(
   const homeRoot = await capturePathRoot(dependencies.fileSystem, {
     rootKind: "home",
     rootPath: snapshot.homeDirectory,
-    currentUserId: dependencies.currentUserId,
+    ownership: dependencies.ownership,
   }).catch((cause) => {
     throw new InstallerError("HARNESS_CONFIG_UNSAFE", cause);
   });
@@ -385,7 +386,7 @@ async function mutateTarget(
     : await capturePathRoot(dependencies.fileSystem, {
         rootKind: "state",
         rootPath: resolve(loadedBeforeLock.path, "../.."),
-        currentUserId: dependencies.currentUserId,
+        ownership: dependencies.ownership,
       }).catch((cause) => {
         throw new InstallerError("STATE_INVALID", cause);
       });
@@ -404,7 +405,7 @@ async function mutateTarget(
   let primaryError: unknown;
   try {
     const loaded = await loadInstallerState({
-      currentUserId: dependencies.currentUserId,
+      ownership: dependencies.ownership,
       environment: dependencies.environment,
       fileSystem: dependencies.fileSystem,
       homeDirectory: snapshot.homeDirectory,

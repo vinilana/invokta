@@ -244,7 +244,16 @@ configuration targets:
 
 Antigravity CLI and IDE share one target. Cursor's executable aliases also
 share one target. Claude Desktop mutation is macOS-only; it is unsupported on
-Linux. Windows configuration mutation is not supported in this release.
+Linux and Windows, and VS Code mutation is unsupported on Windows because both
+clients use platform-specific configuration locations there.
+
+On Windows, where no POSIX user id exists, the installer validates paths with
+a Windows ownership identity (ADR 0027): symbolic links and junctions are
+rejected, path identities are captured and revalidated before every write, and
+containment inside the user profile is preserved, so a globally installed
+engine package such as one under the npm global root installs and removes
+normally. Exact POSIX file modes are not asserted on Windows; directory
+confinement follows the user profile's access-control lists.
 
 VS Code uses its JSONC `servers` object and `${env:NAME}` variables. Claude
 Desktop uses the JSON `mcpServers` object for credential-free local stdio

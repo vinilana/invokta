@@ -38,6 +38,8 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0025](./adr/0025-portable-mcp-tool-names.md)
 - Generated engine MCP conformance gate —
   [ADR 0026](./adr/0026-generated-engine-mcp-conformance-gate.md)
+- Windows installer ownership identity —
+  [ADR 0027](./adr/0027-windows-installer-ownership-identity.md)
 
 ## Guides and examples
 

@@ -18,6 +18,10 @@ import { createNodeFileSystem } from "../src/node-file-system.js";
 import { configurationTargetIds } from "../src/registry.js";
 import type { InstallerEnvironment } from "../src/target-config-evidence.js";
 import { createNodeTargetConfigEvidenceProbes } from "../src/target-config-evidence.js";
+import {
+  createWindowsLikeFileSystem,
+  windowsPrincipal,
+} from "./windows-file-system.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -171,7 +175,7 @@ describe("Node target configuration evidence probes", () => {
         }),
       );
       const probes = createNodeTargetConfigEvidenceProbes({
-        currentUserId: 1000,
+        ownership: { kind: "posix-user", reportedOwnerId: 1000 },
         environment: environment(),
         fileSystem: fileSystemWithInspection(inspectPath),
       });
@@ -197,7 +201,7 @@ describe("Node target configuration evidence probes", () => {
       }),
     );
     const probes = createNodeTargetConfigEvidenceProbes({
-      currentUserId: 1000,
+      ownership: { kind: "posix-user", reportedOwnerId: 1000 },
       environment: environment(),
       fileSystem: fileSystemWithInspection(inspectPath),
     });
@@ -226,7 +230,7 @@ describe("Node target configuration evidence probes", () => {
           : { kind: "missing" },
     );
     const probes = createNodeTargetConfigEvidenceProbes({
-      currentUserId: 1000,
+      ownership: { kind: "posix-user", reportedOwnerId: 1000 },
       environment: environment(),
       fileSystem: fileSystemWithInspection(inspectPath),
     });
@@ -650,5 +654,32 @@ describe("Node target configuration evidence probes", () => {
     await expect(
       probe({ homeDirectory, targetId: "opencode-v2" }),
     ).resolves.toEqual({ kind: "absent", path: jsonPath });
+  });
+
+  it("reports evidence instead of blocking under the Windows principal identity", async () => {
+    const homeDirectory = temporaryHome();
+    const configPath = join(homeDirectory, ".claude.json");
+    createConfig(configPath);
+    const probes = createNodeTargetConfigEvidenceProbes({
+      ownership: windowsPrincipal,
+      platform: "win32",
+      environment: environment(),
+      fileSystem: createWindowsLikeFileSystem(
+        createNodeFileSystem({ ownership: windowsPrincipal }),
+      ),
+    });
+
+    await expect(
+      probes["claude-code"]({ homeDirectory, targetId: "claude-code" }),
+    ).resolves.toEqual({ kind: "present", path: configPath });
+    await expect(
+      probes.codex({ homeDirectory, targetId: "codex" }),
+    ).resolves.toEqual({
+      kind: "absent",
+      path: join(homeDirectory, ".codex/config.toml"),
+    });
+    await expect(
+      probes.vscode({ homeDirectory, targetId: "vscode" }),
+    ).resolves.toEqual({ kind: "blocked", code: "TARGET_UNSUPPORTED" });
   });
 });
