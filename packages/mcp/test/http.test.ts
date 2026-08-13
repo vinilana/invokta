@@ -1553,6 +1553,75 @@ describe("MCP stateless Streamable HTTP", () => {
     });
   });
 
+  it("publishes ordered challenge scopes independently from supported scopes", async () => {
+    const challengeScopes = ["engine:invoke", "tenant/read"];
+    const server = await start(createContextEngine(), {
+      auth: {
+        mode: "required",
+        async authenticate() {
+          return null;
+        },
+        challengeScopes,
+        resourceMetadata: {
+          resource: "https://engine.example.com/mcp",
+          authorizationServers: ["https://auth.example.com"],
+          scopesSupported: ["engine:invoke", "engine:admin"],
+        },
+      },
+    });
+    challengeScopes[0] = "mutated";
+
+    const unauthorized = await callTool(server);
+
+    expect(unauthorized.status).toBe(401);
+    expect(unauthorized.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://engine.example.com/.well-known/oauth-protected-resource/mcp", scope="engine:invoke tenant/read"',
+    );
+  });
+
+  it.each([
+    { label: "an empty list", scopes: [] },
+    { label: "an empty token", scopes: [""] },
+    { label: "whitespace inside a token", scopes: ["engine invoke"] },
+    { label: "a quote", scopes: ['engine"invoke'] },
+    { label: "a backslash", scopes: ["engine\\invoke"] },
+    { label: "a control character", scopes: ["engine\ninvoke"] },
+    { label: "a non-ASCII token", scopes: ["mémoria"] },
+    { label: "a duplicate", scopes: ["engine:invoke", "engine:invoke"] },
+    { label: "an oversized value", scopes: ["x".repeat(4097)] },
+  ])(
+    "rejects challenge scopes containing $label before listening",
+    async ({ scopes }) => {
+      await expect(
+        serveMcpHttp(createContextEngine(), {
+          port: 0,
+          auth: {
+            mode: "required",
+            authenticate: () => null,
+            challengeScopes: scopes,
+            resourceMetadata: {
+              resource: "https://engine.example.com/mcp",
+              authorizationServers: ["https://auth.example.com"],
+            },
+          },
+        }),
+      ).rejects.toThrow(/challengeScopes/u);
+    },
+  );
+
+  it("rejects challenge scopes without protected resource metadata", async () => {
+    await expect(
+      serveMcpHttp(createContextEngine(), {
+        port: 0,
+        auth: {
+          mode: "required",
+          authenticate: () => null,
+          challengeScopes: ["engine:invoke"],
+        },
+      }),
+    ).rejects.toThrow("requires auth.resourceMetadata");
+  });
+
   it("rejects invalid protected resource metadata before listening", async () => {
     await expect(
       serveMcpHttp(createContextEngine(), {
@@ -1671,14 +1740,19 @@ describe("MCP stateless Streamable HTTP", () => {
     });
   });
 
-  it("lets a loopback HTTP resource advertise a loopback HTTP authorization server", async () => {
+  it("lets a loopback HTTP resource advertise any loopback authorization server", async () => {
     const server = await start(createContextEngine(), {
       auth: {
         mode: "required",
         authenticate: () => null,
         resourceMetadata: {
           resource: "http://127.0.0.1:3000/mcp",
-          authorizationServers: ["http://127.0.0.1:9000"],
+          // A local identity provider normally runs as its own process on
+          // its own port, so a different loopback origin is the common case.
+          authorizationServers: [
+            "http://127.0.0.1:9000",
+            "http://127.0.0.1:3000/tenant",
+          ],
         },
       },
     });
@@ -1689,7 +1763,10 @@ describe("MCP stateless Streamable HTTP", () => {
 
     expect(await json(metadata)).toEqual({
       resource: "http://127.0.0.1:3000/mcp",
-      authorization_servers: ["http://127.0.0.1:9000"],
+      authorization_servers: [
+        "http://127.0.0.1:9000",
+        "http://127.0.0.1:3000/tenant",
+      ],
     });
   });
 

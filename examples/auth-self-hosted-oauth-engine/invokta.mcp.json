@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "auth-self-hosted-oauth-engine",
+  "version": "0.1.0",
+  "title": "auth-self-hosted-oauth-engine",
+  "description": "OAuth-protected MCP access to an Invokta Action Engine.",
+  "capabilityIds": ["identity.whoami"],
+  "server": {
+    "name": "auth-self-hosted-oauth-engine",
+    "entrypoint": "dist/mcp-stdio.js",
+    "forwardEnv": ["APP_PRINCIPAL_ID"]
+  }
+}

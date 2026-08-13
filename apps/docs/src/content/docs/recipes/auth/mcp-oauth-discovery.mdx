@@ -103,9 +103,10 @@ discovery layer is new here.
      loopback HTTP allowed only for local development;
    - `resource` cannot contain credentials, a query, or a fragment;
    - every entry in `authorizationServers` must be an HTTPS identifier without
-     credentials, query, or fragment; an issuer path is allowed, and loopback
-     HTTP is accepted only when `resource` is itself loopback HTTP, so a
-     deployed engine can never advertise a plain-HTTP Authorization Server;
+     credentials, query, or fragment; an issuer path is allowed, and any
+     loopback HTTP origin is accepted behind a loopback HTTP resource, so a
+     local identity provider on its own port works while a deployed engine can
+     never advertise a plain-HTTP Authorization Server;
    - at least one Authorization Server is required.
 
    For the example above, `AUTH_JWT_ISSUER` doubles as the Authorization Server
@@ -239,3 +240,5 @@ example for the composition root and those tests.
   turns the scopes a client obtained into a policy decision.
 - [HTTP authentication](/guides/http-authentication/) is the normative contract
   for Protected Resource Metadata, the challenge, and the secret rules.
+- [Self-hosted OAuth](/recipes/auth/self-hosted-oauth/) adds the host-owned
+  Authorization Server, persistence, proxy topology, and operating runbooks.

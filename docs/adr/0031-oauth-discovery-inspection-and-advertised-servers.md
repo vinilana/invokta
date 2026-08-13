@@ -137,6 +137,30 @@ Summaries and hints carry protocol facts only. Response bodies appear in a step
 detail solely for the two discovery documents, which are unauthenticated public
 metadata.
 
+## Relationship to the deploy inspection
+
+ADR 0024 permits `@invokta/deploy` its own read-only OAuth discovery
+inspection, and `invokta-deploy inspect-oauth` implements one. This decision
+does not replace it, and the duplication is deliberate rather than overlooked.
+
+`@invokta/deploy` declares no dependencies at all: it scaffolds, packages, and
+probes an engine without pulling a framework runtime package into the
+deployment host. Consolidating the two inspections into `@invokta/mcp` would
+add the edge `deploy → mcp` and end that property. The devtools cannot take the
+opposite route either, because ADR 0021 keeps it free of any other supporting
+package. Two consumers therefore need the same protocol knowledge across a
+boundary neither may cross.
+
+The two are also shaped for their callers rather than arbitrarily: the deploy
+inspection fails fast with one stage and reason, which is what a homologation
+exit code needs, while this one reports every leg, which is what a rendered
+report needs. They must stay behaviorally consistent on the legs they share; a
+divergence in what either accepts is a defect in whichever drifted.
+
+Extracting a shared implementation requires either a decision to give
+`@invokta/deploy` a runtime dependency or a new package both may depend on, and
+neither has evidence yet.
+
 ## Consequences
 
 - The interactive OAuth path works against the topology real engines deploy, and

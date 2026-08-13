@@ -6,12 +6,14 @@ description: Complete command, manifest, generated-file, probe, and programmatic
 import { Aside } from '@astrojs/starlight/components';
 
 `@invokta/deploy` turns an engine with an MCP Streamable HTTP entry point into a
-reviewable container build context and probes an existing endpoint. It is a
-development tool, not a runtime adapter or deployment service.
+reviewable container build context, probes an existing endpoint, and inspects
+OAuth discovery readiness. It is a development tool, not a runtime adapter or
+deployment service.
 
 The toolkit generates and validates text. It never runs a shell, package
 manager, compiler, or container tool. `init` and `package` make no network
-requests; `probe` makes one bounded HTTP request.
+requests. `probe` makes one bounded HTTP request; `inspect-oauth` performs a
+bounded, credential-free discovery sequence.
 
 ## Install
 
@@ -30,6 +32,7 @@ invokta-deploy init
 invokta-deploy package
 invokta-deploy probe --url <url> [--expect alive|ready]
   [--bearer-env NAME] [--host-header HOST] [--timeout-ms N]
+invokta-deploy inspect-oauth --url <url> [--timeout-ms N]
 invokta-deploy --help
 invokta-deploy --version
 ```
@@ -39,8 +42,8 @@ only help and version write to standard output.
 
 | Exit | Meaning |
 | --- | --- |
-| `0` | Command succeeded or probe classified the endpoint as healthy |
-| `1` | Project input, generated-file conflict, or endpoint health failed |
+| `0` | Command succeeded, probe is healthy, or OAuth discovery is ready |
+| `1` | Project input, generated-file conflict, endpoint health, or OAuth inspection failed |
 | `2` | Usage, manifest, initialization, or unexpected command failure |
 
 ### `init`
@@ -173,6 +176,43 @@ variable and never appears in argv or diagnostics.
   connection.
 </Aside>
 
+### `inspect-oauth`
+
+```sh
+invokta-deploy inspect-oauth \
+  --url https://engine.example/mcp \
+  --timeout-ms 10000
+```
+
+This is a read-only OAuth discovery readiness check. It sends an
+unauthenticated MCP `initialize`, validates the Bearer challenge and Protected
+Resource Metadata, follows the MCP-defined OAuth/OIDC metadata discovery order,
+requires Authorization Code and S256 PKCE advertisements, classifies CIMD/DCR
+availability, and validates a JWKS when one is advertised. A missing
+`jwks_uri` is accepted because access tokens are not required to be JWTs.
+
+The command sends no token, cookie, client credential, or user data. It does
+not register a client, perform login or consent, exchange a code, refresh a
+token, or mutate the remote service. It follows no redirect and performs no
+retry. OAuth/OIDC well-known fallbacks are separate protocol attempts.
+
+The exact `/mcp` target excludes userinfo, query, and fragment. HTTPS is
+required except for literal loopback addresses. `--timeout-ms` is one deadline
+for the complete sequence, defaults to `10000`, and is bounded to `1..60000`.
+Each response is capped at 256 KiB.
+
+Success reports only the resource, issuer, challenged scopes, registration
+classification, and JWKS status. Failure reports `OAUTH_INSPECTION_FAILED`
+with stable `stage` and `reason` values; raw headers, response bodies, metadata,
+query values, and transport messages are never printed.
+
+<Aside type="note" title="Three different verification levels">
+  `probe` is a container-safe liveness/readiness check. `inspect-oauth` proves
+  discovery readiness without credentials. A complete browser login, consent,
+  token exchange, and authenticated MCP invocation requires an interactive
+  OAuth client such as Invokta devtools.
+</Aside>
+
 ## Deployment manifest
 
 ```json
@@ -239,7 +279,7 @@ Deployment errors are toolkit contracts, not `EngineError` values:
 `MANIFEST_NOT_FOUND`, `MANIFEST_INVALID`, `PACKAGE_JSON_INVALID`,
 `LOCKFILE_MISSING`, `LOCKFILE_AMBIGUOUS`, `ENTRY_NOT_BUILT`,
 `GENERATED_FILE_CONFLICT`, `WRITE_FAILED`, `PROBE_UNREACHABLE`, and
-`PROBE_UNHEALTHY`.
+`PROBE_UNHEALTHY`, plus `OAUTH_INSPECTION_FAILED`.
 
 `DeployError` contains a stable `code`, `exitCode`, and sanitized details. It
 stores no cause. `renderDeployDiagnostic` emits the code and message followed by
@@ -249,7 +289,8 @@ indented details.
 
 The package root exports:
 
-- command functions: `runDeployCli`, `runInit`, `runPackage`, `runProbe`;
+- command functions: `runDeployCli`, `runInit`, `runPackage`, `runProbe`,
+  `runInspectOAuth`;
 - context functions: `createDeployContext`, `writeDiagnostic`;
 - command/context types: `DeployCommandName`, `RunDeployCliOptions`,
   `DeployCommandRun`, `DeployContext`, `DeployContextOverrides`, `DeployIo`,
@@ -282,8 +323,8 @@ process.exitCode = exitCode;
 ```
 
 The orchestration functions return an exit code and never terminate the
-process. `runInit`, `runPackage`, and `runProbe` accept command arguments plus a
-`DeployContext` for embedding and tests.
+process. `runInit`, `runPackage`, `runProbe`, and `runInspectOAuth` accept
+command arguments plus a `DeployContext` for embedding and tests.
 
 Follow the [deployment guide](/guides/deployment/) for the normal workflow and
 the [`@invokta/mcp` reference](/reference/mcp/) for the server being packaged.

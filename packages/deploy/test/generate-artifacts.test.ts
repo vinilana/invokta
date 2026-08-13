@@ -480,4 +480,10 @@ describe("deploy/DEPLOYMENT.md", () => {
     expect(bare).toContain("The manifest declares no required variables.");
     expect(bare).toContain("The manifest declares no optional variables.");
   });
+
+  it("distinguishes health, OAuth discovery, and interactive authorization", () => {
+    expect(document).toContain("invokta-deploy inspect-oauth");
+    expect(document).toContain("perform login, consent, or token exchange");
+    expect(document).toContain("interactive OAuth client");
+  });
 });

@@ -8,6 +8,7 @@ export {
   renderDeployDiagnostic,
 } from "./errors.js";
 export { runInit } from "./init.js";
+export { runInspectOAuth } from "./inspect-oauth.js";
 export type {
   DeployCommandRun,
   DeployContext,

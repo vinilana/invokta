@@ -26,6 +26,10 @@ import {
   createNodeExecutableResolver,
   resolveNodeOperatingSystemHome,
 } from "./node-harness-environment.js";
+import {
+  captureProcessOwnershipIdentity,
+  type InstallerOwnershipIdentity,
+} from "./ownership-identity.js";
 import { runReadOnlyInventory } from "./read-only-inventory.js";
 import {
   loadBundledRegistry,
@@ -56,17 +60,18 @@ export interface RunInteractiveSessionOptions {
   readonly resolveExecutable?: ExecutableResolver;
   readonly configEvidenceProbes?: TargetConfigEvidenceProbes;
   readonly environment?: InstallerEnvironment;
+  readonly ownership?: InstallerOwnershipIdentity;
   readonly platform?: NodeJS.Platform;
 }
 
 function mutationDependencies(
-  currentUserId: number,
+  ownership: InstallerOwnershipIdentity | undefined,
   environment: InstallerEnvironment,
   fileSystem: InstallerTransactionFileSystem,
 ): MutationCoordinatorDependencies {
   return {
     adapters: configurationTargetAdapters,
-    currentUserId,
+    ownership,
     environment,
     fileSystem,
     lock: {
@@ -89,14 +94,16 @@ export async function runInteractiveSession(
   const prompter = options.prompter ?? createClackInteractivePrompter();
   prompter.intro("Invokta capability installer");
   const command = options.command ?? { kind: "inventory" as const };
-  const nodeFileSystem = createNodeFileSystem();
+  const ownership = options.ownership ?? captureProcessOwnershipIdentity();
+  const nodeFileSystem = createNodeFileSystem(
+    ownership === undefined ? {} : { ownership },
+  );
   const fileSystem = options.fileSystem ?? nodeFileSystem;
   const transactionFileSystem = options.transactionFileSystem ?? nodeFileSystem;
-  const currentUserId = process.getuid?.() ?? -1;
   const removalSource =
     command.kind === "remove-engine"
       ? await loadEngineRemovalManifest({
-          currentUserId,
+          ownership,
           fileSystem: transactionFileSystem,
           projectDirectory: command.projectDirectory,
         })
@@ -129,6 +136,7 @@ export async function runInteractiveSession(
         createNodeTargetConfigEvidenceProbes({
           environment,
           fileSystem,
+          ...(ownership === undefined ? {} : { ownership }),
           ...(options.platform === undefined
             ? {}
             : { platform: options.platform }),
@@ -142,7 +150,7 @@ export async function runInteractiveSession(
     if (command.kind === "remove-engine" && removalSource !== undefined) {
       return await runEngineRemovalSession({
         dependencies: mutationDependencies(
-          currentUserId,
+          ownership,
           environment,
           transactionFileSystem,
         ),
@@ -156,7 +164,7 @@ export async function runInteractiveSession(
         command.kind === "install-engine"
           ? (
               await loadEngineInstallManifest({
-                currentUserId,
+                ownership,
                 fileSystem: transactionFileSystem,
                 nodeExecutable: process.execPath,
                 projectDirectory: command.projectDirectory,
@@ -165,7 +173,7 @@ export async function runInteractiveSession(
           : createRemoteInstallDescriptor(command);
       return await runInstallSession({
         dependencies: mutationDependencies(
-          currentUserId,
+          ownership,
           environment,
           transactionFileSystem,
         ),
@@ -185,7 +193,7 @@ export async function runInteractiveSession(
       return await runManagementSession({
         action: command.kind,
         dependencies: mutationDependencies(
-          currentUserId,
+          ownership,
           environment,
           transactionFileSystem,
         ),

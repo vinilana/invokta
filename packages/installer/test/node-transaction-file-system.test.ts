@@ -395,3 +395,58 @@ describe.skipIf(process.platform === "win32")(
     });
   },
 );
+
+describe("Windows principal transaction semantics", () => {
+  const windowsPrincipal = {
+    kind: "windows-principal",
+    reportedOwnerId: 0,
+  } as const;
+
+  it("creates files and directories without comparing the constant owner id", async () => {
+    const directory = temporaryDirectory();
+    const fileSystem = createNodeFileSystem({ ownership: windowsPrincipal });
+    const privatePath = join(directory, "private");
+    await fileSystem.mkdir(privatePath, 0o700);
+    expect(lstatSync(privatePath).isDirectory()).toBe(true);
+
+    const outputPath = join(privatePath, "state.json");
+    const handle = await fileSystem.createExclusiveNoFollow(outputPath, 0o600);
+    try {
+      await handle.writeAll(new TextEncoder().encode("{}\n"));
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    expect(readFileSync(outputPath, "utf8")).toBe("{}\n");
+  });
+
+  it("rejects a symbolic link through the emulated no-follow open", async () => {
+    const directory = temporaryDirectory();
+    const targetPath = join(directory, "target.json");
+    const linkPath = join(directory, "link.json");
+    writeFileSync(targetPath, "{}\n");
+    symlinkSync(targetPath, linkPath, "file");
+    const fileSystem = createNodeFileSystem({ ownership: windowsPrincipal });
+
+    await expectFileSystemError(
+      fileSystem.openReadNoFollow(linkPath),
+      "SYMBOLIC_LINK",
+    );
+    const handle = await fileSystem.openReadNoFollow(targetPath);
+    try {
+      expect(new TextDecoder().decode(await handle.readAll(16))).toBe("{}\n");
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("reports a missing path as NOT_FOUND through the emulated open", async () => {
+    const directory = temporaryDirectory();
+    const fileSystem = createNodeFileSystem({ ownership: windowsPrincipal });
+
+    await expectFileSystemError(
+      fileSystem.openReadNoFollow(join(directory, "absent.json")),
+      "NOT_FOUND",
+    );
+  });
+});

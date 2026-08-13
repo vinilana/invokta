@@ -137,8 +137,10 @@ ending in `/mcp`, the path is:
 
 The `resource` must be the exact `/mcp` URL over HTTPS. Loopback HTTP is allowed
 only for local development. It cannot contain credentials, a query, or a
-fragment. Authorization Server identifiers require HTTPS and may contain issuer
-paths, but no credentials, query, or fragment.
+fragment. Authorization Server identifiers require HTTPS except at the exact
+same loopback HTTP origin as a loopback development resource. They may contain
+issuer paths, but no credentials, query, or fragment. A different loopback port
+is rejected.
 
 The configured resource URL, not `Host` or a forwarded header, determines the
 metadata URL.
@@ -191,6 +193,6 @@ For exact HTTP status and media contracts, use the
 
 This guide stays provider-neutral. For copyable, tested integrations of
 Supabase, Clerk, Auth0, Cognito, Firebase, Better Auth, Auth.js, WorkOS, API
-keys, and generic OIDC issuers, use the
+keys, generic OIDC issuers, and a complete self-hosted OAuth deployment, use the
 [authentication recipes](/recipes/auth/); each is backed by a runnable
 `auth-*` example in the repository.

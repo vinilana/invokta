@@ -344,14 +344,17 @@ describe("the toolkit import graph", () => {
     expect(markersInCode(childProcessMarkers)).toEqual([]);
   });
 
-  it("reaches a network built-in only from the probe request module", () => {
+  it("reaches a network built-in only from the bounded request modules", () => {
     const reaching = modules
       .filter((module) =>
         networkBuiltins.some((builtin) => module.code.includes(builtin)),
       )
       .map((module) => module.path);
 
-    expect(reaching).toEqual(["src/probe/request.ts"]);
+    expect(reaching).toEqual([
+      "src/oauth-inspection/request.ts",
+      "src/probe/request.ts",
+    ]);
     expect(markersInCode(["fetch(", "new WebSocket"])).toEqual([]);
   });
 });

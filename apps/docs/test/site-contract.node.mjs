@@ -27,6 +27,7 @@ const requiredRecipeRoutes = [
   "/recipes/auth/workos/",
   "/recipes/auth/api-key/",
   "/recipes/auth/mcp-oauth-discovery/",
+  "/recipes/auth/self-hosted-oauth/",
 ];
 
 const packageReferences = [

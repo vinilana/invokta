@@ -22,6 +22,7 @@ repository.
 | MCP HTTP from services and automations without a user | [API keys](/recipes/auth/api-key/) |
 | Your own application process that already resolved a session | The embedded pattern in the [Auth.js](/recipes/auth/authjs/) and [Better Auth](/recipes/auth/better-auth/) recipes |
 | An OAuth-capable MCP client that discovers your Authorization Server | [MCP OAuth discovery](/recipes/auth/mcp-oauth-discovery/) |
+| An MCP service that must operate its own users, login, consent, and tokens | [Self-hosted OAuth](/recipes/auth/self-hosted-oauth/) |
 
 Authentication proves who is calling and produces a `Principal`; whether that
 principal may execute a capability stays a domain decision. Pair any recipe
@@ -97,6 +98,12 @@ here with [domain authorization](/recipes/domain-authorization/) and the
     your Authorization Server from the Bearer challenge.
 
     [Open recipe](/recipes/auth/mcp-oauth-discovery/)
+  </Card>
+  <Card title="Self-hosted OAuth for MCP" icon="setting">
+    Import the production-oriented example with PostgreSQL, PKCE, DCR, login,
+    consent, rotating refresh tokens, and Caddy or Traefik deployment assets.
+
+    [Open recipe](/recipes/auth/self-hosted-oauth/)
   </Card>
 </CardGrid>
 

@@ -39,9 +39,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   mandatory PKCE, audience binding, `state` validation, and in-memory-only
   credentials are unchanged. Hosted identity providers, which every
   `examples/auth-*` engine demonstrates, were previously refused outright.
-  `serveMcpHttp` correspondingly accepts a loopback Authorization Server in
-  `auth.resourceMetadata`, but only when the resource is itself loopback HTTP,
-  so a deployed engine can never advertise a plain-HTTP one.
+  `serveMcpHttp` correspondingly accepts any loopback Authorization Server in
+  `auth.resourceMetadata` behind a loopback HTTP resource, so a local identity
+  provider on its own port can be advertised; a deployed engine still cannot
+  advertise a plain-HTTP one.
 - `@invokta/mcp` exposes `inspectMcpOAuth`, a read-only diagnostic that runs the
   OAuth discovery chain — the `401` challenge, Protected Resource Metadata, the
   Authorization Server's RFC 8414 metadata, and whether dynamic client
@@ -61,10 +62,37 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   control off and says why, and the reproduction command becomes the command
   the developer would type. The path is named explicitly and must stay inside
   the directory `serve` runs in.
+- Added optional ordered OAuth challenge scopes to `@invokta/mcp`, with
+  startup validation and immutable Bearer challenge serialization independent
+  of Protected Resource Metadata's `scopes_supported`.
+- Added the official `auth-self-hosted-oauth-engine` example with PKCE, DCR,
+  ES256 resource-specific tokens, rotating refresh tokens, PostgreSQL,
+  single-owner login and consent, Caddy/Traefik deployment assets, operating
+  documentation, and project-local OAuth/deployment skills.
+- Added `invokta-deploy inspect-oauth`, a credential-free, read-only, bounded
+  inspection of the MCP challenge, Protected Resource Metadata, OAuth/OIDC
+  discovery, Authorization Code, S256 PKCE, registration mechanisms, and an
+  advertised JWKS.
+- Added real devtools homologation of the official example through DCR, PKCE,
+  login, one-click consent, token exchange, authenticated initialization,
+  catalog, and a deliberate tool call.
 - Added `invokta check-mcp` and `validateMcpToolCatalog` as a build-time
   conformance gate for the actual published MCP catalog. Newly generated MCP
   profiles include the gate in their canonical `check`, so ambiguous derived
   tool names fail before adapter startup, installation, or deployment.
+
+### Fixed
+
+- The engine installer no longer rejects every local Action Engine path on
+  Windows with `ENGINE_PATH_UNSAFE` (ADR 0027). Ownership validation now uses
+  a platform-aware identity: POSIX platforms keep exact uid and private-mode
+  checks, while Windows — where Node exposes no `process.getuid()` and reports
+  a constant file owner — relies on the unchanged no-follow, path-identity,
+  and home-containment protections, with no-follow opens emulated where the
+  kernel flag does not exist. Installing and removing a globally installed
+  engine package, such as one under the npm global root, now works on Windows
+  for home-relative targets; VS Code and Claude Desktop keep their documented
+  platform scope.
 
 ### Changed
 
@@ -74,12 +102,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `engine.invoke` path, and ambiguous aliases fail closed before the server
   connects or listens. MCP clients that hard-code dotted tool names must refresh
   `tools/list` and use the advertised alias.
+- Official example imports now rewrite npm lockfile package names together with
+  `package.json`, and malformed lockfiles roll back the import.
+- MCP Protected Resource Metadata accepts an HTTP Authorization Server only on
+  loopback, and only behind an HTTP loopback resource, so a local identity
+  provider on its own port can be advertised. Production and cross-origin
+  Authorization Server identifiers still require HTTPS.
 
 ### Security
 
-- Pinned the transitive `nanoid` dependency to 3.3.17 so development and CI
+- Pinned the transitive `nanoid` dependency to 3.3.18 so development and CI
   tooling no longer resolves the vulnerable zero-size custom-generator
   implementation reported through the Vitest dependency chain.
+- Self-hosted Client ID Metadata Documents remain disabled until the example
+  has an SSRF-resistant fetch policy. Discovery inspection never accepts
+  credentials, follows redirects, prints raw metadata, or mutates the remote
+  service.
 
 ## [0.4.0] - 2026-08-06
 

@@ -143,6 +143,7 @@ export default defineConfig({
                 { slug: "recipes/auth/workos" },
                 { slug: "recipes/auth/api-key" },
                 { slug: "recipes/auth/mcp-oauth-discovery" },
+                { slug: "recipes/auth/self-hosted-oauth" },
               ],
             },
           ],

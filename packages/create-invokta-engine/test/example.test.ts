@@ -385,6 +385,8 @@ describe("createExampleProject", () => {
       files: {
         "templates/engine/package.json":
           '{\n  "name": "@acme/template",\n  "private": true\n}\n',
+        "templates/engine/package-lock.json":
+          '{\n  "name": "@acme/template",\n  "version": "0.1.0",\n  "lockfileVersion": 3,\n  "packages": {\n    "": { "name": "@acme/template", "version": "0.1.0" }\n  }\n}\n',
         "templates/engine/src/engine.ts": "export const ready = true;\n",
         "README.md": "repo root\n",
       },
@@ -407,10 +409,52 @@ describe("createExampleProject", () => {
     });
 
     expect(project.label).toBe("acme/repo/templates/engine");
-    expect(project.files).toEqual(["package.json", "src/engine.ts"]);
+    expect(project.files).toEqual([
+      "package-lock.json",
+      "package.json",
+      "src/engine.ts",
+    ]);
     expect(
       JSON.parse(readFileSync(join(project.directory, "package.json"), "utf8")),
     ).toMatchObject({ name: "my-engine", private: true });
+    expect(
+      JSON.parse(
+        readFileSync(join(project.directory, "package-lock.json"), "utf8"),
+      ),
+    ).toMatchObject({
+      name: "my-engine",
+      packages: { "": { name: "my-engine" } },
+    });
+  });
+
+  it("rejects a malformed package lock and rolls back the import", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = await buildRepositoryArchive({
+      rootName: "repo-main",
+      files: {
+        "package.json": '{"name":"template","private":true}\n',
+        "package-lock.json": "not-json\n",
+      },
+    });
+    const info: ExampleRepoInfo = {
+      owner: "acme",
+      repository: "repo",
+      branch: "main",
+      filePath: "",
+      label: "acme/repo",
+    };
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: info,
+        fetch: createFetch({ archive }),
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+    expect(() =>
+      readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
+    ).toThrow();
   });
 
   it("rejects symlink and hardlink archives without crashing", async () => {

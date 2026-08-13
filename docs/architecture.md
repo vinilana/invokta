@@ -308,8 +308,10 @@ targets are preselected, but no mutation occurs without explicit confirmation.
 Engine-scoped removal preflights every matching managed target and one
 confirmation authorizes its complete ordered removable set.
 Creating a missing configuration requires installed-client evidence. Project,
-profile, remote-workspace, organization-managed, and Windows configuration
-mutation are not provided by this profile.
+profile, remote-workspace, and organization-managed configuration mutation are
+not provided by this profile. On Windows, mutation uses the ownership identity
+of ADR 0027 and covers only targets whose default user configuration resolves
+inside the home directory.
 
 **AE-INSTALL-03 — Managed lifecycle.** New ownership records persist the
 normalized launch descriptor. `status`, `enable`, `disable`, and `remove`

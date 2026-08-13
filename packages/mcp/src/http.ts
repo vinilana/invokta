@@ -13,6 +13,7 @@ import { preserveFalsyRequestIds } from "./request-id-transport.js";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
 const DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+const MAX_CHALLENGE_SCOPE_BYTES = 4096;
 const MCP_PATH = "/mcp";
 
 export interface McpHttpHeaderView {
@@ -38,6 +39,7 @@ interface RequiredMcpHttpAuth {
   readonly authenticate: (
     request: McpHttpAuthenticationRequest,
   ) => Principal | null | Promise<Principal | null>;
+  readonly challengeScopes?: ReadonlyArray<string>;
   readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
 }
 
@@ -77,6 +79,7 @@ interface HttpResponse {
 interface RequiredMcpHttpAuthSnapshot {
   readonly mode: "required";
   readonly authenticate: RequiredMcpHttpAuth["authenticate"];
+  readonly challengeScopes?: ReadonlyArray<string>;
   readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
 }
 
@@ -87,6 +90,46 @@ interface DangerouslyDisabledMcpHttpAuthSnapshot {
 type McpHttpAuthSnapshot =
   | RequiredMcpHttpAuthSnapshot
   | DangerouslyDisabledMcpHttpAuthSnapshot;
+
+function snapshotChallengeScopes(
+  value: ReadonlyArray<string> | undefined,
+  hasResourceMetadata: boolean,
+): ReadonlyArray<string> | undefined {
+  if (value === undefined) return undefined;
+  if (!hasResourceMetadata) {
+    throw new TypeError("auth.challengeScopes requires auth.resourceMetadata.");
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new TypeError(
+      "auth.challengeScopes must contain at least one scope token.",
+    );
+  }
+  const scopes: string[] = [];
+  const seen = new Set<string>();
+  let serializedBytes = 0;
+  for (const scope of value) {
+    if (
+      typeof scope !== "string" ||
+      !/^[\x21\x23-\x5b\x5d-\x7e]+$/u.test(scope)
+    ) {
+      throw new TypeError(
+        "auth.challengeScopes must contain only RFC 6749 scope tokens.",
+      );
+    }
+    if (seen.has(scope)) {
+      throw new TypeError("auth.challengeScopes must not contain duplicates.");
+    }
+    seen.add(scope);
+    serializedBytes += Buffer.byteLength(scope) + (scopes.length === 0 ? 0 : 1);
+    if (serializedBytes > MAX_CHALLENGE_SCOPE_BYTES) {
+      throw new TypeError(
+        `auth.challengeScopes must serialize to at most ${MAX_CHALLENGE_SCOPE_BYTES} bytes.`,
+      );
+    }
+    scopes.push(scope);
+  }
+  return Object.freeze(scopes);
+}
 
 function snapshotAuthOptions(value: McpHttpAuthOptions): McpHttpAuthSnapshot {
   if (value === null || typeof value !== "object") {
@@ -100,9 +143,14 @@ function snapshotAuthOptions(value: McpHttpAuthOptions): McpHttpAuthSnapshot {
         "auth.authenticate must be a function when auth.mode is required.",
       );
     }
+    const challengeScopes = snapshotChallengeScopes(
+      value.challengeScopes,
+      value.resourceMetadata !== undefined,
+    );
     return Object.freeze({
       mode: "required",
       authenticate: value.authenticate,
+      ...(challengeScopes === undefined ? {} : { challengeScopes }),
       ...(value.resourceMetadata === undefined
         ? {}
         : { resourceMetadata: value.resourceMetadata }),
@@ -114,6 +162,17 @@ function snapshotAuthOptions(value: McpHttpAuthOptions): McpHttpAuthSnapshot {
   throw new TypeError(
     'auth.mode must be either "required" or "dangerously-disabled-for-development".',
   );
+}
+
+function bearerChallenge(
+  metadataUrl: string | undefined,
+  challengeScopes: ReadonlyArray<string> | undefined,
+): string {
+  if (metadataUrl === undefined) return "Bearer";
+  const resourceMetadata = `resource_metadata="${metadataUrl}"`;
+  return challengeScopes === undefined
+    ? `Bearer ${resourceMetadata}`
+    : `Bearer ${resourceMetadata}, scope="${challengeScopes.join(" ")}"`;
 }
 
 function normalizeHostname(authority: string): string | null {
@@ -208,9 +267,9 @@ function toMetadata(metadata: McpHttpProtectedResourceMetadata) {
   if (urls.some(hasUnsafeUrlCharacter)) {
     throw new TypeError("Protected resource metadata contains an unsafe URL.");
   }
-  const loopbackResource = validateResourceUrl(metadata.resource);
+  validateResourceUrl(metadata.resource);
   for (const authorizationServer of metadata.authorizationServers) {
-    validateAuthorizationServerUrl(authorizationServer, loopbackResource);
+    validateAuthorizationServerUrl(authorizationServer, metadata.resource);
   }
   const value = {
     resource: metadata.resource,
@@ -222,7 +281,7 @@ function toMetadata(metadata: McpHttpProtectedResourceMetadata) {
   return OAuthProtectedResourceMetadataSchema.parse(value);
 }
 
-function validateResourceUrl(value: string): boolean {
+function validateResourceUrl(value: string): void {
   let url: URL;
   try {
     url = new URL(value);
@@ -246,13 +305,9 @@ function validateResourceUrl(value: string): boolean {
       "Protected resource metadata requires an HTTPS /mcp resource URL, except for loopback HTTP development.",
     );
   }
-  return loopbackDevelopment;
 }
 
-function validateAuthorizationServerUrl(
-  value: string,
-  loopbackResource: boolean,
-): void {
+function validateAuthorizationServerUrl(value: string, resource: string): void {
   let url: URL;
   try {
     url = new URL(value);
@@ -261,18 +316,26 @@ function validateAuthorizationServerUrl(
       "Protected resource metadata has an invalid authorization server URL.",
     );
   }
-  const secure = url.protocol === "https:";
+  // A loopback resource may advertise any loopback authorization server, not
+  // only one sharing its origin: a local identity provider normally runs as a
+  // separate process on its own port. Both ends stay on the developer's
+  // machine, so the trust boundary does not move, and a deployed HTTPS
+  // resource still cannot advertise plain HTTP at all.
+  const resourceUrl = new URL(resource);
   const loopbackDevelopment =
-    loopbackResource && url.protocol === "http:" && isLoopback(url.hostname);
+    url.protocol === "http:" &&
+    isLoopback(url.hostname) &&
+    resourceUrl.protocol === "http:" &&
+    isLoopback(resourceUrl.hostname);
   if (
-    (!secure && !loopbackDevelopment) ||
+    (url.protocol !== "https:" && !loopbackDevelopment) ||
     url.username !== "" ||
     url.password !== "" ||
     url.search !== "" ||
     url.hash !== ""
   ) {
     throw new TypeError(
-      "Authorization server URLs require HTTPS and cannot contain credentials, a query, or a fragment, except for loopback HTTP development behind a loopback HTTP resource.",
+      "Authorization server URLs require HTTPS, except on loopback behind a loopback HTTP resource, and cannot contain credentials, a query, or a fragment.",
     );
   }
 }
@@ -749,12 +812,12 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         if (authenticatedSnapshot === null) {
           sendBeforeBodyConsumption(request, response, {
             status: 401,
-            headers:
-              metadataUrl === undefined
-                ? { "www-authenticate": "Bearer" }
-                : {
-                    "www-authenticate": `Bearer resource_metadata="${metadataUrl}"`,
-                  },
+            headers: {
+              "www-authenticate": bearerChallenge(
+                metadataUrl,
+                auth.challengeScopes,
+              ),
+            },
             body: { error: "unauthorized" },
           });
           return;
