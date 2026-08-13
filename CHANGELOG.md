@@ -23,6 +23,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Added real devtools homologation of the official example through DCR, PKCE,
   login, one-click consent, token exchange, authenticated initialization,
   catalog, and a deliberate tool call.
+- Added `invokta check-mcp` and `validateMcpToolCatalog` as a build-time
+  conformance gate for the actual published MCP catalog. Newly generated MCP
+  profiles include the gate in their canonical `check`, so ambiguous derived
+  tool names fail before adapter startup, installation, or deployment.
 
 ### Changed
 

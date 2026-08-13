@@ -16,7 +16,11 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { serveMcpStdio } from "../src/index.js";
+import {
+  McpToolNameCollisionError,
+  serveMcpStdio,
+  validateMcpToolCatalog,
+} from "../src/index.js";
 import { createMcpServer } from "../src/protocol-server.js";
 
 const openClients: Client[] = [];
@@ -237,14 +241,26 @@ describe("MCP stdio protocol adapter", () => {
       },
     });
 
+    expect(() => validateMcpToolCatalog(engine)).toThrow(
+      'Capabilities "support.echo" and "support_echo" resolve to duplicate MCP tool name "support_echo".',
+    );
+    try {
+      validateMcpToolCatalog(engine);
+      throw new Error("Expected MCP tool-name validation to fail.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(McpToolNameCollisionError);
+      expect(error).toMatchObject({
+        code: "MCP_TOOL_NAME_COLLISION",
+        capabilityIds: ["support.echo", "support_echo"],
+        toolName: "support_echo",
+      });
+    }
     expect(() =>
       createMcpServer(engine, {
         principal: null,
         source: "mcp-stdio",
       }),
-    ).toThrow(
-      'Capabilities "support.echo" and "support_echo" resolve to duplicate MCP tool name "support_echo".',
-    );
+    ).toThrow(McpToolNameCollisionError);
   });
 
   it("rejects domain IDs and unknown names not published by tools/list", async () => {
