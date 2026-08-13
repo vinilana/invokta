@@ -1,4 +1,4 @@
-# ADR 0027: Adapter emulation in the engine devtools
+# ADR 0028: Adapter emulation in the engine devtools
 
 - Status: Accepted
 - Date: 2026-08-13

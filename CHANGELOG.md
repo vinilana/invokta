@@ -10,7 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - `invokta-devtools serve` now emulates a capability call through the execution
-  path you select (ADR 0027): direct, CLI, MCP stdio, or MCP HTTP. Playground
+  path you select (ADR 0028): direct, CLI, MCP stdio, or MCP HTTP. Playground
   keeps one argument editor and one result view for all four, with an
   adapter-specific record of what was exchanged — request and response bodies
   with the HTTP status, `tools/call` frames, or the command with its standard
@@ -21,7 +21,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   while MCP HTTP reuses the running engine host. `@invokta/devtools` therefore
   depends on `@invokta/cli` as well as `@invokta/core` and `@invokta/mcp`.
 - The devtools playground now separates identity from authentication
-  (ADR 0028). The acting development `Principal`, including an explicit
+  (ADR 0029). The acting development `Principal`, including an explicit
   anonymous choice, is selected next to the adapter switch and applies to every
   path; the global `Act as` status is gone. Authentication is shown only for
   MCP HTTP, which additionally gains a target: the devtools host, with the
@@ -33,7 +33,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   memory and is never persisted or echoed back.
 - `@invokta/mcp` now reaches an OAuth Authorization Server on a different origin
   than the MCP resource, provided the resource's own Protected Resource Metadata
-  advertises it (ADR 0030, amending ADR 0023). That document is still read only
+  advertises it (ADR 0031, amending ADR 0023). That document is still read only
   from the resource's own origin over HTTPS, so the resource remains the
   authority on who may issue tokens for it; the loopback-only redirect,
   mandatory PKCE, audience binding, `state` validation, and in-memory-only
@@ -54,7 +54,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   recently managed to do, and present the session token as the MCP HTTP
   credential it is rather than as a missing prerequisite for every adapter.
 - The CLI and MCP stdio emulations can run the engine's own built entry point
-  instead of the devtools child (ADR 0029), so the composition root that
+  instead of the devtools child (ADR 0030), so the composition root that
   decides the principal is the project's — including the `principal: null` the
   generated starter passes. The devtools child remains the default and keeps
   the selected identity; choosing a project entry point turns the identity

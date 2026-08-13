@@ -1,11 +1,11 @@
-# ADR 0028: Selectable HTTP authentication in the engine devtools
+# ADR 0029: Selectable HTTP authentication in the engine devtools
 
 - Status: Accepted
 - Date: 2026-08-13
 
 ## Context
 
-ADR 0027 made the devtools playground adapter-parameterized: one set of
+ADR 0028 made the devtools playground adapter-parameterized: one set of
 arguments reaches the engine through a direct call, the CLI adapter, MCP stdio,
 or MCP HTTP. The identity surface did not follow. The interface presents one
 global control — `Act as <principal>` with a session-token status — as though
@@ -55,7 +55,7 @@ An external endpoint is reached through the public `@invokta/mcp` client facade,
 which already refuses a URL that is neither HTTPS nor literal loopback, carries
 credentials, or contains a query or fragment. None, bearer, and custom headers
 connect per call and close with it, keeping the per-invocation process model of
-ADR 0027. OAuth is inherently a session, so it reuses the ephemeral
+ADR 0028. OAuth is inherently a session, so it reuses the ephemeral
 Authorization Code with PKCE flow accepted by ADR 0023, including its loopback
 callback, its refusal of a cross-origin identity provider, and its rejection of
 a preconfigured client ID or secret.
@@ -68,7 +68,7 @@ credential out of an argument vector. Nothing is persisted, written to the
 developer's project, or echoed back: reading the target returns its kind, its
 URL, its authentication type, and header or variable names only.
 
-The prohibitions of ADR 0021 and ADR 0027 continue to bind, and this decision
+The prohibitions of ADR 0021 and ADR 0028 continue to bind, and this decision
 adds three. The devtools MUST NOT authenticate an emulated call for an adapter
 that establishes no credential; MUST NOT persist, echo, or log a credential;
 and MUST NOT accept an external endpoint the MCP client facade refuses. An

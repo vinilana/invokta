@@ -1,4 +1,4 @@
-# ADR 0030: OAuth discovery inspection and advertised authorization servers
+# ADR 0031: OAuth discovery inspection and advertised authorization servers
 
 - Status: Accepted
 - Date: 2026-08-13
@@ -40,7 +40,7 @@ failing request is knowable before any browser navigation happens.
 
 This decision amends ADR 0023. Every property ADR 0023 decided remains in force
 except its same-origin endpoint restriction, which the first section below
-replaces. ADR 0028 adopts that flow by reference and restates the restriction
+replaces. ADR 0029 adopts that flow by reference and restates the restriction
 while doing so; that clause follows this amendment.
 
 ### The resource origin stays the trust anchor

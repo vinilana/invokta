@@ -2,7 +2,7 @@ import { api, type HttpTargetView, type OAuthInspection } from "./api.js";
 import { el } from "./dom.js";
 
 /**
- * Where MCP HTTP sends a call and how it authenticates, chartered by ADR 0028.
+ * Where MCP HTTP sends a call and how it authenticates, chartered by ADR 0029.
  * The devtools host authenticates with its own minted session tokens, so it
  * offers those two choices only; an external endpoint is the developer's own
  * server, so it offers what a real HTTP boundary accepts.

@@ -1,11 +1,11 @@
-# ADR 0029: Project entry points in devtools emulation
+# ADR 0030: Project entry points in devtools emulation
 
 - Status: Accepted
 - Date: 2026-08-13
 
 ## Context
 
-ADR 0027 runs the CLI and MCP stdio emulations in a devtools-owned child
+ADR 0028 runs the CLI and MCP stdio emulations in a devtools-owned child
 process that imports the built engine module and calls the published adapter.
 That child is a composition root: it decides the principal the adapter starts
 with, and it decides it from the identity selected in the interface.
@@ -65,7 +65,7 @@ root is the only thing that decides identity. Nothing is discovered: an
 absent selection means the devtools entry point, and a path that does not
 exist fails as the spawned process reports it.
 
-This extends ADR 0027 and changes none of its prohibitions. The devtools still
+This extends ADR 0028 and changes none of its prohibitions. The devtools still
 spawns only per-invocation adapter children and its engine host, still keeps no
 process alive between invocations, and still adds no execution path: a project
 entry point is the developer's own published adapter, reached through

@@ -3,7 +3,7 @@ import { el } from "./dom.js";
 
 /**
  * Which composition root runs an emulated CLI or MCP stdio call, chartered by
- * ADR 0029. The devtools child supplies the identity selected here; the
+ * ADR 0030. The devtools child supplies the identity selected here; the
  * engine's own entry point supplies whatever its root decides, including no
  * principal at all — which is what the generated starter does.
  *

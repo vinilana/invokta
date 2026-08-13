@@ -1,6 +1,6 @@
 /**
  * Where the MCP HTTP adapter sends an emulated call, and how it authenticates,
- * chartered by ADR 0028. The devtools host is the default and authenticates
+ * chartered by ADR 0029. The devtools host is the default and authenticates
  * with its own minted session tokens; an external endpoint is a server the
  * developer runs, whose authentication is whatever that server implements.
  *

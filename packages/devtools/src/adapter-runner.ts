@@ -14,7 +14,7 @@ import { HttpTargetError } from "./http-target.js";
 
 /**
  * Emulates one capability call through a caller-selected adapter, chartered by
- * ADR 0027. MCP HTTP reuses the running engine host; the other three adapters
+ * ADR 0028. MCP HTTP reuses the running engine host; the other three adapters
  * run in a devtools-owned child process that imports the same built module and
  * calls the published adapter. A child never outlives the call that spawned it.
  */

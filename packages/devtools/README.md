@@ -402,7 +402,7 @@ node packages/devtools/dist/cli.js serve examples/hello-engine/dist/engine.js
 The built-engine contract is chartered by
 [ADR 0021](../../docs/adr/0021-engine-devtools-dev-server.md), extended for
 adapter emulation by
-[ADR 0027](../../docs/adr/0027-adapter-emulation-in-engine-devtools.md).
+[ADR 0028](../../docs/adr/0028-adapter-emulation-in-engine-devtools.md).
 Installed-target inspection is chartered by
 [ADR 0022](../../docs/adr/0022-mcp-installation-inspection-and-homologation.md),
 with interactive OAuth accepted by

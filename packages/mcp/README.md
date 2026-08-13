@@ -70,7 +70,7 @@ Tokens, PKCE material, and registration artifacts stay in process memory and are
 cleared on `close`
 ([ADR 0023](../../docs/adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md),
 amended by
-[ADR 0030](../../docs/adr/0030-oauth-discovery-inspection-and-advertised-servers.md)).
+[ADR 0030](../../docs/adr/0031-oauth-discovery-inspection-and-advertised-servers.md)).
 
 Protected resource metadata is read only from the MCP resource's own origin.
 The authorization servers that document advertises are then trusted for

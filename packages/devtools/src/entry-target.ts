@@ -2,7 +2,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 /**
  * Which composition root runs an emulated CLI or MCP stdio call, chartered by
- * ADR 0029. The devtools child is the default: it supplies the identity the
+ * ADR 0030. The devtools child is the default: it supplies the identity the
  * interface selected. The engine's own entry point supplies whatever its root
  * decides, including no principal at all, which is what the generated starter
  * does.

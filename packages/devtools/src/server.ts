@@ -36,7 +36,7 @@ import type { AdapterCallCapture, TraceStore } from "./trace-store.js";
 
 /**
  * The interactive OAuth authorization of an external MCP endpoint, chartered
- * by ADR 0023 and reused here by ADR 0028. The devtools server only starts the
+ * by ADR 0023 and reused here by ADR 0029. The devtools server only starts the
  * flow and completes it from the loopback callback; every token, PKCE value,
  * and registration artifact stays inside the session.
  */

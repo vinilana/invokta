@@ -32,7 +32,7 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0023](0023-ephemeral-oauth-for-installed-mcp-inspection.md) | Ephemeral OAuth for installed MCP inspection | Accepted | 2026-08-06 |
 | [0025](0025-portable-mcp-tool-names.md) | Portable MCP tool names | Accepted | 2026-08-11 |
 | [0026](0026-generated-engine-mcp-conformance-gate.md) | Generated engine MCP conformance gate | Accepted | 2026-08-11 |
-| [0027](0027-adapter-emulation-in-engine-devtools.md) | Adapter emulation in the engine devtools | Accepted | 2026-08-13 |
-| [0028](0028-selectable-http-authentication-in-devtools.md) | Selectable HTTP authentication in the engine devtools | Accepted | 2026-08-13 |
-| [0029](0029-project-entry-points-in-devtools-emulation.md) | Project entry points in devtools emulation | Accepted | 2026-08-13 |
-| [0030](0030-oauth-discovery-inspection-and-advertised-servers.md) | OAuth discovery inspection and advertised authorization servers | Accepted | 2026-08-13 |
+| [0028](0028-adapter-emulation-in-engine-devtools.md) | Adapter emulation in the engine devtools | Accepted | 2026-08-13 |
+| [0029](0029-selectable-http-authentication-in-devtools.md) | Selectable HTTP authentication in the engine devtools | Accepted | 2026-08-13 |
+| [0030](0030-project-entry-points-in-devtools-emulation.md) | Project entry points in devtools emulation | Accepted | 2026-08-13 |
+| [0031](0031-oauth-discovery-inspection-and-advertised-servers.md) | OAuth discovery inspection and advertised authorization servers | Accepted | 2026-08-13 |

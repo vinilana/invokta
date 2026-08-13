@@ -35,17 +35,17 @@ Each delivered change is normative through its accepted architecture decision:
   extended with ephemeral OAuth by
   [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md) and
   amended with advertised authorization servers and discovery inspection by
-  [ADR 0030](./adr/0030-oauth-discovery-inspection-and-advertised-servers.md)
+  [ADR 0031](./adr/0031-oauth-discovery-inspection-and-advertised-servers.md)
 - Portable MCP tool names —
   [ADR 0025](./adr/0025-portable-mcp-tool-names.md)
 - Generated engine MCP conformance gate —
   [ADR 0026](./adr/0026-generated-engine-mcp-conformance-gate.md)
 - Adapter emulation in the engine devtools —
-  [ADR 0027](./adr/0027-adapter-emulation-in-engine-devtools.md), extended with
+  [ADR 0028](./adr/0028-adapter-emulation-in-engine-devtools.md), extended with
   selectable HTTP authentication by
-  [ADR 0028](./adr/0028-selectable-http-authentication-in-devtools.md) and with
+  [ADR 0029](./adr/0029-selectable-http-authentication-in-devtools.md) and with
   project entry points by
-  [ADR 0029](./adr/0029-project-entry-points-in-devtools-emulation.md)
+  [ADR 0030](./adr/0030-project-entry-points-in-devtools-emulation.md)
 
 ## Guides and examples
 
