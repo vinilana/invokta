@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "entry": "dist/mcp-http.js",
+  "env": {
+    "required": ["APP_PUBLIC_URL"],
+    "optional": [
+      "INVOKTA_HTTP_AUTH_MODE",
+      "INVOKTA_OAUTH_ISSUER",
+      "INVOKTA_OAUTH_JWKS_URL",
+      "INVOKTA_HTTP_BEARER_TOKEN",
+      "INVOKTA_HTTP_PRINCIPAL_ID",
+      "INVOKTA_HTTP_HOST",
+      "INVOKTA_HTTP_PORT",
+      "INVOKTA_HTTP_ALLOWED_HOSTS",
+      "INVOKTA_HTTP_ALLOWED_ORIGINS",
+      "INVOKTA_HTTP_MAX_BODY_BYTES"
+    ]
+  },
+  "image": {
+    "baseImage": "node:22.23.1-bookworm-slim",
+    "port": 3000
+  },
+  "healthcheck": {
+    "expect": "alive"
+  }
+}

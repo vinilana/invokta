@@ -1,0 +1,4 @@
+interface:
+  display_name: "Develop Invokta Action Engine"
+  short_description: "Develop this Invokta Action Engine safely"
+  default_prompt: "Use $develop-invokta-project to implement this Action Engine change through the single engine.invoke path."

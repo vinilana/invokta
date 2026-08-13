@@ -119,6 +119,20 @@ Because the adapter validates the raw \`Host\` header, the check sends the first
 entry of \`INVOKTA_HTTP_ALLOWED_HOSTS\` as its \`Host\` when that variable is
 set, so the allowlist never has to admit a loopback host.
 
+## OAuth verification levels
+
+The health check above proves liveness or credential-bearing readiness with one
+MCP request. For an OAuth-protected public endpoint, run
+\`invokta-deploy inspect-oauth --url https://your-host.example/mcp\` separately.
+That read-only command verifies the Bearer challenge, Protected Resource
+Metadata, Authorization Server discovery, Authorization Code with S256 PKCE,
+advertised client-registration mechanisms, and an advertised JWKS. It does not
+perform login, consent, or token exchange.
+
+A complete authorization check requires an interactive OAuth client, such as
+Invokta devtools. Keep that homologation separate from container health and
+discovery readiness because it needs a browser, a user, and token issuance.
+
 ## Deployment topology
 
 - The engine terminates HTTP only. Put a TLS-terminating edge (reverse proxy,

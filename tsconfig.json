@@ -19,6 +19,7 @@
     { "path": "./examples/auth-cognito-engine" },
     { "path": "./examples/auth-firebase-engine" },
     { "path": "./examples/auth-jwt-bearer-engine" },
+    { "path": "./examples/auth-self-hosted-oauth-engine" },
     { "path": "./examples/auth-supabase-engine" },
     { "path": "./examples/auth-workos-engine" },
     { "path": "./examples/community-capabilities" },

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain MCP OAuth"
+  short_description: "Change and diagnose MCP OAuth safely"
+  default_prompt: "Use $maintain-mcp-oauth to diagnose or change this project's OAuth flow without weakening security."

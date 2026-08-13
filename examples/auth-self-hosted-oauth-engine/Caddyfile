@@ -1,0 +1,8 @@
+{$APP_PUBLIC_URL} {
+	encode zstd gzip
+
+	@mcp path /mcp /.well-known/oauth-protected-resource/mcp
+	reverse_proxy @mcp engine:3000
+
+	reverse_proxy auth:3001
+}

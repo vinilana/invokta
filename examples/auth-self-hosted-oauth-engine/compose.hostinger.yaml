@@ -1,0 +1,25 @@
+services:
+  engine:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-mcp.rule=Host(`${APP_PUBLIC_HOST:?Set APP_PUBLIC_HOST in .env}`) && (Path(`/mcp`) || Path(`/.well-known/oauth-protected-resource/mcp`))
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-mcp.priority=100
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-mcp.entrypoints=websecure
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-mcp.tls=true
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-mcp.tls.certresolver=${APP_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-mcp.service=${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-engine
+      - traefik.http.services.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-engine.loadbalancer.server.port=3000
+
+  auth:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-oauth.rule=Host(`${APP_PUBLIC_HOST:?Set APP_PUBLIC_HOST in .env}`)
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-oauth.priority=10
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-oauth.entrypoints=websecure
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-oauth.tls=true
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-oauth.tls.certresolver=${APP_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.routers.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-oauth.service=${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-oauth
+      - traefik.http.services.${APP_TRAEFIK_ROUTER_PREFIX:-invokta-app}-oauth.loadbalancer.server.port=3001
+
+  proxy:
+    profiles: [bundled-caddy]

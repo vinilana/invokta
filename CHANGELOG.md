@@ -9,6 +9,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Added optional ordered OAuth challenge scopes to `@invokta/mcp`, with
+  startup validation and immutable Bearer challenge serialization independent
+  of Protected Resource Metadata's `scopes_supported`.
+- Added the official `auth-self-hosted-oauth-engine` example with PKCE, DCR,
+  ES256 resource-specific tokens, rotating refresh tokens, PostgreSQL,
+  single-owner login and consent, Caddy/Traefik deployment assets, operating
+  documentation, and project-local OAuth/deployment skills.
+- Added `invokta-deploy inspect-oauth`, a credential-free, read-only, bounded
+  inspection of the MCP challenge, Protected Resource Metadata, OAuth/OIDC
+  discovery, Authorization Code, S256 PKCE, registration mechanisms, and an
+  advertised JWKS.
+- Added real devtools homologation of the official example through DCR, PKCE,
+  login, one-click consent, token exchange, authenticated initialization,
+  catalog, and a deliberate tool call.
 - Added `invokta check-mcp` and `validateMcpToolCatalog` as a build-time
   conformance gate for the actual published MCP catalog. Newly generated MCP
   profiles include the gate in their canonical `check`, so ambiguous derived
@@ -35,12 +49,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `engine.invoke` path, and ambiguous aliases fail closed before the server
   connects or listens. MCP clients that hard-code dotted tool names must refresh
   `tools/list` and use the advertised alias.
+- Official example imports now rewrite npm lockfile package names together with
+  `package.json`, and malformed lockfiles roll back the import.
+- MCP Protected Resource Metadata accepts an HTTP Authorization Server only at
+  the exact same loopback origin as an HTTP loopback resource. Production and
+  cross-origin Authorization Server identifiers still require HTTPS.
 
 ### Security
 
 - Pinned the transitive `nanoid` dependency to 3.3.18 so development and CI
   tooling no longer resolves the vulnerable zero-size custom-generator
   implementation reported through the Vitest dependency chain.
+- Self-hosted Client ID Metadata Documents remain disabled until the example
+  has an SSRF-resistant fetch policy. Discovery inspection never accepts
+  credentials, follows redirects, prints raw metadata, or mutates the remote
+  service.
 
 ## [0.4.0] - 2026-08-06
 

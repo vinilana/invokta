@@ -11,6 +11,7 @@ const helpText = `Usage:
   invokta-deploy package
   invokta-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
                          [--host-header HOST] [--timeout-ms N]
+  invokta-deploy inspect-oauth --url <url> [--timeout-ms N]
   invokta-deploy --help
   invokta-deploy --version
 `;
@@ -42,6 +43,7 @@ function createCommands() {
     init: vi.fn(async () => 0 as const),
     package: vi.fn(async () => 0 as const),
     probe: vi.fn(async () => 0 as const),
+    "inspect-oauth": vi.fn(async () => 0 as const),
   };
 }
 
@@ -64,6 +66,7 @@ describe("runDeployCli usage", () => {
     expect(commands.init).not.toHaveBeenCalled();
     expect(commands.package).not.toHaveBeenCalled();
     expect(commands.probe).not.toHaveBeenCalled();
+    expect(commands["inspect-oauth"]).not.toHaveBeenCalled();
     expect(loadPackageVersion).not.toHaveBeenCalled();
   });
 
@@ -144,7 +147,7 @@ describe("runDeployCli usage", () => {
 });
 
 describe("runDeployCli dispatch", () => {
-  it.each([["init"], ["package"], ["probe"]] as const)(
+  it.each([["init"], ["package"], ["probe"], ["inspect-oauth"]] as const)(
     "routes %s to its command module with the remaining arguments",
     async (name) => {
       const output = createIo();

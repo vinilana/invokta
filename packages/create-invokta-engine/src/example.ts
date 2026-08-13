@@ -460,6 +460,48 @@ function rewritePackageName(contents: string, projectName: string): string {
   return `${JSON.stringify(next, undefined, 2)}\n`;
 }
 
+function rewritePackageLockName(contents: string, projectName: string): string {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(contents) as unknown;
+  } catch {
+    return failedExample(["package-lock.json"]);
+  }
+  if (
+    typeof manifest !== "object" ||
+    manifest === null ||
+    Array.isArray(manifest)
+  ) {
+    return failedExample(["package-lock.json"]);
+  }
+  const record = manifest as Record<string, unknown>;
+  const packages = record.packages;
+  let nextPackages = packages;
+  if (
+    typeof packages === "object" &&
+    packages !== null &&
+    !Array.isArray(packages)
+  ) {
+    const packageRecords = packages as Record<string, unknown>;
+    const root = packageRecords[""];
+    if (typeof root === "object" && root !== null && !Array.isArray(root)) {
+      nextPackages = {
+        ...packageRecords,
+        "": { ...(root as Record<string, unknown>), name: projectName },
+      };
+    }
+  }
+  return `${JSON.stringify(
+    {
+      ...record,
+      name: projectName,
+      ...(nextPackages === undefined ? {} : { packages: nextPackages }),
+    },
+    undefined,
+    2,
+  )}\n`;
+}
+
 async function downloadToFile(
   fetchImpl: ExampleFetch,
   url: string,
@@ -627,6 +669,11 @@ async function copyExtractedProject(options: {
       if (relativePath === "package.json") {
         contents = Buffer.from(
           rewritePackageName(contents.toString("utf8"), projectName),
+          "utf8",
+        );
+      } else if (relativePath === "package-lock.json") {
+        contents = Buffer.from(
+          rewritePackageLockName(contents.toString("utf8"), projectName),
           "utf8",
         );
       }

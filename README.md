@@ -171,8 +171,8 @@ Invokta supplies the shared runtime mechanics and delivery adapters:
   diagnostics, test-identity switching, and watch by process replacement;
 - `@invokta/installer` detects supported local MCP clients, installs local or
   remote Action Engines across selected clients, and manages those entries;
-- `@invokta/deploy` scaffolds and packages stateless HTTP engines and probes
-  deployed endpoints;
+- `@invokta/deploy` scaffolds and packages stateless HTTP engines, probes
+  deployed endpoints, and inspects OAuth discovery readiness;
 - `create-invokta-engine` creates a `complete`, `cli`, `mcp-stdio`, or
   `mcp-http` standalone starter; the `complete` profile includes direct, CLI,
   MCP stdio, and MCP HTTP entry points, and `--example` bootstraps a project
@@ -232,11 +232,14 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
   domain authorization, safe errors, and all four execution channels;
 - [`support-harness`](./examples/support-harness/) for a private harness that
   consumes the support capability only through MCP stdio;
-- the ten [`auth-*` examples](./examples/), from
+- the eleven [`auth-*` examples](./examples/), from
   [`auth-jwt-bearer-engine`](./examples/auth-jwt-bearer-engine/) to
   provider-specific engines for Supabase, Clerk, Auth0, Cognito, Firebase,
   Better Auth, Auth.js, WorkOS, and hashed API keys, each verifying credentials
-  at the MCP HTTP boundary and mapping them into the minimal `Principal`;
+  at the MCP HTTP boundary and mapping them into the minimal `Principal`, plus
+  [`auth-self-hosted-oauth-engine`](./examples/auth-self-hosted-oauth-engine/)
+  for a production-oriented Authorization Server, PostgreSQL, and Compose
+  integration that remains outside the framework runtime;
 - [`crawl-engine`](./examples/crawl-engine/) for an outbound provider
   integration, crawling the web with Firecrawl behind a port, with target rules
   that run before authorization;

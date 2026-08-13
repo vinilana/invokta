@@ -16,6 +16,7 @@ export const deployErrorMessages = Object.freeze({
   WRITE_FAILED: "A deployment file could not be written.",
   PROBE_UNREACHABLE: "The MCP endpoint could not be reached.",
   PROBE_UNHEALTHY: "The MCP endpoint is not healthy.",
+  OAUTH_INSPECTION_FAILED: "OAuth discovery is not ready.",
 } as const);
 
 export type DeployErrorCode = keyof typeof deployErrorMessages;
@@ -31,6 +32,7 @@ export const deployErrorExitCodes = Object.freeze({
   WRITE_FAILED: 1,
   PROBE_UNREACHABLE: 1,
   PROBE_UNHEALTHY: 1,
+  OAUTH_INSPECTION_FAILED: 1,
 } as const) satisfies Readonly<Record<DeployErrorCode, DeployExitCode>>;
 
 export interface DeployErrorOptions {

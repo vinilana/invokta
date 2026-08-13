@@ -27,6 +27,7 @@ const contract: [DeployErrorCode, string, 0 | 1 | 2][] = [
   ["WRITE_FAILED", "A deployment file could not be written.", 1],
   ["PROBE_UNREACHABLE", "The MCP endpoint could not be reached.", 1],
   ["PROBE_UNHEALTHY", "The MCP endpoint is not healthy.", 1],
+  ["OAUTH_INSPECTION_FAILED", "OAuth discovery is not ready.", 1],
 ];
 
 describe("deploy error contract", () => {

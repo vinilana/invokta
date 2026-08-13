@@ -1,0 +1,167 @@
+name: auth-self-hosted-oauth-engine
+
+x-engine-image: &engine-image
+  image: auth-self-hosted-oauth-engine:${APP_IMAGE_TAG:-local}
+  build:
+    context: .
+    dockerfile: Dockerfile
+
+x-database-environment: &database-environment
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGDATABASE: ${POSTGRES_DB:-invokta_app}
+  PGUSER: ${POSTGRES_USER:-invokta_app}
+  PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.2-pg18-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-invokta_app}
+      POSTGRES_USER: ${POSTGRES_USER:-invokta_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    shm_size: 256mb
+    logging: *default-logging
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  migrate:
+    <<: *engine-image
+    restart: "no"
+    command: ["node", "dist/database/migrate.js"]
+    environment:
+      <<: *database-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    logging: *default-logging
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  engine:
+    <<: *engine-image
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    environment:
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?Set APP_PUBLIC_URL in .env}
+      INVOKTA_HTTP_AUTH_MODE: ${INVOKTA_HTTP_AUTH_MODE:-oauth}
+      INVOKTA_OAUTH_ISSUER:
+      INVOKTA_OAUTH_JWKS_URL: ${INVOKTA_OAUTH_JWKS_URL:-http://auth:3001/jwks}
+      INVOKTA_HTTP_BEARER_TOKEN:
+      INVOKTA_HTTP_PRINCIPAL_ID:
+      INVOKTA_HTTP_HOST: 0.0.0.0
+      INVOKTA_HTTP_PORT: "3000"
+      INVOKTA_HTTP_ALLOWED_HOSTS:
+      INVOKTA_HTTP_ALLOWED_ORIGINS:
+      INVOKTA_HTTP_MAX_BODY_BYTES:
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_HTTP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+      migrate:
+        condition: service_completed_successfully
+      auth:
+        condition: service_healthy
+        restart: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  auth:
+    <<: *engine-image
+    restart: unless-stopped
+    init: true
+    command: ["node", "dist/oauth-server.js"]
+    environment:
+      <<: *database-environment
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?Set APP_PUBLIC_URL in .env}
+      INVOKTA_OAUTH_HOST: 0.0.0.0
+      INVOKTA_OAUTH_PORT: "3001"
+      INVOKTA_OAUTH_ALLOWED_HOSTS:
+      # The shared image healthcheck reads this variable.
+      INVOKTA_HTTP_PORT: "3001"
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_OAUTH_PORT:-3001}:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+      migrate:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  proxy:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    environment:
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?Set APP_PUBLIC_URL in .env}
+    ports:
+      - "${APP_PROXY_BIND_ADDRESS:-0.0.0.0}:80:80"
+      - "${APP_PROXY_BIND_ADDRESS:-0.0.0.0}:443:443"
+      - "${APP_PROXY_BIND_ADDRESS:-0.0.0.0}:443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      engine:
+        condition: service_healthy
+        restart: true
+      auth:
+        condition: service_healthy
+        restart: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

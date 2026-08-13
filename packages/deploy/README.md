@@ -10,14 +10,15 @@ toolkit itself never does.
 
 The toolkit generates and validates text. No command spawns a process, executes
 a shell, or runs a package manager, compiler, or container tool. `init` and
-`package` perform no network operation at all, and `probe` performs exactly one
-HTTP request per invocation.
+`package` perform no network operation at all. `probe` performs exactly one
+HTTP request; `inspect-oauth` performs bounded, credential-free OAuth discovery.
 
 ```text
 invokta-deploy init
 invokta-deploy package
 invokta-deploy probe --url <url> [--expect alive|ready] [--bearer-env NAME]
                        [--host-header HOST] [--timeout-ms N]
+invokta-deploy inspect-oauth --url <url> [--timeout-ms N]
 invokta-deploy --help
 invokta-deploy --version
 ```
@@ -30,8 +31,8 @@ progress go to `stderr`; nothing is written to `stdout` except `--help` and
 
 | Code | Meaning                                                                                            |
 | ---- | -------------------------------------------------------------------------------------------------- |
-| `0`  | The command succeeded; for `probe`, the endpoint is healthy.                                         |
-| `1`  | The command completed but reported failures: a generated-file conflict, an invalid project input, or an unhealthy probe result. |
+| `0`  | The command succeeded; a probe is healthy or OAuth discovery is ready.                              |
+| `1`  | The command completed but reported failures: a generated-file conflict, invalid project input, unhealthy probe, or failed OAuth inspection. |
 | `2`  | Invalid usage, a missing or invalid manifest, or an initialization failure.                          |
 
 Orchestrating functions return these values and never call `process.exit`; only
@@ -169,6 +170,52 @@ header, the script sends the first entry of `INVOKTA_HTTP_ALLOWED_HOSTS` as
 its `Host` when that variable is set, so the runtime allowlist never has to
 admit a loopback host.
 
+## invokta-deploy inspect-oauth
+
+Performs a read-only OAuth discovery readiness inspection against an
+OAuth-protected MCP endpoint:
+
+```text
+invokta-deploy inspect-oauth \
+  --url https://engine.example/mcp \
+  --timeout-ms 10000
+```
+
+The command sends no token, cookie, client credential, or user data. It never
+registers a client, opens a login or consent interaction, exchanges a code,
+refreshes a token, or mutates the remote service. It checks, in order:
+
+1. an unauthenticated MCP `initialize` request receives HTTP 401 with a valid
+   Bearer challenge and `resource_metadata`;
+2. Protected Resource Metadata is valid and names the exact MCP resource plus
+   at least one Authorization Server;
+3. Authorization Server Metadata is found in the MCP-defined OAuth/OIDC
+   discovery order and its `issuer` is exact;
+4. the authorization and token endpoints are safe, and Authorization Code plus
+   S256 PKCE are advertised;
+5. CIMD and DCR advertisements are classified, or the result states that
+   pre-registration is required; and
+6. an advertised JWKS is fetched and checked as a JWK Set. A missing `jwks_uri`
+   is valid because OAuth access tokens need not be JWTs.
+
+`--url` follows the same exact `/mcp`, no-userinfo, no-query, no-fragment, and
+HTTPS rules as `probe`; plain HTTP is limited to literal loopback addresses.
+`--timeout-ms` is one deadline shared by the entire sequence, defaults to
+`10000`, and accepts `1..60000`. Each response is capped at 256 KiB. Requests
+use fresh connections, perform no retry, and never follow redirects. OAuth and
+OIDC metadata fallbacks are distinct protocol discovery attempts, not retries.
+
+Success and failure are written to `stderr`. Success reports only the resource,
+issuer, challenged scopes, registration classification, and JWKS status.
+Failure uses `OAUTH_INSPECTION_FAILED` with one stable `stage` and `reason`; it
+never includes a raw header, response body, discovery document, query value, or
+transport error. Exit `0` means discovery ready, `1` means inspection failed,
+and `2` means invalid usage.
+
+This command proves discovery readiness, not a complete OAuth flow. Use an
+interactive client such as Invokta devtools to homologate browser login,
+consent, callback handling, token exchange, and authenticated capability use.
+
 ## Deployment manifest
 
 `invokta.deploy.json` at the engine project root is the single input that
@@ -269,5 +316,5 @@ const exitCode = await runDeployCli({
 
 `runDeployCli` resolves with the exit code and writes diagnostics through the
 injectable `io.writeStderr` sink. It never terminates the process. `runInit`,
-`runPackage`, and `runProbe` are exported for the same purpose, each taking its
-argument list and a `DeployContext`.
+`runPackage`, `runProbe`, and `runInspectOAuth` are exported for the same
+purpose, each taking its argument list and a `DeployContext`.

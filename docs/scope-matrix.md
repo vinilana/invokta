@@ -14,7 +14,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Direct execution | Run the common `engine.invoke` pipeline | Supply trusted principal, signal, and dependencies | Distributed executor or background jobs |
 | CLI | `list`, `describe`, `run`, JSON I/O, and stable exit codes | Own the executable, local principal, and untrusted-input bounds | Login, actor flags, or plugin discovery |
 | MCP | Map capabilities to tools over stdio and stateless HTTP | Own process composition and deployment | Resources, prompts, tasks, sessions, or resumption |
-| HTTP authentication | Run a required hook, issue a 401 challenge, and publish configured resource metadata | Verify credentials and return a minimal Principal | Identity provider, login, token lifecycle, or universal token verifier |
+| HTTP authentication | Run a required hook, issue a configured 401 Bearer challenge, and publish configured resource metadata | Verify credentials and return a minimal Principal | Identity provider, login, token lifecycle, or universal token verifier |
 | Authorization | Enforce each capability's `access` rule before `run` | Encode domain policy or call a PDP | Policy language, role model, PDP adapter, or relationship graph |
 | HTTP security | Default to loopback; validate exact Host, Origin, route, media types, and body bounds | Configure TLS, proxy trust, allowlists, exposure, and secrets | API gateway, WAF, or certificate management |
 | Errors | Seven `EngineError` codes and safe adapter mappings | Keep public messages and details safe | Stack or cause disclosure and automatic recovery policy |
@@ -80,3 +80,7 @@ observable repetition, for example:
 
 Until that evidence exists, keep the behavior in the custom engine's composition
 root or an injected service.
+
+An official example is executable integration guidance, not evidence that every
+dependency it contains belongs in a framework runtime package. See ADR 0024 for
+the production MCP OAuth boundary.

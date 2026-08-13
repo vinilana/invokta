@@ -34,6 +34,8 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0022](./adr/0022-mcp-installation-inspection-and-homologation.md),
   extended with ephemeral OAuth by
   [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md)
+- Production MCP OAuth integration boundary —
+  [ADR 0024](./adr/0024-production-mcp-oauth-integration-boundary.md)
 - Portable MCP tool names —
   [ADR 0025](./adr/0025-portable-mcp-tool-names.md)
 - Generated engine MCP conformance gate —
@@ -49,12 +51,15 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [Getting started: direct, CLI, MCP stdio, and MCP HTTP](./getting-started.md)
 - [File naming and project structure for custom engines](../apps/docs/src/content/docs/guides/file-naming.mdx)
 - [Integrating an identity provider at the HTTP boundary](./http-authentication.md)
+- [Self-hosted OAuth recipe](../apps/docs/src/content/docs/recipes/auth/self-hosted-oauth.mdx)
+- [OAuth client interoperability release checklist](./oauth-client-interoperability-checklist.md)
 - [Integrating a PDP through a capability access rule](./capability-authorization.md)
 - [Authoring and composing community capabilities](./capability-composition.md)
 - [Installing Action Engines in MCP clients](../apps/docs/src/content/docs/reference/installer.mdx)
 - [Scope and maturity matrix](./scope-matrix.md)
 - [`hello-engine`: minimal onboarding example](../examples/hello-engine/)
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)
+- [`auth-self-hosted-oauth-engine`: self-hosted OAuth and production deployment example](../examples/auth-self-hosted-oauth-engine/)
 - [`support-harness`: private MCP consumer](../examples/support-harness/)
 - [`crawl-engine`: outbound provider integration with Firecrawl](../examples/crawl-engine/)
 - [`cursor-agent-routing-engine`: versioned Cursor subagent and model routing policy](../examples/cursor-agent-routing-engine/)
