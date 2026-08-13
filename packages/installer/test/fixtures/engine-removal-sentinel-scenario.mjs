@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { runEngineRemovalSession } from "../../dist/engine-removal-session.js";
 import { installDescriptorAcrossTargets } from "../../dist/mutation-coordinator.js";
 import { createNodeFileSystem } from "../../dist/node-file-system.js";
+import { captureProcessOwnershipIdentity } from "../../dist/ownership-identity.js";
 import { configurationTargetAdapters } from "../../dist/target-adapters.js";
 
 const homeDirectory = mkdtempSync(join(tmpdir(), "invokta-remove-sentinel-"));
@@ -50,7 +51,7 @@ const snapshot = {
 };
 const dependencies = {
   adapters: configurationTargetAdapters,
-  currentUserId: process.getuid?.() ?? 0,
+  ownership: captureProcessOwnershipIdentity(),
   environment: {
     get(name) {
       environmentReads.add(name);

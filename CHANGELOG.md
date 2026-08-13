@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- The engine installer no longer rejects every local Action Engine path on
+  Windows with `ENGINE_PATH_UNSAFE` (ADR 0026). Ownership validation now uses
+  a platform-aware identity: POSIX platforms keep exact uid and private-mode
+  checks, while Windows — where Node exposes no `process.getuid()` and reports
+  a constant file owner — relies on the unchanged no-follow, path-identity,
+  and home-containment protections, with no-follow opens emulated where the
+  kernel flag does not exist. Installing and removing a globally installed
+  engine package, such as one under the npm global root, now works on Windows
+  for home-relative targets; VS Code and Claude Desktop keep their documented
+  platform scope.
+
 ### Changed
 
 - MCP stdio and HTTP now publish deterministic portable tool aliases that match

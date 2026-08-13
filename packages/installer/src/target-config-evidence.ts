@@ -6,6 +6,11 @@ import type {
   TargetConfigEvidenceProbe,
   TargetConfigEvidenceProbes,
 } from "./harness-detection.js";
+import {
+  captureProcessOwnershipIdentity,
+  type InstallerOwnershipIdentity,
+  validOwnershipIdentity,
+} from "./ownership-identity.js";
 
 export interface InstallerEnvironment {
   readonly get: (name: string) => unknown;
@@ -14,16 +19,16 @@ export interface InstallerEnvironment {
 export interface CreateNodeTargetConfigEvidenceProbesOptions {
   readonly environment: InstallerEnvironment;
   readonly fileSystem: InstallerFileSystem;
-  readonly currentUserId?: number;
+  readonly ownership?: InstallerOwnershipIdentity;
   readonly platform?: NodeJS.Platform;
 }
 
 interface ResolvedTargetConfigEvidenceProbeOptions
   extends Omit<
     CreateNodeTargetConfigEvidenceProbesOptions,
-    "currentUserId" | "platform"
+    "ownership" | "platform"
   > {
-  readonly currentUserId: number | undefined;
+  readonly ownership: InstallerOwnershipIdentity | undefined;
   readonly platform: NodeJS.Platform;
 }
 
@@ -155,12 +160,8 @@ async function inspectOwnedPath(
   targetPath: string,
   expectedTargetKind: "regular-file" | "directory",
 ): Promise<OwnedPathInspection> {
-  const currentUserId = options.currentUserId;
-  if (
-    currentUserId === undefined ||
-    !Number.isSafeInteger(currentUserId) ||
-    currentUserId < 0
-  ) {
+  const ownership = options.ownership;
+  if (ownership === undefined || !validOwnershipIdentity(ownership)) {
     return "unsafe";
   }
   const normalizedHome = resolve(homeDirectory);
@@ -190,7 +191,7 @@ async function inspectOwnedPath(
     for (const [index, componentPath] of componentPaths.entries()) {
       const inspection = await options.fileSystem.inspectPath(componentPath);
       if (inspection.kind === "missing") return "missing";
-      if (inspection.ownerId !== currentUserId) return "unsafe";
+      if (inspection.ownerId !== ownership.reportedOwnerId) return "unsafe";
       if (inspection.kind === "symbolic-link" || inspection.kind === "other") {
         return "unsafe";
       }
@@ -434,9 +435,7 @@ export function createNodeTargetConfigEvidenceProbes(
 ): TargetConfigEvidenceProbes {
   const resolvedOptions: ResolvedTargetConfigEvidenceProbeOptions = {
     ...options,
-    currentUserId:
-      options.currentUserId ??
-      (typeof process.getuid === "function" ? process.getuid() : undefined),
+    ownership: options.ownership ?? captureProcessOwnershipIdentity(),
     platform: options.platform ?? process.platform,
   };
   const unsupportedProbe: TargetConfigEvidenceProbe = async () =>

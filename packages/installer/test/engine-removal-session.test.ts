@@ -14,6 +14,7 @@ import {
   mutateDescriptorAcrossTargets,
 } from "../src/mutation-coordinator.js";
 import { createNodeFileSystem } from "../src/node-file-system.js";
+import { captureProcessOwnershipIdentity } from "../src/ownership-identity.js";
 import type { CapabilityInstallDescriptor } from "../src/registry.js";
 import { configurationTargetAdapters } from "../src/target-adapters.js";
 
@@ -94,7 +95,7 @@ function dependencies(): MutationCoordinatorDependencies {
   let token = 0;
   return {
     adapters: configurationTargetAdapters,
-    currentUserId: process.getuid?.() ?? 0,
+    ownership: captureProcessOwnershipIdentity(),
     environment: { get: () => undefined },
     fileSystem: createNodeFileSystem(),
     lock: {

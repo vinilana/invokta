@@ -22,6 +22,10 @@ const encoder = new TextEncoder();
 const stateByteLimit = 16_777_216;
 const homeDirectory = "/home/tester";
 const currentUserId = 1_000;
+const ownership = {
+  kind: "posix-user",
+  reportedOwnerId: currentUserId,
+} as const;
 const secretSentinel = "STATE_SECRET_SENTINEL_73f663";
 const supportedAdapters = Object.freeze(
   Object.fromEntries(
@@ -625,7 +629,7 @@ describe("read-only installer state loading", () => {
     const fileSystem = stateFileSystem(bytes);
 
     const loaded = await loadInstallerState({
-      currentUserId,
+      ownership,
       environment: { get: () => undefined },
       fileSystem,
       homeDirectory,
@@ -650,7 +654,7 @@ describe("read-only installer state loading", () => {
     const fileSystem = stateFileSystem(new Uint8Array(), inspectPath);
 
     const loaded = await loadInstallerState({
-      currentUserId,
+      ownership,
       environment: {
         get: (name) =>
           name === "XDG_STATE_HOME" ? "/var/user-state" : undefined,
@@ -674,7 +678,7 @@ describe("read-only installer state loading", () => {
 
       await expect(
         loadInstallerState({
-          currentUserId,
+          ownership,
           environment: { get: () => xdgStateHome },
           fileSystem,
           homeDirectory,
@@ -709,7 +713,7 @@ describe("read-only installer state loading", () => {
 
     await expect(
       loadInstallerState({
-        currentUserId,
+        ownership,
         environment: { get: () => undefined },
         fileSystem,
         homeDirectory,
@@ -730,7 +734,7 @@ describe("read-only installer state loading", () => {
       ),
     );
     const options = {
-      currentUserId,
+      ownership,
       environment: { get: () => undefined },
       homeDirectory,
       targetContracts,
@@ -764,13 +768,51 @@ describe("read-only installer state loading", () => {
 
     await expect(
       loadInstallerState({
-        currentUserId,
+        ownership,
         environment: { get: () => undefined },
         fileSystem,
         homeDirectory,
         targetContracts,
       }),
     ).rejects.toMatchObject({ code: "STATE_READ_FAILED" });
+    expect(fileSystem.readFile).not.toHaveBeenCalled();
+  });
+
+  it("loads state under the Windows principal identity from constant owner ids", async () => {
+    const fileSystem = stateFileSystem(
+      stateBytes([record()]),
+      vi.fn(async (path: string) => ({
+        ...pathInspection(path),
+        ownerId: 0,
+      })),
+    );
+
+    const loaded = await loadInstallerState({
+      ownership: { kind: "windows-principal", reportedOwnerId: 0 },
+      environment: { get: () => undefined },
+      fileSystem,
+      homeDirectory,
+      targetContracts,
+    });
+
+    expect(loaded.path).toBe(
+      "/home/tester/.local/state/invokta/installer.json",
+    );
+    expect(Object.keys(loaded.state.installations)).toHaveLength(1);
+  });
+
+  it("fails closed when no ownership identity could be captured", async () => {
+    const fileSystem = stateFileSystem(stateBytes([record()]));
+
+    await expect(
+      loadInstallerState({
+        ownership: undefined,
+        environment: { get: () => undefined },
+        fileSystem,
+        homeDirectory,
+        targetContracts,
+      }),
+    ).rejects.toMatchObject({ code: "STATE_INVALID" });
     expect(fileSystem.readFile).not.toHaveBeenCalled();
   });
 });

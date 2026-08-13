@@ -131,7 +131,7 @@ export async function inspectManagedInstallations(
     options.dependencies.adapters,
   );
   const loaded = await loadInstallerState({
-    currentUserId: options.dependencies.currentUserId,
+    ownership: options.dependencies.ownership,
     environment: options.dependencies.environment,
     fileSystem: options.dependencies.fileSystem,
     homeDirectory: options.snapshot.homeDirectory,
@@ -141,7 +141,7 @@ export async function inspectManagedInstallations(
   const homeRoot = await capturePathRoot(options.dependencies.fileSystem, {
     rootKind: "home",
     rootPath: options.snapshot.homeDirectory,
-    currentUserId: options.dependencies.currentUserId,
+    ownership: options.dependencies.ownership,
   }).catch((cause) => {
     throw new InstallerError("HARNESS_CONFIG_UNSAFE", cause);
   });
@@ -226,7 +226,7 @@ export async function inspectEngineManagedInstallations(
     options.dependencies.adapters,
   );
   const loaded = await loadInstallerState({
-    currentUserId: options.dependencies.currentUserId,
+    ownership: options.dependencies.ownership,
     environment: options.dependencies.environment,
     fileSystem: options.dependencies.fileSystem,
     homeDirectory: options.snapshot.homeDirectory,
@@ -258,7 +258,7 @@ export async function inspectEngineManagedInstallations(
   const homeRoot = await capturePathRoot(options.dependencies.fileSystem, {
     rootKind: "home",
     rootPath: options.snapshot.homeDirectory,
-    currentUserId: options.dependencies.currentUserId,
+    ownership: options.dependencies.ownership,
   }).catch((cause) => {
     throw new InstallerError("HARNESS_CONFIG_UNSAFE", cause);
   });

@@ -89,7 +89,7 @@ describe("interactive install session", () => {
     const result = await runInstallSession({
       dependencies: {
         adapters: configurationTargetAdapters,
-        currentUserId: 1,
+        ownership: { kind: "posix-user", reportedOwnerId: 1 },
         environment: { get: () => undefined },
         fileSystem: createNodeFileSystem(),
         lock: {
@@ -162,7 +162,7 @@ describe("interactive install session", () => {
     const result = await runInstallSession({
       dependencies: {
         adapters: configurationTargetAdapters,
-        currentUserId: 1,
+        ownership: { kind: "posix-user", reportedOwnerId: 1 },
         environment: { get: () => undefined },
         fileSystem: createNodeFileSystem(),
         lock: {

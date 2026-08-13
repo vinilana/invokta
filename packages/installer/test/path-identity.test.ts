@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { InstallerTransactionFileSystem } from "../src/file-system.js";
 import { createNodeFileSystem } from "../src/node-file-system.js";
+import type { InstallerOwnershipIdentity } from "../src/ownership-identity.js";
 import {
   bootstrapPrivateDirectory,
   capturePathIdentity,
@@ -21,6 +22,10 @@ import {
   InstallerPathIdentityError,
   revalidatePathIdentity,
 } from "../src/path-identity.js";
+import {
+  createWindowsLikeFileSystem,
+  windowsPrincipal,
+} from "./windows-file-system.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -41,6 +46,10 @@ function currentUserId(): number {
     throw new Error("POSIX user identity is required by this fixture.");
   }
   return process.getuid();
+}
+
+function posixOwnership(uid: number): InstallerOwnershipIdentity {
+  return { kind: "posix-user", reportedOwnerId: uid };
 }
 
 async function expectIdentityError(
@@ -64,7 +73,7 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
     const root = await capturePathRoot(fileSystem, {
       rootKind: "home",
       rootPath: home,
-      currentUserId: currentUserId(),
+      ownership: posixOwnership(currentUserId()),
     });
     const targetPath = join(home, ".codex/config.toml");
 
@@ -100,7 +109,7 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
     const root = await capturePathRoot(fileSystem, {
       rootKind: "home",
       rootPath: home,
-      currentUserId: currentUserId(),
+      ownership: posixOwnership(currentUserId()),
     });
 
     await expectIdentityError(
@@ -126,7 +135,7 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
       capturePathRoot(fileSystem, {
         rootKind: "home",
         rootPath: home,
-        currentUserId: currentUserId() + 1,
+        ownership: posixOwnership(currentUserId() + 1),
       }),
       "ROOT_UNSAFE",
     );
@@ -152,7 +161,7 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
     const root = await capturePathRoot(fileSystem, {
       rootKind: "home",
       rootPath: home,
-      currentUserId: currentUserId(),
+      ownership: posixOwnership(currentUserId()),
     });
     const expected = await capturePathIdentity(fileSystem, {
       root,
@@ -179,7 +188,7 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
     const root = await capturePathRoot(fileSystem, {
       rootKind: "home",
       rootPath: home,
-      currentUserId: currentUserId(),
+      ownership: posixOwnership(currentUserId()),
     });
     const directoryPath = join(home, ".local/state/invokta");
     const expected = await capturePathIdentity(fileSystem, {
@@ -219,7 +228,7 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
     const root = await capturePathRoot(fileSystem, {
       rootKind: "state",
       rootPath: home,
-      currentUserId: currentUserId(),
+      ownership: posixOwnership(currentUserId()),
     });
     const targetPath = join(home, "invokta/nested");
     const expected = await capturePathIdentity(fileSystem, {
@@ -254,7 +263,7 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
     const root = await capturePathRoot(fileSystem, {
       rootKind: "home",
       rootPath: home,
-      currentUserId: currentUserId(),
+      ownership: posixOwnership(currentUserId()),
     });
     const expected = await capturePathIdentity(fileSystem, {
       root,
@@ -267,5 +276,64 @@ describe.skipIf(process.platform === "win32")("installer path identity", () => {
       "COMPONENT_UNSAFE",
     );
     expect(raced).toBe(true);
+  });
+});
+
+describe("Windows principal path identity", () => {
+  function windowsFileSystem(): InstallerTransactionFileSystem {
+    return createWindowsLikeFileSystem(
+      createNodeFileSystem({ ownership: windowsPrincipal }),
+    );
+  }
+
+  it("captures a root whose components report the constant Windows owner id", async () => {
+    const home = temporaryHome();
+    const fileSystem = windowsFileSystem();
+
+    const root = await capturePathRoot(fileSystem, {
+      rootKind: "home",
+      rootPath: home,
+      ownership: windowsPrincipal,
+    });
+
+    expect(root).toMatchObject({ uid: 0, gid: 0, ownership: windowsPrincipal });
+  });
+
+  it("rejects a missing ownership identity before touching the file system", async () => {
+    const home = temporaryHome();
+
+    await expectIdentityError(
+      capturePathRoot(windowsFileSystem(), {
+        rootKind: "home",
+        rootPath: home,
+        ownership: undefined,
+      }),
+      "INVALID_PATH",
+    );
+  });
+
+  it("bootstraps private directories without POSIX mode equality", async () => {
+    const home = temporaryHome();
+    const fileSystem = windowsFileSystem();
+    const root = await capturePathRoot(fileSystem, {
+      rootKind: "home",
+      rootPath: home,
+      ownership: windowsPrincipal,
+    });
+    const directoryPath = join(home, ".local/state/invokta");
+    const expected = await capturePathIdentity(fileSystem, {
+      root,
+      targetPath: directoryPath,
+      targetKind: "directory",
+    });
+
+    const created = await bootstrapPrivateDirectory(fileSystem, { expected });
+
+    expect(created.missingPaths).toEqual([]);
+    expect(created.components.at(-1)).toMatchObject({
+      path: directoryPath,
+      kind: "directory",
+      uid: 0,
+    });
   });
 });

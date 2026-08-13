@@ -592,13 +592,15 @@ function writeGeneratedInstallerFixture(projectDirectory) {
     import { loadEngineInstallManifest } from "./node_modules/@invokta/installer/dist/engine-manifest.js";
     import { installDescriptorAcrossTargets } from "./node_modules/@invokta/installer/dist/mutation-coordinator.js";
     import { createNodeFileSystem } from "./node_modules/@invokta/installer/dist/node-file-system.js";
+    import { captureProcessOwnershipIdentity } from "./node_modules/@invokta/installer/dist/ownership-identity.js";
     import { configurationTargetAdapters } from "./node_modules/@invokta/installer/dist/target-adapters.js";
 
     const homeDirectory = process.env.HOME;
     assert.ok(homeDirectory);
+    const ownership = captureProcessOwnershipIdentity();
     const fileSystem = createNodeFileSystem();
     const source = await loadEngineInstallManifest({
-      currentUserId: process.getuid?.() ?? 0,
+      ownership,
       fileSystem,
       nodeExecutable: process.execPath,
       projectDirectory: process.cwd(),
@@ -607,7 +609,7 @@ function writeGeneratedInstallerFixture(projectDirectory) {
     const results = await installDescriptorAcrossTargets({
       dependencies: {
         adapters: configurationTargetAdapters,
-        currentUserId: process.getuid?.() ?? 0,
+        ownership,
         environment: { get: (name) => process.env[name] },
         fileSystem,
         lock: {
