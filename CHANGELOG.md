@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Added `invokta check-mcp` and `validateMcpToolCatalog` as a build-time
+  conformance gate for the actual published MCP catalog. Newly generated MCP
+  profiles include the gate in their canonical `check`, so ambiguous derived
+  tool names fail before adapter startup, installation, or deployment.
+
 ### Changed
 
 - MCP stdio and HTTP now publish deterministic portable tool aliases that match
