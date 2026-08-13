@@ -31,7 +31,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Security
 
-- Pinned the transitive `nanoid` dependency to 3.3.17 so development and CI
+- Pinned the transitive `nanoid` dependency to 3.3.18 so development and CI
   tooling no longer resolves the vulnerable zero-size custom-generator
   implementation reported through the Vitest dependency chain.
 

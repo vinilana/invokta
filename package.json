@@ -23,7 +23,7 @@
     "examples/*"
   ],
   "resolutions": {
-    "nanoid": "3.3.17"
+    "nanoid": "3.3.18"
   },
   "scripts": {
     "build": "tsc -b --pretty false",
