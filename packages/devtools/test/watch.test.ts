@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -246,4 +246,54 @@ describe("serve --watch", () => {
     expect(failed.detail).toContain("error TS1005");
     expect(await greet()).toBe("two");
   }, 20_000);
+
+  // Every rebuild kills the previous host before starting the next one, so a
+  // host that outlives SIGTERM makes the watcher wait out its whole SIGKILL
+  // timeout on each change.
+  it("exits the engine host on SIGTERM without waiting for SIGKILL", async () => {
+    const hostEntry = join(
+      repositoryRoot,
+      "packages/devtools/dist/host-entry.js",
+    );
+    const child = spawn(
+      process.execPath,
+      [hostEntry, "out/engine.js", "engine", "http://127.0.0.1:0", "0"],
+      { cwd: projectRoot, stdio: ["pipe", "pipe", "pipe"] },
+    );
+    const exited = new Promise<void>((resolvePromise) => {
+      child.once("exit", () => {
+        resolvePromise();
+      });
+    });
+
+    try {
+      child.stderr.setEncoding("utf8");
+      await waitFor(
+        () =>
+          new Promise<true | undefined>((resolvePromise) => {
+            const onData = (chunk: string): void => {
+              if (!chunk.includes('"type":"ready"')) return;
+              child.stderr.off("data", onData);
+              resolvePromise(true);
+            };
+            child.stderr.on("data", onData);
+            setTimeout(() => {
+              child.stderr.off("data", onData);
+              resolvePromise(undefined);
+            }, 500);
+          }),
+        15_000,
+        "the engine host ready message",
+      );
+
+      const sentAt = Date.now();
+      child.kill("SIGTERM");
+      await exited;
+      // The watcher escalates to SIGKILL after 3s; a clean exit is immediate.
+      expect(Date.now() - sentAt).toBeLessThan(2_000);
+    } finally {
+      child.kill("SIGKILL");
+      await exited;
+    }
+  }, 25_000);
 });
