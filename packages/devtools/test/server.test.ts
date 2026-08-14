@@ -965,8 +965,9 @@ describe("adapter emulation over /api/invoke", () => {
   it("redirects the OAuth callback to a clean result path before rendering", async () => {
     // ADR 0023: the authorization code and state must not stay in the address
     // bar or history, so nothing renders at the callback URL itself.
+    const state = "a".repeat(43);
     const callback = await fetch(
-      `${base}/oauth/callback?state=${"a".repeat(43)}&code=one-time-code`,
+      `${base}/oauth/callback?state=${state}&code=one-time-code`,
       { redirect: "manual" },
     );
     expect(callback.status).toBe(303);
@@ -980,6 +981,46 @@ describe("adapter emulation over /api/invoke", () => {
 
     const unknownOutcome = await fetch(`${base}/oauth/result?outcome=weird`);
     expect(await unknownOutcome.text()).toContain("Authorization failed");
+
+    // An ambiguous state or an oversized target must not select an attempt.
+    const ambiguous = await fetch(
+      `${base}/oauth/callback?state=${state}&state=${state}&code=x`,
+      { redirect: "manual" },
+    );
+    expect(ambiguous.headers.get("location")).toBe(
+      "/oauth/result?outcome=invalid",
+    );
+    const oversized = await fetch(
+      `${base}/oauth/callback?state=${state}&code=${"c".repeat(9_000)}`,
+      { redirect: "manual" },
+    );
+    expect(oversized.headers.get("location")).toBe(
+      "/oauth/result?outcome=invalid",
+    );
+  });
+
+  it("keeps the stored target when starting an authorization fails", async () => {
+    // The target is committed only once `begin` succeeded, so a failed start
+    // cannot leave /api/invoke pointing somewhere the interface never shows.
+    const failed = await fetch(`${base}/api/http-target`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "external",
+        url: "http://127.0.0.1:1/mcp",
+        authentication: { type: "oauth" },
+      }),
+    });
+    expect(failed.status).toBe(400);
+    expect((await failed.json()) as unknown).toMatchObject({
+      error: "authorization_failed",
+    });
+
+    const view = await fetch(`${base}/api/http-target`);
+    expect((await view.json()) as unknown).toEqual({
+      kind: "devtools",
+      authentication: { type: "session-token" },
+    });
   });
 
   it("refuses a target the devtools host could never honor", async () => {

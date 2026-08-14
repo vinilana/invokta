@@ -100,6 +100,8 @@ const apiBodyLimitBytes = 64 * 1024;
 const mcpBodyLimitBytes = 1024 * 1024;
 /** Bounds the whole discovery chain of one OAuth endpoint check. */
 const httpTargetCheckTimeoutMs = 20_000;
+/** ADR 0023: an oversized callback target must not select an attempt. */
+const oauthCallbackTargetLimitBytes = 8_192;
 
 const appShellPage = `<!doctype html>
 <html lang="en" data-theme="dark">
@@ -129,7 +131,10 @@ try {
 `;
 
 const oauthCallbackCopy: Readonly<
-  Record<"success" | "rejected" | "error", readonly [string, string]>
+  Record<
+    "success" | "rejected" | "invalid" | "error",
+    readonly [string, string]
+  >
 > = {
   success: [
     "Authorization complete",
@@ -139,13 +144,19 @@ const oauthCallbackCopy: Readonly<
     "Authorization was not completed",
     "Return to Invokta devtools to try again.",
   ],
+  invalid: [
+    "Authorization callback was invalid",
+    "Return to Invokta devtools and start the authorization again.",
+  ],
   error: [
     "Authorization failed",
     "Return to Invokta devtools to review the endpoint.",
   ],
 };
 
-function oauthCallbackPage(outcome: "success" | "rejected" | "error"): string {
+type OAuthCallbackOutcome = "success" | "rejected" | "invalid" | "error";
+
+function oauthCallbackPage(outcome: OAuthCallbackOutcome): string {
   const [title, hint] = oauthCallbackCopy[outcome];
   return `<!doctype html>
 <html lang="en" data-theme="dark">
@@ -609,25 +620,31 @@ export async function startDevtoolsServer(
       throw error;
     }
 
-    // A previous authorization belongs to the previous target.
-    await options.oauth?.disconnect().catch(() => undefined);
-    options.httpTarget.set(target);
-
     if (target.kind === "external" && target.authentication.type === "oauth") {
       const oauth = options.oauth;
       if (oauth === undefined) {
+        // Nothing was committed: the stored target and the invoke path stay
+        // exactly as the interface last saw them.
         sendJson(response, 400, {
           error: "oauth_unavailable",
           message: "This dev server cannot run an interactive authorization.",
         });
         return;
       }
+      // The session controller runs one session at a time, so the previous
+      // authorization must be released before its replacement can begin — but
+      // the stored target is replaced only once `begin` succeeded. A failed
+      // begin therefore leaves the target (and what /api/invoke reads)
+      // unchanged, with only its authorization flag telling the truth.
+      await oauth.disconnect().catch(() => undefined);
+      options.httpTarget.markAuthorized(false);
       const state = randomBytes(32).toString("base64url");
       try {
         const authorization = await oauth.begin(target.url, {
           redirectUrl: `${ownOrigin}/oauth/callback`,
           state,
         });
+        options.httpTarget.set(target);
         sendJson(response, 202, {
           ...options.httpTarget.view(),
           authorizationUrl: authorization.authorizationUrl,
@@ -643,6 +660,9 @@ export async function startDevtoolsServer(
       }
       return;
     }
+    // A previous authorization belongs to the previous target.
+    await options.oauth?.disconnect().catch(() => undefined);
+    options.httpTarget.set(target);
     sendJson(response, 200, options.httpTarget.view());
   };
 
@@ -707,23 +727,30 @@ export async function startDevtoolsServer(
   };
 
   /**
-   * Completes the loopback leg of an interactive authorization. The provider
-   * redirects the developer's browser here with the authorization code and
-   * state in the query, so nothing is rendered at this URL: the browser is
-   * redirected to a clean result path first (ADR 0023), keeping the code out
-   * of history and out of any Referer the result page's assets would send.
+   * Completes the loopback leg of an interactive authorization, following the
+   * ADR 0023 callback contract. The provider redirects the developer's
+   * browser here with the authorization code and state in the query, so
+   * nothing is rendered at this URL: the browser is redirected to a clean
+   * result path first, keeping the code out of history and out of any Referer
+   * the result page's assets would send. An oversized or state-ambiguous
+   * callback must not select — let alone consume — an in-flight attempt.
    */
   const handleOAuthCallback = async (
+    request: IncomingMessage,
     response: ServerResponse,
     url: URL,
   ): Promise<void> => {
-    const finish = (outcome: "success" | "rejected" | "error"): void => {
+    const finish = (outcome: OAuthCallbackOutcome): void => {
       response.writeHead(303, {
         location: `/oauth/result?outcome=${outcome}`,
         "cache-control": "no-store",
       });
       response.end();
     };
+    if (Buffer.byteLength(request.url ?? "") > oauthCallbackTargetLimitBytes) {
+      finish("invalid");
+      return;
+    }
     const oauth = options.oauth;
     const states = url.searchParams.getAll("state");
     const codes = url.searchParams.getAll("code");
@@ -733,20 +760,42 @@ export async function startDevtoolsServer(
       oauth === undefined ||
       states.length !== 1 ||
       state === undefined ||
-      !/^[A-Za-z0-9_-]{43}$/u.test(state) ||
+      !/^[A-Za-z0-9_-]{43}$/u.test(state)
+    ) {
+      finish("invalid");
+      return;
+    }
+    // From here one attempt is selected; a malformed result consumes it.
+    const rejectCallback = async (
+      outcome: "invalid" | "rejected",
+    ): Promise<void> => {
+      try {
+        await oauth.reject(state);
+      } catch {
+        finish("error");
+        return;
+      }
+      finish(outcome);
+    };
+    if (
       !(
         (codes.length === 1 && errors.length === 0) ||
         (codes.length === 0 && errors.length === 1)
       )
     ) {
-      await oauth?.reject(state ?? "").catch(() => undefined);
-      finish("error");
+      await rejectCallback("invalid");
+      return;
+    }
+    const error = errors[0];
+    if (error !== undefined) {
+      await rejectCallback(
+        error.length === 0 || error.length > 256 ? "invalid" : "rejected",
+      );
       return;
     }
     const code = codes[0];
     if (code === undefined || code.length === 0 || code.length > 4_096) {
-      await oauth.reject(state).catch(() => undefined);
-      finish("rejected");
+      await rejectCallback("invalid");
       return;
     }
     try {
@@ -997,7 +1046,7 @@ export async function startDevtoolsServer(
         );
         return;
       }
-      await handleOAuthCallback(response, url);
+      await handleOAuthCallback(request, response, url);
       return;
     }
     if (path === "/oauth/result") {
@@ -1017,7 +1066,11 @@ export async function startDevtoolsServer(
       });
       response.end(
         oauthCallbackPage(
-          outcome === "success" || outcome === "rejected" ? outcome : "error",
+          outcome === "success" ||
+            outcome === "rejected" ||
+            outcome === "invalid"
+            ? outcome
+            : "error",
         ),
       );
       return;
