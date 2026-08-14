@@ -5,6 +5,7 @@ import {
   beginMcpOAuthAuthorization,
   connectMcpClient,
   inspectMcpOAuth,
+  isForbiddenMcpClientHeader,
   type McpClientConnection,
   McpClientError,
   type McpClientOperationOptions,
@@ -32,6 +33,7 @@ import {
 } from "../src/index.js";
 
 expectTypeOf(toMcpToolName("support.classify-ticket")).toEqualTypeOf<string>();
+expectTypeOf(isForbiddenMcpClientHeader("X-API-Key")).toEqualTypeOf<boolean>();
 
 declare const catalogEngine: Engine;
 expectTypeOf(validateMcpToolCatalog(catalogEngine)).toEqualTypeOf<void>();

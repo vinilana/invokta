@@ -121,7 +121,10 @@ export interface HttpAuthControl {
   setDisabled(disabled: boolean): void;
 }
 
-export function createHttpAuthControl(owner: string): HttpAuthControl {
+export function createHttpAuthControl(
+  owner: string,
+  onTargetChange?: () => void,
+): HttpAuthControl {
   const summary = el("span", { class: "auth-summary" }, [
     describeHttpTarget(current),
   ]);
@@ -245,12 +248,34 @@ export function createHttpAuthControl(owner: string): HttpAuthControl {
     headerList.append(createHeaderRow().row);
   });
 
+  /** The exact drafted URL a successful check blessed, if any. */
+  let readyUrl: string | undefined;
+  /** Whether the whole control is locked because a call is in flight. */
+  let locked = false;
+
+  const paintFormFields = (): void => {
+    const type = externalType.value;
+    // Discovery must resolve for the exact drafted endpoint before an
+    // authorization may start: Check is offered while the URL is drafted, and
+    // Authorize stays disabled until that same URL passed the check. Editing
+    // the URL invalidates the earlier report.
+    check.hidden = type !== "oauth";
+    bearer.hidden = type !== "bearer";
+    headerList.hidden = type !== "headers";
+    addHeader.hidden = type !== "headers";
+    apply.textContent = type === "oauth" ? "Authorize" : "Use endpoint";
+    apply.disabled =
+      locked ||
+      (type === "oauth" &&
+        (readyUrl === undefined || url.value.trim() !== readyUrl));
+  };
+
   /**
    * Renders the discovery chain leg by leg. A failure names the leg that
    * produced it, which is the whole reason the check exists: authentication as
    * a whole failing says nothing a developer can act on.
    */
-  const showCheck = (inspection: OAuthInspection): void => {
+  const showCheck = (inspection: OAuthInspection, checkedUrl: string): void => {
     while (checkReport.firstChild) checkReport.firstChild.remove();
     for (const step of inspection.steps) {
       const tone =
@@ -273,16 +298,26 @@ export function createHttpAuthControl(owner: string): HttpAuthControl {
     }
     checkReport.hidden = false;
     // Authorizing before the chain resolves only reproduces the failure the
-    // report already explains.
-    apply.disabled = externalType.value === "oauth" && !inspection.ready;
+    // report already explains — and readiness belongs to the URL that was
+    // actually inspected, not to whatever the field says later.
+    readyUrl = inspection.ready ? checkedUrl : undefined;
+    paintFormFields();
   };
 
   check.addEventListener("click", () => {
+    const draft = url.value.trim();
+    if (draft === "") {
+      feedback.textContent = "Enter the endpoint URL to check.";
+      url.focus();
+      return;
+    }
     feedback.textContent = "";
     check.disabled = true;
     void api
-      .checkHttpTarget()
-      .then(showCheck)
+      .checkHttpTarget(draft)
+      .then((inspection) => {
+        showCheck(inspection, draft);
+      })
       .catch((error: unknown) => {
         feedback.textContent =
           error instanceof Error
@@ -294,18 +329,8 @@ export function createHttpAuthControl(owner: string): HttpAuthControl {
       });
   });
 
-  const paintFormFields = (): void => {
-    const type = externalType.value;
-    // The check reads the endpoint the dev server already holds, so it is
-    // offered once an endpoint is selected rather than while one is drafted.
-    check.hidden = type !== "oauth" || current.kind !== "external";
-    if (type !== "oauth") apply.disabled = false;
-    bearer.hidden = type !== "bearer";
-    headerList.hidden = type !== "headers";
-    addHeader.hidden = type !== "headers";
-    apply.textContent = type === "oauth" ? "Authorize" : "Use endpoint";
-  };
   externalType.addEventListener("change", paintFormFields);
+  url.addEventListener("input", paintFormFields);
   paintFormFields();
 
   const paint = (target: HttpTargetView): void => {
@@ -331,10 +356,16 @@ export function createHttpAuthControl(owner: string): HttpAuthControl {
       }
       feedback.textContent =
         "Continue in the new tab, then return here. Waiting for authorization…";
+      // Browsers report a blocked popup by returning null, not by throwing,
+      // so both shapes fall back to showing the URL to open by hand.
+      let opened: unknown = null;
       try {
-        globalThis.open?.(next.authorizationUrl, "_blank", "noopener");
+        opened = globalThis.open?.(next.authorizationUrl, "_blank", "noopener");
       } catch {
-        feedback.textContent = `Open ${next.authorizationUrl} to authorize, then return here.`;
+        opened = null;
+      }
+      if (opened == null) {
+        feedback.textContent = `The browser did not open a tab. Open ${next.authorizationUrl} to authorize, then return here. Waiting for authorization…`;
       }
       for (let attempt = 0; attempt < authorizationPollAttempts; attempt += 1) {
         await new Promise((resolve) =>
@@ -401,10 +432,13 @@ export function createHttpAuthControl(owner: string): HttpAuthControl {
   });
 
   // The selection belongs to the session, not to this panel: the shell loads
-  // it once at boot and every panel follows the published value.
+  // it once at boot and every panel follows the published value. The owner's
+  // panel also repaints whatever depends on the target, such as whether the
+  // identity selection applies.
   listeners.set(owner, (target) => {
     paint(target);
     paintFormFields();
+    onTargetChange?.();
   });
   paint(current);
 
@@ -419,8 +453,11 @@ export function createHttpAuthControl(owner: string): HttpAuthControl {
   return {
     element,
     setDisabled: (disabled) => {
+      locked = disabled;
       choice.disabled = disabled;
-      apply.disabled = disabled;
+      // Re-enabling must restore the gated state, not unconditionally arm
+      // Authorize for an endpoint whose check has not passed.
+      paintFormFields();
     },
   };
 }

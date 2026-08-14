@@ -151,10 +151,13 @@ describe("startServe", () => {
     });
   }
 
-  it("describes the engine and its adapters on /api/engine", async () => {
+  it("describes the engine on /api/engine", async () => {
     const response = await fetch(`${base}/api/engine`);
 
     expect(response.status).toBe(200);
+    // Deliberately no adapter catalog: the interface owns the adapter
+    // presentations, and publishing a second copy from the server would be
+    // one more thing to keep in step by hand.
     expect(await response.json()).toEqual({
       name: "server-test-engine",
       version: "0.1.0",
@@ -163,28 +166,6 @@ describe("startServe", () => {
       // The served module is published so the interface can propose the
       // conventional sibling path for a project entry point.
       module: fixtureModule,
-      maxConcurrentInvocations: 4,
-      adapters: [
-        {
-          id: "direct",
-          source: "direct",
-          label: "Direct",
-          identity: "process",
-        },
-        { id: "cli", source: "cli", label: "CLI", identity: "process" },
-        {
-          id: "mcp-stdio",
-          source: "mcp-stdio",
-          label: "MCP stdio",
-          identity: "process",
-        },
-        {
-          id: "mcp-http",
-          source: "mcp-http",
-          label: "MCP HTTP",
-          identity: "per-request",
-        },
-      ],
     });
   });
 
@@ -942,6 +923,63 @@ describe("adapter emulation over /api/invoke", () => {
       cli: { kind: "devtools" },
       "mcp-stdio": { kind: "devtools" },
     });
+  });
+
+  it("checks the drafted OAuth endpoint without committing a target", async () => {
+    // The check binds to the exact URL the caller drafted, so an endpoint can
+    // be inspected before it is ever selected — no browser tab required.
+    const drafted = `http://127.0.0.1:${String(handles.engineAddress.port)}/mcp`;
+    const checked = await fetch(`${base}/api/http-target/check`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: drafted }),
+    });
+    expect(checked.status).toBe(200);
+    const inspection = (await checked.json()) as {
+      readonly ready: boolean;
+      readonly steps: ReadonlyArray<{
+        readonly name: string;
+        readonly outcome: string;
+      }>;
+    };
+    // The engine host challenges but publishes no OAuth metadata, so the
+    // chain reports which leg failed rather than authorizing anything.
+    expect(inspection.ready).toBe(false);
+    expect(inspection.steps.map(({ name }) => name)).toEqual([
+      "challenge",
+      "resource-metadata",
+      "authorization-server-metadata",
+      "registration",
+    ]);
+
+    // Without a drafted URL, the stored devtools target has no OAuth chain.
+    const stored = await fetch(`${base}/api/http-target/check`, {
+      method: "POST",
+    });
+    expect(stored.status).toBe(400);
+    expect((await stored.json()) as unknown).toMatchObject({
+      error: "not_an_external_endpoint",
+    });
+  });
+
+  it("redirects the OAuth callback to a clean result path before rendering", async () => {
+    // ADR 0023: the authorization code and state must not stay in the address
+    // bar or history, so nothing renders at the callback URL itself.
+    const callback = await fetch(
+      `${base}/oauth/callback?state=${"a".repeat(43)}&code=one-time-code`,
+      { redirect: "manual" },
+    );
+    expect(callback.status).toBe(303);
+    expect(callback.headers.get("location")).toBe(
+      "/oauth/result?outcome=error",
+    );
+
+    const result = await fetch(`${base}/oauth/result?outcome=success`);
+    expect(result.status).toBe(200);
+    expect(await result.text()).toContain("Authorization complete");
+
+    const unknownOutcome = await fetch(`${base}/oauth/result?outcome=weird`);
+    expect(await unknownOutcome.text()).toContain("Authorization failed");
   });
 
   it("refuses a target the devtools host could never honor", async () => {

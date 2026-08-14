@@ -434,7 +434,21 @@ class OAuthEndpointTrust {
     );
   }
 
+  /**
+   * RFC 8414 issuer identifiers carry no query or fragment, so an advertised
+   * authorization server is the delegated-endpoint hygiene plus that rule.
+   */
   allowsAdvertisedServer(candidate: URL): boolean {
+    return this.allowsDelegatedEndpoint(candidate) && candidate.search === "";
+  }
+
+  /**
+   * An OAuth endpoint the validated authorization-server metadata publishes.
+   * It may sit on its own origin — hosted providers commonly split the issuer
+   * from the endpoints — but it must be HTTPS (or loopback HTTP behind a
+   * loopback resource) and carry no credentials and no fragment.
+   */
+  allowsDelegatedEndpoint(candidate: URL): boolean {
     return (
       isSecureOrLoopbackUrl(candidate) &&
       (!isLoopbackHttpUrl(candidate) || isLoopbackHttpUrl(this.resourceUrl)) &&
@@ -450,9 +464,12 @@ class OAuthEndpointTrust {
 
   allowsEndpoint(candidate: URL): boolean {
     return (
-      this.allowsResourceMetadata(candidate) ||
-      (isSecureOrLoopbackUrl(candidate) &&
-        this.advertisedOrigins.has(candidate.origin))
+      candidate.username === "" &&
+      candidate.password === "" &&
+      candidate.hash === "" &&
+      (this.allowsResourceMetadata(candidate) ||
+        (isSecureOrLoopbackUrl(candidate) &&
+          this.advertisedOrigins.has(candidate.origin)))
     );
   }
 
@@ -605,7 +622,12 @@ function serializeAuthorizationUrl(
   return serialized;
 }
 
-function isForbiddenCustomHeader(name: string): boolean {
+/**
+ * Whether the MCP client facade refuses a caller-supplied header name. The
+ * devtools validates an external target's custom headers with this same
+ * predicate so it never accepts a target the facade will refuse.
+ */
+export function isForbiddenMcpClientHeader(name: string): boolean {
   const normalized = name.toLowerCase();
   return (
     normalized === "host" ||
@@ -658,7 +680,7 @@ function snapshotAuthentication(
   }
   const headers = snapshotStringRecord(
     authentication.headers,
-    (name) => HTTP_HEADER_NAME.test(name) && !isForbiddenCustomHeader(name),
+    (name) => HTTP_HEADER_NAME.test(name) && !isForbiddenMcpClientHeader(name),
     (headerValue) => !headerValue.includes("\r") && !headerValue.includes("\n"),
   );
   if (headers === undefined || Object.keys(headers).length === 0)
@@ -1073,6 +1095,29 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
           value.authorizationServerUrl)
     ) {
       throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    // The issuer has been matched to an advertised authorization server, so
+    // the endpoints its validated metadata publishes are that server's own
+    // delegation — hosted providers commonly place them on another origin.
+    if (value.authorizationServerMetadata !== undefined) {
+      const metadata = value.authorizationServerMetadata;
+      for (const endpoint of [
+        metadata.authorization_endpoint,
+        metadata.token_endpoint,
+        metadata.registration_endpoint,
+      ]) {
+        if (endpoint === undefined) continue;
+        let endpointUrl: URL;
+        try {
+          endpointUrl = new URL(endpoint);
+        } catch {
+          throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+        }
+        if (!this.trust.allowsDelegatedEndpoint(endpointUrl)) {
+          throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+        }
+        this.trust.trustAdvertisedServer(endpointUrl);
+      }
     }
     this.discovery = structuredClone(value);
   }
@@ -2224,9 +2269,18 @@ async function inspectOAuthServerMetadata(
   let url = candidates[0]?.url ?? context.resourceUrl;
   let result: InspectionResponse | undefined;
   for (const candidate of candidates) {
-    url = candidate.url;
-    result = await tryInspectionRequest(context, url, INSPECTION_GET);
-    if (result !== undefined && result.status !== 404) break;
+    const attempt = await tryInspectionRequest(
+      context,
+      candidate.url,
+      INSPECTION_GET,
+    );
+    // An unreachable later candidate must not erase an earlier answer, so a
+    // failed attempt keeps the last response — and the URL that produced it.
+    if (attempt !== undefined) {
+      result = attempt;
+      url = candidate.url;
+    }
+    if (attempt !== undefined && attempt.status !== 404) break;
   }
   if (result === undefined) {
     return {
@@ -2289,17 +2343,18 @@ async function inspectOAuthServerMetadata(
     }
     if (
       endpointUrl === undefined ||
-      !context.trust.allowsEndpoint(endpointUrl)
+      !context.trust.allowsDelegatedEndpoint(endpointUrl)
     ) {
       return {
         step: failedStep(
           "authorization-server-metadata",
           `The authorization server metadata places ${name} at ${endpoint}.`,
-          "Every OAuth endpoint must be an absolute URL on an origin the protected resource metadata advertises.",
+          "Every OAuth endpoint must be an absolute HTTPS URL — or loopback HTTP behind a loopback resource — with no credentials and no fragment.",
           document,
         ),
       };
     }
+    context.trust.trustAdvertisedServer(endpointUrl);
   }
   if (!parsed.data.response_types_supported.includes("code")) {
     return {
@@ -2311,13 +2366,26 @@ async function inspectOAuthServerMetadata(
       ),
     };
   }
+  // `invokta-deploy inspect-oauth` rejects both of these, so accepting them
+  // here would make the two inspectors disagree about the same endpoint.
+  const grantTypes = parsed.data.grant_types_supported;
+  if (grantTypes === undefined || !grantTypes.includes("authorization_code")) {
+    return {
+      step: failedStep(
+        "authorization-server-metadata",
+        "The authorization server does not advertise the authorization_code grant type.",
+        "Advertise grant_types_supported including authorization_code; it is the only grant this client performs.",
+        document,
+      ),
+    };
+  }
   const challengeMethods = parsed.data.code_challenge_methods_supported;
-  if (challengeMethods !== undefined && !challengeMethods.includes("S256")) {
+  if (challengeMethods === undefined || !challengeMethods.includes("S256")) {
     return {
       step: failedStep(
         "authorization-server-metadata",
         "The authorization server does not advertise the S256 code challenge method.",
-        "This client always sends a PKCE challenge with S256.",
+        "This client always sends a PKCE challenge with S256, so advertise code_challenge_methods_supported including S256.",
         document,
       ),
     };
@@ -2351,11 +2419,11 @@ function inspectOAuthRegistration(
   } catch {
     url = undefined;
   }
-  if (url === undefined || !context.trust.allowsEndpoint(url)) {
+  if (url === undefined || !context.trust.allowsDelegatedEndpoint(url)) {
     return failedStep(
       "registration",
       `The authorization server advertises dynamic client registration at ${registrationEndpoint}.`,
-      "The registration endpoint must be an absolute URL on an origin the protected resource metadata advertises.",
+      "The registration endpoint must be an absolute HTTPS URL — or loopback HTTP behind a loopback resource — with no credentials and no fragment.",
     );
   }
   return okStep(

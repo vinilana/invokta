@@ -10,6 +10,8 @@
  * and header or variable names only.
  */
 
+import { isForbiddenMcpClientHeader } from "@invokta/mcp";
+
 export type HttpAuthenticationType =
   | "session-token"
   | "none"
@@ -270,10 +272,12 @@ export function parseHttpTarget(value: unknown): HttpTarget {
           "A header name is invalid.",
         );
       }
-      if (candidate.name.toLowerCase() === "host") {
+      // The MCP client facade refuses these outright, so accepting the
+      // target here would only defer the same refusal to every invocation.
+      if (isForbiddenMcpClientHeader(candidate.name)) {
         throw new HttpTargetError(
           "INVALID_AUTHENTICATION",
-          "The Host header cannot be overridden.",
+          `The ${candidate.name} header is reserved by the MCP client and cannot carry a credential.`,
         );
       }
       return {

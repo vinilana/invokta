@@ -16,7 +16,7 @@ import { createCopyButton, formatDuration } from "./clipboard.js";
 import { el, pretty } from "./dom.js";
 import { exampleFromSchema } from "./example-from-schema.js";
 import { createEntryPointControl } from "./entry-point.js";
-import { createHttpAuthControl } from "./http-auth.js";
+import { createHttpAuthControl, getHttpTarget } from "./http-auth.js";
 import { createIdentitySelect } from "./identity.js";
 import { prefillKeyFor } from "./playground-handoff.js";
 import { getActivePrincipalKey, getActiveToken } from "./principals.js";
@@ -322,9 +322,18 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
           exchange.responseBody,
         ),
       );
-    } else if (exchange.kind === "stdio") {
+    } else if (exchange.kind === "mcp") {
+      // The facade framed the call: the target is the spawned server command
+      // over stdio, or the endpoint an external HTTP call went to.
       exchangeBody.append(
-        pane("Server command", "command", "Adapter command", exchange.command),
+        pane(
+          exchange.transport === "stdio" ? "Server command" : "Endpoint",
+          exchange.transport === "stdio" ? "command" : "endpoint",
+          exchange.transport === "stdio"
+            ? "Adapter command"
+            : "Adapter endpoint",
+          exchange.target,
+        ),
         pane(
           "Request · tools/call",
           "tools/call request",
@@ -555,7 +564,10 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
         adapter,
         capabilityId: capability.id,
         arguments: args,
-        principalKey: getActivePrincipalKey(),
+        // A path the identity does not apply to must not carry it: the dev
+        // server would otherwise attribute the call to an identity that was
+        // never presented anywhere.
+        principalKey: identityApplies() ? getActivePrincipalKey() : null,
       },
       controller.signal,
     )
@@ -613,6 +625,11 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   });
 
   const readCurlCommand = (): string => {
+    // An external endpoint's credential must never reach the clipboard, and a
+    // same-origin command would reproduce the wrong call anyway — the copy is
+    // offered only while MCP HTTP targets the devtools host.
+    const httpTarget = getHttpTarget();
+    if (httpTarget.kind !== "devtools") return "";
     let args: unknown;
     try {
       args = JSON.parse(editor.value);
@@ -629,7 +646,10 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     for (const [name, value] of Object.entries(request.headers)) {
       lines.push(`  -H ${shellQuote(`${name}: ${value}`)}`);
     }
-    if (getActiveToken() !== null) {
+    if (
+      httpTarget.authentication.type === "session-token" &&
+      getActiveToken() !== null
+    ) {
       // Deliberately double-quoted so the shell expands the variable.
       lines.push(`  -H "authorization: Bearer $${tokenVariableName}"`);
     }
@@ -641,10 +661,18 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     `curl command (reads the token from $${tokenVariableName})`,
     readCurlCommand,
   );
+
+  /** The copy reproduces only a devtools-host call; anything else hides it. */
+  const paintCurl = (): void => {
+    curlCopy.hidden =
+      adapter !== "mcp-http" || getHttpTarget().kind !== "devtools";
+  };
   const commandCopy = createCopyButton("adapter command", () =>
     lastExchange === undefined || lastExchange.kind === "http"
       ? ""
-      : lastExchange.command,
+      : lastExchange.kind === "mcp"
+        ? lastExchange.target
+        : lastExchange.command,
   );
 
   const route = el("code", { class: "invoke-route" }, [
@@ -662,25 +690,42 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
   );
   identityNote.hidden = true;
   const identity = createIdentitySelect(capability.id);
-  const httpAuth = createHttpAuthControl(capability.id);
+  const httpAuth = createHttpAuthControl(capability.id, () => {
+    paintIdentity();
+  });
   const entryPoint = createEntryPointControl(capability.id, () => {
     paintIdentity();
   });
 
   /**
-   * The identity applies only when the devtools is the composition root. A
-   * project entry point supplies its own principal, so the selection here
-   * would describe something that does not run.
+   * The identity applies only when the devtools presents it: as the child's
+   * principal when the devtools is the composition root, or as the session
+   * token when MCP HTTP targets the devtools host with that credential. A
+   * project entry point, an external endpoint, and the credential-less
+   * devtools host all establish the principal themselves.
    */
+  const identityApplies = (): boolean => {
+    if (adapter !== "mcp-http") return entryPoint.identityApplies();
+    const target = getHttpTarget();
+    return (
+      target.kind === "devtools" &&
+      target.authentication.type === "session-token"
+    );
+  };
+
   const paintIdentity = (): void => {
-    const applies =
-      adapter === "mcp-http" ? true : entryPoint.identityApplies();
+    const applies = identityApplies();
     identity.setDisabled(!applies || pending);
     identity.element.classList.toggle("identity-control--inactive", !applies);
     identityNote.textContent = applies
       ? ""
-      : "Your entry point's composition root supplies the principal.";
+      : adapter !== "mcp-http"
+        ? "Your entry point's composition root supplies the principal."
+        : getHttpTarget().kind === "external"
+          ? "The selected endpoint authenticates the call itself."
+          : "No credential is sent; the call runs anonymously.";
     identityNote.hidden = applies;
+    paintCurl();
   };
 
   const applyAdapter = (next: AdapterId): void => {
@@ -688,7 +733,6 @@ export function renderInvokePanel(capability: CapabilityInfo): HTMLElement {
     const presentation = presentationFor(next);
     route.textContent = presentation.route;
     adapterNote.textContent = `${presentation.summary} ${presentation.identity}`;
-    curlCopy.hidden = next !== "mcp-http";
     commandCopy.hidden = next === "mcp-http";
     // Only the HTTP boundary authenticates. The other three paths receive the
     // identity when the process starts, so there is nothing to select.

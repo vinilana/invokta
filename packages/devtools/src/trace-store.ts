@@ -15,6 +15,8 @@ export interface AdapterCallCapture {
   readonly errorCode?: string;
   readonly request: string;
   readonly response: string;
+  /** The invocation arguments as JSON, so the call can be reproduced. */
+  readonly input?: string;
   /** The identity the call acted as; `null` when it ran anonymously. */
   readonly principalId?: string | null;
   /** The HTTP status, when the MCP HTTP adapter carried the call. */
@@ -60,6 +62,10 @@ export type TraceEntry =
       readonly call: AdapterCallCapture;
       readonly requestTruncated: boolean;
       readonly responseTruncated: boolean;
+      /** Request length in characters before truncation, when truncated. */
+      readonly requestOriginalSize?: number;
+      /** Response length in characters before truncation, when truncated. */
+      readonly responseOriginalSize?: number;
     }
   | {
       readonly kind: "notice";
@@ -163,13 +169,19 @@ export function createTraceStore(
       });
     },
     appendAdapterCall: (capture) => {
+      const { input, ...withoutInput } = capture;
       const requestTruncated = capture.request.length > maxBodyLength;
       const responseTruncated = capture.response.length > maxBodyLength;
       return append({
         kind: "adapter",
         ...stamp(),
         call: {
-          ...capture,
+          ...withoutInput,
+          // A truncated input would no longer parse, so it is dropped rather
+          // than offered as a reproduction that silently rewrites the call.
+          ...(input !== undefined && input.length <= maxBodyLength
+            ? { input }
+            : {}),
           request: requestTruncated
             ? capture.request.slice(0, maxBodyLength)
             : capture.request,
@@ -179,6 +191,12 @@ export function createTraceStore(
         },
         requestTruncated,
         responseTruncated,
+        ...(requestTruncated
+          ? { requestOriginalSize: capture.request.length }
+          : {}),
+        ...(responseTruncated
+          ? { responseOriginalSize: capture.response.length }
+          : {}),
       });
     },
     appendNotice: (notice, detail) =>

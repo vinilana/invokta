@@ -1701,6 +1701,16 @@ describe("MCP stateless Streamable HTTP", () => {
         resource: "https://engine.example.com/mcp",
         authorizationServers: ["http://127.0.0.1:9000"] as const,
       },
+      // `localhost` is not a literal loopback host: the MCP client trusts
+      // only the literal forms, so the server must not publish it either.
+      {
+        resource: "http://localhost:3000/mcp",
+        authorizationServers: ["http://127.0.0.1:9000"] as const,
+      },
+      {
+        resource: "http://127.0.0.1:3000/mcp",
+        authorizationServers: ["http://localhost:9000"] as const,
+      },
     ];
 
     for (const resourceMetadata of invalidCases) {

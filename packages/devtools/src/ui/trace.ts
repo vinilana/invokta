@@ -14,6 +14,8 @@ interface TraceEntryView {
     readonly errorCode?: string;
     /** The identity the call acted as; `null` when it ran anonymously. */
     readonly principalId?: string | null;
+    /** The invocation arguments as JSON, when the server recorded them. */
+    readonly input?: string;
     readonly request: string;
     readonly response: string;
     readonly status?: number;
@@ -253,9 +255,11 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
       ["Open in Playground"],
     );
     playground.addEventListener("click", () => {
+      // Process adapters record a rendered command as the request, so the
+      // recorded arguments are the faithful reproduction whenever present.
       openCapabilityInPlayground(
         call.capabilityId,
-        playgroundPrefill(call.request),
+        call.input ?? playgroundPrefill(call.request),
       );
     });
     const tone =

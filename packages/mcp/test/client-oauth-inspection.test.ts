@@ -78,6 +78,7 @@ async function startInspectionFixture(
           token_endpoint: `${origins.identity}/token`,
           registration_endpoint: `${origins.identity}/register`,
           response_types_supported: ["code"],
+          grant_types_supported: ["authorization_code"],
           code_challenge_methods_supported: ["S256"],
         },
       ),
@@ -292,6 +293,8 @@ describe("read-only MCP OAuth discovery inspection", () => {
         authorization_endpoint: `${origins.identity}/authorize`,
         token_endpoint: `${origins.identity}/token`,
         response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
       }),
     });
 
@@ -318,6 +321,99 @@ describe("read-only MCP OAuth discovery inspection", () => {
     });
     expect(inspection.steps[0]?.summary).toContain("200");
     expect(inspection.steps[1]?.outcome).toBe("ok");
+    expect(inspection.ready).toBe(false);
+  });
+
+  it("accepts OAuth endpoints the validated metadata places on another origin", async () => {
+    // The hosted-provider shape: the issuer answers discovery while its
+    // endpoints live elsewhere, the way Cognito serves its OAuth endpoints
+    // apart from the issuer origin.
+    const fixture = await startInspectionFixture({
+      authorizationServerMetadata: (origins) => ({
+        issuer: origins.identity,
+        authorization_endpoint: "https://endpoints.example.test/authorize",
+        token_endpoint: "https://endpoints.example.test/token",
+        registration_endpoint: "https://endpoints.example.test/register",
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+
+    const inspection = await inspectMcpOAuth(oauthTarget(fixture.url));
+
+    expect(outcomes(inspection.steps)).toEqual([
+      ["challenge", "ok"],
+      ["resource-metadata", "ok"],
+      ["authorization-server-metadata", "ok"],
+      ["registration", "ok"],
+    ]);
+    expect(inspection.ready).toBe(true);
+  });
+
+  it("reports an endpoint that carries credentials or a fragment", async () => {
+    const fixture = await startInspectionFixture({
+      authorizationServerMetadata: (origins) => ({
+        issuer: origins.identity,
+        authorization_endpoint: `${origins.identity}/authorize#fragment`,
+        token_endpoint: `${origins.identity}/token`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+
+    const inspection = await inspectMcpOAuth(oauthTarget(fixture.url));
+
+    expect(inspection.steps[2]).toMatchObject({
+      name: "authorization-server-metadata",
+      outcome: "failed",
+    });
+    expect(inspection.steps[2]?.hint).toContain("no fragment");
+    expect(inspection.ready).toBe(false);
+  });
+
+  it("reports metadata that does not advertise the authorization_code grant", async () => {
+    const fixture = await startInspectionFixture({
+      authorizationServerMetadata: (origins) => ({
+        issuer: origins.identity,
+        authorization_endpoint: `${origins.identity}/authorize`,
+        token_endpoint: `${origins.identity}/token`,
+        registration_endpoint: `${origins.identity}/register`,
+        response_types_supported: ["code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+
+    const inspection = await inspectMcpOAuth(oauthTarget(fixture.url));
+
+    expect(inspection.steps[2]).toMatchObject({
+      name: "authorization-server-metadata",
+      outcome: "failed",
+    });
+    expect(inspection.steps[2]?.summary).toContain("authorization_code");
+    expect(inspection.ready).toBe(false);
+  });
+
+  it("reports metadata that does not advertise the S256 challenge method", async () => {
+    const fixture = await startInspectionFixture({
+      authorizationServerMetadata: (origins) => ({
+        issuer: origins.identity,
+        authorization_endpoint: `${origins.identity}/authorize`,
+        token_endpoint: `${origins.identity}/token`,
+        registration_endpoint: `${origins.identity}/register`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+      }),
+    });
+
+    const inspection = await inspectMcpOAuth(oauthTarget(fixture.url));
+
+    expect(inspection.steps[2]).toMatchObject({
+      name: "authorization-server-metadata",
+      outcome: "failed",
+    });
+    expect(inspection.steps[2]?.summary).toContain("S256");
     expect(inspection.ready).toBe(false);
   });
 

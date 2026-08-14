@@ -28,42 +28,6 @@ export const adapterIds: readonly AdapterId[] = Object.freeze([
   "mcp-http",
 ]);
 
-export interface AdapterDescriptor {
-  readonly id: AdapterId;
-  /** The `ExecutionContext.source` the emulated call reaches the engine with. */
-  readonly source: AdapterId;
-  readonly label: string;
-  /** How the adapter establishes the principal, in one phrase. */
-  readonly identity: "per-request" | "process";
-}
-
-export const adapterDescriptors: readonly AdapterDescriptor[] = Object.freeze([
-  Object.freeze({
-    id: "direct",
-    source: "direct",
-    label: "Direct",
-    identity: "process",
-  }),
-  Object.freeze({
-    id: "cli",
-    source: "cli",
-    label: "CLI",
-    identity: "process",
-  }),
-  Object.freeze({
-    id: "mcp-stdio",
-    source: "mcp-stdio",
-    label: "MCP stdio",
-    identity: "process",
-  }),
-  Object.freeze({
-    id: "mcp-http",
-    source: "mcp-http",
-    label: "MCP HTTP",
-    identity: "per-request",
-  }),
-] as const satisfies readonly AdapterDescriptor[]);
-
 export function isAdapterId(value: unknown): value is AdapterId {
   return typeof value === "string" && adapterIds.includes(value as AdapterId);
 }
@@ -130,6 +94,13 @@ export interface AdapterInvocationResult {
   readonly result?: unknown;
   readonly error?: AdapterError;
   readonly exchange: AdapterExchange;
+  /**
+   * Whether the selected devtools identity was actually presented to this
+   * call. A project entry point, an external endpoint, and the devtools host
+   * without a credential all establish the principal themselves, so a call
+   * through them must not be attributed to the selected identity.
+   */
+  readonly identityApplied: boolean;
 }
 
 export interface AdapterRunnerModule {
@@ -185,8 +156,16 @@ const defaultMaxConcurrent = 4;
 const defaultTimeoutMs = 30_000;
 const maximumTimeoutMs = 300_000;
 const maximumCapturedStreamLength = 262_144;
+/**
+ * How much adapter output is decoded before the exchange record is truncated.
+ * Matches the MCP client facade's 10 MiB message boundary, so a result the
+ * MCP adapters accept is not misreported as a failure by the process ones.
+ */
+const maximumAdapterPayloadLength = 10 * 1024 * 1024;
 /** Linux bounds one argument at 128 KiB; this stays clear of that ceiling. */
 const maximumArgumentBytes = 98_304;
+/** Windows bounds the whole command line at 32,767 UTF-16 characters. */
+const maximumWindowsCommandLineChars = 30_000;
 const killTimeoutMs = 3_000;
 const environmentName = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -270,8 +249,11 @@ function killChild(child: ChildProcess): void {
 interface ProcessOutcome {
   readonly exitCode: number | null;
   readonly signal: string | null;
+  /** Complete up to the adapter payload boundary; capped only when recorded. */
   readonly stdout: string;
   readonly stderr: string;
+  /** Whether stdout outgrew the adapter payload boundary and was cut. */
+  readonly stdoutOverflowed: boolean;
   readonly failure?: "timeout" | "aborted" | "spawn-failed";
   readonly failureMessage?: string;
 }
@@ -317,13 +299,22 @@ async function runChildProcess(
       resolve(outcome);
     };
 
+    // The full stream is retained up to the shared adapter payload boundary
+    // so the result can be decoded whole; only the recorded exchange is
+    // truncated to the capture length.
+    let stdoutOverflowed = false;
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
-      if (stdout.length < maximumCapturedStreamLength) stdout += chunk;
+      if (stdout.length + chunk.length <= maximumAdapterPayloadLength) {
+        stdout += chunk;
+        return;
+      }
+      stdout += chunk.slice(0, maximumAdapterPayloadLength - stdout.length);
+      stdoutOverflowed = true;
     });
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
-      if (stderr.length < maximumCapturedStreamLength) stderr += chunk;
+      if (stderr.length < maximumAdapterPayloadLength) stderr += chunk;
     });
     child.once("error", (error: Error) => {
       failure = "spawn-failed";
@@ -331,8 +322,9 @@ async function runChildProcess(
       settle({
         exitCode: null,
         signal: null,
-        stdout: cap(stdout),
-        stderr: cap(stderr),
+        stdout,
+        stderr,
+        stdoutOverflowed,
         failure,
         ...(failureMessage === undefined ? {} : { failureMessage }),
       });
@@ -343,8 +335,9 @@ async function runChildProcess(
         settle({
           exitCode: code,
           signal,
-          stdout: cap(stdout),
-          stderr: cap(stderr),
+          stdout,
+          stderr,
+          stdoutOverflowed,
           ...(failure === undefined ? {} : { failure }),
           ...(failureMessage === undefined ? {} : { failureMessage }),
         });
@@ -436,6 +429,17 @@ function readProcessOutcome(
   if (failure !== undefined) {
     return { outcome: "adapter-error", error: failure };
   }
+  if (outcome.stdoutOverflowed) {
+    // The MCP adapters refuse the same size through the facade's message
+    // boundary, so the four paths stay equivalent for oversized results.
+    return {
+      outcome: "adapter-error",
+      error: {
+        code: "LIMIT_EXCEEDED",
+        message: `The ${adapterLabel} adapter answered with more output than the ${String(maximumAdapterPayloadLength)}-character adapter boundary.`,
+      },
+    };
+  }
   if (outcome.exitCode === 0) {
     const parsed = parseJson(outcome.stdout.trim());
     if (parsed.value === undefined && outcome.stdout.trim() !== "") {
@@ -504,8 +508,13 @@ function readMcpToolResult(result: McpToolResult): {
   }
   const text = readToolResultText(result);
   if (text === undefined) return { outcome: "success", result };
+  // `parseJson` omits `value` when parsing failed, which is distinct from the
+  // text being the valid JSON document `null`.
   const parsed = parseJson(text);
-  return { outcome: "success", result: parsed.value ?? text };
+  return {
+    outcome: "success",
+    result: "value" in parsed ? parsed.value : text,
+  };
 }
 
 function toolCallRequestBody(toolName: string, input: unknown): string {
@@ -591,23 +600,32 @@ export function createAdapterRunner(
     adapterLabel: string,
   ): Promise<Omit<AdapterInvocationResult, "durationMs">> => {
     // A command-line adapter carries its arguments in the argument vector,
-    // which the operating system bounds per argument. Refusing here names the
-    // real constraint instead of surfacing a spawn failure.
+    // which Linux bounds per argument and Windows bounds as one command line.
+    // Refusing here names the real constraint instead of surfacing a spawn
+    // failure.
     const oversized = rest.find(
       (value) => Buffer.byteLength(value, "utf8") > maximumArgumentBytes,
     );
-    if (oversized !== undefined) {
+    const commandLine = renderCommand(argv);
+    const overWindowsLimit =
+      process.platform === "win32" &&
+      commandLine.length > maximumWindowsCommandLineChars;
+    if (oversized !== undefined || overWindowsLimit) {
       return {
         adapter: invocation.adapter,
         capabilityId: invocation.capabilityId,
         outcome: "adapter-error",
+        identityApplied: false,
         error: {
           code: "ARGUMENTS_TOO_LARGE",
-          message: `The ${adapterLabel} adapter passes arguments on the command line, which this system bounds at ${String(maximumArgumentBytes)} bytes. Use an MCP adapter for a payload this size.`,
+          message:
+            oversized !== undefined
+              ? `The ${adapterLabel} adapter passes arguments on the command line, which this system bounds at ${String(maximumArgumentBytes)} bytes per argument. Use an MCP adapter for a payload this size.`
+              : `The ${adapterLabel} adapter passes arguments on the command line, which Windows bounds at ${String(maximumWindowsCommandLineChars)} characters in total. Use an MCP adapter for a payload this size.`,
         },
         exchange: {
           kind: "process",
-          command: renderCommand(argv),
+          command: commandLine,
           argv,
           exitCode: null,
           signal: null,
@@ -629,16 +647,17 @@ export function createAdapterRunner(
       adapter: invocation.adapter,
       capabilityId: invocation.capabilityId,
       outcome: mapped.outcome,
+      identityApplied: identityApplies && invocation.identity != null,
       ...(mapped.result === undefined ? {} : { result: mapped.result }),
       ...(mapped.error === undefined ? {} : { error: mapped.error }),
       exchange: {
         kind: "process",
-        command: renderCommand(argv),
+        command: commandLine,
         argv,
         exitCode: outcome.exitCode,
         signal: outcome.signal,
-        stdout: outcome.stdout,
-        stderr: outcome.stderr,
+        stdout: cap(outcome.stdout),
+        stderr: cap(outcome.stderr),
       },
     };
   };
@@ -657,6 +676,7 @@ export function createAdapterRunner(
       "stdio",
       renderCommand(argv),
       "MCP stdio",
+      identityApplies && invocation.identity != null,
       async (signal) => {
         const connection = await connectMcpClient(
           {
@@ -691,6 +711,7 @@ export function createAdapterRunner(
     transport: "stdio" | "http",
     target: string,
     adapterLabel: string,
+    identityApplied: boolean,
     open: (signal: AbortSignal) => Promise<{
       call: (signal: AbortSignal) => Promise<McpClientToolResult>;
       close: () => Promise<void>;
@@ -728,6 +749,7 @@ export function createAdapterRunner(
         adapter: invocation.adapter,
         capabilityId: invocation.capabilityId,
         outcome: mapped.outcome,
+        identityApplied,
         ...(mapped.result === undefined ? {} : { result: mapped.result }),
         ...(mapped.error === undefined ? {} : { error: mapped.error }),
         exchange: exchange(called.response),
@@ -748,6 +770,7 @@ export function createAdapterRunner(
         adapter: invocation.adapter,
         capabilityId: invocation.capabilityId,
         outcome: "adapter-error",
+        identityApplied,
         error: { code, message },
         exchange: exchange({ error: { code, message } }),
       };
@@ -765,6 +788,7 @@ export function createAdapterRunner(
       "http",
       resolution.url,
       "MCP HTTP",
+      false,
       async (signal) => {
         const connection = await connectMcpClient(
           {
@@ -790,7 +814,7 @@ export function createAdapterRunner(
     invocation: AdapterInvocation,
     url: string,
   ): Promise<Omit<AdapterInvocationResult, "durationMs">> =>
-    runFacadeCall(invocation, "http", url, "MCP HTTP", async () => {
+    runFacadeCall(invocation, "http", url, "MCP HTTP", false, async () => {
       const oauthCall = options.oauthCall;
       if (oauthCall === undefined) {
         throw new McpClientError(
@@ -815,6 +839,7 @@ export function createAdapterRunner(
       invocation.input,
     );
     const identity = useSessionToken ? invocation.identity : null;
+    const identityApplied = identity != null;
     const timeoutMs = resolveTimeout(invocation.timeoutMs, fallbackTimeoutMs);
     const deadline = AbortSignal.timeout(timeoutMs);
     const signal =
@@ -855,6 +880,7 @@ export function createAdapterRunner(
         adapter: invocation.adapter,
         capabilityId: invocation.capabilityId,
         outcome: "adapter-error",
+        identityApplied,
         error: failed,
         exchange: {
           kind: "http",
@@ -867,7 +893,10 @@ export function createAdapterRunner(
       };
     }
 
-    const responseBody = cap(await response.text());
+    // The complete body is decoded up to the shared adapter payload boundary;
+    // only the recorded exchange is truncated to the capture length.
+    const responseText = await response.text();
+    const responseBody = cap(responseText);
     const exchange: AdapterExchange = {
       kind: "http",
       method: "POST",
@@ -879,8 +908,20 @@ export function createAdapterRunner(
     const base = {
       adapter: invocation.adapter,
       capabilityId: invocation.capabilityId,
+      identityApplied,
       exchange,
     } as const;
+
+    if (responseText.length > maximumAdapterPayloadLength) {
+      return {
+        ...base,
+        outcome: "adapter-error",
+        error: {
+          code: "LIMIT_EXCEEDED",
+          message: `The engine host answered with more than the ${String(maximumAdapterPayloadLength)}-character adapter boundary.`,
+        },
+      };
+    }
 
     if (!response.ok) {
       return {
@@ -899,7 +940,7 @@ export function createAdapterRunner(
     }
 
     const message = asRecord(
-      readHttpMessage(response.headers.get("content-type"), responseBody),
+      readHttpMessage(response.headers.get("content-type"), responseText),
     );
     const result = asRecord(message?.result);
     if (result === undefined) {
@@ -953,6 +994,7 @@ export function createAdapterRunner(
         adapter: invocation.adapter,
         capabilityId: invocation.capabilityId,
         outcome: "adapter-error",
+        identityApplied: false,
         error: failure,
         exchange: {
           kind: "mcp",
@@ -1032,6 +1074,7 @@ export function createAdapterRunner(
           adapter: invocation.adapter,
           capabilityId: invocation.capabilityId,
           outcome: "adapter-error",
+          identityApplied: false,
           error: {
             code: "ADAPTER_FAILED",
             message:

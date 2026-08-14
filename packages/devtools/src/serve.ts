@@ -166,6 +166,8 @@ async function startWithEngine(
       ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
     });
   } catch (error) {
+    // Start-up failure releases the same resources shutdown does.
+    await oauth.close().catch(() => undefined);
     await engineHost.close();
     throw error;
   }
@@ -262,6 +264,8 @@ async function startWithWatch(
       ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
     });
   } catch (error) {
+    // Start-up failure releases the same resources shutdown does.
+    await oauth.close().catch(() => undefined);
     await watch.handles.close();
     throw error;
   }

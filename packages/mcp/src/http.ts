@@ -210,6 +210,16 @@ function isLoopback(host: string): boolean {
   );
 }
 
+/**
+ * The loopback form OAuth metadata may use. The MCP client trusts only the
+ * literal loopback hosts (RFC 8252 prefers them over `localhost`), so the
+ * published document must not be broader than what the client will accept.
+ */
+function isLiteralLoopback(host: string): boolean {
+  const normalized = normalizeHostname(host);
+  return normalized === "127.0.0.1" || normalized === "[::1]";
+}
+
 function normalizedAllowedHosts(
   bindHost: string,
   configured: ReadonlyArray<string> | undefined,
@@ -292,7 +302,7 @@ function validateResourceUrl(value: string): void {
   }
   const secure = url.protocol === "https:";
   const loopbackDevelopment =
-    url.protocol === "http:" && isLoopback(url.hostname);
+    url.protocol === "http:" && isLiteralLoopback(url.hostname);
   if (
     (!secure && !loopbackDevelopment) ||
     url.username !== "" ||
@@ -302,7 +312,7 @@ function validateResourceUrl(value: string): void {
     url.hash !== ""
   ) {
     throw new TypeError(
-      "Protected resource metadata requires an HTTPS /mcp resource URL, except for loopback HTTP development.",
+      "Protected resource metadata requires an HTTPS /mcp resource URL, except for literal-loopback (127.0.0.1 or [::1]) HTTP development.",
     );
   }
 }
@@ -324,9 +334,9 @@ function validateAuthorizationServerUrl(value: string, resource: string): void {
   const resourceUrl = new URL(resource);
   const loopbackDevelopment =
     url.protocol === "http:" &&
-    isLoopback(url.hostname) &&
+    isLiteralLoopback(url.hostname) &&
     resourceUrl.protocol === "http:" &&
-    isLoopback(resourceUrl.hostname);
+    isLiteralLoopback(resourceUrl.hostname);
   if (
     (url.protocol !== "https:" && !loopbackDevelopment) ||
     url.username !== "" ||
@@ -335,7 +345,7 @@ function validateAuthorizationServerUrl(value: string, resource: string): void {
     url.hash !== ""
   ) {
     throw new TypeError(
-      "Authorization server URLs require HTTPS, except on loopback behind a loopback HTTP resource, and cannot contain credentials, a query, or a fragment.",
+      "Authorization server URLs require HTTPS, except on literal loopback behind a literal-loopback HTTP resource, and cannot contain credentials, a query, or a fragment.",
     );
   }
 }

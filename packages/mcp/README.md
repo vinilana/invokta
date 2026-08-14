@@ -70,13 +70,15 @@ Tokens, PKCE material, and registration artifacts stay in process memory and are
 cleared on `close`
 ([ADR 0023](../../docs/adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md),
 amended by
-[ADR 0030](../../docs/adr/0031-oauth-discovery-inspection-and-advertised-servers.md)).
+[ADR 0031](../../docs/adr/0031-oauth-discovery-inspection-and-advertised-servers.md)).
 
 Protected resource metadata is read only from the MCP resource's own origin.
 The authorization servers that document advertises are then trusted for
-authorization-server metadata, dynamic client registration, the authorization
-endpoint, and the token endpoint, so an engine on one origin can delegate to an
-identity provider on another.
+authorization-server metadata and, once that metadata validates with a matching
+issuer, the endpoints it publishes — dynamic client registration, the
+authorization endpoint, and the token endpoint — are trusted on their own
+origins too, so an engine can delegate to a hosted identity provider that
+serves its OAuth endpoints apart from its issuer.
 
 ## Inspecting OAuth discovery
 

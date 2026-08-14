@@ -111,6 +111,20 @@ describe("parseHttpTarget", () => {
         },
       }),
     ).toThrow(/Host header/);
+    // The whole facade policy applies, not just Host: a header the MCP client
+    // refuses must be refused when the target is saved, not per invocation.
+    for (const name of ["Cookie", "Origin", "Sec-Fetch-Mode", "Proxy-Auth"]) {
+      expect(() =>
+        parseHttpTarget({
+          kind: "external",
+          url,
+          authentication: {
+            type: "headers",
+            headers: [{ name, value: { kind: "literal", value: "x" } }],
+          },
+        }),
+      ).toThrow(/reserved by the MCP client/);
+    }
     expect(() =>
       parseHttpTarget({
         kind: "external",

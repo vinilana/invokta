@@ -10,6 +10,7 @@ export {
   beginMcpOAuthAuthorization,
   connectMcpClient,
   inspectMcpOAuth,
+  isForbiddenMcpClientHeader,
   type McpClientConnection,
   McpClientError,
   type McpClientErrorCode,

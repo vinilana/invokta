@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 /**
@@ -59,10 +60,24 @@ export function isEntryAdapter(value: unknown): value is EntryAdapter {
   );
 }
 
+function isInside(root: string, candidate: string): boolean {
+  const inside = relative(root, candidate);
+  return (
+    inside !== "" &&
+    inside !== ".." &&
+    !inside.startsWith(`..${sep}`) &&
+    !isAbsolute(inside)
+  );
+}
+
 /**
  * Validates an entry point the interface named. The path is resolved against
  * the directory `serve` runs in and must stay inside it: the devtools executes
- * what the developer points at, and the project is the boundary of that.
+ * what the developer points at, and the project is the boundary of that. The
+ * comparison uses canonical filesystem identity, so a symlink inside the
+ * project cannot name a file outside it — and the canonical path is what the
+ * child is later spawned with, so retargeting the link after selection does
+ * not move what runs.
  */
 export function parseEntryPoint(value: unknown, cwd: string): EntryPoint {
   if (typeof value !== "object" || value === null) {
@@ -90,14 +105,25 @@ export function parseEntryPoint(value: unknown, cwd: string): EntryPoint {
     );
   }
   const path = record.path.trim();
-  const resolvedPath = resolve(cwd, path);
-  const inside = relative(cwd, resolvedPath);
-  if (
-    inside === "" ||
-    inside.startsWith(`..${sep}`) ||
-    inside === ".." ||
-    isAbsolute(inside)
-  ) {
+  const lexicalPath = resolve(cwd, path);
+  if (!isInside(cwd, lexicalPath)) {
+    throw new EntryTargetError(
+      "INVALID_ENTRY_POINT",
+      "The entry point must be inside the directory the dev server runs in.",
+    );
+  }
+  let realCwd: string;
+  let resolvedPath: string;
+  try {
+    realCwd = realpathSync(cwd);
+    resolvedPath = realpathSync(lexicalPath);
+  } catch {
+    throw new EntryTargetError(
+      "INVALID_ENTRY_POINT",
+      "The entry point does not exist inside the project.",
+    );
+  }
+  if (!isInside(realCwd, resolvedPath)) {
     throw new EntryTargetError(
       "INVALID_ENTRY_POINT",
       "The entry point must be inside the directory the dev server runs in.",

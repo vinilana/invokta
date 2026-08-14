@@ -33,16 +33,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   memory and is never persisted or echoed back.
 - `@invokta/mcp` now reaches an OAuth Authorization Server on a different origin
   than the MCP resource, provided the resource's own Protected Resource Metadata
-  advertises it (ADR 0031, amending ADR 0023). That document is still read only
-  from the resource's own origin over HTTPS, so the resource remains the
-  authority on who may issue tokens for it; the loopback-only redirect,
-  mandatory PKCE, audience binding, `state` validation, and in-memory-only
-  credentials are unchanged. Hosted identity providers, which every
-  `examples/auth-*` engine demonstrates, were previously refused outright.
-  `serveMcpHttp` correspondingly accepts any loopback Authorization Server in
-  `auth.resourceMetadata` behind a loopback HTTP resource, so a local identity
-  provider on its own port can be advertised; a deployed engine still cannot
-  advertise a plain-HTTP one.
+  advertises it (ADR 0031, amending ADR 0023). Once that server's RFC 8414
+  metadata validates with a matching issuer, the endpoints it publishes are
+  followed on their own origins too — the shape hosted providers such as
+  Cognito actually deploy. That document is still read only from the resource's
+  own origin over HTTPS, so the resource remains the authority on who may issue
+  tokens for it; the loopback-only redirect, mandatory PKCE, audience binding,
+  `state` validation, and in-memory-only credentials are unchanged. Hosted
+  identity providers, which every `examples/auth-*` engine demonstrates, were
+  previously refused outright. `serveMcpHttp` correspondingly accepts any
+  literal-loopback Authorization Server in `auth.resourceMetadata` behind a
+  literal-loopback HTTP resource, so a local identity provider on its own port
+  can be advertised; a deployed engine still cannot advertise a plain-HTTP one.
+- `isForbiddenMcpClientHeader` is exported from `@invokta/mcp`, so a caller
+  collecting custom authentication headers can refuse what the client facade
+  would refuse at the moment the header is named rather than per call.
 - `@invokta/mcp` exposes `inspectMcpOAuth`, a read-only diagnostic that runs the
   OAuth discovery chain — the `401` challenge, Protected Resource Metadata, the
   Authorization Server's RFC 8414 metadata, and whether dynamic client

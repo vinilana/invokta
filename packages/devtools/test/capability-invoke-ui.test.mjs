@@ -1294,6 +1294,88 @@ describe("capability invocation", () => {
     resetAdapterSelection();
   });
 
+  it("gates Authorize behind a discovery check of the exact drafted URL", async () => {
+    installDocument();
+    installGlobal("sessionStorage", new MemoryStorage());
+    const fetch = vi.fn(async (path) => {
+      if (path === "/api/http-target/check") {
+        return jsonResponse({
+          steps: [
+            { name: "challenge", outcome: "ok", summary: "401 with metadata." },
+          ],
+          ready: true,
+        });
+      }
+      return jsonResponse({
+        kind: "devtools",
+        authentication: { type: "session-token" },
+      });
+    });
+    installGlobal("fetch", fetch);
+
+    const { resetAdapterSelection } = await import("../src/ui/adapters.js");
+    const { resetHttpTarget } = await import("../src/ui/http-auth.js");
+    resetAdapterSelection();
+    resetHttpTarget();
+    const { renderInvokePanel } = await import("../src/ui/invoke-panel.js");
+    const panel = renderInvokePanel(classify);
+    const elements = walk(panel);
+    const choice = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("auth-choice"),
+    );
+    const url = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("auth-url"),
+    );
+    const type = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("auth-external-type"),
+    );
+    const check = elements.find(
+      (node) =>
+        node instanceof FakeElement && node.classList.contains("auth-check"),
+    );
+    const apply = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.tagName === "BUTTON" &&
+        node.textContent === "Use endpoint",
+    );
+
+    choice.value = "external";
+    choice.dispatchEvent(new Event("change"));
+    type.value = "oauth";
+    type.dispatchEvent(new Event("change"));
+
+    // A fresh OAuth endpoint offers Check while it is drafted, and keeps
+    // Authorize disabled until the drafted URL itself passed the check.
+    expect(check.hidden).toBe(false);
+    expect(apply.disabled).toBe(true);
+
+    url.value = "https://mcp.example.com/mcp";
+    url.dispatchEvent(new Event("input"));
+    check.dispatchEvent(new Event("click"));
+    await waitFor(() => expect(apply.disabled).toBe(false));
+
+    // The check carried the drafted URL, not a previously stored target.
+    const [, checkRequest] = fetch.mock.calls.find(
+      ([path]) => path === "/api/http-target/check",
+    );
+    expect(JSON.parse(checkRequest.body)).toEqual({
+      url: "https://mcp.example.com/mcp",
+    });
+
+    // Editing the URL invalidates the readiness the old report established.
+    url.value = "https://other.example.com/mcp";
+    url.dispatchEvent(new Event("input"));
+    expect(apply.disabled).toBe(true);
+
+    resetHttpTarget();
+    resetAdapterSelection();
+  });
+
   it("reports an adapter that could not complete the call", async () => {
     installDocument();
     installGlobal("sessionStorage", new MemoryStorage());
@@ -1305,10 +1387,13 @@ describe("capability invocation", () => {
           capabilityId: "support.classify-ticket",
           outcome: "adapter-error",
           durationMs: 90,
+          identityApplied: true,
           error: { code: "SPAWN_FAILED", message: "The server did not start." },
+          // The exchange shape the server actually emits for a facade call.
           exchange: {
-            kind: "stdio",
-            command: "node stdio-entry.js",
+            kind: "mcp",
+            transport: "stdio",
+            target: "node stdio-entry.js",
             request: '{"method":"tools/call"}',
             response: '{"error":{"code":"SPAWN_FAILED"}}',
           },
@@ -1346,6 +1431,9 @@ describe("capability invocation", () => {
     expect(panel.textContent).toContain("Result · adapter error");
     expect(result.textContent).toContain("SPAWN_FAILED");
     expect(panel.textContent).toContain("Server command");
+    expect(panel.textContent).toContain("node stdio-entry.js");
+    expect(panel.textContent).toContain("Request · tools/call");
+    expect(panel.textContent).toContain('{"method":"tools/call"}');
     resetAdapterSelection();
   });
 

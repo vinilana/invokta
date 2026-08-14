@@ -3,6 +3,7 @@ import {
   type IncomingMessage,
   type RequestListener,
   type Server as NodeHttpServer,
+  type ServerResponse,
 } from "node:http";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -59,6 +60,8 @@ async function startOrigin(listener: RequestListener): Promise<string> {
 interface FixtureOrigins {
   readonly resource: string;
   readonly identity: string;
+  /** A separate origin the identity's metadata may delegate endpoints to. */
+  readonly endpoints: string;
   readonly unadvertised: string;
 }
 
@@ -73,12 +76,49 @@ async function startTrustFixture(
     readonly tokenEndpoint?: (origins: FixtureOrigins) => string;
   } = {},
 ) {
-  const origins = { resource: "", identity: "", unadvertised: "" };
+  const origins = {
+    resource: "",
+    identity: "",
+    endpoints: "",
+    unadvertised: "",
+  };
   const observed = {
     identityPaths: [] as string[],
+    endpointsPaths: [] as string[],
     registrationBodies: [] as string[],
     tokenBodies: [] as string[],
     unadvertisedPaths: [] as string[],
+  };
+
+  /** The register and token endpoints, servable from more than one origin. */
+  const providerEndpoints = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
+    const url = new URL(request.url ?? "/", "http://provider.invalid");
+    if (request.method === "POST" && url.pathname === "/register") {
+      const body = await requestBody(request);
+      observed.registrationBodies.push(body);
+      const metadata = JSON.parse(body) as Record<string, unknown>;
+      response
+        .writeHead(201, { "content-type": "application/json" })
+        .end(
+          JSON.stringify({ ...metadata, client_id: "invokta-trust-client" }),
+        );
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/token") {
+      observed.tokenBodies.push(await requestBody(request));
+      response.writeHead(200, { "content-type": "application/json" }).end(
+        JSON.stringify({
+          access_token: ACCESS_TOKEN,
+          token_type: "Bearer",
+          expires_in: 300,
+        }),
+      );
+      return;
+    }
+    response.writeHead(404).end();
   };
 
   origins.resource = await startOrigin(async (request, response) => {
@@ -173,29 +213,14 @@ async function startTrustFixture(
       );
       return;
     }
-    if (request.method === "POST" && url.pathname === "/register") {
-      const body = await requestBody(request);
-      observed.registrationBodies.push(body);
-      const metadata = JSON.parse(body) as Record<string, unknown>;
-      response
-        .writeHead(201, { "content-type": "application/json" })
-        .end(
-          JSON.stringify({ ...metadata, client_id: "invokta-trust-client" }),
-        );
-      return;
-    }
-    if (request.method === "POST" && url.pathname === "/token") {
-      observed.tokenBodies.push(await requestBody(request));
-      response.writeHead(200, { "content-type": "application/json" }).end(
-        JSON.stringify({
-          access_token: ACCESS_TOKEN,
-          token_type: "Bearer",
-          expires_in: 300,
-        }),
-      );
-      return;
-    }
-    response.writeHead(404).end();
+    await providerEndpoints(request, response);
+  });
+
+  origins.endpoints = await startOrigin(async (request, response) => {
+    observed.endpointsPaths.push(
+      new URL(request.url ?? "/", origins.endpoints).pathname,
+    );
+    await providerEndpoints(request, response);
   });
 
   origins.unadvertised = await startOrigin((request, response) => {
@@ -241,9 +266,53 @@ describe("advertised OAuth authorization servers", () => {
     ).toBe(fixture.url);
   });
 
-  it("refuses an authorization endpoint the trusted document does not advertise", async () => {
+  it("follows the OAuth endpoints the validated metadata places on another origin", async () => {
+    // The hosted-provider shape: the issuer answers discovery, but its
+    // endpoints live on an origin the resource document never names — the way
+    // Cognito serves its OAuth endpoints apart from the issuer.
     const fixture = await startTrustFixture({
-      authorizationEndpoint: (origins) => `${origins.unadvertised}/authorize`,
+      authorizationEndpoint: (origins) => `${origins.endpoints}/authorize`,
+      registrationEndpoint: (origins) => `${origins.endpoints}/register`,
+      tokenEndpoint: (origins) => `${origins.endpoints}/token`,
+    });
+
+    const authorization = await beginMcpOAuthAuthorization(
+      oauthTarget(fixture.url),
+      { redirectUrl: REDIRECT_URL, state: STATE },
+    );
+    authorizations.push(authorization);
+
+    const authorizationUrl = new URL(authorization.authorizationUrl);
+    expect(authorizationUrl.origin).toBe(fixture.origins.endpoints);
+    expect(authorizationUrl.searchParams.get("state")).toBe(STATE);
+    expect(fixture.observed.endpointsPaths).toContain("/register");
+
+    const connection = await authorization.finish("one-time-code");
+    connections.push(connection);
+    expect(fixture.observed.endpointsPaths).toContain("/token");
+    expect(
+      new URLSearchParams(fixture.observed.tokenBodies[0] ?? "").get(
+        "resource",
+      ),
+    ).toBe(fixture.url);
+  });
+
+  it("refuses a metadata endpoint that is neither HTTPS nor loopback", async () => {
+    const fixture = await startTrustFixture({
+      authorizationEndpoint: () => "http://identity.example.test/authorize",
+    });
+
+    await expect(
+      beginMcpOAuthAuthorization(oauthTarget(fixture.url), {
+        redirectUrl: REDIRECT_URL,
+        state: STATE,
+      }),
+    ).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+  });
+
+  it("refuses a metadata endpoint that carries a fragment", async () => {
+    const fixture = await startTrustFixture({
+      tokenEndpoint: (origins) => `${origins.unadvertised}/token#fragment`,
     });
 
     await expect(
@@ -255,9 +324,9 @@ describe("advertised OAuth authorization servers", () => {
     expect(fixture.observed.unadvertisedPaths).toEqual([]);
   });
 
-  it("refuses a registration endpoint the trusted document does not advertise", async () => {
+  it("refuses an advertised authorization server carrying a query", async () => {
     const fixture = await startTrustFixture({
-      registrationEndpoint: (origins) => `${origins.unadvertised}/register`,
+      authorizationServers: (origins) => [`${origins.identity}?tenant=x`],
     });
 
     await expect(
@@ -265,24 +334,8 @@ describe("advertised OAuth authorization servers", () => {
         redirectUrl: REDIRECT_URL,
         state: STATE,
       }),
-    ).rejects.toMatchObject({ code: "CONNECTION_FAILED" });
-    expect(fixture.observed.unadvertisedPaths).toEqual([]);
-  });
-
-  it("refuses a token endpoint the trusted document does not advertise", async () => {
-    const fixture = await startTrustFixture({
-      tokenEndpoint: (origins) => `${origins.unadvertised}/token`,
-    });
-    const authorization = await beginMcpOAuthAuthorization(
-      oauthTarget(fixture.url),
-      { redirectUrl: REDIRECT_URL, state: STATE },
-    );
-    authorizations.push(authorization);
-
-    await expect(authorization.finish("one-time-code")).rejects.toMatchObject({
-      code: "CONNECTION_FAILED",
-    });
-    expect(fixture.observed.unadvertisedPaths).toEqual([]);
+    ).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    expect(fixture.observed.identityPaths).toEqual([]);
   });
 
   it("refuses an advertised authorization server served over plain HTTP", async () => {

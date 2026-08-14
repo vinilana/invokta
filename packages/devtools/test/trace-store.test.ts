@@ -105,8 +105,38 @@ describe("createTraceStore", () => {
     expect(entry.call.exitCode).toBe(1);
     expect(entry.call.request).toBe("engi");
     expect(entry.requestTruncated).toBe(true);
+    // The truncation badge names how much was cut, same as an exchange.
+    expect(entry.requestOriginalSize).toBe("engine run fixture.echo".length);
     expect(entry.call.response).toBe("ok");
     expect(entry.responseTruncated).toBe(false);
+    expect(entry.responseOriginalSize).toBeUndefined();
+  });
+
+  it("keeps the invocation input only while it still parses whole", () => {
+    const store = createTraceStore({ maxCapturedBodyLength: 16 });
+    const shared = {
+      adapter: "cli",
+      capabilityId: "fixture.echo",
+      outcome: "success",
+      durationMs: 1,
+      request: "engine run fixture.echo",
+      response: "{}",
+    } as const;
+
+    const kept = store.appendAdapterCall({ ...shared, input: '{"ok":true}' });
+    expect(kept.kind).toBe("adapter");
+    if (kept.kind !== "adapter") return;
+    expect(kept.call.input).toBe('{"ok":true}');
+
+    // A truncated input would no longer parse, so it is dropped instead of
+    // being offered as a reproduction that silently rewrites the call.
+    const dropped = store.appendAdapterCall({
+      ...shared,
+      input: `{"message":"${"x".repeat(32)}"}`,
+    });
+    expect(dropped.kind).toBe("adapter");
+    if (dropped.kind !== "adapter") return;
+    expect(dropped.call.input).toBeUndefined();
   });
 
   it("records the identity an emulated call acted as, including anonymous", () => {

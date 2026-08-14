@@ -7,7 +7,7 @@ import {
   type AdapterInvocationResult,
   type AdapterRunner,
   AdapterBusyError,
-  adapterDescriptors,
+  adapterIds,
   createAdapterRunner,
   isAdapterId,
 } from "../src/adapter-runner.js";
@@ -93,18 +93,7 @@ function invoke(
 
 describe("adapter catalog", () => {
   it("publishes exactly the four execution sources", () => {
-    expect(adapterDescriptors.map((entry) => entry.id)).toEqual([
-      "direct",
-      "cli",
-      "mcp-stdio",
-      "mcp-http",
-    ]);
-    for (const descriptor of adapterDescriptors) {
-      expect(descriptor.source).toBe(descriptor.id);
-    }
-    expect(
-      adapterDescriptors.find((entry) => entry.id === "mcp-http")?.identity,
-    ).toBe("per-request");
+    expect([...adapterIds]).toEqual(["direct", "cli", "mcp-stdio", "mcp-http"]);
     expect(isAdapterId("cli")).toBe(true);
     expect(isAdapterId("grpc")).toBe(false);
   });

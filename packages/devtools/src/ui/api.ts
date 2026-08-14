@@ -1,12 +1,5 @@
 import type { AdapterId } from "./adapters.js";
 
-export interface AdapterInfo {
-  readonly id: AdapterId;
-  readonly source: string;
-  readonly label: string;
-  readonly identity: "per-request" | "process";
-}
-
 export interface EngineInfo {
   readonly name: string;
   readonly version: string;
@@ -16,8 +9,6 @@ export interface EngineInfo {
     readonly specifier: string;
     readonly exportName: string;
   };
-  readonly adapters?: readonly AdapterInfo[];
-  readonly maxConcurrentInvocations?: number;
 }
 
 export interface CapabilityInfo {
@@ -160,11 +151,15 @@ export const api = {
   engine: () => getJson<EngineInfo>("/api/engine"),
   httpTarget: () => getJson<HttpTargetView>("/api/http-target"),
   /**
-   * Runs the read-only OAuth discovery check against the selected endpoint.
-   * Nothing is authorized and no credential is sent.
+   * Runs the read-only OAuth discovery check against the exact endpoint the
+   * form is drafting. Nothing is authorized and no credential is sent.
    */
-  checkHttpTarget: async (): Promise<OAuthInspection> => {
-    const response = await fetch("/api/http-target/check", { method: "POST" });
+  checkHttpTarget: async (url: string): Promise<OAuthInspection> => {
+    const response = await fetch("/api/http-target/check", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
     if (!response.ok)
       await failWithDetail(response, "The endpoint could not be checked.");
     return (await response.json()) as OAuthInspection;
@@ -313,7 +308,11 @@ export interface AdapterErrorInfo {
   readonly publicDetails?: unknown;
 }
 
-/** What the selected adapter actually exchanged with the engine. */
+/**
+ * What the selected adapter actually exchanged with the engine. This mirrors
+ * the server's `AdapterExchange` in `adapter-runner.ts` field for field; the
+ * two must not drift, or the exchange panes render the wrong record.
+ */
 export type AdapterExchange =
   | {
       readonly kind: "http";
@@ -324,8 +323,11 @@ export type AdapterExchange =
       readonly responseBody: string;
     }
   | {
-      readonly kind: "stdio";
-      readonly command: string;
+      /** One call through the MCP client facade, which frames it for us. */
+      readonly kind: "mcp";
+      readonly transport: "stdio" | "http";
+      /** The spawned server command, or the endpoint that was called. */
+      readonly target: string;
       readonly request: string;
       readonly response: string;
     }
@@ -347,6 +349,8 @@ export interface AdapterInvocationResult {
   readonly result?: unknown;
   readonly error?: AdapterErrorInfo;
   readonly exchange: AdapterExchange;
+  /** Whether the selected devtools identity was presented to this call. */
+  readonly identityApplied?: boolean;
 }
 
 export interface AdapterInvocationRequest {

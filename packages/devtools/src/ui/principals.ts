@@ -196,11 +196,9 @@ export function listKnownPrincipals(): readonly PrincipalInfo[] {
 export async function ensureActiveToken(): Promise<void> {
   const principals = await api.principals();
   rememberPrincipals(principals);
-  if (selectionIsExplicit && activeKey === null) {
-    // The developer chose to act anonymously; do not undo it on reload.
-    notifyPrincipalChange();
-    return;
-  }
+  // Tokens of principals that no longer exist are pruned before anything
+  // else: an explicit anonymous selection must not leave orphaned bearer
+  // tokens sitting in session storage with no control left to reveal them.
   const knownKeys = new Set(principals.map(({ key }) => key));
   let tokensChanged = false;
   for (const key of Object.keys(tokens)) {
@@ -209,6 +207,11 @@ export async function ensureActiveToken(): Promise<void> {
     tokensChanged = true;
   }
   if (tokensChanged) writeTokens(tokens);
+  if (selectionIsExplicit && activeKey === null) {
+    // The developer chose to act anonymously; do not undo it on reload.
+    notifyPrincipalChange();
+    return;
+  }
 
   const selected =
     principals.find(({ key }) => key === activeKey) ??

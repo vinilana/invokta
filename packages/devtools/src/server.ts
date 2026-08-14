@@ -17,11 +17,7 @@ import type {
   AdapterInvocationResult,
   AdapterRunner,
 } from "./adapter-runner.js";
-import {
-  adapterDescriptors,
-  AdapterBusyError,
-  isAdapterId,
-} from "./adapter-runner.js";
+import { AdapterBusyError, isAdapterId } from "./adapter-runner.js";
 import type { EntryTargetStore } from "./entry-target.js";
 import {
   EntryTargetError,
@@ -102,6 +98,8 @@ const defaultPort = 4100;
 const host = "127.0.0.1";
 const apiBodyLimitBytes = 64 * 1024;
 const mcpBodyLimitBytes = 1024 * 1024;
+/** Bounds the whole discovery chain of one OAuth endpoint check. */
+const httpTargetCheckTimeoutMs = 20_000;
 
 const appShellPage = `<!doctype html>
 <html lang="en" data-theme="dark">
@@ -271,19 +269,24 @@ function readCapabilityView(value: unknown): CapabilityView | undefined {
 /**
  * Renders what the adapter exchanged into the two strings the trace shows.
  * Each adapter carries a different shape, and the trace stays one readable
- * feed rather than four. The identity the call acted as travels with it, so
- * the interface can report what each test identity managed to do.
+ * feed rather than four. The identity the call acted as travels with it — but
+ * only when the adapter actually presented it, so a call whose principal came
+ * from a project entry point or an external endpoint is never attributed to
+ * the selected test identity. The invocation arguments travel too, so "Open
+ * in Playground" can reproduce a call whose exchange is a rendered command.
  */
 function toAdapterCapture(
   result: AdapterInvocationResult,
   principalId: string | null,
+  input: string,
 ): AdapterCallCapture {
   const shared = {
     adapter: result.adapter,
     capabilityId: result.capabilityId,
     outcome: result.outcome,
     durationMs: result.durationMs,
-    principalId,
+    principalId: result.identityApplied ? principalId : null,
+    input,
     ...(result.error === undefined ? {} : { errorCode: result.error.code }),
   };
   if (result.exchange.kind === "http") {
@@ -493,36 +496,62 @@ export async function startDevtoolsServer(
   };
 
   /**
-   * Reads or replaces where MCP HTTP sends a call. The response never carries
-   * a credential: only the kind, the URL, the authentication type, and header
-   * or environment-variable names leave this process.
-   */
-  /**
-   * Runs the read-only OAuth discovery check against the selected endpoint.
-   * It authorizes nothing and sends no credential: the point is to attribute a
+   * Runs the read-only OAuth discovery check against the exact endpoint the
+   * caller drafted (falling back to the selected external endpoint). It
+   * authorizes nothing and sends no credential: the point is to attribute a
    * failure to the leg that produced it, instead of to authentication as a
-   * whole.
+   * whole. The inspection is bounded by a deadline and cancelled when the
+   * browser goes away, so a target that never answers cannot pin this handler.
    */
   const handleHttpTargetCheck = async (
+    request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> => {
-    const target = options.httpTarget.current();
-    if (target.kind !== "external") {
-      sendJson(response, 400, {
-        error: "not_an_external_endpoint",
-        message:
-          "The devtools host authenticates with its own session tokens; there is no OAuth chain to check.",
-      });
+    const read = await readBody(request, apiBodyLimitBytes);
+    if (!read.ok) {
+      sendJson(response, 413, { error: "payload_too_large" });
       return;
     }
+    const body = parseJson(read.body) as { readonly url?: unknown } | undefined;
+    let url: string;
+    if (typeof body?.url === "string" && body.url !== "") {
+      url = body.url;
+    } else {
+      const target = options.httpTarget.current();
+      if (target.kind !== "external") {
+        sendJson(response, 400, {
+          error: "not_an_external_endpoint",
+          message:
+            "The devtools host authenticates with its own session tokens; there is no OAuth chain to check.",
+        });
+        return;
+      }
+      url = target.url;
+    }
+    const deadline = AbortSignal.timeout(httpTargetCheckTimeoutMs);
+    const disconnected = new AbortController();
+    request.once("close", () => {
+      if (!response.writableEnded) disconnected.abort();
+    });
     try {
-      const inspection = await inspectMcpOAuth({
-        transport: "http",
-        url: target.url,
-        authentication: { type: "oauth" },
-      });
+      const inspection = await inspectMcpOAuth(
+        {
+          transport: "http",
+          url,
+          authentication: { type: "oauth" },
+        },
+        { signal: AbortSignal.any([deadline, disconnected.signal]) },
+      );
       sendJson(response, 200, inspection);
     } catch (error) {
+      if (disconnected.signal.aborted) return;
+      if (deadline.aborted) {
+        sendJson(response, 504, {
+          error: "check_timed_out",
+          message: "The endpoint did not answer the discovery check in time.",
+        });
+        return;
+      }
       sendJson(response, 400, {
         error: "invalid_target",
         message:
@@ -533,6 +562,11 @@ export async function startDevtoolsServer(
     }
   };
 
+  /**
+   * Reads or replaces where MCP HTTP sends a call. The response never carries
+   * a credential: only the kind, the URL, the authentication type, and header
+   * or environment-variable names leave this process.
+   */
   const handleHttpTarget = async (
     request: IncomingMessage,
     response: ServerResponse,
@@ -674,19 +708,21 @@ export async function startDevtoolsServer(
 
   /**
    * Completes the loopback leg of an interactive authorization. The provider
-   * redirects the developer's browser here; the page it renders only tells
-   * them to go back to the workbench.
+   * redirects the developer's browser here with the authorization code and
+   * state in the query, so nothing is rendered at this URL: the browser is
+   * redirected to a clean result path first (ADR 0023), keeping the code out
+   * of history and out of any Referer the result page's assets would send.
    */
   const handleOAuthCallback = async (
     response: ServerResponse,
     url: URL,
   ): Promise<void> => {
     const finish = (outcome: "success" | "rejected" | "error"): void => {
-      response.writeHead(200, {
-        "content-type": "text/html; charset=utf-8",
+      response.writeHead(303, {
+        location: `/oauth/result?outcome=${outcome}`,
         "cache-control": "no-store",
       });
-      response.end(oauthCallbackPage(outcome));
+      response.end();
     };
     const oauth = options.oauth;
     const states = url.searchParams.getAll("state");
@@ -811,7 +847,11 @@ export async function startDevtoolsServer(
       throw error;
     }
     options.trace.appendAdapterCall(
-      toAdapterCapture(result, identity?.principal.id ?? null),
+      toAdapterCapture(
+        result,
+        identity?.principal.id ?? null,
+        JSON.stringify(body.arguments ?? {}),
+      ),
     );
     sendJson(response, 200, result);
   };
@@ -940,7 +980,7 @@ export async function startDevtoolsServer(
         );
         return;
       }
-      await handleHttpTargetCheck(response);
+      await handleHttpTargetCheck(request, response);
       return;
     }
     if (path === "/api/entry-target") {
@@ -958,6 +998,28 @@ export async function startDevtoolsServer(
         return;
       }
       await handleOAuthCallback(response, url);
+      return;
+    }
+    if (path === "/oauth/result") {
+      if (method !== "GET") {
+        sendJson(
+          response,
+          405,
+          { error: "method_not_allowed" },
+          { allow: "GET" },
+        );
+        return;
+      }
+      const outcome = url.searchParams.get("outcome");
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end(
+        oauthCallbackPage(
+          outcome === "success" || outcome === "rejected" ? outcome : "error",
+        ),
+      );
       return;
     }
     if (path === "/api/invoke") {
@@ -1018,14 +1080,15 @@ export async function startDevtoolsServer(
     }
     if (path === "/api/engine") {
       const view = options.engineView();
+      // Deliberately no adapter catalog here: the interface owns the adapter
+      // presentations, and a second copy published from the server would be
+      // one more thing to keep in step by hand.
       sendJson(response, 200, {
         name: view.name,
         version: view.version,
         capabilityCount: view.capabilities.length,
         engineHost: { host: "127.0.0.1", port: options.enginePort() },
         module: options.module,
-        adapters: adapterDescriptors,
-        maxConcurrentInvocations: options.adapters.maxConcurrent,
       });
       return;
     }

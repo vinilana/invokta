@@ -57,19 +57,30 @@ anchor. Terminal discovery failures remain latched and fail closed.
 
 Once that document is read and validated, the origins of its
 `authorization_servers` entries are allowed for authorization-server metadata
-(RFC 8414), dynamic client registration (RFC 7591), the authorization endpoint,
-and the token endpoint. Every entry must be an HTTPS URL with no credentials and
-no fragment; loopback HTTP is accepted only when the MCP resource is itself
+(RFC 8414). Every entry must be an HTTPS URL with no credentials, no query, and
+no fragment — an RFC 8414 issuer identifier carries neither a query nor a
+fragment; loopback HTTP is accepted only when the MCP resource is itself
 loopback HTTP, so a remote HTTPS resource still cannot downgrade any endpoint. A
 document that advertises a malformed or disallowed entry is rejected whole, and
 a document that advertises no authorization server is rejected.
 
-The allowlist is a single internal set derived only from that document: the
-resource origin, plus the advertised origins once the document has been
-validated. Nothing else adds to it, it exists only for the lifetime of one
-authorization attempt, and it is cleared with the rest of the OAuth material.
-Every point where a URL becomes a network request or a browser navigation
-consults that one set.
+Once an advertised server's RFC 8414 metadata has been read from an allowed
+origin and its `issuer` exactly matches the advertised URL, the endpoints that
+metadata publishes — the authorization endpoint, the token endpoint, and the
+registration endpoint (RFC 7591) — are allowed on their own origins, under the
+same constraints minus the query rule, which RFC 6749 permits on an endpoint.
+Hosted providers routinely serve those endpoints apart from the issuer —
+Cognito's OAuth endpoints live on a domain its issuer origin never names — and
+the delegation is the issuer's own, made in a document only a server the
+resource named can serve.
+
+The allowlist is a single internal set derived only from those validated
+documents: the resource origin, the advertised origins once the protected
+resource metadata has been validated, and the published endpoint origins once
+the matching authorization-server metadata has been validated. Nothing else
+adds to it, it exists only for the lifetime of one authorization attempt, and
+it is cleared with the rest of the OAuth material. Every point where a URL
+becomes a network request or a browser navigation consults that one set.
 
 `serveMcpHttp` publishes the mirror of the loopback rule. Its
 `auth.resourceMetadata` validation already accepted a loopback HTTP `resource`
@@ -78,7 +89,10 @@ consults that one set.
 identity provider could not publish the document this decision tells clients to
 read. A loopback HTTP resource may now name a loopback HTTP authorization
 server; every other constraint on that URL is unchanged, and an issuer path
-stays allowed.
+stays allowed. Loopback means the literal hosts `127.0.0.1` and `[::1]` on both
+sides: the client trusts only the literal forms (RFC 8252 prefers them over
+`localhost`), so the server refuses to publish a metadata document naming
+`localhost` that every client of this framework would then reject.
 
 The production requirement does not move: HTTPS everywhere, except literal
 loopback on both sides at once. A deployed HTTPS engine still cannot advertise a
@@ -155,7 +169,12 @@ The two are also shaped for their callers rather than arbitrarily: the deploy
 inspection fails fast with one stage and reason, which is what a homologation
 exit code needs, while this one reports every leg, which is what a rendered
 report needs. They must stay behaviorally consistent on the legs they share; a
-divergence in what either accepts is a defect in whichever drifted.
+divergence in what either accepts is a defect in whichever drifted. As part of
+this decision that consistency covers the loopback rule (both accept any
+literal-loopback authorization server behind a literal-loopback resource), the
+delegated endpoint origins, and the capability checks: both require the
+metadata to advertise the `authorization_code` grant and the `S256` code
+challenge method.
 
 Extracting a shared implementation requires either a decision to give
 `@invokta/deploy` a runtime dependency or a new package both may depend on, and
