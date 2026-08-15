@@ -6,6 +6,7 @@ import type {
   ServerResponse,
 } from "node:http";
 import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -90,10 +91,17 @@ export interface DevtoolsServerOptions {
   /** The engine host's current MCP endpoint port on loopback. */
   readonly enginePort: () => number;
   /**
-   * Defaults to 4100. The caller selects the port, because the engine host
-   * has to allow the interface origin before this server binds.
+   * Defaults to 4100. Ignored when `server` is already bound: the caller
+   * selects the port, because the engine host has to allow the interface
+   * origin before this server accepts a request.
    */
   readonly port?: number;
+  /**
+   * An already-bound loopback server to serve on. `serve` binds the port
+   * before it starts the engine host, so nothing can take the port between
+   * publishing the allowed origin and answering on it.
+   */
+  readonly server?: NodeHttpServer;
   /** Directory holding the built interface bundle. Defaults to `dist/ui`. */
   readonly uiRoot?: string;
 }
@@ -1187,7 +1195,8 @@ export async function startDevtoolsServer(
     sendJson(response, 404, { error: "not_found" });
   };
 
-  const server: NodeHttpServer = createServer((request, response) => {
+  const server: NodeHttpServer = options.server ?? createServer();
+  server.on("request", (request, response) => {
     void handle(request, response).catch(() => {
       if (!response.headersSent) {
         sendJson(response, 500, { error: "internal_error" });
@@ -1197,10 +1206,12 @@ export async function startDevtoolsServer(
     });
   });
 
-  const boundPort = await listenOnLoopback(server, {
-    ...(options.port === undefined ? {} : { port: options.port }),
-    maxPortAttempts: 1,
-  });
+  const boundPort = server.listening
+    ? (server.address() as AddressInfo).port
+    : await listenOnLoopback(server, {
+        ...(options.port === undefined ? {} : { port: options.port }),
+        maxPortAttempts: 1,
+      });
   authorities = loopbackAuthorities(boundPort);
   ownOrigin = devtoolsOrigin(boundPort);
   oauthRedirectUrl = `${literalLoopbackOrigin(boundPort)}/oauth/callback`;

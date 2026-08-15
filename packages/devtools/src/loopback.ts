@@ -1,5 +1,4 @@
 import type { AddressInfo, Server } from "node:net";
-import { createServer } from "node:net";
 
 /**
  * The host every devtools URL is printed and opened with. The servers bind
@@ -95,9 +94,15 @@ export async function listenOnLoopback(
     requested === 0
       ? 1
       : Math.max(1, options.maxPortAttempts ?? defaultPortAttempts);
+  if (requested < 0 || requested > maximumPort) {
+    throw new RangeError(
+      `A loopback port must be between 0 and ${String(maximumPort)}.`,
+    );
+  }
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const candidate = requested === 0 ? 0 : requested + attempt;
+    // The walk stops at the top of the range rather than wrapping around.
     if (candidate > maximumPort) break;
     try {
       await listenOnce(server, candidate);
@@ -108,27 +113,10 @@ export async function listenOnLoopback(
       if (attempt < attempts - 1) options.onPortInUse?.(candidate);
     }
   }
-  throw lastError;
-}
-
-/**
- * Picks the port a server will bind before it exists. The dev server has to
- * publish its own origin to the engine host it starts first, so the selection
- * happens once, up front, on a probe socket that is closed again.
- */
-export async function selectLoopbackPort(
-  options: ListenOnLoopbackOptions = {},
-): Promise<number> {
-  const probe = createServer();
-  try {
-    return await listenOnLoopback(probe, options);
-  } finally {
-    if (probe.listening) {
-      await new Promise<void>((resolve) => {
-        probe.close(() => {
-          resolve();
-        });
-      });
-    }
+  if (lastError === undefined) {
+    throw new RangeError(
+      `No loopback port was free between ${String(requested)} and ${String(maximumPort)}.`,
+    );
   }
+  throw lastError;
 }

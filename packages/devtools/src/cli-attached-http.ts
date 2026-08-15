@@ -3,7 +3,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 export const attachedCliConnectionBodyLimitBytes = 1024 * 1024;
 export const attachedCliRunBodyLimitBytes = 10 * 1024 * 1024;
-export const attachedCliSessionCookieName = "invokta_devtools_session";
+// One origin serves both workbenches, and a browser keeps one cookie per
+// name: each workbench needs its own, or switching between them silently
+// replaces the other's session.
+export const attachedCliSessionCookieName = "invokta_devtools_cli_session";
 export const attachedCliCsrfHeaderName = "x-invokta-csrf";
 
 const contentSecurityPolicy = [

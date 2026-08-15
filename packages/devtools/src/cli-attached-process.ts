@@ -115,7 +115,10 @@ export function collectAttachedCliChild(
     child.once("error", (cause) => {
       finish(attachedCliError("SPAWN_FAILED", cause));
     });
-    child.once("exit", (code) => {
+    // `close` rather than `exit`: the child is gone on `exit`, but its stdio
+    // pipes may still hold undelivered bytes, which truncates a catalog large
+    // enough to arrive in more than one chunk.
+    child.once("close", (code) => {
       if (overflow) {
         finish(attachedCliError("LIMIT_EXCEEDED"));
         return;

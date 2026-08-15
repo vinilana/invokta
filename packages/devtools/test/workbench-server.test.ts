@@ -265,6 +265,55 @@ describe("workbench launcher", () => {
     expect(crossed.status).toBe(403);
   });
 
+  it("keeps a browser session per workbench in one cookie jar", async () => {
+    const cliController = createCliController();
+    const { base } = await startLauncher({ cliController });
+
+    // A browser keeps one cookie per name for the origin and sends every
+    // matching one back, so the two workbenches need distinct names.
+    const mcpSession = await fetch(`${base}/api/mcp/session`);
+    const mcpCookie = cookiePair(mcpSession);
+    const mcpCsrf = ((await mcpSession.json()) as { csrfToken: string })
+      .csrfToken;
+    const cliSession = await fetch(`${base}/api/cli/session`);
+    const cliCookie = cookiePair(cliSession);
+    const cliCsrf = ((await cliSession.json()) as { csrfToken: string })
+      .csrfToken;
+
+    expect(mcpCookie.split("=")[0]).not.toBe(cliCookie.split("=")[0]);
+
+    const jar = `${mcpCookie}; ${cliCookie}`;
+    await fetch(`${base}/api/cli/connection`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: jar,
+        origin: base,
+        "x-invokta-csrf": cliCsrf,
+      },
+      body: JSON.stringify({ command: "node" }),
+    });
+
+    // Switching back and forth must find the same session on both sides, not
+    // mint a new one and strand the connected target under the old owner.
+    const mcpAgain = await fetch(`${base}/api/mcp/session`, {
+      headers: { cookie: jar },
+    });
+    expect(mcpAgain.headers.get("set-cookie")).toBeNull();
+    await expect(mcpAgain.json()).resolves.toMatchObject({
+      csrfToken: mcpCsrf,
+      state: "idle",
+    });
+
+    const cliAgain = await fetch(`${base}/api/cli/session`, {
+      headers: { cookie: jar },
+    });
+    expect(cliAgain.headers.get("set-cookie")).toBeNull();
+    await expect(cliAgain.json()).resolves.toMatchObject({
+      state: "connected",
+    });
+  });
+
   it("serves one shared asset surface", async () => {
     const { base } = await startLauncher();
 

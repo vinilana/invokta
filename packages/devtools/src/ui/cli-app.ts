@@ -9,6 +9,7 @@ import {
   cliStatusPill,
 } from "./cli-components.js";
 import {
+  createVerbQueue,
   type CliActivityRecord,
   type CliApi,
   type CliCapabilityDescription,
@@ -46,6 +47,7 @@ export type {
 export {
   buildCliTarget,
   completeConnectionAttempt,
+  createVerbQueue,
   nextRovingIndex,
   parseRunInput,
   refreshFailureIsDisconnect,
@@ -506,16 +508,26 @@ export function mountCliApp(
     }
   }
 
-  async function loadDescribe(id: string): Promise<void> {
+  const queueDescribe = createVerbQueue();
+
+  async function describeSelected(id: string): Promise<void> {
+    if (id !== selectedId) return;
     describeError = "";
     try {
-      described = await api.describe(id);
+      const description = await api.describe(id);
+      if (id !== selectedId) return;
+      described = description;
     } catch (error) {
+      if (id !== selectedId) return;
       described = undefined;
       describeError = cliErrorMessage(error);
     } finally {
-      render();
+      if (id === selectedId) render();
     }
+  }
+
+  function loadDescribe(id: string): Promise<void> {
+    return queueDescribe(() => describeSelected(id));
   }
 
   async function loadActivity(): Promise<void> {

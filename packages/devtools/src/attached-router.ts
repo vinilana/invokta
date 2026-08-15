@@ -42,7 +42,10 @@ const callBodyLimitBytes = 10 * 1024 * 1024;
 const oauthCallbackTargetLimitBytes = 8_192;
 const oauthAuthorizationCodeLimitCodePoints = 4_096;
 const maximumBrowserSessions = 128;
-const sessionCookieName = "invokta_devtools_session";
+// One origin serves both workbenches, and a browser keeps one cookie per
+// name: each workbench needs its own, or switching between them silently
+// replaces the other's session.
+const sessionCookieName = "invokta_devtools_mcp_session";
 const csrfHeaderName = "x-invokta-csrf";
 const contentSecurityPolicy = [
   "default-src 'none'",

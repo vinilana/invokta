@@ -79,6 +79,23 @@ async function openDevtools(
   };
 }
 
+/**
+ * The origin the ready line reports. The requested port can be taken between
+ * the probe and the spawn, and walking to the next one is the behavior under
+ * test elsewhere; here only the path has to match.
+ */
+function readyBase(stdout: string, path: string): string {
+  const suffix = path === "/" ? "/" : path;
+  const match = new RegExp(
+    `^Invokta devtools listening on (http://localhost:\\d+)${suffix}\n$`,
+    "u",
+  ).exec(stdout);
+  if (match?.[1] === undefined) {
+    throw new Error(`Unexpected ready line: ${JSON.stringify(stdout)}`);
+  }
+  return match[1];
+}
+
 describe("invokta-devtools open", () => {
   beforeAll(() => {
     execFileSync(
@@ -97,7 +114,9 @@ describe("invokta-devtools open", () => {
   it("lands on the chooser and serves both workbenches", async () => {
     const port = await freePort();
     const devtools = await openDevtools([], port);
-    const base = `http://localhost:${String(port)}`;
+    // A parallel test can claim the port between the probe and the spawn, and
+    // the walk is the point: the ready line names the port that answered.
+    const base = readyBase(devtools.stdout, "/");
 
     try {
       expect(devtools.stdout).toBe(`Invokta devtools listening on ${base}/\n`);
@@ -125,13 +144,12 @@ describe("invokta-devtools open", () => {
       const port = await freePort();
       const devtools = await openDevtools([flag], port);
       try {
+        const base = readyBase(devtools.stdout, path);
         expect(devtools.stdout, flag).toBe(
-          `Invokta devtools listening on http://localhost:${String(port)}${path}\n`,
+          `Invokta devtools listening on ${base}${path}\n`,
         );
         // The peer workbench stays mounted, so the switch has somewhere to go.
-        const peer = await fetch(
-          `http://localhost:${String(port)}${path === "/mcp" ? "/cli" : "/mcp"}`,
-        );
+        const peer = await fetch(`${base}${path === "/mcp" ? "/cli" : "/mcp"}`);
         expect(peer.status).toBe(200);
         await peer.arrayBuffer();
       } finally {

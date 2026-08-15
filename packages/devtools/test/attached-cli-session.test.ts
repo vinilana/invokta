@@ -1,4 +1,7 @@
+import type { ChildProcess } from "node:child_process";
 import { spawn as realSpawn } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -256,6 +259,47 @@ describe("createAttachedCliSessionController", () => {
     expect(stream.state(owner).state).toBe("connected");
     expect(stream.catalog(owner)).toEqual([]);
     await stream.close();
+  });
+
+  it("reads the catalog the child flushed after it exited", async () => {
+    // Node delivers `exit` when the process is gone and `close` when its
+    // stdio has drained. A catalog large enough to arrive in more than one
+    // chunk can still be in flight at `exit`.
+    const document = JSON.stringify([
+      { id: "fixture.echo", description: "Echoes a value." },
+    ]);
+    const head = document.slice(0, 12);
+    const tail = document.slice(12);
+    const spawn = (): ChildProcess => {
+      const child = new EventEmitter() as ChildProcess;
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      Object.assign(child, {
+        stdout,
+        stderr,
+        exitCode: null,
+        signalCode: null,
+        kill: () => true,
+      });
+      setImmediate(() => {
+        stdout.write(head);
+        child.emit("exit", 0, null);
+        stdout.write(tail);
+        stdout.end();
+        stderr.end();
+        setImmediate(() => child.emit("close", 0, null));
+      });
+      return child;
+    };
+
+    const controller = createAttachedCliSessionController({ spawn });
+    await expect(controller.connect(owner, target())).resolves.toMatchObject({
+      capabilityCount: 1,
+    });
+    expect(controller.catalog(owner)).toEqual([
+      { id: "fixture.echo", description: "Echoes a value." },
+    ]);
+    await controller.close();
   });
 
   it("describes a listed id without spawning run", async () => {

@@ -258,3 +258,19 @@ export function retainedActivityOf(
 export function refreshFailureIsDisconnect(code: string | undefined): boolean {
   return code !== "TARGET_BUSY";
 }
+
+/**
+ * Runs tasks one after another. The attached CLI accepts one verb at a time,
+ * so overlapping requests would answer the newest one with TARGET_BUSY and
+ * let an older answer land after it. A rejected task does not stall the rest.
+ */
+export function createVerbQueue(): (
+  task: () => Promise<void>,
+) => Promise<void> {
+  let tail: Promise<void> = Promise.resolve();
+  return (task) => {
+    const next = tail.then(task);
+    tail = next.catch(() => undefined);
+    return next;
+  };
+}

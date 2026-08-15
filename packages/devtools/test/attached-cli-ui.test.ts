@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCliTarget,
   cliPrimaryTabs,
+  createVerbQueue,
   refreshFailureIsDisconnect,
 } from "../src/ui/cli-app.js";
 
@@ -100,6 +101,42 @@ describe("CLI workbench UI contract", () => {
     expect(app).toContain('type: "password"');
     expect(app).toContain("completeConnectionAttempt");
     expect(app).toContain("Cleared after response");
+  });
+
+  it("runs queued CLI verbs one at a time", async () => {
+    const queue = createVerbQueue();
+    const order: string[] = [];
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const first = queue(async () => {
+      order.push("first:start");
+      await held;
+      order.push("first:end");
+    });
+    const rejected = queue(async () => {
+      order.push("rejected");
+      throw new Error("verb failed");
+    });
+    const second = queue(async () => {
+      order.push("second");
+    });
+
+    await Promise.resolve();
+    // The target accepts one verb at a time, so nothing overlaps the first.
+    expect(order).toStrictEqual(["first:start"]);
+    release();
+    await expect(rejected).rejects.toThrow("verb failed");
+    await Promise.all([first, second]);
+    // A rejected verb does not stall the ones queued behind it.
+    expect(order).toStrictEqual([
+      "first:start",
+      "first:end",
+      "rejected",
+      "second",
+    ]);
   });
 
   it("treats Refresh failures except TARGET_BUSY as disconnect", () => {

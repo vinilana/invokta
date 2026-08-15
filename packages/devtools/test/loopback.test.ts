@@ -136,6 +136,14 @@ describe("listenOnLoopback", () => {
     ).rejects.toMatchObject({ code: "EADDRINUSE" });
   });
 
+  it("refuses a port outside the range instead of throwing nothing", async () => {
+    const server = trackedServer();
+    await expect(
+      listenOnLoopback(server, { port: 70_000 }),
+    ).rejects.toBeInstanceOf(RangeError);
+    expect(server.listening).toBe(false);
+  });
+
   it("binds the literal loopback address so localhost reaches it", async () => {
     const server = trackedServer();
     const port = await listenOnLoopback(server, { port: 0 });
