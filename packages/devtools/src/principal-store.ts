@@ -18,6 +18,8 @@ export interface DevPrincipal {
 
 export interface PrincipalStore {
   issue(principal: Principal): DevPrincipal;
+  /** Replaces an existing principal, keeping its key and its token. */
+  update(key: string, principal: Principal): DevPrincipal | null;
   /** Mints a replacement token for an existing principal, revoking the old one. */
   rotate(key: string): DevPrincipal | null;
   remove(key: string): boolean;
@@ -82,6 +84,13 @@ export function createPrincipalStore(): PrincipalStore {
 
   return {
     issue,
+    update: (key, principal) => {
+      const record = records.get(key);
+      if (record === undefined) return null;
+      record.principal = structuredClone(principal);
+      notify();
+      return { key, token: record.token, principal: record.principal };
+    },
     rotate: (key) => {
       const record = records.get(key);
       if (record === undefined) return null;

@@ -8,5 +8,9 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/ui"],
-  "references": [{ "path": "../core" }, { "path": "../mcp" }]
+  "references": [
+    { "path": "../cli" },
+    { "path": "../core" },
+    { "path": "../mcp" }
+  ]
 }

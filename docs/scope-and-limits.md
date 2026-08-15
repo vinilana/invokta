@@ -12,7 +12,7 @@
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
-| `@invokta/devtools` | Development-time engine dev server, doctor diagnostics, and installed MCP inspection and homologation |
+| `@invokta/devtools` | Development-time engine dev server with per-adapter capability emulation, doctor diagnostics, and installed MCP inspection and homologation |
 | `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile, or import of one public GitHub example tree |
 | `create-invokta-capability` | Creation of a standalone atomic capability package |
 | `create-invokta-capability-library` | Creation of a standalone capability-library package |
@@ -59,6 +59,9 @@ while the example owns one replaceable Authorization Server implementation.
 | Containers or runtime plugin systems | 0 |
 | Concurrent attached devtools targets | 1 |
 | Concurrent attached devtools tool calls | 1, explicitly initiated |
+| Concurrent devtools adapter emulations | 4, each in its own process |
+| Devtools playground HTTP targets | 1: the devtools host or one external endpoint |
+| Devtools playground entry points | 1 per adapter: the devtools child or one project entry inside the served directory |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,

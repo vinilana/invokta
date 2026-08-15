@@ -88,10 +88,14 @@ through the provider in the new tab and return to the workbench after the
 loopback callback completes. Invokta uses Authorization Code with PKCE, the
 server's advertised MCP OAuth metadata, and its advertised dynamic client
 registration endpoint. It does not accept a preconfigured client ID or client
-secret. OAuth endpoints must remain on the MCP resource's exact origin; a
-cross-origin identity provider is rejected. Tokens, PKCE material, client
-registration data, and discovery documents remain in process memory and are
-cleared on disconnect or process exit.
+secret. The authorization servers the resource's own Protected Resource
+Metadata advertises are followed, including ones on another origin — which is
+what every hosted identity provider is. That document is still read only from
+the resource's own origin, so the resource stays the authority on who may issue
+tokens for it, and a loopback HTTP authorization server is accepted only behind
+a loopback HTTP resource. Tokens, PKCE material, client registration data, and
+discovery documents remain in process memory and are cleared on disconnect or
+process exit.
 
 OAuth is intentionally interactive and UI-only. The `verify` command supports
 none, bearer, and custom-header authentication so it remains deterministic for
@@ -224,9 +228,10 @@ invokta-devtools serve <esm-module> [--export <name>] [--port <number>]
 ```
 
 The workspace-aware mode for a built Invokta engine. Unlike attached
-inspection, it can show Doctor, test identities backed by development
-`Principal` values, Invokta invocation trace, and watch behavior because it
-owns the engine host.
+inspection, it can run a capability through every adapter the engine
+publishes, show Doctor, offer test identities backed by development
+`Principal` values, keep the Invokta invocation trace, and apply watch
+behavior, because it owns the engine module.
 
 ```sh
 npx @invokta/devtools doctor \
@@ -250,20 +255,107 @@ export.
 The built-engine interface uses one compact workbench surface across
 Playground, Activity, Diagnostics, and Test identities. Playground summarizes
 top-level input and output fields for scanning and keeps each complete JSON
-Schema available under **Raw JSON Schema**. Invocations still use the
-schema-seeded JSON editor and the same MCP HTTP path to `engine.invoke`.
+Schema available under **Raw JSON Schema**. Invocations use the schema-seeded
+JSON editor and always reach `engine.invoke`.
 
-Playground reports each invocation's outcome and elapsed time in the result
-bar, and the arguments, result, raw MCP request, raw MCP response, and each
-JSON Schema carry a copy control. `Ctrl`/`⌘` + `Enter` invokes from the editor,
-and `/` returns focus to the capability filter from anywhere outside a text
-field.
+### Adapters
 
-Activity adds a toolbar: filter entries by text across capability IDs, MCP
-methods, HTTP status, and captured payloads; narrow the feed to invocations,
-MCP exchanges, or lifecycle notices; and **Hold** stops new entries from
-arriving while you read one, releasing the held entries as soon as you resume.
-Filtering and holding act on the browser view only.
+Playground runs one capability call through the execution path you select, so
+the same arguments can be compared across every path the engine publishes:
+
+| Adapter | What runs | `ExecutionContext.source` |
+| --- | --- | --- |
+| **Direct** | `engine.invoke`, the way an embedding application calls it | `direct` |
+| **CLI** | the `@invokta/cli` adapter as a process, with its exit code and streams | `cli` |
+| **MCP stdio** | the `serveMcpStdio` server, called the way an MCP client calls it | `mcp-stdio` |
+| **MCP HTTP** | one Streamable HTTP request to the running engine host | `mcp-http` |
+
+Every emulation performs a real call through the published adapter. Direct,
+CLI, and MCP stdio each run in a child process that imports the same built
+module you passed to `serve`, started per call and ended with it; MCP HTTP
+reuses the running engine host. The result bar reads the same for every
+adapter, and **Adapter exchange** shows what that path actually carried — the
+bodies and HTTP status, the `tools/call` frames, or the command with its
+streams and exit code. A capability error arrives with the same code from all
+four paths.
+
+Direct and CLI carry the arguments in the command line, so a payload beyond
+what the operating system allows in one argument is refused with
+`ARGUMENTS_TOO_LARGE`; the MCP adapters carry the same payload in the protocol.
+
+### Identity and authentication
+
+The adapter bar separates the two, because the framework does:
+
+**Identity** is the development `Principal` the call acts as. It applies to
+every adapter — it is what an `access` rule sees — and includes an explicit
+**Anonymous** choice so a rule can be denied on purpose. The three process
+adapters start as the selected identity, the way a composition root supplies
+it; there is no credential and no authentication step, so nothing else is
+asked of you.
+
+**Entry** appears for CLI and MCP stdio, and decides which composition root
+runs the call:
+
+| Entry point | Who supplies the principal |
+| --- | --- |
+| **Devtools** (default) | the identity selected here, so an `access` rule can be exercised as different actors |
+| **Project** | your own built entry point, spawned as it is — its root decides, including `principal: null`, which is what the generated starter passes |
+
+Selecting your entry point is how you see what the shipped command actually
+does: the identity control turns off and says so, and the reproduction command
+becomes the command you would type. Name the path yourself — the devtools
+proposes the conventional sibling of the served module and discovers nothing —
+and it must stay inside the directory `serve` runs in. A direct call has no
+project entry point: a generated `src/direct.ts` is a demonstration script
+bound to one capability, not an adapter with an invocation contract.
+
+**Authentication** appears only for MCP HTTP, which is the only path that
+authenticates. It selects where the call goes and how it presents itself:
+
+| Target | Authentication |
+| --- | --- |
+| **Devtools host** (default) | the selected identity's session token, or no credential — which exercises the adapter's own fail-closed `401` |
+| **External endpoint** | none, bearer, custom headers, or interactive OAuth |
+
+An external endpoint is a Streamable HTTP MCP URL you run yourself, typically
+your own built HTTP entry point, so the authentication you actually ship — the
+hook in `src/http-auth.ts` — runs against the same arguments the other three
+paths use. The principal then comes from *that server's* hook, not from the
+devtools identity. Plain HTTP is accepted only for loopback; every other
+endpoint must use HTTPS.
+
+With **OAuth** selected, **Check** runs the discovery chain against the endpoint
+and reports it leg by leg: the `401` challenge and whether it advertises
+`resource_metadata`, the Protected Resource Metadata document, the Authorization
+Server's RFC 8414 metadata, and whether dynamic client registration is
+advertised. A leg that could not run says what it was waiting for rather than
+reporting a failure it never attempted, and **Authorize** stays disabled until
+the chain resolves. The check authorizes nothing and sends no credential.
+
+An Authorization Server on a different origin than the engine — which is what
+every hosted identity provider is — is reached as long as the engine's own
+Protected Resource Metadata advertises it. That document is still read only
+from the engine's own origin, so the engine remains the authority on who may
+issue tokens for it.
+
+A credential value starting with `$` names an environment variable the dev
+server reads, so the secret stays in the dev server's environment instead of
+travelling through the browser. Whatever you supply is held in process memory
+for as long as the endpoint stays selected: it is never persisted, never
+written to your project, and never echoed back — reading the selection returns
+the URL, the authentication type, and header or variable names only.
+
+The arguments, result, adapter command, raw MCP request, raw MCP response, and
+each JSON Schema carry a copy control. `Ctrl`/`⌘` + `Enter` invokes from the
+editor, and `/` returns focus to the capability filter from anywhere outside a
+text field.
+
+Activity adds a toolbar: filter entries by text across capability IDs,
+adapters, MCP methods, HTTP status, and captured payloads; narrow the feed to
+emulated calls, invocations, MCP exchanges, or lifecycle notices; and **Hold**
+stops new entries from arriving while you read one, releasing the held entries
+as soon as you resume. Filtering and holding act on the browser view only.
 
 **Clear view** is different: it empties the visible list *and* the dev
 server's in-memory buffer, so the entries do not come back on the next
@@ -308,7 +400,9 @@ node packages/devtools/dist/cli.js serve examples/hello-engine/dist/engine.js
 ```
 
 The built-engine contract is chartered by
-[ADR 0021](../../docs/adr/0021-engine-devtools-dev-server.md).
+[ADR 0021](../../docs/adr/0021-engine-devtools-dev-server.md), extended for
+adapter emulation by
+[ADR 0028](../../docs/adr/0028-adapter-emulation-in-engine-devtools.md).
 Installed-target inspection is chartered by
 [ADR 0022](../../docs/adr/0022-mcp-installation-inspection-and-homologation.md),
 with interactive OAuth accepted by

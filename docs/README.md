@@ -33,7 +33,9 @@ Each delivered change is normative through its accepted architecture decision:
 - MCP installation inspection and homologation —
   [ADR 0022](./adr/0022-mcp-installation-inspection-and-homologation.md),
   extended with ephemeral OAuth by
-  [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md)
+  [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md) and
+  amended with advertised authorization servers and discovery inspection by
+  [ADR 0031](./adr/0031-oauth-discovery-inspection-and-advertised-servers.md)
 - Production MCP OAuth integration boundary —
   [ADR 0024](./adr/0024-production-mcp-oauth-integration-boundary.md)
 - Portable MCP tool names —
@@ -42,6 +44,12 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0026](./adr/0026-generated-engine-mcp-conformance-gate.md)
 - Windows installer ownership identity —
   [ADR 0027](./adr/0027-windows-installer-ownership-identity.md)
+- Adapter emulation in the engine devtools —
+  [ADR 0028](./adr/0028-adapter-emulation-in-engine-devtools.md), extended with
+  selectable HTTP authentication by
+  [ADR 0029](./adr/0029-selectable-http-authentication-in-devtools.md) and with
+  project entry points by
+  [ADR 0030](./adr/0030-project-entry-points-in-devtools-emulation.md)
 
 ## Guides and examples
 

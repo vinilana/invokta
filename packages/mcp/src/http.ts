@@ -210,6 +210,16 @@ function isLoopback(host: string): boolean {
   );
 }
 
+/**
+ * The loopback form OAuth metadata may use. The MCP client trusts only the
+ * literal loopback hosts (RFC 8252 prefers them over `localhost`), so the
+ * published document must not be broader than what the client will accept.
+ */
+function isLiteralLoopback(host: string): boolean {
+  const normalized = normalizeHostname(host);
+  return normalized === "127.0.0.1" || normalized === "[::1]";
+}
+
 function normalizedAllowedHosts(
   bindHost: string,
   configured: ReadonlyArray<string> | undefined,
@@ -292,7 +302,7 @@ function validateResourceUrl(value: string): void {
   }
   const secure = url.protocol === "https:";
   const loopbackDevelopment =
-    url.protocol === "http:" && isLoopback(url.hostname);
+    url.protocol === "http:" && isLiteralLoopback(url.hostname);
   if (
     (!secure && !loopbackDevelopment) ||
     url.username !== "" ||
@@ -302,7 +312,7 @@ function validateResourceUrl(value: string): void {
     url.hash !== ""
   ) {
     throw new TypeError(
-      "Protected resource metadata requires an HTTPS /mcp resource URL, except for loopback HTTP development.",
+      "Protected resource metadata requires an HTTPS /mcp resource URL, except for literal-loopback (127.0.0.1 or [::1]) HTTP development.",
     );
   }
 }
@@ -316,12 +326,17 @@ function validateAuthorizationServerUrl(value: string, resource: string): void {
       "Protected resource metadata has an invalid authorization server URL.",
     );
   }
+  // A loopback resource may advertise any loopback authorization server, not
+  // only one sharing its origin: a local identity provider normally runs as a
+  // separate process on its own port. Both ends stay on the developer's
+  // machine, so the trust boundary does not move, and a deployed HTTPS
+  // resource still cannot advertise plain HTTP at all.
   const resourceUrl = new URL(resource);
   const loopbackDevelopment =
     url.protocol === "http:" &&
-    isLoopback(url.hostname) &&
+    isLiteralLoopback(url.hostname) &&
     resourceUrl.protocol === "http:" &&
-    url.origin === resourceUrl.origin;
+    isLiteralLoopback(resourceUrl.hostname);
   if (
     (url.protocol !== "https:" && !loopbackDevelopment) ||
     url.username !== "" ||
@@ -330,7 +345,7 @@ function validateAuthorizationServerUrl(value: string, resource: string): void {
     url.hash !== ""
   ) {
     throw new TypeError(
-      "Authorization server URLs require HTTPS, except at the same loopback HTTP origin as the resource, and cannot contain credentials, a query, or a fragment.",
+      "Authorization server URLs require HTTPS, except on literal loopback behind a literal-loopback HTTP resource, and cannot contain credentials, a query, or a fragment.",
     );
   }
 }

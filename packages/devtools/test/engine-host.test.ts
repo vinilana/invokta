@@ -323,6 +323,31 @@ describe("createPrincipalStore", () => {
     expect(store.rotate("missing")).toBeNull();
   });
 
+  it("updates a principal in place, keeping its key and token", () => {
+    const store = createPrincipalStore();
+    const issued = store.issue({ id: "reviewer" });
+    const attributes: Record<string, unknown> = {
+      permissions: ["ticket:read"],
+    };
+
+    const updated = store.update(issued.key, { id: "analyst", attributes });
+
+    expect(updated?.key).toBe(issued.key);
+    expect(updated?.token).toBe(issued.token);
+    expect(store.resolve(issued.token)).toEqual({
+      id: "analyst",
+      attributes: { permissions: ["ticket:read"] },
+    });
+
+    // The store keeps a snapshot, so later caller mutation cannot leak in.
+    attributes.permissions = ["ticket:classify"];
+    expect(store.resolve(issued.token)).toEqual({
+      id: "analyst",
+      attributes: { permissions: ["ticket:read"] },
+    });
+    expect(store.update("missing", { id: "analyst" })).toBeNull();
+  });
+
   it("removes principals by key", () => {
     const store = createPrincipalStore();
     const issued = store.issue({ id: "temporary" });

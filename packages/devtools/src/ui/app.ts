@@ -5,12 +5,9 @@ import {
 } from "./capabilities.js";
 import { renderDoctorPanel } from "./doctor-panel.js";
 import { el } from "./dom.js";
-import {
-  ensureActiveToken,
-  getActivePrincipalStatus,
-  onPrincipalChange,
-  renderPrincipalsPanel,
-} from "./principals.js";
+import { loadEntryPoints, rememberServedModule } from "./entry-point.js";
+import { loadHttpTarget } from "./http-auth.js";
+import { ensureActiveToken, renderPrincipalsPanel } from "./principals.js";
 import { styles } from "./styles.js";
 import { createThemeToggle } from "./theme.js";
 import { renderTracePanel } from "./trace.js";
@@ -218,45 +215,9 @@ function boot(): void {
     { class: "meta-pill engine-capability-count" },
     ["Capabilities …"],
   );
-  const principalContextLabel = el("span", {}, [
-    "Act as — · Checking session token…",
-  ]);
-  const principalContext = el(
-    "button",
-    {
-      type: "button",
-      class: "meta-pill principal-context",
-      "aria-label":
-        "Act as unavailable, checking session token; manage test identities",
-    },
-    [principalContextLabel],
-  );
-  principalContext.addEventListener("click", () => {
-    show("principals");
-    tabButtons.get("principals")?.focus();
-  });
-  const updatePrincipalContext = (): void => {
-    const active = getActivePrincipalStatus();
-    if (active === null) {
-      principalContextLabel.textContent =
-        "Act as — · No test identity selected";
-      principalContext.setAttribute(
-        "aria-label",
-        "No test identity selected; manage test identities",
-      );
-      return;
-    }
-    const tokenStatus = active.hasSessionToken ? "Token ready" : "No token";
-    const accessibleTokenStatus = active.hasSessionToken
-      ? "session token ready"
-      : "no session token";
-    principalContextLabel.textContent = `Act as ${active.principalId} · ${tokenStatus}`;
-    principalContext.setAttribute(
-      "aria-label",
-      `Act as ${active.principalId}, ${accessibleTokenStatus}; manage test identities`,
-    );
-  };
-  onPrincipalChange(updatePrincipalContext);
+  // The acting identity and the HTTP credential belong to the Playground,
+  // where the execution path is chosen; only MCP HTTP authenticates at all,
+  // so a global "Act as" pill would announce a ceremony three paths never run.
   const connectionLabel = el("span", { class: "connection-label" }, [
     "Connecting…",
   ]);
@@ -297,7 +258,6 @@ function boot(): void {
         el("div", { class: "workspace-title" }, [title]),
         el("div", { class: "engine-meta", "aria-label": "Engine status" }, [
           connection,
-          principalContext,
           version,
           capabilityCount,
         ]),
@@ -413,6 +373,7 @@ function boot(): void {
   void api
     .engine()
     .then((engine) => {
+      rememberServedModule(engine.module?.specifier);
       title.textContent = engine.name;
       version.textContent = `v${engine.version}`;
       capabilityCount.textContent = `${String(engine.capabilityCount)} capabilities`;
@@ -427,16 +388,12 @@ function boot(): void {
       connection.setAttribute("role", "alert");
     });
 
-  void ensureActiveToken()
-    .then(updatePrincipalContext)
-    .catch(() => {
-      principalContextLabel.textContent = "Act as unavailable";
-      principalContext.setAttribute(
-        "aria-label",
-        "Test identity status unavailable; manage test identities",
-      );
-      // Invocations surface the 401; the rest of the interface stays usable.
-    });
+  // Loading the identities and the HTTP target early lets the Playground open
+  // on the session's real selection. A failure is not fatal: an invocation
+  // reports what actually happened, and the rest of the interface stays usable.
+  void ensureActiveToken().catch(() => undefined);
+  void loadHttpTarget();
+  void loadEntryPoints();
 }
 
 boot();

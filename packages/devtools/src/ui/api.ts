@@ -1,8 +1,14 @@
+import type { AdapterId } from "./adapters.js";
+
 export interface EngineInfo {
   readonly name: string;
   readonly version: string;
   readonly capabilityCount: number;
   readonly engineHost: { readonly host: string; readonly port: number };
+  readonly module?: {
+    readonly specifier: string;
+    readonly exportName: string;
+  };
 }
 
 export interface CapabilityInfo {
@@ -101,8 +107,101 @@ async function failWithDetail(
   throw new ApiError(message, detail.code);
 }
 
+/** One leg of the OAuth discovery chain, as `inspectMcpOAuth` reports it. */
+export interface OAuthStep {
+  readonly name:
+    | "challenge"
+    | "resource-metadata"
+    | "authorization-server-metadata"
+    | "registration";
+  readonly outcome: "ok" | "failed" | "skipped";
+  readonly summary: string;
+  readonly hint?: string;
+  readonly detail?: unknown;
+}
+
+export interface OAuthInspection {
+  readonly steps: readonly OAuthStep[];
+  /** Whether an interactive authorization can be attempted. */
+  readonly ready: boolean;
+}
+
+export interface HttpTargetView {
+  readonly kind: "devtools" | "external";
+  readonly url?: string;
+  readonly authentication: {
+    readonly type: "session-token" | "none" | "bearer" | "headers" | "oauth";
+    readonly headerNames?: readonly string[];
+    readonly environmentVariables?: readonly string[];
+    readonly authorized?: boolean;
+  };
+}
+
+export interface EntryPointSummary {
+  readonly kind: "devtools" | "project";
+  readonly path?: string;
+}
+
+export type EntryPointView = Readonly<{
+  cli: EntryPointSummary;
+  "mcp-stdio": EntryPointSummary;
+}>;
+
 export const api = {
   engine: () => getJson<EngineInfo>("/api/engine"),
+  httpTarget: () => getJson<HttpTargetView>("/api/http-target"),
+  /**
+   * Runs the read-only OAuth discovery check against the exact endpoint the
+   * form is drafting. Nothing is authorized and no credential is sent.
+   */
+  checkHttpTarget: async (url: string): Promise<OAuthInspection> => {
+    const response = await fetch("/api/http-target/check", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    if (!response.ok)
+      await failWithDetail(response, "The endpoint could not be checked.");
+    return (await response.json()) as OAuthInspection;
+  },
+  entryPoints: () => getJson<EntryPointView>("/api/entry-target"),
+  /** Replaces which composition root runs one adapter's emulation. */
+  setEntryPoint: async (selection: unknown): Promise<EntryPointView> => {
+    const response = await fetch("/api/entry-target", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(selection),
+    });
+    if (!response.ok)
+      await failWithDetail(response, "The entry point could not be selected.");
+    return (await response.json()) as EntryPointView;
+  },
+  /**
+   * Replaces where MCP HTTP sends a call. An OAuth target answers with the
+   * authorization URL to continue in; every other target is ready at once.
+   */
+  setHttpTarget: async (
+    target: unknown,
+  ): Promise<{
+    readonly target: HttpTargetView;
+    readonly authorizationUrl?: string;
+  }> => {
+    const response = await fetch("/api/http-target", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(target),
+    });
+    if (!response.ok)
+      await failWithDetail(response, "The endpoint could not be selected.");
+    const body = (await response.json()) as HttpTargetView & {
+      readonly authorizationUrl?: string;
+    };
+    const { authorizationUrl, ...view } = body;
+    return {
+      target: view,
+      ...(authorizationUrl === undefined ? {} : { authorizationUrl }),
+    };
+  },
   capabilities: () => getJson<readonly CapabilityInfo[]>("/api/capabilities"),
   doctor: () => getJson<DoctorInfo>("/api/doctor"),
   principals: () => getJson<readonly PrincipalInfo[]>("/api/principals"),
@@ -118,6 +217,23 @@ export const api = {
     if (!response.ok)
       await failWithDetail(response, "The test identity could not be added.");
     return (await response.json()) as IssuedPrincipal;
+  },
+  /** Replaces a test identity in place; its key and its token are kept. */
+  updatePrincipal: async (
+    key: string,
+    principal: {
+      readonly id: string;
+      readonly attributes?: Readonly<Record<string, unknown>>;
+    },
+  ): Promise<PrincipalInfo> => {
+    const response = await fetch("/api/principals", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key, principal }),
+    });
+    if (!response.ok)
+      await failWithDetail(response, "The test identity could not be updated.");
+    return (await response.json()) as PrincipalInfo;
   },
   rotatePrincipal: async (key: string): Promise<IssuedPrincipal> => {
     const response = await fetch("/api/principals", {
@@ -182,6 +298,94 @@ export function toolCallRequest(
       2,
     ),
   };
+}
+
+export type AdapterOutcome = "success" | "capability-error" | "adapter-error";
+
+export interface AdapterErrorInfo {
+  readonly code: string;
+  readonly message: string;
+  readonly publicDetails?: unknown;
+}
+
+/**
+ * What the selected adapter actually exchanged with the engine. This mirrors
+ * the server's `AdapterExchange` in `adapter-runner.ts` field for field; the
+ * two must not drift, or the exchange panes render the wrong record.
+ */
+export type AdapterExchange =
+  | {
+      readonly kind: "http";
+      readonly method: "POST";
+      readonly url: string;
+      readonly status: number;
+      readonly requestBody: string;
+      readonly responseBody: string;
+    }
+  | {
+      /** One call through the MCP client facade, which frames it for us. */
+      readonly kind: "mcp";
+      readonly transport: "stdio" | "http";
+      /** The spawned server command, or the endpoint that was called. */
+      readonly target: string;
+      readonly request: string;
+      readonly response: string;
+    }
+  | {
+      readonly kind: "process";
+      readonly command: string;
+      readonly argv: readonly string[];
+      readonly exitCode: number | null;
+      readonly signal: string | null;
+      readonly stdout: string;
+      readonly stderr: string;
+    };
+
+export interface AdapterInvocationResult {
+  readonly adapter: AdapterId;
+  readonly capabilityId: string;
+  readonly outcome: AdapterOutcome;
+  readonly durationMs: number;
+  readonly result?: unknown;
+  readonly error?: AdapterErrorInfo;
+  readonly exchange: AdapterExchange;
+  /** Whether the selected devtools identity was presented to this call. */
+  readonly identityApplied?: boolean;
+}
+
+export interface AdapterInvocationRequest {
+  readonly adapter: AdapterId;
+  readonly capabilityId: string;
+  readonly arguments: unknown;
+  readonly principalKey: string | null;
+}
+
+/**
+ * Runs one capability call through the selected adapter. The dev server owns
+ * the adapter, so the browser sends the same request whichever path carries
+ * it and reads back one normalized outcome.
+ */
+export async function invokeCapability(
+  request: AdapterInvocationRequest,
+  signal?: AbortSignal,
+): Promise<AdapterInvocationResult> {
+  const response = await fetch("/api/invoke", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      adapter: request.adapter,
+      capabilityId: request.capabilityId,
+      arguments: request.arguments,
+      ...(request.principalKey === null
+        ? {}
+        : { principalKey: request.principalKey }),
+    }),
+    ...(signal === undefined ? {} : { signal }),
+  });
+  if (!response.ok) {
+    await failWithDetail(response, "The capability could not be invoked.");
+  }
+  return (await response.json()) as AdapterInvocationResult;
 }
 
 /** Sends one raw MCP `tools/call` through the same-origin proxy. */

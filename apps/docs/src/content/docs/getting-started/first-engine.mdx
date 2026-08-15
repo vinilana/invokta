@@ -126,10 +126,12 @@ automation can pass `--profile complete`; pseudo-TTY automation also passes
    ```
 
    The inspector on `http://127.0.0.1:4100/` lists the capability with its
-   input and output JSON Schemas and invokes it from a schema-seeded editor
-   while showing the raw MCP exchange. A live trace records each invocation's
-   outcome and duration, and test identities mint development `Principal`
-   values, so `access` rules can be exercised as different actors.
+   input and output JSON Schemas and invokes it from a schema-seeded editor.
+   The **Adapter** switch chooses which execution path carries the call —
+   direct, CLI, MCP stdio, or MCP HTTP — and shows what that path exchanged.
+   A live trace records each invocation's outcome and duration, and test
+   identities mint development `Principal` values, so `access` rules can be
+   exercised as different actors.
 
 </Steps>
 

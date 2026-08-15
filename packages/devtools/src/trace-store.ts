@@ -1,4 +1,31 @@
+import type { AdapterId, AdapterOutcome } from "./adapter-runner.js";
 import type { InvocationRecord } from "./engine-host.js";
+
+/**
+ * One emulated capability call, whichever adapter carried it. The request and
+ * response are already rendered for reading, because the shape of an exchange
+ * differs per adapter: a JSON-RPC body, a `tools/call` frame, or a command and
+ * its standard output.
+ */
+export interface AdapterCallCapture {
+  readonly adapter: AdapterId;
+  readonly capabilityId: string;
+  readonly outcome: AdapterOutcome;
+  readonly durationMs: number;
+  readonly errorCode?: string;
+  readonly request: string;
+  readonly response: string;
+  /** The invocation arguments as JSON, so the call can be reproduced. */
+  readonly input?: string;
+  /** The identity the call acted as; `null` when it ran anonymously. */
+  readonly principalId?: string | null;
+  /** The HTTP status, when the MCP HTTP adapter carried the call. */
+  readonly status?: number;
+  /** The exit code, when a child process carried the call. */
+  readonly exitCode?: number | null;
+  /** The command that ran, when a child process carried the call. */
+  readonly command?: string;
+}
 
 export interface ExchangeCapture {
   readonly status: number;
@@ -29,6 +56,18 @@ export type TraceEntry =
       readonly responseOriginalSize?: number;
     }
   | {
+      readonly kind: "adapter";
+      readonly id: number;
+      readonly at: string;
+      readonly call: AdapterCallCapture;
+      readonly requestTruncated: boolean;
+      readonly responseTruncated: boolean;
+      /** Request length in characters before truncation, when truncated. */
+      readonly requestOriginalSize?: number;
+      /** Response length in characters before truncation, when truncated. */
+      readonly responseOriginalSize?: number;
+    }
+  | {
       readonly kind: "notice";
       readonly id: number;
       readonly at: string;
@@ -40,6 +79,7 @@ export type TraceEntry =
 export interface TraceStore {
   appendInvocation(record: InvocationRecord): TraceEntry;
   appendExchange(capture: ExchangeCapture): TraceEntry;
+  appendAdapterCall(capture: AdapterCallCapture): TraceEntry;
   appendNotice(notice: string, detail?: string): TraceEntry;
   entries(): ReadonlyArray<TraceEntry>;
   /** Drops every buffered entry; later appends keep their monotonic ids. */
@@ -125,6 +165,37 @@ export function createTraceStore(
           : {}),
         ...(responseTruncated
           ? { responseOriginalSize: capture.responseBody.length }
+          : {}),
+      });
+    },
+    appendAdapterCall: (capture) => {
+      const { input, ...withoutInput } = capture;
+      const requestTruncated = capture.request.length > maxBodyLength;
+      const responseTruncated = capture.response.length > maxBodyLength;
+      return append({
+        kind: "adapter",
+        ...stamp(),
+        call: {
+          ...withoutInput,
+          // A truncated input would no longer parse, so it is dropped rather
+          // than offered as a reproduction that silently rewrites the call.
+          ...(input !== undefined && input.length <= maxBodyLength
+            ? { input }
+            : {}),
+          request: requestTruncated
+            ? capture.request.slice(0, maxBodyLength)
+            : capture.request,
+          response: responseTruncated
+            ? capture.response.slice(0, maxBodyLength)
+            : capture.response,
+        },
+        requestTruncated,
+        responseTruncated,
+        ...(requestTruncated
+          ? { requestOriginalSize: capture.request.length }
+          : {}),
+        ...(responseTruncated
+          ? { responseOriginalSize: capture.response.length }
           : {}),
       });
     },

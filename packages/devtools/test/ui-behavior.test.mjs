@@ -364,22 +364,19 @@ describe("application tabs", () => {
       "var(--ink-fg)",
     ]);
     await waitFor(() =>
-      expect(shell.textContent).toContain("Act as local-dev"),
+      expect(shell.textContent).toContain("Connected locally"),
     );
-    expect(shell.textContent).toContain("Connected locally");
-    expect(shell.textContent).toContain("No token");
-    const principalContext = walk(document.body).find(
-      (node) =>
-        node instanceof FakeElement &&
-        node.classList.contains("principal-context"),
-    );
-    expect(principalContext.getAttribute("aria-label")).toBe(
-      "Act as local-dev, no session token; manage test identities",
-    );
-    const principalContextLabel = walk(principalContext).find(
-      (node) => node instanceof FakeElement && node.tagName === "SPAN",
-    );
-    expect(principalContextLabel.getAttribute("role")).toBeNull();
+    // The acting identity and the HTTP credential live in the Playground, next
+    // to the adapter switch; only MCP HTTP authenticates, so the shell carries
+    // no global "Act as" status.
+    expect(shell.textContent).not.toContain("Act as");
+    expect(
+      walk(document.body).find(
+        (node) =>
+          node instanceof FakeElement &&
+          node.classList.contains("principal-context"),
+      ),
+    ).toBeUndefined();
 
     const buttons = walk(document.body).filter(
       (node) => node instanceof FakeElement && node.tagName === "BUTTON",

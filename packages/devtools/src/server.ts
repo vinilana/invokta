@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type {
   IncomingMessage,
@@ -10,10 +11,40 @@ import { join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Principal } from "@invokta/core";
+import { inspectMcpOAuth } from "@invokta/mcp";
 
+import type {
+  AdapterInvocationResult,
+  AdapterRunner,
+} from "./adapter-runner.js";
+import { AdapterBusyError, isAdapterId } from "./adapter-runner.js";
+import type { EntryTargetStore } from "./entry-target.js";
+import {
+  EntryTargetError,
+  isEntryAdapter,
+  parseEntryPoint,
+} from "./entry-target.js";
 import { faviconLink, faviconSvg } from "./favicon.js";
+import type { HttpTargetStore } from "./http-target.js";
+import { HttpTargetError, parseHttpTarget } from "./http-target.js";
 import type { PrincipalStore } from "./principal-store.js";
-import type { TraceStore } from "./trace-store.js";
+import type { AdapterCallCapture, TraceStore } from "./trace-store.js";
+
+/**
+ * The interactive OAuth authorization of an external MCP endpoint, chartered
+ * by ADR 0023 and reused here by ADR 0029. The devtools server only starts the
+ * flow and completes it from the loopback callback; every token, PKCE value,
+ * and registration artifact stays inside the session.
+ */
+export interface OAuthSession {
+  begin(
+    url: string,
+    options: { readonly redirectUrl: string; readonly state: string },
+  ): Promise<{ readonly authorizationUrl: string }>;
+  complete(state: string, authorizationCode: string): Promise<void>;
+  reject(state: string): Promise<void>;
+  disconnect(): Promise<void>;
+}
 
 export interface DevtoolsServerAddress {
   readonly host: string;
@@ -38,6 +69,18 @@ export interface DevtoolsServerOptions {
   readonly engineView: () => EngineView;
   readonly principals: PrincipalStore;
   readonly trace: TraceStore;
+  /** Runs one capability call through the adapter the caller selected. */
+  readonly adapters: AdapterRunner;
+  /** Where MCP HTTP sends a call, and how it authenticates. */
+  readonly httpTarget: HttpTargetStore;
+  /** Which composition root runs the CLI and MCP stdio emulations. */
+  readonly entryTarget: EntryTargetStore;
+  /** The directory a project entry point is resolved against. */
+  readonly cwd: string;
+  /** The served module, published so the interface can propose a sibling. */
+  readonly module: { readonly specifier: string; readonly exportName: string };
+  /** Drives the interactive OAuth authorization of an external endpoint. */
+  readonly oauth?: OAuthSession;
   /** The engine host's current MCP endpoint port on loopback. */
   readonly enginePort: () => number;
   /** Defaults to 4100. */
@@ -55,6 +98,10 @@ const defaultPort = 4100;
 const host = "127.0.0.1";
 const apiBodyLimitBytes = 64 * 1024;
 const mcpBodyLimitBytes = 1024 * 1024;
+/** Bounds the whole discovery chain of one OAuth endpoint check. */
+const httpTargetCheckTimeoutMs = 20_000;
+/** ADR 0023: an oversized callback target must not select an attempt. */
+const oauthCallbackTargetLimitBytes = 8_192;
 
 const appShellPage = `<!doctype html>
 <html lang="en" data-theme="dark">
@@ -82,6 +129,44 @@ try {
 </body>
 </html>
 `;
+
+const oauthCallbackCopy: Readonly<
+  Record<
+    "success" | "rejected" | "invalid" | "error",
+    readonly [string, string]
+  >
+> = {
+  success: [
+    "Authorization complete",
+    "Return to Invokta devtools. You can close this tab.",
+  ],
+  rejected: [
+    "Authorization was not completed",
+    "Return to Invokta devtools to try again.",
+  ],
+  invalid: [
+    "Authorization callback was invalid",
+    "Return to Invokta devtools and start the authorization again.",
+  ],
+  error: [
+    "Authorization failed",
+    "Return to Invokta devtools to review the endpoint.",
+  ],
+};
+
+type OAuthCallbackOutcome = "success" | "rejected" | "invalid" | "error";
+
+function oauthCallbackPage(outcome: OAuthCallbackOutcome): string {
+  const [title, hint] = oauthCallbackCopy[outcome];
+  return `<!doctype html>
+<html lang="en" data-theme="dark">
+<head><meta charset="utf-8"><title>${title}</title>${faviconLink}
+<style>html{background:#09090b;color-scheme:dark;color:#e4e4e7;font:15px/1.5 system-ui,sans-serif}
+main{max-width:32rem;margin:6rem auto;padding:0 1.5rem}h1{font-size:1.25rem;margin:0 0 .5rem}
+p{color:#a1a1aa;margin:0}</style></head>
+<body><main><h1>${title}</h1><p>${hint}</p></main></body></html>
+`;
+}
 
 const staticContentTypes: Readonly<Record<string, string>> = {
   ".css": "text/css; charset=utf-8",
@@ -165,6 +250,86 @@ function isPrincipalInput(value: unknown): value is Principal {
   }
   return true;
 }
+
+interface CapabilityView {
+  readonly id: string;
+  readonly mcpToolName: string;
+  readonly timeoutMs?: number;
+}
+
+function readCapabilityView(value: unknown): CapabilityView | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as {
+    readonly id?: unknown;
+    readonly mcpToolName?: unknown;
+    readonly timeoutMs?: unknown;
+  };
+  if (typeof record.id !== "string" || typeof record.mcpToolName !== "string") {
+    return undefined;
+  }
+  return {
+    id: record.id,
+    mcpToolName: record.mcpToolName,
+    ...(typeof record.timeoutMs === "number" &&
+    Number.isFinite(record.timeoutMs)
+      ? { timeoutMs: record.timeoutMs }
+      : {}),
+  };
+}
+
+/**
+ * Renders what the adapter exchanged into the two strings the trace shows.
+ * Each adapter carries a different shape, and the trace stays one readable
+ * feed rather than four. The identity the call acted as travels with it — but
+ * only when the adapter actually presented it, so a call whose principal came
+ * from a project entry point or an external endpoint is never attributed to
+ * the selected test identity. The invocation arguments travel too, so "Open
+ * in Playground" can reproduce a call whose exchange is a rendered command.
+ */
+function toAdapterCapture(
+  result: AdapterInvocationResult,
+  principalId: string | null,
+  input: string,
+): AdapterCallCapture {
+  const shared = {
+    adapter: result.adapter,
+    capabilityId: result.capabilityId,
+    outcome: result.outcome,
+    durationMs: result.durationMs,
+    principalId: result.identityApplied ? principalId : null,
+    input,
+    ...(result.error === undefined ? {} : { errorCode: result.error.code }),
+  };
+  if (result.exchange.kind === "http") {
+    return {
+      ...shared,
+      request: result.exchange.requestBody,
+      response: result.exchange.responseBody,
+      status: result.exchange.status,
+    };
+  }
+  if (result.exchange.kind === "mcp") {
+    return {
+      ...shared,
+      request: result.exchange.request,
+      response: result.exchange.response,
+      command: result.exchange.target,
+    };
+  }
+  return {
+    ...shared,
+    request: result.exchange.command,
+    response:
+      result.exchange.stderr === ""
+        ? result.exchange.stdout
+        : `${result.exchange.stdout}${result.exchange.stderr}`,
+    exitCode: result.exchange.exitCode,
+    command: result.exchange.command,
+  };
+}
+
+/** Extra time an emulated call may take on top of the capability deadline. */
+const adapterStartupSlackMs = 10_000;
 
 function defaultUiRoot(): string {
   return join(fileURLToPath(new URL(".", import.meta.url)), "ui");
@@ -284,6 +449,24 @@ export async function startDevtoolsServer(
       sendJson(response, 400, { error: "invalid_principal" });
       return;
     }
+    if (request.method === "PUT") {
+      if (
+        body === undefined ||
+        typeof body.key !== "string" ||
+        !isPrincipalInput(body.principal)
+      ) {
+        sendJson(response, 400, { error: "invalid_principal" });
+        return;
+      }
+      const updated = options.principals.update(body.key, body.principal);
+      if (updated === null) {
+        sendJson(response, 404, { error: "unknown_principal" });
+        return;
+      }
+      // An update keeps the existing token, so none is minted or echoed.
+      sendJson(response, 200, principalBody(updated));
+      return;
+    }
     if (request.method === "DELETE") {
       if (body === undefined || typeof body.key !== "string") {
         sendJson(response, 400, { error: "invalid_principal" });
@@ -300,7 +483,7 @@ export async function startDevtoolsServer(
       response,
       405,
       { error: "method_not_allowed" },
-      { allow: "GET, POST, DELETE" },
+      { allow: "GET, POST, PUT, DELETE" },
     );
   };
 
@@ -321,6 +504,405 @@ export async function startDevtoolsServer(
     request.once("close", () => {
       sseClients.delete(response);
     });
+  };
+
+  /**
+   * Runs the read-only OAuth discovery check against the exact endpoint the
+   * caller drafted (falling back to the selected external endpoint). It
+   * authorizes nothing and sends no credential: the point is to attribute a
+   * failure to the leg that produced it, instead of to authentication as a
+   * whole. The inspection is bounded by a deadline and cancelled when the
+   * browser goes away, so a target that never answers cannot pin this handler.
+   */
+  const handleHttpTargetCheck = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
+    const read = await readBody(request, apiBodyLimitBytes);
+    if (!read.ok) {
+      sendJson(response, 413, { error: "payload_too_large" });
+      return;
+    }
+    const body = parseJson(read.body) as { readonly url?: unknown } | undefined;
+    let url: string;
+    if (typeof body?.url === "string" && body.url !== "") {
+      url = body.url;
+    } else {
+      const target = options.httpTarget.current();
+      if (target.kind !== "external") {
+        sendJson(response, 400, {
+          error: "not_an_external_endpoint",
+          message:
+            "The devtools host authenticates with its own session tokens; there is no OAuth chain to check.",
+        });
+        return;
+      }
+      url = target.url;
+    }
+    const deadline = AbortSignal.timeout(httpTargetCheckTimeoutMs);
+    const disconnected = new AbortController();
+    request.once("close", () => {
+      if (!response.writableEnded) disconnected.abort();
+    });
+    try {
+      const inspection = await inspectMcpOAuth(
+        {
+          transport: "http",
+          url,
+          authentication: { type: "oauth" },
+        },
+        { signal: AbortSignal.any([deadline, disconnected.signal]) },
+      );
+      sendJson(response, 200, inspection);
+    } catch (error) {
+      if (disconnected.signal.aborted) return;
+      if (deadline.aborted) {
+        sendJson(response, 504, {
+          error: "check_timed_out",
+          message: "The endpoint did not answer the discovery check in time.",
+        });
+        return;
+      }
+      sendJson(response, 400, {
+        error: "invalid_target",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The endpoint could not be checked.",
+      });
+    }
+  };
+
+  /**
+   * Reads or replaces where MCP HTTP sends a call. The response never carries
+   * a credential: only the kind, the URL, the authentication type, and header
+   * or environment-variable names leave this process.
+   */
+  const handleHttpTarget = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
+    if (request.method === "GET") {
+      sendJson(response, 200, options.httpTarget.view());
+      return;
+    }
+    if (request.method === "DELETE") {
+      await options.oauth?.disconnect().catch(() => undefined);
+      options.httpTarget.reset();
+      sendJson(response, 200, options.httpTarget.view());
+      return;
+    }
+    if (request.method !== "PUT" && request.method !== "POST") {
+      sendJson(
+        response,
+        405,
+        { error: "method_not_allowed" },
+        { allow: "GET, PUT, POST, DELETE" },
+      );
+      return;
+    }
+    const read = await readBody(request, apiBodyLimitBytes);
+    if (!read.ok) {
+      sendJson(response, 413, { error: "payload_too_large" });
+      return;
+    }
+    let target: ReturnType<typeof parseHttpTarget>;
+    try {
+      target = parseHttpTarget(parseJson(read.body));
+    } catch (error) {
+      if (error instanceof HttpTargetError) {
+        sendJson(response, 400, {
+          error: error.code.toLowerCase(),
+          message: error.message,
+        });
+        return;
+      }
+      throw error;
+    }
+
+    if (target.kind === "external" && target.authentication.type === "oauth") {
+      const oauth = options.oauth;
+      if (oauth === undefined) {
+        // Nothing was committed: the stored target and the invoke path stay
+        // exactly as the interface last saw them.
+        sendJson(response, 400, {
+          error: "oauth_unavailable",
+          message: "This dev server cannot run an interactive authorization.",
+        });
+        return;
+      }
+      // The session controller runs one session at a time, so the previous
+      // authorization must be released before its replacement can begin — but
+      // the stored target is replaced only once `begin` succeeded. A failed
+      // begin therefore leaves the target (and what /api/invoke reads)
+      // unchanged, with only its authorization flag telling the truth.
+      await oauth.disconnect().catch(() => undefined);
+      options.httpTarget.markAuthorized(false);
+      const state = randomBytes(32).toString("base64url");
+      try {
+        const authorization = await oauth.begin(target.url, {
+          redirectUrl: `${ownOrigin}/oauth/callback`,
+          state,
+        });
+        options.httpTarget.set(target);
+        sendJson(response, 202, {
+          ...options.httpTarget.view(),
+          authorizationUrl: authorization.authorizationUrl,
+        });
+      } catch (error) {
+        sendJson(response, 400, {
+          error: "authorization_failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "The authorization could not be started.",
+        });
+      }
+      return;
+    }
+    // A previous authorization belongs to the previous target.
+    await options.oauth?.disconnect().catch(() => undefined);
+    options.httpTarget.set(target);
+    sendJson(response, 200, options.httpTarget.view());
+  };
+
+  /**
+   * Reads or replaces which composition root runs an emulated CLI or MCP
+   * stdio call: the devtools child, which supplies the selected identity, or
+   * the engine's own entry point, which supplies whatever its root decides.
+   */
+  const handleEntryTarget = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
+    if (request.method === "GET") {
+      sendJson(response, 200, options.entryTarget.view());
+      return;
+    }
+    if (request.method === "DELETE") {
+      options.entryTarget.reset();
+      sendJson(response, 200, options.entryTarget.view());
+      return;
+    }
+    if (request.method !== "PUT") {
+      sendJson(
+        response,
+        405,
+        { error: "method_not_allowed" },
+        { allow: "GET, PUT, DELETE" },
+      );
+      return;
+    }
+    const read = await readBody(request, apiBodyLimitBytes);
+    if (!read.ok) {
+      sendJson(response, 413, { error: "payload_too_large" });
+      return;
+    }
+    const body = parseJson(read.body) as
+      | { readonly adapter?: unknown; readonly entryPoint?: unknown }
+      | undefined;
+    if (body === undefined || !isEntryAdapter(body.adapter)) {
+      sendJson(response, 400, {
+        error: "invalid_adapter",
+        message: "Only the CLI and MCP stdio adapters have an entry point.",
+      });
+      return;
+    }
+    try {
+      options.entryTarget.set(
+        body.adapter,
+        parseEntryPoint(body.entryPoint, options.cwd),
+      );
+    } catch (error) {
+      if (error instanceof EntryTargetError) {
+        sendJson(response, 400, {
+          error: error.code.toLowerCase(),
+          message: error.message,
+        });
+        return;
+      }
+      throw error;
+    }
+    sendJson(response, 200, options.entryTarget.view());
+  };
+
+  /**
+   * Completes the loopback leg of an interactive authorization, following the
+   * ADR 0023 callback contract. The provider redirects the developer's
+   * browser here with the authorization code and state in the query, so
+   * nothing is rendered at this URL: the browser is redirected to a clean
+   * result path first, keeping the code out of history and out of any Referer
+   * the result page's assets would send. An oversized or state-ambiguous
+   * callback must not select — let alone consume — an in-flight attempt.
+   */
+  const handleOAuthCallback = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    url: URL,
+  ): Promise<void> => {
+    const finish = (outcome: OAuthCallbackOutcome): void => {
+      response.writeHead(303, {
+        location: `/oauth/result?outcome=${outcome}`,
+        "cache-control": "no-store",
+      });
+      response.end();
+    };
+    if (Buffer.byteLength(request.url ?? "") > oauthCallbackTargetLimitBytes) {
+      finish("invalid");
+      return;
+    }
+    const oauth = options.oauth;
+    const states = url.searchParams.getAll("state");
+    const codes = url.searchParams.getAll("code");
+    const errors = url.searchParams.getAll("error");
+    const state = states[0];
+    if (
+      oauth === undefined ||
+      states.length !== 1 ||
+      state === undefined ||
+      !/^[A-Za-z0-9_-]{43}$/u.test(state)
+    ) {
+      finish("invalid");
+      return;
+    }
+    // From here one attempt is selected; a malformed result consumes it.
+    const rejectCallback = async (
+      outcome: "invalid" | "rejected",
+    ): Promise<void> => {
+      try {
+        await oauth.reject(state);
+      } catch {
+        finish("error");
+        return;
+      }
+      finish(outcome);
+    };
+    if (
+      !(
+        (codes.length === 1 && errors.length === 0) ||
+        (codes.length === 0 && errors.length === 1)
+      )
+    ) {
+      await rejectCallback("invalid");
+      return;
+    }
+    const error = errors[0];
+    if (error !== undefined) {
+      await rejectCallback(
+        error.length === 0 || error.length > 256 ? "invalid" : "rejected",
+      );
+      return;
+    }
+    const code = codes[0];
+    if (code === undefined || code.length === 0 || code.length > 4_096) {
+      await rejectCallback("invalid");
+      return;
+    }
+    try {
+      await oauth.complete(state, code);
+      options.httpTarget.markAuthorized(true);
+      finish("success");
+    } catch {
+      finish("error");
+    }
+  };
+
+  /**
+   * Runs one capability call through the selected adapter. Every adapter the
+   * engine publishes is reachable here, and the answer is normalized so the
+   * interface reads one outcome regardless of which path carried the call.
+   */
+  const handleInvoke = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
+    const read = await readBody(request, mcpBodyLimitBytes);
+    if (!read.ok) {
+      sendJson(response, 413, { error: "payload_too_large" });
+      return;
+    }
+    const body = parseJson(read.body) as
+      | {
+          readonly adapter?: unknown;
+          readonly capabilityId?: unknown;
+          readonly arguments?: unknown;
+          readonly principalKey?: unknown;
+        }
+      | undefined;
+    if (body === undefined || !isAdapterId(body.adapter)) {
+      sendJson(response, 400, {
+        error: "unknown_adapter",
+        message: "Select one of the adapters the engine publishes.",
+      });
+      return;
+    }
+    const capability = options
+      .engineView()
+      .capabilities.map(readCapabilityView)
+      .find((entry) => entry?.id === body.capabilityId);
+    if (capability === undefined) {
+      sendJson(response, 400, {
+        error: "unknown_capability",
+        message: "The engine publishes no capability with that ID.",
+      });
+      return;
+    }
+    let identity: {
+      readonly principal: Principal;
+      readonly token: string;
+    } | null = null;
+    if (typeof body.principalKey === "string" && body.principalKey !== "") {
+      const record = options.principals
+        .list()
+        .find((entry) => entry.key === body.principalKey);
+      if (record === undefined) {
+        sendJson(response, 400, {
+          error: "unknown_principal",
+          message: "The selected test identity no longer exists.",
+        });
+        return;
+      }
+      identity = { principal: record.principal, token: record.token };
+    }
+
+    // A closed browser connection ends the emulation, so an adapter child is
+    // never left running for a caller that stopped listening.
+    const controller = new AbortController();
+    request.once("close", () => {
+      if (!response.writableEnded) controller.abort();
+    });
+
+    let result: AdapterInvocationResult;
+    try {
+      result = await options.adapters.run({
+        adapter: body.adapter,
+        capabilityId: capability.id,
+        mcpToolName: capability.mcpToolName,
+        input: body.arguments ?? {},
+        identity,
+        signal: controller.signal,
+        ...(capability.timeoutMs === undefined
+          ? {}
+          : { timeoutMs: capability.timeoutMs + adapterStartupSlackMs }),
+      });
+    } catch (error) {
+      if (error instanceof AdapterBusyError) {
+        sendJson(response, 429, {
+          error: "adapter_busy",
+          message: `Wait for one of the ${String(error.limit)} running emulations to finish.`,
+        });
+        return;
+      }
+      throw error;
+    }
+    options.trace.appendAdapterCall(
+      toAdapterCapture(
+        result,
+        identity?.principal.id ?? null,
+        JSON.stringify(body.arguments ?? {}),
+      ),
+    );
+    sendJson(response, 200, result);
   };
 
   const handleMcpProxy = async (
@@ -433,6 +1015,79 @@ export async function startDevtoolsServer(
       await handleMcpProxy(request, response);
       return;
     }
+    if (path === "/api/http-target") {
+      await handleHttpTarget(request, response);
+      return;
+    }
+    if (path === "/api/http-target/check") {
+      if (method !== "POST") {
+        sendJson(
+          response,
+          405,
+          { error: "method_not_allowed" },
+          { allow: "POST" },
+        );
+        return;
+      }
+      await handleHttpTargetCheck(request, response);
+      return;
+    }
+    if (path === "/api/entry-target") {
+      await handleEntryTarget(request, response);
+      return;
+    }
+    if (path === "/oauth/callback") {
+      if (method !== "GET") {
+        sendJson(
+          response,
+          405,
+          { error: "method_not_allowed" },
+          { allow: "GET" },
+        );
+        return;
+      }
+      await handleOAuthCallback(request, response, url);
+      return;
+    }
+    if (path === "/oauth/result") {
+      if (method !== "GET") {
+        sendJson(
+          response,
+          405,
+          { error: "method_not_allowed" },
+          { allow: "GET" },
+        );
+        return;
+      }
+      const outcome = url.searchParams.get("outcome");
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end(
+        oauthCallbackPage(
+          outcome === "success" ||
+            outcome === "rejected" ||
+            outcome === "invalid"
+            ? outcome
+            : "error",
+        ),
+      );
+      return;
+    }
+    if (path === "/api/invoke") {
+      if (method !== "POST") {
+        sendJson(
+          response,
+          405,
+          { error: "method_not_allowed" },
+          { allow: "POST" },
+        );
+        return;
+      }
+      await handleInvoke(request, response);
+      return;
+    }
     if (path === "/api/principals") {
       await handlePrincipals(request, response);
       return;
@@ -478,11 +1133,15 @@ export async function startDevtoolsServer(
     }
     if (path === "/api/engine") {
       const view = options.engineView();
+      // Deliberately no adapter catalog here: the interface owns the adapter
+      // presentations, and a second copy published from the server would be
+      // one more thing to keep in step by hand.
       sendJson(response, 200, {
         name: view.name,
         version: view.version,
         capabilityCount: view.capabilities.length,
         engineHost: { host: "127.0.0.1", port: options.enginePort() },
+        module: options.module,
       });
       return;
     }

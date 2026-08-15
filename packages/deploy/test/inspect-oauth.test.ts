@@ -228,6 +228,29 @@ describe("runInspectOAuth", () => {
     ]);
   });
 
+  it("accepts a loopback authorization server on another loopback port", async () => {
+    // A local identity provider normally runs as its own process on its own
+    // port; `serveMcpHttp` publishes this topology and `inspectMcpOAuth`
+    // accepts it, so this inspector must agree.
+    const identity = await startOAuthStub();
+    const stub = await startOAuthStub({
+      resource: (origin) => ({
+        resource: `${origin}/mcp`,
+        authorization_servers: [identity.origin],
+        scopes_supported: ["mcp:tools"],
+      }),
+    });
+
+    const result = await inspect(["--url", stub.endpoint]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.join("")).toContain(`issuer: ${identity.origin}`);
+    expect(identity.requests.map(({ path }) => path)).toEqual([
+      "/.well-known/oauth-authorization-server",
+      "/jwks",
+    ]);
+  });
+
   it("fails at the challenge stage when resource metadata is not advertised", async () => {
     const stub = await startOAuthStub({ challenge: () => "Bearer" });
 

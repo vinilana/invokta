@@ -1686,10 +1686,6 @@ describe("MCP stateless Streamable HTTP", () => {
         authorizationServers: ["http://auth.example.com"] as const,
       },
       {
-        resource: "http://127.0.0.1:3000/mcp",
-        authorizationServers: ["http://127.0.0.1:3001"] as const,
-      },
-      {
         resource: "https://engine.example.com/mcp",
         authorizationServers: ["https://user@auth.example.com"] as const,
       },
@@ -1700,6 +1696,20 @@ describe("MCP stateless Streamable HTTP", () => {
       {
         resource: "https://engine.example.com/mcp",
         authorizationServers: ["https://auth.example.com#fragment"] as const,
+      },
+      {
+        resource: "https://engine.example.com/mcp",
+        authorizationServers: ["http://127.0.0.1:9000"] as const,
+      },
+      // `localhost` is not a literal loopback host: the MCP client trusts
+      // only the literal forms, so the server must not publish it either.
+      {
+        resource: "http://localhost:3000/mcp",
+        authorizationServers: ["http://127.0.0.1:9000"] as const,
+      },
+      {
+        resource: "http://127.0.0.1:3000/mcp",
+        authorizationServers: ["http://localhost:9000"] as const,
       },
     ];
 
@@ -1740,21 +1750,33 @@ describe("MCP stateless Streamable HTTP", () => {
     });
   });
 
-  it("allows a same-origin loopback HTTP authorization server for development", async () => {
+  it("lets a loopback HTTP resource advertise any loopback authorization server", async () => {
     const server = await start(createContextEngine(), {
       auth: {
         mode: "required",
         authenticate: () => null,
         resourceMetadata: {
           resource: "http://127.0.0.1:3000/mcp",
-          authorizationServers: ["http://127.0.0.1:3000/tenant"],
+          // A local identity provider normally runs as its own process on
+          // its own port, so a different loopback origin is the common case.
+          authorizationServers: [
+            "http://127.0.0.1:9000",
+            "http://127.0.0.1:3000/tenant",
+          ],
         },
       },
     });
 
-    expect(server.address()).toEqual({
-      host: "127.0.0.1",
-      port: expect.any(Number),
+    const metadata = await fetch(
+      endpoint(server, "/.well-known/oauth-protected-resource/mcp"),
+    );
+
+    expect(await json(metadata)).toEqual({
+      resource: "http://127.0.0.1:3000/mcp",
+      authorization_servers: [
+        "http://127.0.0.1:9000",
+        "http://127.0.0.1:3000/tenant",
+      ],
     });
   });
 

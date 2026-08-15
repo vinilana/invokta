@@ -83,6 +83,87 @@ describe("createTraceStore", () => {
     expect(entry.responseOriginalSize).toBeUndefined();
   });
 
+  it("records an emulated call with its adapter and truncates its bodies", () => {
+    const store = createTraceStore({ maxCapturedBodyLength: 4 });
+    const entry = store.appendAdapterCall({
+      adapter: "cli",
+      capabilityId: "fixture.echo",
+      outcome: "capability-error",
+      durationMs: 12,
+      errorCode: "INPUT_INVALID",
+      request: "engine run fixture.echo",
+      response: "ok",
+      exitCode: 1,
+      command: "engine run fixture.echo",
+    });
+
+    expect(entry.kind).toBe("adapter");
+    if (entry.kind !== "adapter") return;
+    expect(entry.call.adapter).toBe("cli");
+    expect(entry.call.outcome).toBe("capability-error");
+    expect(entry.call.errorCode).toBe("INPUT_INVALID");
+    expect(entry.call.exitCode).toBe(1);
+    expect(entry.call.request).toBe("engi");
+    expect(entry.requestTruncated).toBe(true);
+    // The truncation badge names how much was cut, same as an exchange.
+    expect(entry.requestOriginalSize).toBe("engine run fixture.echo".length);
+    expect(entry.call.response).toBe("ok");
+    expect(entry.responseTruncated).toBe(false);
+    expect(entry.responseOriginalSize).toBeUndefined();
+  });
+
+  it("keeps the invocation input only while it still parses whole", () => {
+    const store = createTraceStore({ maxCapturedBodyLength: 16 });
+    const shared = {
+      adapter: "cli",
+      capabilityId: "fixture.echo",
+      outcome: "success",
+      durationMs: 1,
+      request: "engine run fixture.echo",
+      response: "{}",
+    } as const;
+
+    const kept = store.appendAdapterCall({ ...shared, input: '{"ok":true}' });
+    expect(kept.kind).toBe("adapter");
+    if (kept.kind !== "adapter") return;
+    expect(kept.call.input).toBe('{"ok":true}');
+
+    // A truncated input would no longer parse, so it is dropped instead of
+    // being offered as a reproduction that silently rewrites the call.
+    const dropped = store.appendAdapterCall({
+      ...shared,
+      input: `{"message":"${"x".repeat(32)}"}`,
+    });
+    expect(dropped.kind).toBe("adapter");
+    if (dropped.kind !== "adapter") return;
+    expect(dropped.call.input).toBeUndefined();
+  });
+
+  it("records the identity an emulated call acted as, including anonymous", () => {
+    const store = createTraceStore();
+    const shared = {
+      adapter: "direct",
+      capabilityId: "fixture.echo",
+      outcome: "success",
+      durationMs: 3,
+      request: "{}",
+      response: "{}",
+    } as const;
+
+    const named = store.appendAdapterCall({
+      ...shared,
+      principalId: "local:operations-analyst",
+    });
+    const anonymous = store.appendAdapterCall({ ...shared, principalId: null });
+
+    expect(named.kind).toBe("adapter");
+    if (named.kind !== "adapter") return;
+    expect(named.call.principalId).toBe("local:operations-analyst");
+    expect(anonymous.kind).toBe("adapter");
+    if (anonymous.kind !== "adapter") return;
+    expect(anonymous.call.principalId).toBeNull();
+  });
+
   it("clears buffered entries while keeping ids monotonic", () => {
     const store = createTraceStore();
     store.appendInvocation(record(1));

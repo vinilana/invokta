@@ -3,10 +3,14 @@ import { resolve } from "node:path";
 
 import { toMcpToolName } from "@invokta/mcp";
 
+import { createAdapterRunner } from "./adapter-runner.js";
 import type { ThrownValueInfo } from "./diagnostics.js";
 import type { DoctorReport } from "./doctor.js";
 import { doctorReportToJson, inspectEngine } from "./doctor.js";
 import { startEngineHost } from "./engine-host.js";
+import { createEntryTargetStore } from "./entry-target.js";
+import { createHttpTargetStore } from "./http-target.js";
+import { createPlaygroundOAuth } from "./playground-oauth.js";
 import type { LoadedEngine } from "./load-engine.js";
 import { createPrincipalStore } from "./principal-store.js";
 import type { DevtoolsServerAddress, EngineView } from "./server.js";
@@ -30,6 +34,15 @@ interface ServeCommonOptions {
 
 export interface ServeEngineOptions extends ServeCommonOptions {
   readonly engine: LoadedEngine;
+  /**
+   * The module the engine was loaded from. Adapter emulation spawns children
+   * that import it themselves, so the path is required even though the parent
+   * already holds the engine.
+   */
+  readonly module: {
+    readonly specifier: string;
+    readonly exportName: string;
+  };
   /** Whether the module also exposes a tracked composed `capabilities` export. */
   readonly composedCapabilitiesExport: boolean;
 }
@@ -123,17 +136,38 @@ async function startWithEngine(
     return cachedView;
   };
 
+  const httpTarget = createHttpTargetStore();
+  const entryTarget = createEntryTargetStore();
+  const oauth = createPlaygroundOAuth();
+  const adapters = createAdapterRunner({
+    module: options.module,
+    cwd: options.cwd,
+    mcpEndpoint: () =>
+      `http://127.0.0.1:${String(engineHost.address().port)}/mcp`,
+    httpTarget: () => httpTarget.resolve(),
+    oauthCall: oauth.call,
+    entryPoint: (adapter) => entryTarget.for(adapter),
+  });
+
   let devtools: Awaited<ReturnType<typeof startDevtoolsServer>>;
   try {
     devtools = await startDevtoolsServer({
       engineView,
       principals,
       trace,
+      adapters,
+      httpTarget,
+      entryTarget,
+      oauth,
+      cwd: options.cwd,
+      module: options.module,
       enginePort: () => engineHost.address().port,
       port: devtoolsPort,
       ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
     });
   } catch (error) {
+    // Start-up failure releases the same resources shutdown does.
+    await oauth.close().catch(() => undefined);
     await engineHost.close();
     throw error;
   }
@@ -145,6 +179,7 @@ async function startWithEngine(
       engineAddress: engineHost.address(),
       close: async () => {
         await devtools.close();
+        await oauth.close();
         await engineHost.close();
       },
     },
@@ -193,17 +228,44 @@ async function startWithWatch(
     return { kind: "refused", report: watch.doctor as DoctorReport };
   }
 
+  const httpTarget = createHttpTargetStore();
+  const entryTarget = createEntryTargetStore();
+  const oauth = createPlaygroundOAuth();
+  const adapters = createAdapterRunner({
+    module: {
+      specifier: options.watch.moduleSpecifier,
+      exportName: options.watch.exportName,
+    },
+    cwd: options.cwd,
+    mcpEndpoint: () =>
+      `http://127.0.0.1:${String(watch.handles.enginePort())}/mcp`,
+    httpTarget: () => httpTarget.resolve(),
+    oauthCall: oauth.call,
+    entryPoint: (adapter) => entryTarget.for(adapter),
+  });
+
   let devtools: Awaited<ReturnType<typeof startDevtoolsServer>>;
   try {
     devtools = await startDevtoolsServer({
       engineView: watch.handles.engineView,
       principals,
       trace,
+      adapters,
+      httpTarget,
+      entryTarget,
+      oauth,
+      cwd: options.cwd,
+      module: {
+        specifier: options.watch.moduleSpecifier,
+        exportName: options.watch.exportName,
+      },
       enginePort: watch.handles.enginePort,
       port: devtoolsPort,
       ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
     });
   } catch (error) {
+    // Start-up failure releases the same resources shutdown does.
+    await oauth.close().catch(() => undefined);
     await watch.handles.close();
     throw error;
   }
@@ -215,6 +277,7 @@ async function startWithWatch(
       engineAddress: { host: "127.0.0.1", port: watch.handles.enginePort() },
       close: async () => {
         await devtools.close();
+        await oauth.close();
         await watch.handles.close();
       },
     },

@@ -15,6 +15,11 @@ import { startServe } from "../src/serve.js";
 import { startOnAvailablePort } from "./available-port.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
+/** The module adapter emulation children import, resolved against the cwd. */
+const fixtureModule = {
+  specifier: "packages/devtools/test/fixtures/adapter-engine.js",
+  exportName: "engine",
+} as const;
 
 const fixtureSchema = {
   "~standard": {
@@ -68,6 +73,7 @@ describe("shipped interface bundle", () => {
       startServe({
         engine,
         cwd: repositoryRoot,
+        module: fixtureModule,
         composedCapabilitiesExport: false,
         port,
         uiRoot: join(repositoryRoot, "packages/devtools/dist/ui"),

@@ -4,6 +4,8 @@ import { expectTypeOf } from "vitest";
 import {
   beginMcpOAuthAuthorization,
   connectMcpClient,
+  inspectMcpOAuth,
+  isForbiddenMcpClientHeader,
   type McpClientConnection,
   McpClientError,
   type McpClientOperationOptions,
@@ -18,6 +20,9 @@ import {
   type McpOAuthAuthorization,
   type McpOAuthAuthorizationOptions,
   type McpOAuthClientTarget,
+  type McpOAuthInspection,
+  type McpOAuthStep,
+  type McpOAuthStepName,
   McpToolNameCollisionError,
   type ServeMcpHttpOptions,
   type ServeMcpStdioOptions,
@@ -28,6 +33,7 @@ import {
 } from "../src/index.js";
 
 expectTypeOf(toMcpToolName("support.classify-ticket")).toEqualTypeOf<string>();
+expectTypeOf(isForbiddenMcpClientHeader("X-API-Key")).toEqualTypeOf<boolean>();
 
 declare const catalogEngine: Engine;
 expectTypeOf(validateMcpToolCatalog(catalogEngine)).toEqualTypeOf<void>();
@@ -79,6 +85,33 @@ expectTypeOf(oauthAuthorization.finish("authorization-code")).toEqualTypeOf<
   Promise<McpClientConnection>
 >();
 expectTypeOf(oauthAuthorization.close()).toEqualTypeOf<Promise<void>>();
+
+expectTypeOf(inspectMcpOAuth(oauthTarget)).toEqualTypeOf<
+  Promise<McpOAuthInspection>
+>();
+expectTypeOf(
+  inspectMcpOAuth(oauthTarget, { signal: new AbortController().signal }),
+).toEqualTypeOf<Promise<McpOAuthInspection>>();
+
+expectTypeOf<McpOAuthStepName>().toEqualTypeOf<
+  | "challenge"
+  | "resource-metadata"
+  | "authorization-server-metadata"
+  | "registration"
+>();
+
+declare const oauthInspection: McpOAuthInspection;
+declare const oauthStep: McpOAuthStep;
+expectTypeOf(oauthInspection.steps).toEqualTypeOf<readonly McpOAuthStep[]>();
+expectTypeOf(oauthInspection.ready).toEqualTypeOf<boolean>();
+expectTypeOf(oauthStep.name).toEqualTypeOf<McpOAuthStepName>();
+expectTypeOf(oauthStep.outcome).toEqualTypeOf<"ok" | "failed" | "skipped">();
+expectTypeOf(oauthStep.summary).toEqualTypeOf<string>();
+expectTypeOf(oauthStep.hint).toEqualTypeOf<string | undefined>();
+expectTypeOf(oauthStep.detail).toEqualTypeOf<McpJsonValue | undefined>();
+
+// @ts-expect-error The inspection report is a read-only snapshot.
+oauthInspection.steps[0] = oauthStep;
 
 declare const connection: McpClientConnection;
 expectTypeOf(connection.server).toEqualTypeOf<McpClientServerInfo>();

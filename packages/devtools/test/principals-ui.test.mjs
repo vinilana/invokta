@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const originalDescriptors = new Map(
-  ["document", "fetch", "sessionStorage"].map((name) => [
+  ["document", "fetch", "sessionStorage", "EventSource"].map((name) => [
     name,
     Object.getOwnPropertyDescriptor(globalThis, name),
   ]),
@@ -132,12 +132,35 @@ async function waitFor(assertion) {
   }
 }
 
+function dispatchTrace(source, entry) {
+  const event = new Event("trace");
+  Object.defineProperty(event, "data", { value: JSON.stringify(entry) });
+  source.dispatchEvent(event);
+}
+
+/** Returns the event sources the panel opened, newest last. */
 function installBrowser(fetchImplementation) {
   installGlobal("document", {
     createElement: (tagName) => new FakeElement(tagName),
   });
   installGlobal("sessionStorage", new MemoryStorage());
   installGlobal("fetch", vi.fn(fetchImplementation));
+  const sources = [];
+  class FakeEventSource extends EventTarget {
+    closed = false;
+
+    constructor(url) {
+      super();
+      this.url = url;
+      sources.push(this);
+    }
+
+    close() {
+      this.closed = true;
+    }
+  }
+  installGlobal("EventSource", FakeEventSource);
+  return sources;
 }
 
 afterEach(() => {
@@ -207,6 +230,44 @@ describe("principals panel", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it("frames the token as the MCP HTTP credential it is", async () => {
+    installBrowser(async () =>
+      jsonResponse([
+        { key: "p1", principal: { id: "local-dev" } },
+        { key: "p2", principal: { id: "reviewer" } },
+      ]),
+    );
+    sessionStorage.setItem(
+      "invokta-devtools.tokens",
+      JSON.stringify({ p1: "secret" }),
+    );
+
+    const { renderPrincipalsPanel } = await import("../src/ui/principals.js");
+    const container = new FakeElement("main");
+    renderPrincipalsPanel(container);
+    await waitFor(() =>
+      expect(container.textContent).toContain("MCP HTTP credential"),
+    );
+
+    const withToken = walk(container).find(
+      (node) => node.getAttribute?.("aria-label") === "Test identity local-dev",
+    );
+    const withoutToken = walk(container).find(
+      (node) => node.getAttribute?.("aria-label") === "Test identity reviewer",
+    );
+    expect(withToken.textContent).toContain("Session token ready");
+    expect(withoutToken.textContent).toContain("No session token");
+    expect(withoutToken.textContent).toContain(
+      "Only MCP HTTP against the devtools host presents one.",
+    );
+    // Nothing is broken without a token, so nothing warns about it.
+    expect(container.textContent).not.toContain("Session token missing");
+    const missing = walk(withoutToken).find(
+      (node) => node.textContent === "No session token",
+    );
+    expect(missing.getAttribute("class")).toBe("badge");
+  });
+
   it("explains token lifecycle and exposes principal states as text", async () => {
     installBrowser(async () =>
       jsonResponse([
@@ -229,7 +290,7 @@ describe("principals panel", () => {
     );
     expect(container.textContent).toContain("Selected");
     expect(container.textContent).toContain("Not selected");
-    expect(container.textContent).toContain("Session token missing");
+    expect(container.textContent).toContain("No session token");
     expect(container.textContent).toContain("Act as");
     expect(container.textContent).toContain("Rotate token and use…");
     expect(container.textContent).toContain("Create session token and use…");
@@ -241,6 +302,10 @@ describe("principals panel", () => {
     );
     expect(row.getAttribute("aria-label")).toBe("Test identity local-dev");
     expect(container.textContent).toContain("Test identities");
+    // Identity is selected next to the adapter switch; this panel manages it.
+    expect(container.textContent).toContain(
+      "Manage the development identities the Playground can act as.",
+    );
     expect(container.textContent).toContain("Principal ID");
     expect(container.textContent).not.toContain("Development principals");
     const status = walk(row).find(
@@ -296,7 +361,7 @@ describe("principals panel", () => {
     expect(identity.textContent).toContain("Internal key p1");
     expect(invocationState.textContent).toContain("Invocation");
     expect(invocationState.textContent).toContain("Selected");
-    expect(credentialState.textContent).toContain("Credential");
+    expect(credentialState.textContent).toContain("MCP HTTP credential");
     expect(credentialState.textContent).toContain("Session token ready");
     expect(localRow.getAttribute("aria-describedby")).toBe(
       "principal-invocation-state-0 principal-credential-state-0",
@@ -453,9 +518,7 @@ describe("principals panel", () => {
     activate.dispatchEvent(new Event("click"));
 
     await waitFor(() =>
-      expect(panelStatus.textContent).toBe(
-        "“reviewer” is now active. No session token is available.",
-      ),
+      expect(panelStatus.textContent).toBe("“reviewer” is now active."),
     );
     expect(walk(container)).toContain(panelStatus);
     const refreshedReviewerRow = walk(container).find(
@@ -643,19 +706,267 @@ describe("principals panel", () => {
       (node) => node.getAttribute?.("class") === "principal-preset",
     );
     expect(presets.map((button) => button.textContent)).toEqual([
-      "Admin",
-      "Reviewer",
-      "Anonymous",
+      "Ticket analyst",
+      "Ticket reader",
+      "No permissions",
     ]);
 
+    // The presets carry the attributes the repository's own access rules
+    // read, so a filled form passes or fails a real rule.
     presets[0].dispatchEvent(new Event("click"));
-    expect(idInput.value).toBe("admin");
-    expect(JSON.parse(attributesInput.value)).toEqual({ role: "admin" });
+    expect(idInput.value).toBe("local:operations-analyst");
+    expect(JSON.parse(attributesInput.value)).toEqual({
+      permissions: [
+        "ticket:read",
+        "ticket:classify",
+        "ticket:draft-reply",
+        "knowledge:search",
+      ],
+      allowedTicketIds: ["T-123", "T-456", "T-789"],
+    });
     expect(idInput.focused).toBe(true);
 
     presets[2].dispatchEvent(new Event("click"));
-    expect(idInput.value).toBe("anonymous");
-    expect(attributesInput.value).toBe("");
+    expect(idInput.value).toBe("local:no-permissions");
+    expect(JSON.parse(attributesInput.value)).toEqual({ permissions: [] });
+  });
+
+  it("edits an identity in place through the create form", async () => {
+    let records = [
+      {
+        key: "p1",
+        principal: {
+          id: "local-dev",
+          attributes: { permissions: ["ticket:read"] },
+        },
+      },
+    ];
+    const requests = [];
+    installBrowser(async (path, options = {}) => {
+      if (options.method === "PUT") {
+        const body = JSON.parse(options.body);
+        requests.push(body);
+        records = [{ key: body.key, principal: body.principal }];
+        return jsonResponse({ key: body.key, principal: body.principal });
+      }
+      if (options.method !== undefined) {
+        throw new Error(`Unexpected request: ${options.method} ${path}`);
+      }
+      return jsonResponse(records);
+    });
+    sessionStorage.setItem("invokta-devtools.active", "p1");
+
+    const principals = await import("../src/ui/principals.js");
+    const repainted = vi.fn();
+    principals.onPrincipalChange(repainted);
+    const container = new FakeElement("main");
+    principals.renderPrincipalsPanel(container);
+    await waitFor(() => expect(container.textContent).toContain("Edit"));
+
+    const row = walk(container).find(
+      (node) => node.getAttribute?.("aria-label") === "Test identity local-dev",
+    );
+    const edit = walk(row).find(
+      (node) => node.tagName === "BUTTON" && node.textContent === "Edit",
+    );
+    edit.dispatchEvent(new Event("click"));
+
+    const createSection = walk(container).find((node) =>
+      node.getAttribute?.("class")?.includes("principal-create"),
+    );
+    const idInput = walk(container).find(
+      (node) => node.getAttribute?.("id") === "new-principal-id",
+    );
+    const attributesInput = walk(container).find(
+      (node) => node.getAttribute?.("id") === "new-principal-attributes",
+    );
+    const submit = walk(container).find(
+      (node) =>
+        node.tagName === "BUTTON" && node.textContent === "Save changes",
+    );
+    expect(createSection.getAttribute("open")).toBe("");
+    expect(createSection.textContent).toContain("Edit identity");
+    expect(createSection.textContent).toContain(
+      "Editing “local-dev”. Its key and session token stay as they are.",
+    );
+    expect(idInput.value).toBe("local-dev");
+    expect(JSON.parse(attributesInput.value)).toEqual({
+      permissions: ["ticket:read"],
+    });
+    expect(idInput.focused).toBe(true);
+
+    // The edit reuses the create form's validation rather than its own.
+    attributesInput.value = "[]";
+    submit.dispatchEvent(new Event("click"));
+    expect(requests).toHaveLength(0);
+    expect(attributesInput.getAttribute("aria-invalid")).toBe("true");
+    expect(attributesInput.focused).toBe(true);
+
+    attributesInput.value = '{"permissions":["ticket:classify"]}';
+    idInput.value = "local:analyst";
+    submit.dispatchEvent(new Event("click"));
+
+    const panelStatus = walk(container).find(
+      (node) => node.getAttribute?.("id") === "principals-panel-status",
+    );
+    await waitFor(() =>
+      expect(panelStatus.textContent).toBe("Updated “local:analyst”."),
+    );
+    expect(requests).toEqual([
+      {
+        key: "p1",
+        principal: {
+          id: "local:analyst",
+          attributes: { permissions: ["ticket:classify"] },
+        },
+      },
+    ]);
+    // The identity picker in the Playground shows the new name.
+    expect(repainted).toHaveBeenCalled();
+    expect(principals.listKnownPrincipals()).toEqual([
+      {
+        key: "p1",
+        principal: {
+          id: "local:analyst",
+          attributes: { permissions: ["ticket:classify"] },
+        },
+      },
+    ]);
+    const updatedRow = walk(container).find(
+      (node) =>
+        node.getAttribute?.("aria-label") === "Test identity local:analyst",
+    );
+    expect(updatedRow.focused).toBe(true);
+    // The form returns to creating once the edit lands.
+    expect(
+      walk(container).find(
+        (node) =>
+          node.tagName === "BUTTON" && node.textContent === "Add identity",
+      ),
+    ).toBeDefined();
+  });
+
+  it("leaves the edit form for a new identity when the edit is cancelled", async () => {
+    installBrowser(async (_path, options = {}) => {
+      if (options.method !== undefined) {
+        throw new Error(`Unexpected request: ${options.method}`);
+      }
+      return jsonResponse([{ key: "p1", principal: { id: "local-dev" } }]);
+    });
+
+    const { renderPrincipalsPanel } = await import("../src/ui/principals.js");
+    const container = new FakeElement("main");
+    renderPrincipalsPanel(container);
+    await waitFor(() => expect(container.textContent).toContain("Edit"));
+
+    const edit = walk(container).find(
+      (node) => node.tagName === "BUTTON" && node.textContent === "Edit",
+    );
+    edit.dispatchEvent(new Event("click"));
+    const cancel = walk(container).find(
+      (node) =>
+        node.getAttribute?.("aria-label") === "Cancel editing this identity",
+    );
+    expect(cancel.hidden).toBe(false);
+    cancel.dispatchEvent(new Event("click"));
+
+    const idInput = walk(container).find(
+      (node) => node.getAttribute?.("id") === "new-principal-id",
+    );
+    expect(idInput.value).toBe("");
+    expect(cancel.hidden).toBe(true);
+    expect(
+      walk(container).find(
+        (node) =>
+          node.tagName === "BUTTON" && node.textContent === "Add identity",
+      ),
+    ).toBeDefined();
+  });
+
+  it("summarises the recent emulated calls made as each identity", async () => {
+    const sources = installBrowser(async () =>
+      jsonResponse([
+        { key: "p1", principal: { id: "local-dev" } },
+        { key: "p2", principal: { id: "reviewer" } },
+      ]),
+    );
+
+    const { renderPrincipalsPanel } = await import("../src/ui/principals.js");
+    const container = new FakeElement("main");
+    const dispose = renderPrincipalsPanel(container);
+    await waitFor(() =>
+      expect(container.textContent).toContain("No emulated calls yet."),
+    );
+    expect(sources).toHaveLength(1);
+    expect(sources[0].url).toBe("/api/events");
+
+    dispatchTrace(sources[0], {
+      kind: "adapter",
+      id: 1,
+      at: "2026-08-13T12:00:00.000Z",
+      call: {
+        adapter: "cli",
+        capabilityId: "support.classify",
+        outcome: "capability-error",
+        durationMs: 4,
+        errorCode: "ACCESS_DENIED",
+        principalId: "local-dev",
+        request: "{}",
+        response: "{}",
+      },
+    });
+    dispatchTrace(sources[0], {
+      kind: "adapter",
+      id: 2,
+      at: "2026-08-13T12:00:01.000Z",
+      call: {
+        adapter: "direct",
+        capabilityId: "support.summarize",
+        outcome: "success",
+        durationMs: 2,
+        principalId: "local-dev",
+        request: "{}",
+        response: "{}",
+      },
+    });
+    // An anonymous call belongs to no identity.
+    dispatchTrace(sources[0], {
+      kind: "adapter",
+      id: 3,
+      at: "2026-08-13T12:00:02.000Z",
+      call: {
+        adapter: "direct",
+        capabilityId: "support.classify",
+        outcome: "adapter-error",
+        durationMs: 1,
+        principalId: null,
+        request: "{}",
+        response: "{}",
+      },
+    });
+
+    const localRow = walk(container).find(
+      (node) => node.getAttribute?.("aria-label") === "Test identity local-dev",
+    );
+    const reviewerRow = walk(container).find(
+      (node) => node.getAttribute?.("aria-label") === "Test identity reviewer",
+    );
+    const recent = walk(localRow).find((node) =>
+      node.getAttribute?.("class")?.includes("principal-recent"),
+    );
+    expect(recent.textContent).toContain("Recent");
+    // Newest first, so the summary reads like the Activity feed.
+    expect(recent.textContent).toContain(
+      "support.summarize · direct · Success",
+    );
+    expect(recent.textContent).toContain(
+      "support.classify · cli · Capability error",
+    );
+    expect(reviewerRow.textContent).toContain("No emulated calls yet.");
+    expect(container.textContent).not.toContain("support.classify · direct");
+
+    dispose();
+    expect(sources[0].closed).toBe(true);
   });
 
   it("duplicates an identity into the create form without copying tokens", async () => {

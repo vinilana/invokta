@@ -1210,6 +1210,10 @@ async function runServe(
     serveOptions = {
       engine: loaded.engine,
       cwd,
+      module: {
+        specifier: command.moduleSpecifier,
+        exportName: command.exportName,
+      },
       composedCapabilitiesExport: hasComposedCapabilitiesExport(
         loaded.namespace,
       ),

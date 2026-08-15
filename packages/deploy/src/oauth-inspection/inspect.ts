@@ -216,7 +216,7 @@ function parseBearerChallenge(
   return undefined;
 }
 
-function safeUrl(value: unknown, trustedOrigin: string): URL | undefined {
+function parseSafeUrl(value: unknown): URL | undefined {
   if (typeof value !== "string" || value.length === 0 || value.length > 2_048) {
     return undefined;
   }
@@ -233,8 +233,37 @@ function safeUrl(value: unknown, trustedOrigin: string): URL | undefined {
   if (url.username !== "" || url.password !== "" || url.hash !== "") {
     return undefined;
   }
+  return url;
+}
+
+function safeUrl(value: unknown, trustedOrigin: string): URL | undefined {
+  const url = parseSafeUrl(value);
+  if (url === undefined) return undefined;
   if (url.protocol === "https:") return url;
   return url.protocol === "http:" && url.origin === trustedOrigin
+    ? url
+    : undefined;
+}
+
+function isLiteralLoopback(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+/**
+ * An authorization-server URL: HTTPS anywhere, or literal-loopback HTTP when
+ * the inspected resource is itself literal-loopback HTTP — a local identity
+ * provider normally runs as its own process on its own port. Mirrors the MCP
+ * package's `validateAuthorizationServerUrl`; a divergence between the two
+ * inspectors is a defect (ADR 0031).
+ */
+function safeAuthorizationUrl(value: unknown, resource: URL): URL | undefined {
+  const url = parseSafeUrl(value);
+  if (url === undefined) return undefined;
+  if (url.protocol === "https:") return url;
+  return url.protocol === "http:" &&
+    isLiteralLoopback(url.hostname) &&
+    resource.protocol === "http:" &&
+    isLiteralLoopback(resource.hostname)
     ? url
     : undefined;
 }
@@ -394,7 +423,7 @@ export async function inspectOAuthDiscovery(
   if (issuerText === undefined) {
     return failure("RESOURCE_METADATA", "AUTHORIZATION_SERVER_NOT_ADVERTISED");
   }
-  const issuer = safeUrl(issuerText, options.url.origin);
+  const issuer = safeAuthorizationUrl(issuerText, options.url);
   if (issuer === undefined || issuer.search !== "") {
     return failure("RESOURCE_METADATA", "UNSAFE_URL");
   }
@@ -408,7 +437,7 @@ export async function inspectOAuthDiscovery(
     return failure("AUTHORIZATION_SERVER_METADATA", "ISSUER_MISMATCH");
   }
   for (const field of ["authorization_endpoint", "token_endpoint"] as const) {
-    if (safeUrl(metadata[field], options.url.origin) === undefined) {
+    if (safeAuthorizationUrl(metadata[field], options.url) === undefined) {
       return failure("AUTHORIZATION_SERVER_METADATA", "INVALID_ENDPOINT");
     }
   }
@@ -431,14 +460,15 @@ export async function inspectOAuthDiscovery(
   }
   if (
     metadata.registration_endpoint !== undefined &&
-    safeUrl(metadata.registration_endpoint, options.url.origin) === undefined
+    safeAuthorizationUrl(metadata.registration_endpoint, options.url) ===
+      undefined
   ) {
     return failure("AUTHORIZATION_SERVER_METADATA", "INVALID_ENDPOINT");
   }
 
   let jwks: OAuthInspectionSuccess["jwks"] = "not-advertised";
   if (metadata.jwks_uri !== undefined) {
-    const jwksUrl = safeUrl(metadata.jwks_uri, options.url.origin);
+    const jwksUrl = safeAuthorizationUrl(metadata.jwks_uri, options.url);
     if (jwksUrl === undefined || jwksUrl.search !== "") {
       return failure("JWKS", "UNSAFE_URL");
     }

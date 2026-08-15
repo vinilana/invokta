@@ -4,16 +4,60 @@ import { clear, el, pretty } from "./dom.js";
 const tokensStorageKey = "invokta-devtools.tokens";
 const activeStorageKey = "invokta-devtools.active";
 
-/** Quick-fill identities for the create form; none of them mints anything. */
+/**
+ * Quick-fill identities for the create form; none of them mints anything. The
+ * attributes are the ones an `access` rule actually reads, so a filled form
+ * passes or fails a real rule instead of teaching a shape nothing checks.
+ */
 const attributePresets: ReadonlyArray<{
   readonly label: string;
   readonly id: string;
   readonly attributes?: Readonly<Record<string, unknown>>;
 }> = [
-  { label: "Admin", id: "admin", attributes: { role: "admin" } },
-  { label: "Reviewer", id: "reviewer", attributes: { role: "reviewer" } },
-  { label: "Anonymous", id: "anonymous" },
+  {
+    label: "Ticket analyst",
+    id: "local:operations-analyst",
+    attributes: {
+      permissions: [
+        "ticket:read",
+        "ticket:classify",
+        "ticket:draft-reply",
+        "knowledge:search",
+      ],
+      allowedTicketIds: ["T-123", "T-456", "T-789"],
+    },
+  },
+  {
+    label: "Ticket reader",
+    id: "local:reader",
+    attributes: { permissions: ["ticket:read"] },
+  },
+  {
+    label: "No permissions",
+    id: "local:no-permissions",
+    attributes: { permissions: [] },
+  },
 ];
+
+/** One emulated call as the trace stream reports it, for the Recent lines. */
+interface RecentCall {
+  readonly adapter: string;
+  readonly capabilityId: string;
+  readonly outcome: string;
+  /** The identity the call acted as; `null` when it ran anonymously. */
+  readonly principalId?: string | null;
+}
+
+const outcomeLabels: Readonly<Record<string, string>> = {
+  success: "Success",
+  "capability-error": "Capability error",
+  "adapter-error": "Adapter error",
+};
+
+/** Emulated calls the panel remembers, across every identity. */
+const recentCallCapacity = 24;
+/** How many of them one identity shows. */
+const recentCallsPerIdentity = 3;
 
 function readTokens(): Record<string, string> {
   try {
@@ -53,8 +97,18 @@ function writeTokens(tokens: Record<string, string>): void {
   }
 }
 
+/**
+ * Acting anonymously is a deliberate choice, not a missing selection: it is
+ * how an `access` rule gets denied on purpose. It is stored under a reserved
+ * value, because a real principal key is always minted as `p_…`.
+ */
+const anonymousSelection = "anonymous";
+
 const tokens = readTokens();
-let activeKey: string | null = readActiveKey();
+const storedSelection = readActiveKey();
+let activeKey: string | null =
+  storedSelection === anonymousSelection ? null : storedSelection;
+let selectionIsExplicit = storedSelection !== null;
 let knownPrincipals = new Map<string, PrincipalInfo>();
 const changeListeners = new Set<() => void>();
 
@@ -82,14 +136,7 @@ function forgetToken(key: string): void {
   writeTokens(tokens);
 }
 
-export function setActivePrincipal(key: string | null): void {
-  activeKey = key;
-  try {
-    if (key === null) sessionStorage.removeItem(activeStorageKey);
-    else sessionStorage.setItem(activeStorageKey, key);
-  } catch {
-    // Session storage is a convenience only.
-  }
+function notifyPrincipalChange(): void {
   for (const listener of changeListeners) {
     try {
       listener();
@@ -97,6 +144,17 @@ export function setActivePrincipal(key: string | null): void {
       // One interface listener cannot prevent the remaining updates.
     }
   }
+}
+
+export function setActivePrincipal(key: string | null): void {
+  activeKey = key;
+  selectionIsExplicit = true;
+  try {
+    sessionStorage.setItem(activeStorageKey, key ?? anonymousSelection);
+  } catch {
+    // Session storage is a convenience only.
+  }
+  notifyPrincipalChange();
 }
 
 export function getActivePrincipalKey(): string | null {
@@ -130,9 +188,17 @@ export function onPrincipalChange(listener: () => void): () => void {
  * Reconciles browser-session state with the listed principals and selects a
  * valid principal. Initialization never issues, rotates, or revokes a token.
  */
+/** The principals the interface has seen, for the invocation identity picker. */
+export function listKnownPrincipals(): readonly PrincipalInfo[] {
+  return [...knownPrincipals.values()];
+}
+
 export async function ensureActiveToken(): Promise<void> {
   const principals = await api.principals();
   rememberPrincipals(principals);
+  // Tokens of principals that no longer exist are pruned before anything
+  // else: an explicit anonymous selection must not leave orphaned bearer
+  // tokens sitting in session storage with no control left to reveal them.
   const knownKeys = new Set(principals.map(({ key }) => key));
   let tokensChanged = false;
   for (const key of Object.keys(tokens)) {
@@ -141,6 +207,11 @@ export async function ensureActiveToken(): Promise<void> {
     tokensChanged = true;
   }
   if (tokensChanged) writeTokens(tokens);
+  if (selectionIsExplicit && activeKey === null) {
+    // The developer chose to act anonymously; do not undo it on reload.
+    notifyPrincipalChange();
+    return;
+  }
 
   const selected =
     principals.find(({ key }) => key === activeKey) ??
@@ -166,6 +237,12 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
 
   let active = true;
   let pendingCompletion: PendingCompletion | null = null;
+  /** Newest first, bounded, and dropped when the panel closes. */
+  const recentCalls: RecentCall[] = [];
+  let recentViews: ReadonlyArray<{
+    readonly principalId: string;
+    readonly element: HTMLElement;
+  }> = [];
   const tokenGuidanceId = "principal-token-guidance";
   const panelBody = el("div", { class: "principals-panel-body" }, []);
   const panelStatus = el(
@@ -181,6 +258,29 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
   );
   const clearPanelStatus = (): void => {
     panelStatus.textContent = "";
+  };
+
+  /** What one identity managed to do, newest first. */
+  const recentContent = (principalId: string): HTMLElement[] => {
+    const calls = recentCalls
+      .filter((call) => call.principalId === principalId)
+      .slice(0, recentCallsPerIdentity);
+    if (calls.length === 0) {
+      return [el("span", { class: "hint" }, ["No emulated calls yet."])];
+    }
+    return calls.map((call) =>
+      el("span", { class: "principal-recent-call" }, [
+        el("code", {}, [call.capabilityId]),
+        ` · ${call.adapter} · ${outcomeLabels[call.outcome] ?? call.outcome}`,
+      ]),
+    );
+  };
+
+  const paintRecent = (): void => {
+    for (const view of recentViews) {
+      clear(view.element);
+      view.element.append(...recentContent(view.principalId));
+    }
   };
 
   const render = async (): Promise<void> => {
@@ -208,10 +308,15 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
     rememberPrincipals(principals);
     clear(panelBody);
 
+    let editingKey: string | null = null;
     const rowViews: Array<{
       readonly key: string;
       readonly row: HTMLDivElement;
       readonly tokenAction: HTMLButtonElement;
+    }> = [];
+    const nextRecentViews: Array<{
+      readonly principalId: string;
+      readonly element: HTMLElement;
     }> = [];
     const rows = principals.map((entry: PrincipalInfo, index) => {
       const hasToken = tokens[entry.key] !== undefined;
@@ -261,9 +366,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         activate.addEventListener("click", () => {
           clearPanelStatus();
           pendingCompletion = {
-            message: hasToken
-              ? `“${entry.principal.id}” is now active.`
-              : `“${entry.principal.id}” is now active. No session token is available.`,
+            message: `“${entry.principal.id}” is now active.`,
             focus: { kind: "principal", key: entry.key },
           };
           setActivePrincipal(entry.key);
@@ -432,6 +535,29 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
             );
           });
       });
+      const fillForm = (id: string): void => {
+        clearPanelStatus();
+        resetCreateValidation();
+        createSection.setAttribute("open", "");
+        idInput.value = id;
+        attributesInput.value =
+          entry.principal.attributes === undefined
+            ? ""
+            : pretty(entry.principal.attributes);
+      };
+      const edit = el(
+        "button",
+        {
+          type: "button",
+          "aria-label": `Edit test identity ${entry.principal.id}`,
+        },
+        ["Edit"],
+      );
+      edit.addEventListener("click", () => {
+        fillForm(entry.principal.id);
+        beginEditing(entry);
+        idInput.focus();
+      });
       const duplicate = el(
         "button",
         {
@@ -441,21 +567,33 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         ["Duplicate"],
       );
       duplicate.addEventListener("click", () => {
-        clearPanelStatus();
-        resetCreateValidation();
-        createSection.setAttribute("open", "");
-        idInput.value = `${entry.principal.id}-copy`;
-        attributesInput.value =
-          entry.principal.attributes === undefined
-            ? ""
-            : pretty(entry.principal.attributes);
+        fillForm(`${entry.principal.id}-copy`);
+        beginEditing(null);
         idInput.focus();
       });
       cancelConfirmation.addEventListener("click", () => {
         resetConfirmation();
         setActionStatus("");
       });
-      actionButtons.push(tokenAction, duplicate, remove, cancelConfirmation);
+      actionButtons.push(
+        tokenAction,
+        edit,
+        duplicate,
+        remove,
+        cancelConfirmation,
+      );
+
+      const recentCallList = el("div", { class: "principal-recent-calls" }, [
+        ...recentContent(entry.principal.id),
+      ]);
+      nextRecentViews.push({
+        principalId: entry.principal.id,
+        element: recentCallList,
+      });
+      const recent = el("div", { class: "principal-recent" }, [
+        el("span", { class: "principal-state-label" }, ["Recent"]),
+        recentCallList,
+      ]);
 
       const row = el(
         "div",
@@ -488,19 +626,29 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
                   [isActive ? "Selected" : "Not selected"],
                 ),
               ]),
-              el("div", { class: "principal-credential-state" }, [
-                el("span", { class: "principal-state-label" }, ["Credential"]),
-                el(
-                  "span",
-                  {
-                    id: `principal-credential-state-${String(index)}`,
-                    class: `badge ${hasToken ? "ok" : "warn"}`,
-                  },
-                  [hasToken ? "Session token ready" : "Session token missing"],
-                ),
-              ]),
+              el(
+                "div",
+                {
+                  id: `principal-credential-state-${String(index)}`,
+                  class: "principal-credential-state",
+                },
+                [
+                  el("span", { class: "principal-state-label" }, [
+                    "MCP HTTP credential",
+                  ]),
+                  el("span", { class: `badge${hasToken ? " ok" : ""}` }, [
+                    hasToken ? "Session token ready" : "No session token",
+                  ]),
+                  hasToken
+                    ? null
+                    : el("span", { class: "hint principal-credential-note" }, [
+                        "Only MCP HTTP against the devtools host presents one.",
+                      ]),
+                ],
+              ),
             ]),
           ]),
+          recent,
           entry.principal.attributes === undefined
             ? null
             : el("details", { class: "principal-attributes" }, [
@@ -542,7 +690,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
     const attributesInput = el("textarea", {
       id: attributesInputId,
       rows: "3",
-      placeholder: '{"role":"reviewer"}',
+      placeholder: '{"permissions":["ticket:read"]}',
       spellcheck: "false",
       "aria-describedby": createHintId,
       "aria-errormessage": createFeedbackId,
@@ -609,54 +757,127 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         idInput.value = preset.id;
         attributesInput.value =
           preset.attributes === undefined ? "" : pretty(preset.attributes);
+        beginEditing(null);
         idInput.focus();
       });
       return button;
     });
-    const create = el("button", { type: "button" }, ["Add identity"]);
-    create.addEventListener("click", () => {
-      clearPanelStatus();
-      resetCreateValidation();
+    /** The form's one reading of its fields, shared by adding and editing. */
+    const readFormPrincipal = (): {
+      readonly id: string;
+      readonly attributes?: Readonly<Record<string, unknown>>;
+    } | null => {
       const id = idInput.value.trim();
       if (id === "") {
         idInput.setAttribute("aria-invalid", "true");
         setCreateFeedback("Enter a Principal ID.", "error");
         idInput.focus();
-        return;
+        return null;
       }
-      let attributes: Readonly<Record<string, unknown>> | undefined;
       const attributesText = attributesInput.value.trim();
-      if (attributesText !== "") {
-        try {
-          const parsed = JSON.parse(attributesText) as unknown;
-          if (
-            typeof parsed !== "object" ||
-            parsed === null ||
-            Array.isArray(parsed)
-          ) {
-            attributesInput.setAttribute("aria-invalid", "true");
-            setCreateFeedback("Attributes must be a JSON object.", "error");
-            attributesInput.focus();
-            return;
-          }
-          attributes = parsed as Readonly<Record<string, unknown>>;
-        } catch {
-          attributesInput.setAttribute("aria-invalid", "true");
-          setCreateFeedback("Attributes must be a JSON object.", "error");
-          attributesInput.focus();
-          return;
-        }
+      if (attributesText === "") return { id };
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(attributesText);
+      } catch {
+        parsed = undefined;
+      }
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        attributesInput.setAttribute("aria-invalid", "true");
+        setCreateFeedback("Attributes must be a JSON object.", "error");
+        attributesInput.focus();
+        return null;
+      }
+      return { id, attributes: parsed as Readonly<Record<string, unknown>> };
+    };
+
+    const create = el("button", { type: "button" }, ["Add identity"]);
+    const cancelEdit = el(
+      "button",
+      { type: "button", "aria-label": "Cancel editing this identity" },
+      ["Cancel"],
+    );
+    cancelEdit.hidden = true;
+    /**
+     * Switches the one form between adding a new identity and editing an
+     * existing one; editing keeps the identity's key and its token.
+     */
+    const beginEditing = (entry: PrincipalInfo | null): void => {
+      editingKey = entry?.key ?? null;
+      const editing = entry !== null;
+      createHeading.textContent = editing ? "Edit identity" : "Add identity";
+      createOutcome.textContent = editing
+        ? "Keeps its key and session token"
+        : "Mints a token and activates it";
+      createHint.textContent = editing
+        ? `Editing “${entry.principal.id}”. Its key and session token stay as they are.`
+        : "Create an in-memory Principal for development and homologation. Its bearer token stays hidden in this browser session.";
+      create.textContent = editing ? "Save changes" : "Add identity";
+      cancelEdit.hidden = !editing;
+    };
+    cancelEdit.addEventListener("click", () => {
+      resetCreateValidation();
+      idInput.value = "";
+      attributesInput.value = "";
+      beginEditing(null);
+      idInput.focus();
+    });
+    const saveEdit = (
+      key: string,
+      principal: {
+        readonly id: string;
+        readonly attributes?: Readonly<Record<string, unknown>>;
+      },
+    ): void => {
+      create.disabled = true;
+      create.textContent = "Saving…";
+      setCreateFeedback(`Saving “${principal.id}”…`);
+      void api
+        .updatePrincipal(key, principal)
+        .then((updated) => {
+          if (!active) return;
+          rememberPrincipal(updated);
+          // The identity picker reads the same list, so it repaints too.
+          notifyPrincipalChange();
+          pendingCompletion = {
+            message: `Updated “${updated.principal.id}”.`,
+            focus: { kind: "principal", key: updated.key },
+          };
+          void render();
+        })
+        .catch((error: unknown) => {
+          if (!active) return;
+          create.disabled = false;
+          create.textContent = "Save changes";
+          setCreateFeedback(
+            error instanceof Error && error.message !== ""
+              ? error.message
+              : "The test identity could not be updated. It is unchanged.",
+            "error",
+          );
+        });
+    };
+    create.addEventListener("click", () => {
+      clearPanelStatus();
+      resetCreateValidation();
+      const principal = readFormPrincipal();
+      if (principal === null) return;
+      const editedKey = editingKey;
+      if (editedKey !== null) {
+        saveEdit(editedKey, principal);
+        return;
       }
       create.disabled = true;
       create.textContent = "Adding…";
       setCreateFeedback(
-        `Adding “${id}”, minting its token, and making it active…`,
+        `Adding “${principal.id}”, minting its token, and making it active…`,
       );
       void api
-        .createPrincipal({
-          id,
-          ...(attributes === undefined ? {} : { attributes }),
-        })
+        .createPrincipal(principal)
         .then((issued) => {
           if (!active) return;
           rememberPrincipal(issued);
@@ -692,20 +913,31 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         el("span", { class: "badge principals-count" }, [countLabel]),
       ]),
       el("p", { class: "hint principals-intro" }, [
-        "Choose the identity used to authenticate Playground invocations.",
+        "Manage the development identities the Playground can act as.",
       ]),
     ]);
+    const createHeading = el("span", { class: "principal-create-heading" }, [
+      "Add identity",
+    ]);
+    const createOutcome = el(
+      "span",
+      { class: "hint principal-create-outcome" },
+      ["Mints a token and activates it"],
+    );
+    const createHint = el(
+      "p",
+      { id: createHintId, class: "hint principal-create-hint" },
+      [
+        "Create an in-memory Principal for development and homologation. Its bearer token stays hidden in this browser session.",
+      ],
+    );
     const createSection = el("details", { class: "principal-create" }, [
       el("summary", { class: "principal-create-summary" }, [
-        el("span", { class: "principal-create-heading" }, ["Add identity"]),
-        el("span", { class: "hint principal-create-outcome" }, [
-          "Mints a token and activates it",
-        ]),
+        createHeading,
+        createOutcome,
       ]),
       el("div", { class: "principal-create-body" }, [
-        el("p", { id: createHintId, class: "hint principal-create-hint" }, [
-          "Create an in-memory Principal for development and homologation. Its bearer token stays hidden in this browser session.",
-        ]),
+        createHint,
         el("div", { class: "principal-create-fields" }, [
           el("div", { class: "principal-field" }, [
             el("label", { for: idInputId }, ["Principal ID"]),
@@ -727,7 +959,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
           },
           [el("span", { class: "hint" }, ["Quick fill:"]), ...presetButtons],
         ),
-        el("div", { class: "principal-create-actions" }, [create]),
+        el("div", { class: "principal-create-actions" }, [create, cancelEdit]),
         feedback,
       ]),
     ]);
@@ -749,7 +981,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         ...(principals.length === 0
           ? [
               el("p", { class: "empty principal-empty" }, [
-                "No test identities yet. Add one to authenticate invocations.",
+                "No test identities yet. Add one to act as it in the Playground.",
               ]),
             ]
           : [el("div", { class: "principals-list" }, rows)]),
@@ -768,6 +1000,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
       identitiesSection,
       createSection,
     );
+    recentViews = nextRecentViews;
 
     const completion = pendingCompletion;
     if (completion !== null) {
@@ -801,7 +1034,29 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
     el("p", { class: "hint", role: "status" }, ["Loading test identities…"]),
   );
   void render();
+
+  // The Recent lines read the same stream the Activity panel consumes, which
+  // replays the session buffer on connect. They are supplementary, so a
+  // browser without the stream still manages identities.
+  const source =
+    typeof EventSource === "function" ? new EventSource("/api/events") : null;
+  source?.addEventListener("trace", (event) => {
+    try {
+      const entry = JSON.parse((event as MessageEvent<string>).data) as {
+        readonly kind?: string;
+        readonly call?: RecentCall;
+      };
+      if (entry.kind !== "adapter" || entry.call === undefined) return;
+      recentCalls.unshift(entry.call);
+      if (recentCalls.length > recentCallCapacity) recentCalls.pop();
+      paintRecent();
+    } catch {
+      // A malformed frame is dropped; the stream continues.
+    }
+  });
+
   return () => {
     active = false;
+    source?.close();
   };
 }

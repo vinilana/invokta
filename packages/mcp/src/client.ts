@@ -2,6 +2,7 @@ import { types as nodeTypes } from "node:util";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
+  buildDiscoveryUrls,
   extractResourceMetadataUrl,
   type OAuthClientProvider,
   type OAuthDiscoveryState,
@@ -12,6 +13,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import {
   type OAuthClientInformationMixed,
   type OAuthClientMetadata,
+  OAuthMetadataSchema,
   OAuthProtectedResourceMetadataSchema,
   type OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
@@ -22,6 +24,7 @@ import type {
 import {
   ErrorCode,
   type JSONRPCMessage,
+  LATEST_PROTOCOL_VERSION,
   McpError,
   type MessageExtraInfo,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -117,6 +120,25 @@ export interface McpOAuthAuthorization {
     options?: McpClientOperationOptions,
   ): Promise<McpClientConnection>;
   close(): Promise<void>;
+}
+
+export type McpOAuthStepName =
+  | "challenge"
+  | "resource-metadata"
+  | "authorization-server-metadata"
+  | "registration";
+
+export interface McpOAuthStep {
+  readonly name: McpOAuthStepName;
+  readonly outcome: "ok" | "failed" | "skipped";
+  readonly summary: string;
+  readonly hint?: string;
+  readonly detail?: McpJsonValue;
+}
+
+export interface McpOAuthInspection {
+  readonly steps: readonly McpOAuthStep[];
+  readonly ready: boolean;
 }
 
 export type McpClientErrorCode =
@@ -389,18 +411,87 @@ function parseCanonicalHttpUrl(value: unknown): URL | undefined {
   return url;
 }
 
-function isSecureOrLoopbackUrl(url: URL): boolean {
+function isLoopbackHttpUrl(url: URL): boolean {
   return (
-    url.protocol === "https:" ||
-    (url.protocol === "http:" &&
-      (url.hostname === "127.0.0.1" || url.hostname === "[::1]"))
+    url.protocol === "http:" &&
+    (url.hostname === "127.0.0.1" || url.hostname === "[::1]")
   );
 }
 
-function isAllowedOAuthEndpoint(resourceUrl: URL, candidate: URL): boolean {
-  return (
-    isSecureOrLoopbackUrl(candidate) && candidate.origin === resourceUrl.origin
-  );
+function isSecureOrLoopbackUrl(url: URL): boolean {
+  return url.protocol === "https:" || isLoopbackHttpUrl(url);
+}
+
+class OAuthEndpointTrust {
+  private readonly advertisedOrigins = new Set<string>();
+
+  constructor(private readonly resourceUrl: URL) {}
+
+  allowsResourceMetadata(candidate: URL): boolean {
+    return (
+      isSecureOrLoopbackUrl(candidate) &&
+      candidate.origin === this.resourceUrl.origin
+    );
+  }
+
+  /**
+   * RFC 8414 issuer identifiers carry no query or fragment, so an advertised
+   * authorization server is the delegated-endpoint hygiene plus that rule.
+   */
+  allowsAdvertisedServer(candidate: URL): boolean {
+    return this.allowsDelegatedEndpoint(candidate) && candidate.search === "";
+  }
+
+  /**
+   * An OAuth endpoint the validated authorization-server metadata publishes.
+   * It may sit on its own origin — hosted providers commonly split the issuer
+   * from the endpoints — but it must be HTTPS (or loopback HTTP behind a
+   * loopback resource) and carry no credentials and no fragment.
+   */
+  allowsDelegatedEndpoint(candidate: URL): boolean {
+    return (
+      isSecureOrLoopbackUrl(candidate) &&
+      (!isLoopbackHttpUrl(candidate) || isLoopbackHttpUrl(this.resourceUrl)) &&
+      candidate.username === "" &&
+      candidate.password === "" &&
+      candidate.hash === ""
+    );
+  }
+
+  trustAdvertisedServer(candidate: URL): void {
+    this.advertisedOrigins.add(candidate.origin);
+  }
+
+  allowsEndpoint(candidate: URL): boolean {
+    return (
+      candidate.username === "" &&
+      candidate.password === "" &&
+      candidate.hash === "" &&
+      (this.allowsResourceMetadata(candidate) ||
+        (isSecureOrLoopbackUrl(candidate) &&
+          this.advertisedOrigins.has(candidate.origin)))
+    );
+  }
+
+  clear(): void {
+    this.advertisedOrigins.clear();
+  }
+}
+
+function resourceMetadataUrls(resourceUrl: URL): {
+  readonly pathAware: URL;
+  readonly root: URL;
+} {
+  const resourcePath = resourceUrl.pathname.endsWith("/")
+    ? resourceUrl.pathname.slice(0, -1)
+    : resourceUrl.pathname;
+  return {
+    pathAware: new URL(
+      `/.well-known/oauth-protected-resource${resourcePath}`,
+      resourceUrl.origin,
+    ),
+    root: new URL("/.well-known/oauth-protected-resource", resourceUrl.origin),
+  };
 }
 
 function parseOAuthCallbackUrl(value: unknown): URL | undefined {
@@ -509,10 +600,10 @@ function snapshotAuthorizationCode(value: unknown): string {
 function serializeAuthorizationUrl(
   value: URL,
   expectedState: string,
-  resourceUrl: URL,
+  trust: OAuthEndpointTrust,
 ): string {
   if (
-    !isAllowedOAuthEndpoint(resourceUrl, value) ||
+    !trust.allowsEndpoint(value) ||
     value.username !== "" ||
     value.password !== "" ||
     value.hash !== "" ||
@@ -531,7 +622,12 @@ function serializeAuthorizationUrl(
   return serialized;
 }
 
-function isForbiddenCustomHeader(name: string): boolean {
+/**
+ * Whether the MCP client facade refuses a caller-supplied header name. The
+ * devtools validates an external target's custom headers with this same
+ * predicate so it never accepts a target the facade will refuse.
+ */
+export function isForbiddenMcpClientHeader(name: string): boolean {
   const normalized = name.toLowerCase();
   return (
     normalized === "host" ||
@@ -584,7 +680,7 @@ function snapshotAuthentication(
   }
   const headers = snapshotStringRecord(
     authentication.headers,
-    (name) => HTTP_HEADER_NAME.test(name) && !isForbiddenCustomHeader(name),
+    (name) => HTTP_HEADER_NAME.test(name) && !isForbiddenMcpClientHeader(name),
     (headerValue) => !headerValue.includes("\r") && !headerValue.includes("\n"),
   );
   if (headers === undefined || Object.keys(headers).length === 0)
@@ -868,6 +964,7 @@ function boundedResponseBody(
 
 class EphemeralOAuthProvider implements OAuthClientProvider {
   private readonly metadata: OAuthClientMetadata;
+  readonly trust: OAuthEndpointTrust;
   private readonly defaultResourceMetadataUrls: ReadonlySet<string>;
   private readonly pathAwareResourceMetadataUrl: string;
   private readonly rootResourceMetadataUrl: string;
@@ -888,17 +985,10 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
     state: string,
   ) {
     this.retainedState = state;
-    const resourcePath = resourceUrl.pathname.endsWith("/")
-      ? resourceUrl.pathname.slice(0, -1)
-      : resourceUrl.pathname;
-    this.pathAwareResourceMetadataUrl = new URL(
-      `/.well-known/oauth-protected-resource${resourcePath}`,
-      resourceUrl.origin,
-    ).href;
-    this.rootResourceMetadataUrl = new URL(
-      "/.well-known/oauth-protected-resource",
-      resourceUrl.origin,
-    ).href;
+    this.trust = new OAuthEndpointTrust(resourceUrl);
+    const { pathAware, root } = resourceMetadataUrls(resourceUrl);
+    this.pathAwareResourceMetadataUrl = pathAware.href;
+    this.rootResourceMetadataUrl = root.href;
     this.defaultResourceMetadataUrls = new Set([
       this.pathAwareResourceMetadataUrl,
       this.rootResourceMetadataUrl,
@@ -996,7 +1086,7 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
     }
     if (
       value.resourceMetadata === undefined ||
-      !isAllowedOAuthEndpoint(this.resourceUrl, authorizationServerUrl) ||
+      !this.trust.allowsEndpoint(authorizationServerUrl) ||
       authorizationServerUrl.username !== "" ||
       authorizationServerUrl.password !== "" ||
       authorizationServerUrl.hash !== "" ||
@@ -1005,6 +1095,29 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
           value.authorizationServerUrl)
     ) {
       throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    // The issuer has been matched to an advertised authorization server, so
+    // the endpoints its validated metadata publishes are that server's own
+    // delegation — hosted providers commonly place them on another origin.
+    if (value.authorizationServerMetadata !== undefined) {
+      const metadata = value.authorizationServerMetadata;
+      for (const endpoint of [
+        metadata.authorization_endpoint,
+        metadata.token_endpoint,
+        metadata.registration_endpoint,
+      ]) {
+        if (endpoint === undefined) continue;
+        let endpointUrl: URL;
+        try {
+          endpointUrl = new URL(endpoint);
+        } catch {
+          throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+        }
+        if (!this.trust.allowsDelegatedEndpoint(endpointUrl)) {
+          throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+        }
+        this.trust.trustAdvertisedServer(endpointUrl);
+      }
     }
     this.discovery = structuredClone(value);
   }
@@ -1020,9 +1133,13 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
     return this.tokenSet !== undefined;
   }
 
-  rememberResourceMetadataUrl(response: Response): void {
+  rememberResourceMetadataUrl(response: Response): boolean {
     const url = extractResourceMetadataUrl(response);
+    if (url !== undefined && !this.trust.allowsResourceMetadata(url)) {
+      return false;
+    }
     this.advertisedResourceMetadataUrl = url?.href;
+    return true;
   }
 
   isResourceMetadataUrl(url: URL): boolean {
@@ -1042,28 +1159,27 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
 
   validateResourceMetadata(value: unknown): void {
     const parsed = OAuthProtectedResourceMetadataSchema.safeParse(value);
-    const authorizationServer = parsed.success
-      ? parsed.data.authorization_servers?.[0]
-      : undefined;
-    let authorizationServerUrl: URL | undefined;
-    try {
-      authorizationServerUrl =
-        authorizationServer === undefined
-          ? undefined
-          : new URL(authorizationServer);
-    } catch {
-      authorizationServerUrl = undefined;
-    }
-    if (
-      !parsed.success ||
-      parsed.data.resource !== this.resourceUrl.href ||
-      authorizationServerUrl === undefined ||
-      !isAllowedOAuthEndpoint(this.resourceUrl, authorizationServerUrl) ||
-      authorizationServerUrl.username !== "" ||
-      authorizationServerUrl.password !== "" ||
-      authorizationServerUrl.hash !== ""
-    ) {
+    if (!parsed.success || parsed.data.resource !== this.resourceUrl.href) {
       throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    const advertised: URL[] = [];
+    for (const entry of parsed.data.authorization_servers ?? []) {
+      let authorizationServerUrl: URL;
+      try {
+        authorizationServerUrl = new URL(entry);
+      } catch {
+        throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+      }
+      if (!this.trust.allowsAdvertisedServer(authorizationServerUrl)) {
+        throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+      }
+      advertised.push(authorizationServerUrl);
+    }
+    if (advertised.length === 0) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    for (const authorizationServerUrl of advertised) {
+      this.trust.trustAdvertisedServer(authorizationServerUrl);
     }
   }
 
@@ -1088,6 +1204,7 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
 
   clear(): void {
     this.writable = false;
+    this.trust.clear();
     this.client = undefined;
     this.tokenSet = undefined;
     this.verifier = undefined;
@@ -1166,7 +1283,7 @@ function createSecureOAuthFetch(
       provider.throwIfTerminalFailure();
       const url = new URL(value);
       if (
-        !isAllowedOAuthEndpoint(resourceUrl, url) ||
+        !provider.trust.allowsEndpoint(url) ||
         url.username !== "" ||
         url.password !== "" ||
         url.hash !== ""
@@ -1214,9 +1331,11 @@ function createSecureOAuthFetch(
         method === "POST" &&
         url.href === resourceUrl.href &&
         response.status === 401 &&
-        !provider.hasTokens()
+        !provider.hasTokens() &&
+        !provider.rememberResourceMetadataUrl(response)
       ) {
-        provider.rememberResourceMetadataUrl(response);
+        await response.body?.cancel();
+        throw new ClientBoundaryFailure("PROTOCOL_ERROR");
       }
       if (response.status >= 300 && response.status < 400) {
         await response.body?.cancel();
@@ -1790,7 +1909,7 @@ export async function beginMcpOAuthAuthorization(
     authorizationUrl = serializeAuthorizationUrl(
       captured,
       authorizationOptions.state,
-      snapshot.url,
+      provider.trust,
     );
   } catch (cause) {
     await closeBootstrap();
@@ -1869,5 +1988,503 @@ export async function beginMcpOAuthAuthorization(
       return finishPromise;
     },
     close,
+  });
+}
+
+const INSPECTION_GET: RequestInit = {
+  method: "GET",
+  headers: { accept: "application/json" },
+};
+const INSPECTION_POST: RequestInit = {
+  method: "POST",
+  headers: {
+    accept: "application/json, text/event-stream",
+    "content-type": "application/json",
+  },
+  body: JSON.stringify({
+    jsonrpc: "2.0",
+    id: 0,
+    method: "initialize",
+    params: {
+      protocolVersion: LATEST_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: { name: CLIENT_NAME, version: CLIENT_VERSION },
+    },
+  }),
+};
+
+interface InspectionResponse {
+  readonly response: Response;
+  readonly status: number;
+  readonly body: string;
+}
+
+interface InspectionContext {
+  readonly resourceUrl: URL;
+  readonly trust: OAuthEndpointTrust;
+  readonly signal: AbortSignal | undefined;
+}
+
+function okStep(
+  name: McpOAuthStepName,
+  summary: string,
+  detail?: McpJsonValue,
+): McpOAuthStep {
+  return Object.freeze({
+    name,
+    outcome: "ok" as const,
+    summary,
+    ...(detail === undefined ? {} : { detail }),
+  });
+}
+
+function failedStep(
+  name: McpOAuthStepName,
+  summary: string,
+  hint: string,
+  detail?: McpJsonValue,
+): McpOAuthStep {
+  return Object.freeze({
+    name,
+    outcome: "failed" as const,
+    summary,
+    hint,
+    ...(detail === undefined ? {} : { detail }),
+  });
+}
+
+function skippedStep(name: McpOAuthStepName, summary: string): McpOAuthStep {
+  return Object.freeze({ name, outcome: "skipped" as const, summary });
+}
+
+async function tryInspectionRequest(
+  context: InspectionContext,
+  url: URL,
+  init: RequestInit,
+): Promise<InspectionResponse | undefined> {
+  try {
+    const response = await fetch(url, {
+      ...init,
+      redirect: "manual",
+      ...(context.signal === undefined ? {} : { signal: context.signal }),
+    });
+    const body = await boundedResponseBody(response).text();
+    return { response, status: response.status, body };
+  } catch (cause) {
+    if (context.signal?.aborted === true) throw clientError("CANCELLED", cause);
+    return undefined;
+  }
+}
+
+function parseInspectionDocument(body: string): McpJsonValue | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  try {
+    return snapshotJson(value);
+  } catch {
+    return undefined;
+  }
+}
+
+async function inspectOAuthChallenge(context: InspectionContext): Promise<{
+  readonly step: McpOAuthStep;
+  readonly resourceMetadataUrl?: URL;
+}> {
+  const result = await tryInspectionRequest(
+    context,
+    context.resourceUrl,
+    INSPECTION_POST,
+  );
+  if (result === undefined) {
+    return {
+      step: failedStep(
+        "challenge",
+        `The MCP endpoint ${context.resourceUrl.href} could not be reached.`,
+        "Confirm the URL, that the host resolves, and that the engine serves Streamable HTTP there.",
+      ),
+    };
+  }
+  if (result.status !== 401) {
+    return {
+      step: failedStep(
+        "challenge",
+        `The MCP endpoint answered ${String(result.status)} instead of 401.`,
+        "OAuth discovery starts from an unauthenticated 401. Serve the engine with required HTTP authentication so it challenges anonymous requests.",
+      ),
+    };
+  }
+  const advertised = extractResourceMetadataUrl(result.response);
+  if (advertised === undefined) {
+    return {
+      step: okStep(
+        "challenge",
+        "The MCP endpoint answered 401 without a resource_metadata challenge parameter.",
+      ),
+    };
+  }
+  if (!context.trust.allowsResourceMetadata(advertised)) {
+    return {
+      step: failedStep(
+        "challenge",
+        `The 401 challenge advertised resource metadata at ${advertised.href}.`,
+        `RFC 9728 derives that URL from the resource identifier, so it must use ${context.resourceUrl.origin} over HTTPS or loopback HTTP.`,
+      ),
+    };
+  }
+  return {
+    step: okStep(
+      "challenge",
+      `The MCP endpoint answered 401 and advertised resource metadata at ${advertised.href}.`,
+    ),
+    resourceMetadataUrl: advertised,
+  };
+}
+
+async function inspectOAuthResourceMetadata(
+  context: InspectionContext,
+  advertised: URL | undefined,
+): Promise<{
+  readonly step: McpOAuthStep;
+  readonly authorizationServer?: string;
+}> {
+  const { pathAware, root } = resourceMetadataUrls(context.resourceUrl);
+  let url = advertised ?? pathAware;
+  let result = await tryInspectionRequest(context, url, INSPECTION_GET);
+  if (
+    result?.status === 404 &&
+    advertised === undefined &&
+    pathAware.href !== root.href
+  ) {
+    url = root;
+    result = await tryInspectionRequest(context, url, INSPECTION_GET);
+  }
+  if (result === undefined) {
+    return {
+      step: failedStep(
+        "resource-metadata",
+        `The protected resource metadata at ${url.href} could not be read.`,
+        "Confirm the URL is reachable, answers without a redirect, and stays within the 10 MiB response boundary.",
+      ),
+    };
+  }
+  if (result.status !== 200) {
+    return {
+      step: failedStep(
+        "resource-metadata",
+        `The protected resource metadata at ${url.href} answered ${String(result.status)}.`,
+        `Publish the RFC 9728 document at ${pathAware.href}; serveMcpHttp publishes it when auth.resourceMetadata is configured.`,
+      ),
+    };
+  }
+  const document = parseInspectionDocument(result.body);
+  if (document === undefined) {
+    return {
+      step: failedStep(
+        "resource-metadata",
+        `The protected resource metadata at ${url.href} is not a JSON document.`,
+        "Serve the RFC 9728 document as application/json with a finite JSON body.",
+      ),
+    };
+  }
+  const parsed = OAuthProtectedResourceMetadataSchema.safeParse(document);
+  if (!parsed.success) {
+    return {
+      step: failedStep(
+        "resource-metadata",
+        `The protected resource metadata at ${url.href} does not match RFC 9728.`,
+        "The document needs a resource identifier and an authorization_servers array of absolute URLs.",
+        document,
+      ),
+    };
+  }
+  if (parsed.data.resource !== context.resourceUrl.href) {
+    return {
+      step: failedStep(
+        "resource-metadata",
+        `The protected resource metadata declares the resource ${parsed.data.resource}.`,
+        `It must be exactly ${context.resourceUrl.href}.`,
+        document,
+      ),
+    };
+  }
+  const advertisedServers: URL[] = [];
+  for (const entry of parsed.data.authorization_servers ?? []) {
+    let authorizationServer: URL | undefined;
+    try {
+      authorizationServer = new URL(entry);
+    } catch {
+      authorizationServer = undefined;
+    }
+    if (
+      authorizationServer === undefined ||
+      !context.trust.allowsAdvertisedServer(authorizationServer)
+    ) {
+      return {
+        step: failedStep(
+          "resource-metadata",
+          `The protected resource metadata advertises the authorization server ${entry}.`,
+          "An advertised authorization server must be an absolute HTTPS URL with no credentials and no fragment; loopback HTTP is accepted only when the MCP resource is itself loopback HTTP.",
+          document,
+        ),
+      };
+    }
+    advertisedServers.push(authorizationServer);
+  }
+  const [authorizationServer] = parsed.data.authorization_servers ?? [];
+  if (authorizationServer === undefined) {
+    return {
+      step: failedStep(
+        "resource-metadata",
+        `The protected resource metadata at ${url.href} advertises no authorization server.`,
+        "Add an authorization_servers array naming the issuer that mints tokens for this resource.",
+        document,
+      ),
+    };
+  }
+  for (const server of advertisedServers) {
+    context.trust.trustAdvertisedServer(server);
+  }
+  return {
+    step: okStep(
+      "resource-metadata",
+      `The protected resource metadata at ${url.href} names ${authorizationServer} as its first authorization server.`,
+      document,
+    ),
+    authorizationServer,
+  };
+}
+
+async function inspectOAuthServerMetadata(
+  context: InspectionContext,
+  authorizationServer: string,
+): Promise<{
+  readonly step: McpOAuthStep;
+  readonly registrationEndpoint?: string;
+}> {
+  const candidates = buildDiscoveryUrls(authorizationServer);
+  let url = candidates[0]?.url ?? context.resourceUrl;
+  let result: InspectionResponse | undefined;
+  for (const candidate of candidates) {
+    const attempt = await tryInspectionRequest(
+      context,
+      candidate.url,
+      INSPECTION_GET,
+    );
+    // An unreachable later candidate must not erase an earlier answer, so a
+    // failed attempt keeps the last response — and the URL that produced it.
+    if (attempt !== undefined) {
+      result = attempt;
+      url = candidate.url;
+    }
+    if (attempt !== undefined && attempt.status !== 404) break;
+  }
+  if (result === undefined) {
+    return {
+      step: failedStep(
+        "authorization-server-metadata",
+        `The authorization server metadata at ${url.href} could not be read.`,
+        "Confirm the authorization server resolves, answers without a redirect, and stays within the 10 MiB response boundary.",
+      ),
+    };
+  }
+  if (result.status !== 200) {
+    return {
+      step: failedStep(
+        "authorization-server-metadata",
+        `The authorization server metadata at ${url.href} answered ${String(result.status)}.`,
+        `Publish the RFC 8414 document for ${authorizationServer}, or advertise the issuer that publishes it.`,
+      ),
+    };
+  }
+  const document = parseInspectionDocument(result.body);
+  if (document === undefined) {
+    return {
+      step: failedStep(
+        "authorization-server-metadata",
+        `The authorization server metadata at ${url.href} is not a JSON document.`,
+        "Serve the RFC 8414 document as application/json with a finite JSON body.",
+      ),
+    };
+  }
+  const parsed = OAuthMetadataSchema.safeParse(document);
+  if (!parsed.success) {
+    return {
+      step: failedStep(
+        "authorization-server-metadata",
+        `The authorization server metadata at ${url.href} does not match RFC 8414.`,
+        "The document needs issuer, authorization_endpoint, token_endpoint, and response_types_supported.",
+        document,
+      ),
+    };
+  }
+  if (parsed.data.issuer !== authorizationServer) {
+    return {
+      step: failedStep(
+        "authorization-server-metadata",
+        `The authorization server metadata declares the issuer ${parsed.data.issuer}.`,
+        `It must exactly match the advertised authorization server ${authorizationServer}, including any trailing slash.`,
+        document,
+      ),
+    };
+  }
+  for (const [name, endpoint] of [
+    ["authorization_endpoint", parsed.data.authorization_endpoint],
+    ["token_endpoint", parsed.data.token_endpoint],
+  ] as const) {
+    let endpointUrl: URL | undefined;
+    try {
+      endpointUrl = new URL(endpoint);
+    } catch {
+      endpointUrl = undefined;
+    }
+    if (
+      endpointUrl === undefined ||
+      !context.trust.allowsDelegatedEndpoint(endpointUrl)
+    ) {
+      return {
+        step: failedStep(
+          "authorization-server-metadata",
+          `The authorization server metadata places ${name} at ${endpoint}.`,
+          "Every OAuth endpoint must be an absolute HTTPS URL — or loopback HTTP behind a loopback resource — with no credentials and no fragment.",
+          document,
+        ),
+      };
+    }
+    context.trust.trustAdvertisedServer(endpointUrl);
+  }
+  if (!parsed.data.response_types_supported.includes("code")) {
+    return {
+      step: failedStep(
+        "authorization-server-metadata",
+        "The authorization server does not support the code response type.",
+        "Authorization Code with PKCE is the only grant this client performs.",
+        document,
+      ),
+    };
+  }
+  // `invokta-deploy inspect-oauth` rejects both of these, so accepting them
+  // here would make the two inspectors disagree about the same endpoint.
+  const grantTypes = parsed.data.grant_types_supported;
+  if (grantTypes === undefined || !grantTypes.includes("authorization_code")) {
+    return {
+      step: failedStep(
+        "authorization-server-metadata",
+        "The authorization server does not advertise the authorization_code grant type.",
+        "Advertise grant_types_supported including authorization_code; it is the only grant this client performs.",
+        document,
+      ),
+    };
+  }
+  const challengeMethods = parsed.data.code_challenge_methods_supported;
+  if (challengeMethods === undefined || !challengeMethods.includes("S256")) {
+    return {
+      step: failedStep(
+        "authorization-server-metadata",
+        "The authorization server does not advertise the S256 code challenge method.",
+        "This client always sends a PKCE challenge with S256, so advertise code_challenge_methods_supported including S256.",
+        document,
+      ),
+    };
+  }
+  return {
+    step: okStep(
+      "authorization-server-metadata",
+      `The authorization server published RFC 8414 metadata at ${url.href}.`,
+      document,
+    ),
+    ...(parsed.data.registration_endpoint === undefined
+      ? {}
+      : { registrationEndpoint: parsed.data.registration_endpoint }),
+  };
+}
+
+function inspectOAuthRegistration(
+  context: InspectionContext,
+  registrationEndpoint: string | undefined,
+): McpOAuthStep {
+  if (registrationEndpoint === undefined) {
+    return failedStep(
+      "registration",
+      "The authorization server metadata does not advertise registration_endpoint.",
+      "This client holds no client ID and registers a public client for each attempt, so the authorization server must support RFC 7591 dynamic client registration.",
+    );
+  }
+  let url: URL | undefined;
+  try {
+    url = new URL(registrationEndpoint);
+  } catch {
+    url = undefined;
+  }
+  if (url === undefined || !context.trust.allowsDelegatedEndpoint(url)) {
+    return failedStep(
+      "registration",
+      `The authorization server advertises dynamic client registration at ${registrationEndpoint}.`,
+      "The registration endpoint must be an absolute HTTPS URL — or loopback HTTP behind a loopback resource — with no credentials and no fragment.",
+    );
+  }
+  return okStep(
+    "registration",
+    `The authorization server advertises dynamic client registration at ${url.href}.`,
+  );
+}
+
+export async function inspectMcpOAuth(
+  target: McpOAuthClientTarget,
+  options?: McpClientOperationOptions,
+): Promise<McpOAuthInspection> {
+  const snapshot = snapshotOAuthTarget(target);
+  const context: InspectionContext = {
+    resourceUrl: snapshot.url,
+    trust: new OAuthEndpointTrust(snapshot.url),
+    signal: snapshotAbortSignal(options, "INVALID_TARGET"),
+  };
+
+  const challenge = await inspectOAuthChallenge(context);
+  const steps: McpOAuthStep[] = [challenge.step];
+
+  const resourceMetadata = await inspectOAuthResourceMetadata(
+    context,
+    challenge.resourceMetadataUrl,
+  );
+  steps.push(resourceMetadata.step);
+  if (resourceMetadata.authorizationServer === undefined) {
+    steps.push(
+      skippedStep(
+        "authorization-server-metadata",
+        "Skipped because the protected resource metadata did not name an authorization server.",
+      ),
+      skippedStep(
+        "registration",
+        "Skipped because the authorization server metadata was not read.",
+      ),
+    );
+    return Object.freeze({ steps: Object.freeze(steps), ready: false });
+  }
+
+  const serverMetadata = await inspectOAuthServerMetadata(
+    context,
+    resourceMetadata.authorizationServer,
+  );
+  steps.push(serverMetadata.step);
+  if (serverMetadata.step.outcome !== "ok") {
+    steps.push(
+      skippedStep(
+        "registration",
+        "Skipped because the authorization server metadata was not read.",
+      ),
+    );
+    return Object.freeze({ steps: Object.freeze(steps), ready: false });
+  }
+
+  steps.push(
+    inspectOAuthRegistration(context, serverMetadata.registrationEndpoint),
+  );
+  return Object.freeze({
+    steps: Object.freeze(steps),
+    ready: steps.every((step) => step.outcome === "ok"),
   });
 }
