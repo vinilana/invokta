@@ -133,6 +133,12 @@ async function main(): Promise<number> {
     process.once("SIGTERM", stop);
     process.stdin.once("end", stop);
   });
+  // The readline interface holds a referenced stdin handle that the parent
+  // never closes. Releasing it lets the event loop drain once the host is
+  // closed; otherwise the process outlives SIGTERM and the watcher waits out
+  // its whole SIGKILL timeout before starting the rebuilt engine.
+  stdinLines.close();
+  process.stdin.pause();
   await host.close();
   return 0;
 }
