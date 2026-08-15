@@ -420,12 +420,12 @@ describe("attached workbench interface contract", () => {
   it("ships the attached DevTools chrome, workbench copy, and shortcut overlay", () => {
     const app = readFileSync(`${uiDirectory}/attached-app.ts`, "utf8");
     const styles = readFileSync(`${uiDirectory}/attached-styles.ts`, "utf8");
-    const server = readFileSync(
-      fileURLToPath(new URL("../src/attached-server.ts", import.meta.url)),
+    const router = readFileSync(
+      fileURLToPath(new URL("../src/attached-router.ts", import.meta.url)),
       "utf8",
     );
 
-    expect(server).toContain("<title>Invokta DevTools · MCP workbench</title>");
+    expect(router).toContain("<title>Invokta DevTools · MCP workbench</title>");
     expect(app).toContain('["DevTools"]');
     expect(app).not.toContain('["devtools"]');
     expect(app).toContain('["MCP workbench"]');
@@ -445,14 +445,14 @@ describe("attached workbench interface contract", () => {
     expect(app).toContain("Invoke the selected tool");
     expect(app).toContain("Move between tabs");
     expect(app).toContain("Toggle this overlay");
-    expect(server).toContain(
+    expect(router).toContain(
       "The Invokta DevTools interface requires JavaScript.",
     );
-    expect(server).toContain("Return to Invokta DevTools");
-    expect(server).not.toContain(
+    expect(router).toContain("Return to Invokta DevTools");
+    expect(router).not.toContain(
       "The Invokta devtools interface requires JavaScript.",
     );
-    expect(server).not.toContain("Return to Invokta devtools");
+    expect(router).not.toContain("Return to Invokta devtools");
     expect(app).toContain("invokta-devtools open --cli");
     expect(app).toContain("CLI workbench");
     expect(app).not.toContain("Playground");

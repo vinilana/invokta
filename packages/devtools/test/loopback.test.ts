@@ -91,10 +91,21 @@ describe("listenOnLoopback", () => {
   });
 
   it("walks past a run of taken ports", async () => {
-    const first = trackedServer();
-    const taken = await listenOnLoopback(first, { port: 0 });
-    const second = trackedServer();
-    await listenOnLoopback(second, { port: taken + 1, maxPortAttempts: 1 });
+    // Another parallel test can claim the neighbouring port first, so the
+    // pair of consecutive ports is retried until both binds land.
+    let taken = 0;
+    for (let attempt = 0; ; attempt += 1) {
+      const first = trackedServer();
+      taken = await listenOnLoopback(first, { port: 0 });
+      const second = trackedServer();
+      try {
+        await listenOnLoopback(second, { port: taken + 1, maxPortAttempts: 1 });
+        break;
+      } catch (error) {
+        if (attempt === 9) throw error;
+        await closeServer(first);
+      }
+    }
 
     const inUse: number[] = [];
     const server = trackedServer();
