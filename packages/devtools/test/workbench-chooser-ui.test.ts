@@ -31,6 +31,18 @@ describe("workbench chooser", () => {
     }
   });
 
+  it("replaces the retyped command with navigation in an idle workbench", () => {
+    const mcpIdle = readUi("attached-app.ts");
+    const cliIdle = readUi("cli-connection-view.ts");
+
+    for (const source of [mcpIdle, cliIdle]) {
+      expect(source).toContain("createWorkbenchOrientation(");
+      // The workspace path is a different command, not a page to navigate to.
+      expect(source).toContain("invokta-devtools serve dist/engine.js");
+      expect(source).not.toContain("or switch workbench from the header");
+    }
+  });
+
   it("keeps the chooser inert and points at the workspace command", () => {
     const chooser = readUi("chooser-app.ts");
 
@@ -71,5 +83,8 @@ describe("workbench chooser", () => {
     expect(attachedStyles).toContain(".att-switch-option {");
     expect(attachedStyles).toContain('.att-switch-option[aria-current="page"]');
     expect(attachedStyles).toContain(".att-brand-link {");
+    expect(attachedStyles).toContain(".att-switch-home {");
+    expect(attachedStyles).toContain(".att-orient-links {");
+    expect(attachedStyles).toContain(".att-orient-link {");
   });
 });

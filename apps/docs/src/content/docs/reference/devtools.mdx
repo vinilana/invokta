@@ -44,8 +44,9 @@ Bare invocation and `open` are equivalent. Both serve the two idle workbenches
 from one loopback origin on `http://localhost:4100/` (or `--port`) and land on
 the chooser: `/` chooses, `/mcp` is the MCP workbench, and `/cli` is the CLI
 workbench. `--mcp` and `--cli` land on that workbench instead — the ready line
-points at its path — and leave the other one mounted, one click away from the
-switch in the workbench header. Neither loads a workspace, spawns a target, or
+points at its path — and leave the other one mounted. The workbench header
+carries the way back to the chooser and the switch to the other workbench, and
+an idle workbench repeats both as links next to its Connect form. Neither loads a workspace, spawns a target, or
 opens an outbound connection until you select Connect, and each keeps its own
 browser session.
 

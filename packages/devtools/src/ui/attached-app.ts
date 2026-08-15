@@ -4,6 +4,7 @@ import { exampleFromSchema } from "./example-from-schema.js";
 import { createCompactThemeToggle, createThemeToggle } from "./theme.js";
 import {
   createBrandLockup,
+  createWorkbenchOrientation,
   createWorkbenchSwitch,
   mountedWorkbench,
   workbenchApiBase,
@@ -1564,12 +1565,18 @@ export function mountAttachedApp(
         el("p", {}, [
           "It inspects an installed MCP server without loading an engine.",
         ]),
+        createWorkbenchOrientation(launchedWorkbench),
         el("dl", { class: "att-idle-orient-paths" }, [
-          el("dt", {}, ["CLI workbench"]),
-          el("dd", {}, [
-            el("div", { class: "att-mono" }, ["invokta-devtools open --cli"]),
-            el("div", {}, ["or switch workbench from the header"]),
-          ]),
+          ...(launchedWorkbench === undefined
+            ? [
+                el("dt", {}, ["CLI workbench"]),
+                el("dd", {}, [
+                  el("div", { class: "att-mono" }, [
+                    "invokta-devtools open --cli",
+                  ]),
+                ]),
+              ]
+            : []),
           el("dt", {}, ["Project workspace"]),
           el("dd", {}, [
             el("div", { class: "att-mono" }, [

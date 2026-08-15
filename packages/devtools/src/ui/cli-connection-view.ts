@@ -17,6 +17,10 @@ import {
   cliTextInput,
 } from "./cli-components.js";
 import { clear, el } from "./dom.js";
+import {
+  createWorkbenchOrientation,
+  mountedWorkbench,
+} from "./workbench-chrome.js";
 
 export type EditableCliEnvironmentPair = SecretControl & { name: string };
 
@@ -314,17 +318,24 @@ export function createCliIdleView(options: CliIdleViewOptions): HTMLElement {
         });
     });
 
+    const launched = mountedWorkbench();
     const orientation = el("aside", { class: "att-idle-orient" }, [
       el("h3", {}, ["This is the CLI workbench."]),
       el("p", {}, [
         "It inspects an installed Invokta CLI without loading an engine.",
       ]),
+      createWorkbenchOrientation(launched),
       el("dl", { class: "att-idle-orient-paths" }, [
-        el("dt", {}, ["MCP workbench"]),
-        el("dd", {}, [
-          el("div", { class: "att-mono" }, ["invokta-devtools open --mcp"]),
-          el("div", {}, ["or switch workbench from the header"]),
-        ]),
+        ...(launched === undefined
+          ? [
+              el("dt", {}, ["MCP workbench"]),
+              el("dd", {}, [
+                el("div", { class: "att-mono" }, [
+                  "invokta-devtools open --mcp",
+                ]),
+              ]),
+            ]
+          : []),
         el("dt", {}, ["Project workspace"]),
         el("dd", {}, [
           el("div", { class: "att-mono" }, [

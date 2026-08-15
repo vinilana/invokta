@@ -12,6 +12,48 @@ export const workbenchPaths: Readonly<Record<WorkbenchName, string>> = {
   cli: "/cli",
 };
 
+/** The chooser: where a workbench is selected. */
+export const chooserPath = "/";
+export const chooserLabel = "All workbenches";
+
+export interface WorkbenchChoice {
+  readonly workbench: WorkbenchName;
+  readonly title: string;
+  /** One line, for a card that sits next to another one. */
+  readonly short: string;
+  readonly summary: string;
+  readonly connects: string;
+  readonly flag: string;
+}
+
+export const workbenchChoices: readonly WorkbenchChoice[] = [
+  {
+    workbench: "mcp",
+    title: "MCP workbench",
+    short: "Inspect an installed MCP server",
+    summary:
+      "Inspect an installed MCP server: list its tools, call one, and read the exchange.",
+    connects: "Connects a stdio command or a Streamable HTTP URL.",
+    flag: "invokta-devtools open --mcp",
+  },
+  {
+    workbench: "cli",
+    title: "CLI workbench",
+    short: "Inspect an installed Invokta CLI",
+    summary:
+      "Inspect an installed Invokta CLI: list its capabilities, describe one, and run it.",
+    connects:
+      "Connects an executable with its arguments, cwd, and environment.",
+    flag: "invokta-devtools open --cli",
+  },
+];
+
+export function workbenchChoice(workbench: WorkbenchName): WorkbenchChoice {
+  return workbenchChoices.find(
+    (choice) => choice.workbench === workbench,
+  ) as WorkbenchChoice;
+}
+
 /**
  * The Invokta mark: a prompt chevron and a cursor rule, drawn from the
  * workbench palette so it follows the theme.
@@ -89,13 +131,28 @@ export function createBrandLockup(current?: WorkbenchName): HTMLElement {
 
 /**
  * The workbench switch. Each workbench is its own page on the same origin, so
- * the control is a pair of links and the current one is marked, not disabled.
+ * the control is a set of links and the current one is marked, not disabled.
+ * It leads with the way back to the chooser, because selecting a workbench
+ * again has to stay reachable from inside one.
  */
 export function createWorkbenchSwitch(current: WorkbenchName): HTMLElement {
-  return el(
-    "nav",
-    { class: "att-switch", "aria-label": "Workbench" },
-    (Object.keys(workbenchPaths) as WorkbenchName[]).map((name) =>
+  return el("nav", { class: "att-switch", "aria-label": "Workbench" }, [
+    el(
+      "a",
+      {
+        class: "att-switch-home",
+        href: chooserPath,
+        title: chooserLabel,
+        "aria-label": chooserLabel,
+      },
+      [
+        el("span", { class: "att-switch-home-mark", "aria-hidden": "true" }, [
+          "‹",
+        ]),
+        el("span", { class: "att-switch-home-label" }, [chooserLabel]),
+      ],
+    ),
+    ...(Object.keys(workbenchPaths) as WorkbenchName[]).map((name) =>
       el(
         "a",
         {
@@ -106,5 +163,41 @@ export function createWorkbenchSwitch(current: WorkbenchName): HTMLElement {
         [workbenchLabels[name]],
       ),
     ),
-  );
+  ]);
+}
+
+function createOrientationLink(
+  href: string,
+  title: string,
+  hint: string,
+): HTMLElement {
+  return el("a", { class: "att-orient-link", href }, [
+    el("span", { class: "att-orient-link-title" }, [title]),
+    el("span", { class: "att-orient-link-hint" }, [hint]),
+  ]);
+}
+
+/**
+ * The way out of an idle workbench: back to the chooser, or straight into the
+ * other workbench. Both are same-origin pages, so this is navigation rather
+ * than a command to retype in a terminal. Absent on a single-workbench server,
+ * where neither destination exists.
+ */
+export function createWorkbenchOrientation(
+  current: WorkbenchName | undefined,
+): HTMLElement | undefined {
+  if (current === undefined) return undefined;
+  const peer = workbenchChoice(current === "mcp" ? "cli" : "mcp");
+  return el("div", { class: "att-orient-links" }, [
+    createOrientationLink(
+      chooserPath,
+      chooserLabel,
+      "Choose which workbench to open",
+    ),
+    createOrientationLink(
+      workbenchPaths[peer.workbench],
+      peer.title,
+      peer.short,
+    ),
+  ]);
 }

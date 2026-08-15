@@ -2,41 +2,16 @@ import { el } from "./dom.js";
 import { createCompactThemeToggle, createThemeToggle } from "./theme.js";
 import {
   createBrandLockup,
+  type WorkbenchChoice,
+  workbenchChoices,
   workbenchPaths,
-  type WorkbenchName,
 } from "./workbench-chrome.js";
+
+export { workbenchChoices } from "./workbench-chrome.js";
 
 export interface ChooserAppHandle {
   destroy(): void;
 }
-
-interface WorkbenchChoice {
-  readonly workbench: WorkbenchName;
-  readonly title: string;
-  readonly summary: string;
-  readonly connects: string;
-  readonly flag: string;
-}
-
-export const workbenchChoices: readonly WorkbenchChoice[] = [
-  {
-    workbench: "mcp",
-    title: "MCP workbench",
-    summary:
-      "Inspect an installed MCP server: list its tools, call one, and read the exchange.",
-    connects: "Connects a stdio command or a Streamable HTTP URL.",
-    flag: "invokta-devtools open --mcp",
-  },
-  {
-    workbench: "cli",
-    title: "CLI workbench",
-    summary:
-      "Inspect an installed Invokta CLI: list its capabilities, describe one, and run it.",
-    connects:
-      "Connects an executable with its arguments, cwd, and environment.",
-    flag: "invokta-devtools open --cli",
-  },
-];
 
 function createChoice(choice: WorkbenchChoice): HTMLElement {
   return el(

@@ -13,8 +13,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   installed Invokta CLI inspection and homologation (ADR 0032).
 - `invokta-devtools open` now serves both idle workbenches from one loopback
   origin and lands on a chooser (ADR 0033): `/` chooses, `/mcp` is the MCP
-  workbench, `/cli` is the CLI workbench, and the workbench header switches
-  between them without restarting the process. `--mcp` is the peer of `--cli`
+  workbench, `/cli` is the CLI workbench, and both the workbench header and an
+  idle workbench's Connect view link back to the chooser and across to the
+  other workbench without restarting the process. `--mcp` is the peer of `--cli`
   and lands on that workbench directly.
 
 ### Changed

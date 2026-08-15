@@ -151,6 +151,42 @@ describe("workbench chooser page", () => {
     expect(body.classList.contains("attached-mode")).toBe(false);
   });
 
+  it("leads back to the chooser from inside a workbench", async () => {
+    const chrome = await import("../src/ui/workbench-chrome.js");
+    installDocument();
+
+    const nav = chrome.createWorkbenchSwitch("cli");
+    const links = walk(nav).filter((element) => element.tagName === "A");
+
+    expect(links.map((link) => link.getAttribute("href"))).toStrictEqual([
+      "/",
+      "/mcp",
+      "/cli",
+    ]);
+    expect(links[0].getAttribute("aria-label")).toBe("All workbenches");
+    expect(links[1].getAttribute("aria-current")).toBeNull();
+    expect(links[2].getAttribute("aria-current")).toBe("page");
+  });
+
+  it("offers the chooser and the other workbench from an idle workbench", async () => {
+    const chrome = await import("../src/ui/workbench-chrome.js");
+    installDocument();
+
+    const orientation = chrome.createWorkbenchOrientation("mcp");
+    const links = walk(orientation).filter(
+      (element) => element.tagName === "A",
+    );
+
+    expect(links.map((link) => link.getAttribute("href"))).toStrictEqual([
+      "/",
+      "/cli",
+    ]);
+    expect(links[0].textContent).toContain("All workbenches");
+    expect(links[1].textContent).toContain("CLI workbench");
+    // A single-workbench server has neither destination.
+    expect(chrome.createWorkbenchOrientation(undefined)).toBeUndefined();
+  });
+
   it("names the workspace path the workbenches do not cover", async () => {
     const { mountChooserApp } = await import("../src/ui/chooser-app.js");
     const { body } = installDocument();
