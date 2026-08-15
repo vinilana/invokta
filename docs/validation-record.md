@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-08-06
+- Last reviewed: 2026-08-15
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
@@ -9,7 +9,14 @@
   accepted in ADR 0018; GitHub example import for `create-invokta-engine`
   accepted in ADR 0020; the `@invokta/devtools` dev server and doctor accepted
   in ADR 0021; MCP installation inspection and homologation accepted in
-  ADR 0022; ephemeral OAuth for installed MCP inspection accepted in ADR 0023
+  ADR 0022; ephemeral OAuth for installed MCP inspection accepted in ADR 0023;
+  the production MCP OAuth integration boundary accepted in ADR 0024; portable
+  MCP tool names accepted in ADR 0025; generated engine MCP conformance accepted
+  in ADR 0026; Windows installer ownership identity accepted in ADR 0027;
+  devtools adapter emulation accepted in ADR 0028; selectable HTTP
+  authentication accepted in ADR 0029; project entry points accepted in ADR
+  0030; and advertised authorization servers and OAuth discovery inspection
+  accepted in ADR 0031
 
 ## Reuse evidence
 
@@ -31,15 +38,15 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 2,621 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 2,822 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  80.90% statements, 76.22% branches, 83.91% functions, and 82.33% lines.
+  80.78% statements, 75.78% branches, 85.23% functions, and 82.30% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
 - `yarn validate` in `apps/docs` passes route and link tests, Astro diagnostics,
   and the production site build.
-- `yarn audit` reports zero vulnerabilities across 271 audited packages.
+- `yarn audit` reports zero vulnerabilities across 307 audited packages.
 
 ## Boundaries exercised
 

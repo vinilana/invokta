@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-15
+
 ### Added
 
 - `invokta-devtools serve` now emulates a capability call through the execution
@@ -300,7 +302,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/vinilana/invokta/releases/tag/v0.5.0
 [0.4.0]: https://github.com/vinilana/invokta/releases/tag/v0.4.0
 [0.3.0]: https://github.com/vinilana/invokta/releases/tag/v0.3.0
 [0.2.0]: https://github.com/vinilana/invokta/releases/tag/v0.2.0

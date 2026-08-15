@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Invokta Release"
+  short_description: "Prepare validated Invokta release branches"
+  default_prompt: "Use $prepare-invokta-release to prepare the next Invokta release on a dedicated release branch."
