@@ -10,6 +10,20 @@ import {
 } from "../src/ui/cli-app.js";
 
 const uiDirectory = fileURLToPath(new URL("../src/ui/", import.meta.url));
+const cliUiSourceFiles = [
+  "cli-app.ts",
+  "cli-api.ts",
+  "cli-command-view.ts",
+  "cli-components.ts",
+  "cli-connection-view.ts",
+  "cli-contract.ts",
+] as const;
+
+function cliUiSource(): string {
+  return cliUiSourceFiles
+    .map((fileName) => readFileSync(`${uiDirectory}/${fileName}`, "utf8"))
+    .join("\n");
+}
 
 describe("CLI workbench UI contract", () => {
   it("exposes Commands, Activity, and Connection only", () => {
@@ -36,14 +50,14 @@ describe("CLI workbench UI contract", () => {
   });
 
   it("ships the CLI workbench chrome, copy, and shortcut overlay", () => {
-    const app = readFileSync(`${uiDirectory}/cli-app.ts`, "utf8");
-    const server = readFileSync(
-      fileURLToPath(new URL("../src/cli-attached-server.ts", import.meta.url)),
+    const app = cliUiSource();
+    const assets = readFileSync(
+      fileURLToPath(new URL("../src/cli-attached-assets.ts", import.meta.url)),
       "utf8",
     );
     const styles = readFileSync(`${uiDirectory}/attached-styles.ts`, "utf8");
 
-    expect(server).toContain("<title>Invokta DevTools · CLI workbench</title>");
+    expect(assets).toContain("<title>Invokta DevTools · CLI workbench</title>");
     expect(app).toContain('["DevTools"]');
     expect(app).not.toContain('["devtools"]');
     expect(app).toContain('["CLI workbench"]');
@@ -64,7 +78,7 @@ describe("CLI workbench UI contract", () => {
     expect(app).toContain("Ctrl/⌘ + Enter");
     expect(app).toContain("Keyboard shortcuts");
     expect(app).toContain("Toggle this overlay");
-    expect(server).toContain(
+    expect(assets).toContain(
       "The Invokta DevTools interface requires JavaScript.",
     );
     expect(app).not.toContain("Doctor");
@@ -78,7 +92,7 @@ describe("CLI workbench UI contract", () => {
   });
 
   it("keeps target data out of browser storage", () => {
-    const app = readFileSync(`${uiDirectory}/cli-app.ts`, "utf8");
+    const app = cliUiSource();
     expect(app).not.toMatch(/localStorage|sessionStorage/);
     expect(app).not.toContain('el("style"');
     expect(app).toContain('href: "/assets/attached.css"');
@@ -96,14 +110,14 @@ describe("CLI workbench UI contract", () => {
     expect(refreshFailureIsDisconnect(undefined)).toBe(true);
     expect(refreshFailureIsDisconnect("TARGET_BUSY")).toBe(false);
 
-    const app = readFileSync(`${uiDirectory}/cli-app.ts`, "utf8");
+    const app = cliUiSource();
     expect(app).toContain("refreshFailureIsDisconnect(code)");
     expect(app).toContain("stopActivityPolling()");
     expect(app).not.toMatch(/error\.code === "CONNECTION_FAILED"/);
   });
 
   it("records only verb metadata in Activity", () => {
-    const app = readFileSync(`${uiDirectory}/cli-app.ts`, "utf8");
+    const app = cliUiSource();
     expect(app).toContain("record.operation");
     expect(app).toContain("record.capabilityId");
     expect(app).toContain("record.exitCode");
