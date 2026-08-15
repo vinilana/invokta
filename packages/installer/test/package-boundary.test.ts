@@ -16,7 +16,7 @@ describe("@invokta/installer package boundary", () => {
 
     expect(manifest).toMatchObject({
       name: "@invokta/installer",
-      version: "0.4.0",
+      version: "0.5.0",
       type: "module",
       engines: { node: ">=22.20.0" },
       files: ["dist", "registry"],

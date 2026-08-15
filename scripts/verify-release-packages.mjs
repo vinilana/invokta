@@ -1079,9 +1079,11 @@ try {
       ...profileCase.dependencies,
       ...profileCase.devDependencies,
     ]);
-    // Devtools loads its public MCP dependency at runtime. Install the matching
-    // local artifact so this pre-release smoke validates one coherent release
-    // set instead of resolving an older published package for focused profiles.
+    // Devtools loads its public adapter dependencies at runtime. Install the
+    // matching local artifacts so this pre-release smoke validates one coherent
+    // release set instead of resolving older published packages for focused
+    // profiles.
+    generatedPackageNames.add("@invokta/cli");
     generatedPackageNames.add("@invokta/mcp");
     const generatedDependencyTarballs = [...generatedPackageNames].map((name) =>
       tarballsByName.get(name),
