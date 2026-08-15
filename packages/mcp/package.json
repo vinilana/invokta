@@ -1,6 +1,6 @@
 {
   "name": "@invokta/mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "MCP server adapters and a plain client facade for Invokta Action Engines.",
   "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",
@@ -36,7 +36,7 @@
     "prepack": "npm run --silent build"
   },
   "dependencies": {
-    "@invokta/core": "0.5.0",
+    "@invokta/core": "0.6.0",
     "@modelcontextprotocol/sdk": "1.30.0"
   }
 }

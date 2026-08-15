@@ -36,18 +36,18 @@
     "deploy:inspect-oauth": "invokta-deploy inspect-oauth"
   },
   "dependencies": {
-    "@invokta/cli": "0.5.0",
-    "@invokta/core": "0.5.0",
-    "@invokta/installer": "0.5.0",
-    "@invokta/mcp": "0.5.0",
+    "@invokta/cli": "0.6.0",
+    "@invokta/core": "0.6.0",
+    "@invokta/installer": "0.6.0",
+    "@invokta/mcp": "0.6.0",
     "jose": "^6.2.8",
     "oidc-provider": "~9.11.3",
     "pg": "^8.16.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@invokta/deploy": "0.5.0",
-    "@invokta/devtools": "0.5.0",
+    "@invokta/deploy": "0.6.0",
+    "@invokta/devtools": "0.6.0",
     "@types/node": "26.1.2",
     "@types/oidc-provider": "^9.11.1",
     "@types/pg": "^8.15.5",

@@ -1,6 +1,6 @@
 {
   "name": "@invokta/deploy",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "HTTP engine scaffolding, packaging, health probing, and OAuth inspection tools for Invokta.",
   "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",
