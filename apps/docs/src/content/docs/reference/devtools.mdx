@@ -1,13 +1,14 @@
 ---
 title: '@invokta/devtools'
-description: Command reference for the MCP workbench, installation verifier, engine dev server, and doctor diagnostics.
+description: Command reference for the MCP workbench, CLI workbench, installation verifier, engine dev server, and doctor diagnostics.
 ---
 
 `@invokta/devtools` is the development-time surface for Invokta: an MCP
-workbench for installed servers, an installation verifier, and — for one built
-engine — a read-only doctor and a local dev server with a web interface for
-browsing capabilities, invoking them, following a live trace, and switching
-test identities backed by `Principal` values.
+workbench for installed servers, a CLI workbench for installed Invokta
+executables, an installation verifier, and — for one built engine — a
+read-only doctor and a local dev server with a web interface for browsing
+capabilities, invoking them, following a live trace, and switching test
+identities backed by `Principal` values.
 
 The package adds no runtime contract, adapter, or transport. Every capability
 execution reaches the engine exclusively through the unmodified
@@ -35,17 +36,35 @@ the usage and `--version` (or `-v`) to print the installed version.
 ### invokta-devtools open
 
 ```text
-invokta-devtools [--port <number>]
-invokta-devtools open [--port <number>]
+invokta-devtools [--mcp | --cli] [--port <number>]
+invokta-devtools open [--mcp | --cli] [--port <number>]
 ```
 
-Bare invocation and `open` are equivalent. Both start an idle loopback
-workbench on `http://127.0.0.1:4100/` (or `--port`) that loads no workspace,
-spawns no target, and opens no outbound connection until you select Connect.
-From the Connection view you attach either a structured stdio command or a
-Streamable HTTP URL; the attached UI provides Tools, Activity, and Connection
-validation, and the argument editor is seeded from each tool's advertised
-input schema.
+Bare invocation and `open` are equivalent. Both serve the two idle workbenches
+from one loopback origin on `http://localhost:4100/` (or `--port`) and land on
+the chooser: `/` chooses, `/mcp` is the MCP workbench, and `/cli` is the CLI
+workbench. `--mcp` and `--cli` land on that workbench instead — the ready line
+points at its path — and leave the other one mounted. The workbench header
+carries the way back to the chooser and the switch to the other workbench, and
+an idle workbench repeats both as links next to its Connect form. Neither loads a workspace, spawns a target, or
+opens an outbound connection until you select Connect, and each keeps its own
+browser session.
+
+The MCP workbench is the attach UI: from the Connection view you attach either
+a structured stdio command or a Streamable HTTP URL; the attached UI provides
+Tools, Activity, and Connection validation, and the argument editor is seeded
+from each tool's advertised input schema.
+
+The CLI workbench connects exactly one structured descriptor — command,
+arguments, optional working directory, and environment. Connect runs
+`<command> <args...> list` once (`shell: false`) and waits for the child to
+exit. Selecting a capability runs `describe <id>`. Run is enabled only after a
+successful list and describe, and only when you press Run, as
+`<command> <args...> run <id> --input '<json>'`. The workbench never passes
+`--stdin`, `--format`, actor flags, or login flags. Each verb starts a new
+process; DevTools does not supply a principal. The CLI UI exposes Commands,
+Activity, and Connection only. Switching workbench carries no target,
+connection, or activity across, and there is no `verify --cli` command.
 
 #### Interactive OAuth
 
@@ -148,19 +167,20 @@ loopback servers:
 
 - the **engine host**: the `@invokta/mcp` HTTP adapter serving the engine on
   `127.0.0.1` with authentication always in `required` mode; and
-- the **devtools interface** on `http://127.0.0.1:4100/` (or `--port`): the
+- the **devtools interface** on `http://localhost:4100/` (or `--port`): the
   web interface, a JSON API, a live trace event stream, and a same-origin
   `POST /mcp` proxy to the engine host.
 
 Standard output carries exactly one ready line, `Invokta devtools listening on
-http://127.0.0.1:<port>/`. The engine `name@version`, the capability count, and
+http://localhost:<port>/`. The engine `name@version`, the capability count, and
 the watch status accompany it on standard error. Terminate with `SIGINT` or
-`SIGTERM` for a clean shutdown. If the default port is already in use, the
-start failure names `EADDRINUSE` and suggests `--port`.
+`SIGTERM` for a clean shutdown. A port already in use is not a failure: the
+next free port is taken and standard error reports `port: <requested> is in
+use, using <selected> instead`.
 
 #### Adapters
 
-Playground runs one capability call through the execution path you select, so
+Capabilities runs one capability call through the execution path you select, so
 the same arguments can be compared across every path the engine publishes:
 
 | Adapter | What runs | `ExecutionContext.source` |
@@ -263,7 +283,7 @@ authentication type, and header or variable names only.
 #### Test identities
 
 **Test identities** is where the identities themselves are created, edited,
-rotated, and removed; the Playground selects among them. Each one lists what it
+rotated, and removed; Capabilities selects among them. Each one lists what it
 recently managed to do — the capability, the adapter, and the outcome of the
 last emulated calls made as it — so an `access` rule can be attributed to the
 identity that met it rather than guessed at. Each one maps to an in-memory

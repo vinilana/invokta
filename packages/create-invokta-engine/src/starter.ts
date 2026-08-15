@@ -182,7 +182,7 @@ ${commands.direct}
 ${runScript("devtools")}
 \`\`\`
 
-Builds the engine and starts the Invokta devtools on http://127.0.0.1:4100/:
+Builds the engine and starts the Invokta devtools on http://localhost:4100/:
 browse capabilities, invoke them from schema-seeded JSON through the execution
 path you select, follow the live invocation trace, switch test identities, and
 read the doctor report. Source changes rebuild and restart the hosted engine

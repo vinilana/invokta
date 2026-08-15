@@ -913,7 +913,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         el("span", { class: "badge principals-count" }, [countLabel]),
       ]),
       el("p", { class: "hint principals-intro" }, [
-        "Manage the development identities the Playground can act as.",
+        "Manage the development identities the Capabilities can act as.",
       ]),
     ]);
     const createHeading = el("span", { class: "principal-create-heading" }, [
@@ -981,7 +981,7 @@ export function renderPrincipalsPanel(container: HTMLElement): () => void {
         ...(principals.length === 0
           ? [
               el("p", { class: "empty principal-empty" }, [
-                "No test identities yet. Add one to act as it in the Playground.",
+                "No test identities yet. Add one to act as it in Capabilities.",
               ]),
             ]
           : [el("div", { class: "principals-list" }, rows)]),

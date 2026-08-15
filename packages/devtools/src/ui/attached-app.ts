@@ -2,6 +2,13 @@ import { createCopyButton, formatDuration } from "./clipboard.js";
 import { clear, el, pretty } from "./dom.js";
 import { exampleFromSchema } from "./example-from-schema.js";
 import { createCompactThemeToggle, createThemeToggle } from "./theme.js";
+import {
+  createBrandLockup,
+  createWorkbenchOrientation,
+  createWorkbenchSwitch,
+  mountedWorkbench,
+  workbenchApiBase,
+} from "./workbench-chrome.js";
 
 export type AttachedJsonValue =
   | null
@@ -467,7 +474,10 @@ async function responseJson<Value>(response: Response): Promise<Value> {
  * Adapts the ADR 0022 loopback routes while keeping the session CSRF token in
  * this closure. No target descriptor or credential is written to storage.
  */
-export function createRouteAttachedApi(fetcher: Fetcher = fetch): AttachedApi {
+export function createRouteAttachedApi(
+  fetcher: Fetcher = fetch,
+  apiBase: string = workbenchApiBase(),
+): AttachedApi {
   let csrfToken = "";
 
   const get = async <Value>(path: string): Promise<Value> => {
@@ -497,23 +507,23 @@ export function createRouteAttachedApi(fetcher: Fetcher = fetch): AttachedApi {
 
   return {
     async session() {
-      const response = await get<AttachedSession>("/api/session");
+      const response = await get<AttachedSession>(`${apiBase}/session`);
       csrfToken = response.csrfToken;
       return response;
     },
     connect: (target) =>
-      mutate<AttachedConnectionState>("/api/connection", "POST", target),
+      mutate<AttachedConnectionState>(`${apiBase}/connection`, "POST", target),
     disconnect: () =>
-      mutate<AttachedConnectionState>("/api/connection", "DELETE"),
+      mutate<AttachedConnectionState>(`${apiBase}/connection`, "DELETE"),
     async tools() {
       const response = await get<{ readonly tools: readonly AttachedTool[] }>(
-        "/api/tools",
+        `${apiBase}/tools`,
       );
       return response.tools;
     },
     async callTool(name, argumentsValue) {
       const response = await mutate<{ readonly response: AttachedJsonValue }>(
-        "/api/tools/call",
+        `${apiBase}/tools/call`,
         "POST",
         { name, arguments: argumentsValue },
       );
@@ -522,37 +532,10 @@ export function createRouteAttachedApi(fetcher: Fetcher = fetch): AttachedApi {
     async activity() {
       const response = await get<{
         readonly records: readonly AttachedActivityRecord[];
-      }>("/api/activity");
+      }>(`${apiBase}/activity`);
       return response.records;
     },
   };
-}
-
-function createBrandMark(): SVGSVGElement {
-  const namespace = "http://www.w3.org/2000/svg";
-  const mark = document.createElementNS(namespace, "svg");
-  mark.setAttribute("viewBox", "0 0 51 43");
-  mark.setAttribute("width", "24");
-  mark.setAttribute("height", "20");
-  mark.setAttribute("fill", "none");
-  mark.setAttribute("class", "att-brand-mark");
-  mark.setAttribute("aria-hidden", "true");
-  mark.setAttribute("focusable", "false");
-
-  const strokes = document.createElementNS(namespace, "g");
-  strokes.setAttribute("transform", "translate(-6.5,-10.5)");
-  strokes.setAttribute("stroke-width", "9");
-  strokes.setAttribute("stroke-linecap", "round");
-  strokes.setAttribute("stroke-linejoin", "round");
-  const prompt = document.createElementNS(namespace, "path");
-  prompt.setAttribute("d", "M11 15 L29 32 L11 49");
-  prompt.setAttribute("stroke", "var(--att-accent-text)");
-  const cursor = document.createElementNS(namespace, "path");
-  cursor.setAttribute("d", "M36 49 H53");
-  cursor.setAttribute("stroke", "var(--att-fg)");
-  strokes.append(prompt, cursor);
-  mark.append(strokes);
-  return mark;
 }
 
 let controlSequence = 0;
@@ -743,6 +726,8 @@ export function mountAttachedApp(
 ): AttachedAppHandle {
   type EditablePair = SecretControl & { name: string };
   const ownerDocument = root.ownerDocument;
+  // Present only when the launcher mounted both workbenches on this origin.
+  const launchedWorkbench = mountedWorkbench(ownerDocument);
   ownerDocument.body.classList.add("attached-mode");
   if (
     ownerDocument.head.querySelector('link[href="/assets/attached.css"]') ===
@@ -967,12 +952,10 @@ export function mountAttachedApp(
   };
 
   const shell = (content: HTMLElement, includeTabs: boolean): void => {
-    const brand = el("div", { class: "att-brand" }, [
-      createBrandMark(),
-      el("span", { class: "att-brand-name" }, ["invokta"]),
-      el("span", { class: "att-product-name" }, ["devtools"]),
-    ]);
-    const topbarChildren: Node[] = [brand];
+    const topbarChildren: Node[] = [createBrandLockup(launchedWorkbench)];
+    if (launchedWorkbench !== undefined) {
+      topbarChildren.push(createWorkbenchSwitch(launchedWorkbench));
+    }
     if (includeTabs) topbarChildren.push(createTabs());
     else
       topbarChildren.push(
@@ -994,9 +977,16 @@ export function mountAttachedApp(
     const topbar = el("header", { class: "att-topbar" }, [
       el("div", { class: "att-frame att-topbar-inner" }, topbarChildren),
     ]);
+    const heading =
+      targetState.state === "connected" && targetState.connection !== undefined
+        ? targetState.connection.server.name
+        : "MCP workbench";
     const context = el("section", { class: "att-context" }, [
       el("div", { class: "att-frame att-context-inner" }, [
-        el("h1", {}, ["MCP workbench"]),
+        el("div", { class: "att-context-title" }, [
+          el("p", { class: "att-kicker" }, ["MCP workbench"]),
+          el("h1", {}, [heading]),
+        ]),
         el("div", { class: "att-context-meta" }, [
           statusPill(targetState),
           ...(targetState.state === "connected" &&
@@ -1570,7 +1560,33 @@ export function mountAttachedApp(
             feedback.textContent = errorMessage(error);
           });
       });
-      formHost.append(form);
+      const orientation = el("aside", { class: "att-idle-orient" }, [
+        el("h3", {}, ["This is the MCP workbench."]),
+        el("p", {}, [
+          "It inspects an installed MCP server without loading an engine.",
+        ]),
+        createWorkbenchOrientation(launchedWorkbench),
+        el("dl", { class: "att-idle-orient-paths" }, [
+          ...(launchedWorkbench === undefined
+            ? [
+                el("dt", {}, ["CLI workbench"]),
+                el("dd", {}, [
+                  el("div", { class: "att-mono" }, [
+                    "invokta-devtools open --cli",
+                  ]),
+                ]),
+              ]
+            : []),
+          el("dt", {}, ["Project workspace"]),
+          el("dd", {}, [
+            el("div", { class: "att-mono" }, [
+              "invokta-devtools serve dist/engine.js",
+            ]),
+            el("div", {}, ["or yarn devtools inside an engine repo"]),
+          ]),
+        ]),
+      ]);
+      formHost.append(form, orientation);
     };
 
     paintForm();
@@ -2250,6 +2266,83 @@ export function mountAttachedApp(
     }
   }
 
+  let shortcutsOverlay: HTMLElement | undefined;
+  let shortcutsOpener: HTMLElement | undefined;
+  const closeShortcuts = (): void => {
+    if (shortcutsOverlay === undefined) return;
+    shortcutsOverlay.remove();
+    shortcutsOverlay = undefined;
+    shortcutsOpener?.focus();
+    shortcutsOpener = undefined;
+  };
+  const shortcutEntry = (keys: string, action: string): HTMLElement =>
+    el("div", { class: "att-shortcuts-entry" }, [
+      el("dt", {}, [el("kbd", {}, [keys])]),
+      el("dd", {}, [action]),
+    ]);
+  const toggleShortcuts = (): void => {
+    if (shortcutsOverlay !== undefined) {
+      closeShortcuts();
+      return;
+    }
+    const card = el("div", { class: "att-shortcuts-card", tabindex: "-1" }, [
+      el("h2", { id: "attached-shortcuts-title" }, ["Keyboard shortcuts"]),
+      el("dl", { class: "att-shortcuts-list" }, [
+        shortcutEntry("Ctrl/⌘ + Enter", "Invoke the selected tool"),
+        shortcutEntry("← →", "Move between tabs"),
+        shortcutEntry("?", "Toggle this overlay"),
+      ]),
+      el("p", { class: "att-hint" }, ["Press ? or Escape to close."]),
+    ]);
+    const overlay = el(
+      "div",
+      {
+        class: "att-shortcuts-overlay",
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-labelledby": "attached-shortcuts-title",
+      },
+      [card],
+    );
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeShortcuts();
+    });
+    shortcutsOverlay = overlay;
+    const previous: unknown = ownerDocument.activeElement;
+    shortcutsOpener =
+      typeof previous === "object" &&
+      previous !== null &&
+      previous !== ownerDocument.body &&
+      typeof (previous as { focus?: unknown }).focus === "function"
+        ? (previous as HTMLElement)
+        : undefined;
+    ownerDocument.body.append(overlay);
+    card.focus();
+  };
+  const onShortcutKeydown = (event: KeyboardEvent): void => {
+    if (destroyed) return;
+    if (event.key === "Escape" && shortcutsOverlay !== undefined) {
+      closeShortcuts();
+      event.preventDefault();
+      return;
+    }
+    if (event.key !== "?" || event.ctrlKey || event.metaKey || event.altKey) {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    const tagName = target?.tagName;
+    if (
+      tagName === "INPUT" ||
+      tagName === "TEXTAREA" ||
+      target?.isContentEditable === true
+    ) {
+      return;
+    }
+    event.preventDefault();
+    toggleShortcuts();
+  };
+  ownerDocument.body.addEventListener("keydown", onShortcutKeydown);
+
   shell(
     el("section", { class: "att-card att-loading" }, ["Opening workbench…"]),
     false,
@@ -2303,6 +2396,8 @@ export function mountAttachedApp(
   return {
     destroy() {
       destroyed = true;
+      closeShortcuts();
+      ownerDocument.body.removeEventListener("keydown", onShortcutKeydown);
       stopAuthorizationPolling();
       stopActivityPolling();
       oauthAuthorizationUrl = undefined;

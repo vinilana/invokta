@@ -15,8 +15,10 @@
   in ADR 0026; Windows installer ownership identity accepted in ADR 0027;
   devtools adapter emulation accepted in ADR 0028; selectable HTTP
   authentication accepted in ADR 0029; project entry points accepted in ADR
-  0030; and advertised authorization servers and OAuth discovery inspection
-  accepted in ADR 0031
+  0030; advertised authorization servers and OAuth discovery inspection
+  accepted in ADR 0031; CLI installation inspection and homologation
+  accepted in ADR 0032; and the workbench launcher with workbench selection
+  accepted in ADR 0033
 
 ## Reuse evidence
 

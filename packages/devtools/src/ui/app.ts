@@ -21,7 +21,7 @@ const tabs: ReadonlyArray<{
 }> = [
   {
     name: "capabilities",
-    label: "Playground",
+    label: "Capabilities",
     render: renderCapabilitiesPanel,
   },
   { name: "trace", label: "Activity", render: renderTracePanel },
@@ -236,7 +236,7 @@ function boot(): void {
   const brand = el("div", { class: "brand-lockup" }, [
     createBrandMark(),
     el("span", { class: "brand-name" }, ["invokta"]),
-    el("span", { class: "product-name" }, ["engine devtools"]),
+    el("span", { class: "product-name" }, ["DevTools"]),
   ]);
   const rails = el(
     "div",
@@ -255,7 +255,10 @@ function boot(): void {
     { class: "workspace-context", "aria-labelledby": title.id },
     [
       el("div", { class: "content-frame workspace-context-inner" }, [
-        el("div", { class: "workspace-title" }, [title]),
+        el("div", { class: "workspace-title" }, [
+          el("p", { class: "workspace-kicker" }, ["Project workspace"]),
+          title,
+        ]),
         el("div", { class: "engine-meta", "aria-label": "Engine status" }, [
           connection,
           version,
@@ -299,7 +302,7 @@ function boot(): void {
     const card = el("div", { class: "shortcuts-card", tabindex: "-1" }, [
       el("h2", { id: "shortcuts-title" }, ["Keyboard shortcuts"]),
       el("dl", { class: "shortcuts-list" }, [
-        shortcutEntry("/", "Focus the Playground search"),
+        shortcutEntry("/", "Focus the Capabilities search"),
         shortcutEntry("Ctrl/⌘ + Enter", "Invoke the edited capability"),
         shortcutEntry("← →", "Move between tabs"),
         shortcutEntry("?", "Toggle this overlay"),

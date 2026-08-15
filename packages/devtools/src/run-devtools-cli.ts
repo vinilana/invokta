@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { startAttachedDevtoolsServer } from "./attached-server.js";
 import {
   asRecord,
   describeThrownValue,
@@ -23,6 +22,11 @@ import {
 import type { StartServeOptions, StartServeResult } from "./serve.js";
 import { startServe } from "./serve.js";
 import { runMcpVerification } from "./verify-mcp.js";
+import type {
+  WorkbenchDevtoolsServer,
+  WorkbenchName,
+} from "./workbench-server.js";
+import { startWorkbenchDevtoolsServer } from "./workbench-server.js";
 
 export interface DevtoolsIo {
   readonly writeStdout: (text: string) => void | Promise<void>;
@@ -59,6 +63,8 @@ export interface ServeCommand {
 export interface OpenCommand {
   readonly command: "open";
   readonly port?: number;
+  /** Which workbench to open on. Without one, `open` lands on the chooser. */
+  readonly workbench?: WorkbenchName;
 }
 
 export interface HelpCommand {
@@ -170,7 +176,8 @@ the value returned by createEngine.
 
 serve preflights the engine with the doctor checks, hosts it with the MCP
 HTTP adapter on loopback, and serves the development interface on
-http://127.0.0.1:4100/ unless --port selects another loopback port.
+http://localhost:4100/ unless --port selects another loopback port. A port
+already in use is reported and the next free one is taken.
 
 --watch requires --build and runs the engine in a replaceable child process:
 project changes run the explicit build command, and only a successful build
@@ -190,8 +197,8 @@ Exit codes:
 const usage = engineUsage.replace(
   "Usage:\n",
   `Usage:
-  invokta-devtools [--port <number>]
-  invokta-devtools open [--port <number>]
+  invokta-devtools [--mcp | --cli] [--port <number>]
+  invokta-devtools open [--mcp | --cli] [--port <number>]
   invokta-devtools verify --stdio <executable> [--arg <value>]...
     [--cwd <directory>] [--env <child-name>=<source-environment-name>]...
     [--timeout-ms <ms>] [--max-tools <count>] [--json]
@@ -202,9 +209,12 @@ const usage = engineUsage.replace(
   invokta-devtools --help
   invokta-devtools --version
 
---timeout-ms bounds the initialization and catalog deadlines, --max-tools
-bounds the accepted tool count, and --json prints the verification result as
-JSON (success to stdout, failure to stderr).
+open serves both idle workbenches on one loopback origin and lands on the
+chooser. --mcp and --cli land on that workbench instead; either one is still
+reachable from the other. --timeout-ms bounds the initialization and catalog
+deadlines,
+--max-tools bounds the accepted tool count, and --json prints the verification
+result as JSON (success to stdout, failure to stderr).
 `,
 );
 
@@ -294,6 +304,7 @@ function parseOpenArguments(
   args: readonly string[],
 ): Omit<OpenCommand, "command"> {
   let port: number | undefined;
+  let workbench: WorkbenchName | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index] as string;
     if (argument === "--port") {
@@ -306,6 +317,21 @@ function parseOpenArguments(
       index += 1;
       continue;
     }
+    if (argument === "--cli" || argument === "--mcp") {
+      const selected: WorkbenchName = argument === "--cli" ? "cli" : "mcp";
+      if (workbench === selected) {
+        throw new UsageError(
+          `The ${argument} option must be provided at most once.`,
+        );
+      }
+      if (workbench !== undefined) {
+        throw new UsageError(
+          "The --cli and --mcp options select one workbench each.",
+        );
+      }
+      workbench = selected;
+      continue;
+    }
     if (argument.startsWith("-")) {
       throw new UsageError(`Unknown option ${quote(argument)}.`);
     }
@@ -313,7 +339,10 @@ function parseOpenArguments(
       "The open command does not accept positional arguments.",
     );
   }
-  return port === undefined ? {} : { port };
+  return {
+    ...(port === undefined ? {} : { port }),
+    ...(workbench === undefined ? {} : { workbench }),
+  };
 }
 
 const environmentNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -1134,6 +1163,14 @@ function renderServeEngineSummary(engine: LoadedEngine): string | undefined {
   }
 }
 
+/**
+ * A taken port is a routine development condition, not a failure: the server
+ * walks to the next free one and the terminal says which port answered.
+ */
+function renderPortInUse(requested: number, selected: number): string {
+  return `port: ${String(requested)} is in use, using ${String(selected)} instead\n`;
+}
+
 function renderServeFailure(command: EngineCommand, error: unknown): string {
   return renderLines([
     `${programName}: the dev server could not start.`,
@@ -1161,6 +1198,10 @@ async function runServe(
 ): Promise<number> {
   let serveOptions: StartServeOptions;
   let engineSummary: string | undefined;
+  let requestedPort: number | undefined;
+  const onPortInUse = (port: number): void => {
+    requestedPort ??= port;
+  };
   if (command.buildCommand !== undefined) {
     // In watch mode the module belongs to the child host; the parent never
     // imports it, so a rebuild can only ever apply by process replacement.
@@ -1180,6 +1221,7 @@ async function runServe(
       onDiagnostic: (text) => {
         void writeStderr(io, text);
       },
+      onPortInUse,
       ...(command.port === undefined ? {} : { port: command.port }),
       ...(command.enginePort === undefined
         ? {}
@@ -1217,6 +1259,7 @@ async function runServe(
       composedCapabilitiesExport: hasComposedCapabilitiesExport(
         loaded.namespace,
       ),
+      onPortInUse,
       ...(command.port === undefined ? {} : { port: command.port }),
       ...(command.enginePort === undefined
         ? {}
@@ -1252,6 +1295,9 @@ async function runServe(
   const address = result.handles.devtoolsAddress;
   // ADR 0021 pins stdout to exactly this ready line, and `open` prints the
   // same one; the extra startup context is a diagnostic and goes to stderr.
+  if (requestedPort !== undefined) {
+    await writeStderr(io, renderPortInUse(requestedPort, address.port));
+  }
   await writeStderr(
     io,
     renderLines([
@@ -1275,9 +1321,14 @@ async function runServe(
 }
 
 async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
-  let server: Awaited<ReturnType<typeof startAttachedDevtoolsServer>>;
+  let requestedPort: number | undefined;
+  const onPortInUse = (port: number): void => {
+    requestedPort ??= port;
+  };
+  let server: WorkbenchDevtoolsServer;
   try {
-    server = await startAttachedDevtoolsServer({
+    server = await startWorkbenchDevtoolsServer({
+      onPortInUse,
       ...(command.port === undefined ? {} : { port: command.port }),
     });
   } catch (error) {
@@ -1288,7 +1339,7 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
     await writeStderr(
       io,
       renderLines([
-        `${programName}: the MCP workbench could not start.`,
+        `${programName}: the workbenches could not start.`,
         describeThrownValue(error),
         ...hint,
       ]),
@@ -1296,9 +1347,20 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
     return 1;
   }
   const address = server.address();
+  await writeStderr(
+    io,
+    command.workbench === undefined
+      ? "workbenches: MCP and CLI\n"
+      : `${command.workbench === "cli" ? "CLI" : "MCP"} workbench\n`,
+  );
+  if (requestedPort !== undefined) {
+    await writeStderr(io, renderPortInUse(requestedPort, address.port));
+  }
   try {
+    // ADR 0021 pins stdout to exactly one ready line; the selected workbench
+    // is the path inside it.
     await io.writeStdout(
-      `Invokta devtools listening on http://${address.host}:${String(address.port)}/\n`,
+      `Invokta devtools listening on http://${address.host}:${String(address.port)}${server.path(command.workbench)}\n`,
     );
   } catch {
     // A gone stdout must not abort a running workbench.
@@ -1310,7 +1372,7 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
   } catch {
     await writeStderr(
       io,
-      `${programName}: the MCP workbench could not close cleanly.\n`,
+      `${programName}: the workbenches could not close cleanly.\n`,
     );
     return 1;
   }

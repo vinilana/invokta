@@ -1,6 +1,7 @@
 # @invokta/devtools
 
-Local MCP workbench, installation verifier, and engine diagnostics for Invokta.
+Invokta DevTools: local MCP and CLI workbenches for installed targets, an
+installation verifier, and engine diagnostics for Invokta.
 The package is a binary supporting application: it contributes no capability,
 runtime adapter, or alternative execution path.
 
@@ -27,10 +28,15 @@ npx @invokta/devtools verify --stdio node --arg dist/mcp-stdio.js
 ```
 
 `serve` prints one ready line on standard output — `Invokta devtools
-listening on http://127.0.0.1:<port>/` — and keeps the dev server running
+listening on http://localhost:<port>/` — and keeps the dev server running
 until `SIGINT` or `SIGTERM`. The engine `name@version`, the capability count,
 and the watch status accompany it on standard error. Open the printed loopback
 URL to invoke capabilities from the web interface.
+
+The interface binds loopback and answers on `localhost`, `127.0.0.1`, and
+`[::1]` alike. A port already in use is not a failure: the next free port is
+taken and standard error reports `port: <requested> is in use, using
+<selected> instead`.
 
 ## Watch mode
 
@@ -57,20 +63,39 @@ Use `--watch-include <path>` to add a path to the watched set and
 ### invokta-devtools open
 
 ```text
-invokta-devtools [--port <number>]
-invokta-devtools open [--port <number>]
+invokta-devtools [--mcp | --cli] [--port <number>]
+invokta-devtools open [--mcp | --cli] [--port <number>]
 ```
 
-Bare invocation and `open` are equivalent. Both start an idle loopback UI and
-do not load a workspace, spawn a target, or open an outbound connection until
-you select Connect.
+Bare invocation and `open` are equivalent. Both serve the two idle workbenches
+from one loopback origin and land on the chooser at `/`:
+
+| Path | Surface |
+| --- | --- |
+| `/` | the chooser: which workbench to open |
+| `/mcp` | the MCP workbench |
+| `/cli` | the CLI workbench |
+
+`--mcp` and `--cli` land on that workbench instead — the ready line points at
+its path — and the other one stays mounted. The workbench header carries the
+way back to the chooser and the switch to the other workbench, and an idle
+workbench repeats both as links next to its Connect form.
+
+Neither workbench loads a workspace, spawns a target, or opens an outbound
+connection until you select Connect, and each keeps its own browser session:
+connecting one leaves the other idle, and switching carries no target,
+connection, or activity across.
 
 ```sh
 npx @invokta/devtools
 npx @invokta/devtools open --port 4200
+npx @invokta/devtools open --mcp
+npx @invokta/devtools open --cli
 ```
 
-Open the printed loopback URL. Connect either a structured stdio command or a
+Open the printed loopback URL.
+
+On the MCP workbench, connect either a structured stdio command or a
 Streamable HTTP URL from the Connection view. The attached UI provides Tools,
 Activity, and Connection validation.
 
@@ -100,6 +125,42 @@ process exit.
 OAuth is intentionally interactive and UI-only. The `verify` command supports
 none, bearer, and custom-header authentication so it remains deterministic for
 automation and homologation pipelines.
+
+### invokta-devtools open --cli
+
+```text
+invokta-devtools --cli [--port <number>]
+invokta-devtools open --cli [--port <number>]
+```
+
+`--cli` lands on the idle CLI workbench. It does not load a workspace, spawn a
+process, or import a module until you select Connect. Switching to the MCP
+workbench from the header is a link between two pages: it carries no target,
+connection, or activity across, and it leaves this workbench attached to
+whatever it had. There is no `verify --cli` command.
+
+Connect exactly one structured descriptor: an executable, an argument array,
+an optional working directory, and environment names and values. Connect runs
+`<command> <args...> list` once with `shell: false` and waits for the child
+to exit. Selecting a capability runs `describe <id>`. Run is enabled only
+after a successful list and describe, and only when you press Run:
+
+```text
+<command> <args...> run <id> --input '<json>'
+```
+
+The workbench never passes `--stdin`, `--format`, actor flags, or login
+flags. Each verb starts a new process and that process exits. DevTools does
+not supply a principal; the attached CLI remains the composition root.
+
+The CLI UI provides Commands, Activity, and Connection validation. Activity
+records the verb, capability id, exit code, duration, and outcome only. It
+does not store argv, environment values, or stream bodies.
+
+```sh
+npx @invokta/devtools open --cli
+npx @invokta/devtools open --cli --port 4200
+```
 
 ### invokta-devtools verify
 
@@ -245,7 +306,7 @@ npx @invokta/devtools serve \
 already be built to native ESM. `--export <name>` defaults to `engine`.
 
 Standard output carries exactly one ready line, `Invokta devtools listening on
-http://127.0.0.1:<port>/`; the engine `name@version`, the capability count,
+http://localhost:<port>/`; the engine `name@version`, the capability count,
 and the watch status are written to standard error with the other diagnostics.
 Exit `0` means the dev server shut down cleanly, `1` means the doctor
 preflight reported findings or the server could not start, and `2` means
@@ -253,14 +314,14 @@ invalid usage, a module that failed to load, a missing export, or a non-engine
 export.
 
 The built-engine interface uses one compact workbench surface across
-Playground, Activity, Diagnostics, and Test identities. Playground summarizes
-top-level input and output fields for scanning and keeps each complete JSON
-Schema available under **Raw JSON Schema**. Invocations use the schema-seeded
-JSON editor and always reach `engine.invoke`.
+Capabilities, Activity, Diagnostics, and Test identities. Capabilities
+summarizes top-level input and output fields for scanning and keeps each
+complete JSON Schema available under **Raw JSON Schema**. Invocations use the
+schema-seeded JSON editor and always reach `engine.invoke`.
 
 ### Adapters
 
-Playground runs one capability call through the execution path you select, so
+Capabilities runs one capability call through the execution path you select, so
 the same arguments can be compared across every path the engine publishes:
 
 | Adapter | What runs | `ExecutionContext.source` |
@@ -368,9 +429,11 @@ route, and nothing is written to disk.
   path is resolved against the current working directory and must already be
   built to native ESM; the error message suggests building first. Run the
   project build (for example `yarn build`) and retry.
-- **`EADDRINUSE` on port 4100.** Another process already holds the default
-  devtools port. The error suggests `--port`; select another loopback port,
-  for example `npx @invokta/devtools serve dist/engine.js --port 4200`.
+- **The interface answered on a port you did not ask for.** The requested
+  port was in use, so the next free one was taken; standard error names both.
+  Pin a port with `--port`, for example
+  `npx @invokta/devtools serve dist/engine.js --port 4200` — that port is
+  taken too if it is free, and walks on from there if it is not.
 - **`verify` fails with `TIMEOUT`.** The verification deadline expired before
   initialization or the paginated `tools/list` completed. Raise it with
   `--timeout-ms <ms>`.
@@ -407,3 +470,5 @@ Installed-target inspection is chartered by
 [ADR 0022](../../docs/adr/0022-mcp-installation-inspection-and-homologation.md),
 with interactive OAuth accepted by
 [ADR 0023](../../docs/adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md).
+Installed CLI inspection is chartered by
+[ADR 0032](../../docs/adr/0032-cli-installation-inspection-and-homologation.md).

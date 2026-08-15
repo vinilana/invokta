@@ -825,7 +825,7 @@ describe("trace panel", () => {
     dispose();
   });
 
-  it("stages playground prefill, routes, and notifies on Open in Playground", async () => {
+  it("stages playground prefill, routes, and notifies on Open in Capabilities", async () => {
     vi.useFakeTimers();
     const sources = installTraceEnvironment();
     const storage = new MemoryStorage();
@@ -887,6 +887,7 @@ describe("trace panel", () => {
       (node) => node.getAttribute?.("class") === "trace-open-playground",
     );
     expect(buttons).toHaveLength(1);
+    expect(buttons[0].textContent).toBe("Open in Capabilities");
     click(buttons[0]);
 
     expect(storage.getItem("invokta-devtools:prefill:support.classify")).toBe(

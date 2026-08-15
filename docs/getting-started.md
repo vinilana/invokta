@@ -314,7 +314,7 @@ inspector:
 npx @invokta/devtools serve dist/engine.js
 ```
 
-The interface on `http://127.0.0.1:4100/` lists every capability with its
+The interface on `http://localhost:4100/` lists every capability with its
 input and output fields plus the complete JSON Schemas, and invokes them from
 a schema-seeded editor. The **Adapter** switch decides which execution path
 carries the call — direct, CLI, MCP stdio, or MCP HTTP — so the same arguments

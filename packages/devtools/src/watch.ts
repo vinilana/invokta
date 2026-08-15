@@ -15,7 +15,7 @@ export interface StartWatchOptions {
   readonly exportName: string;
   readonly cwd: string;
   readonly buildCommand: string;
-  readonly allowedOrigin: string;
+  readonly allowedOrigins: ReadonlyArray<string>;
   readonly enginePort?: number;
   readonly principals: PrincipalStore;
   readonly trace: TraceStore;
@@ -163,7 +163,7 @@ export async function startWatchMode(
           hostEntryPath(),
           options.moduleSpecifier,
           options.exportName,
-          options.allowedOrigin,
+          options.allowedOrigins.join(","),
           String(options.enginePort ?? 0),
         ],
         { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"] },

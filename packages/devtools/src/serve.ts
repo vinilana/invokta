@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import type { Server as NodeHttpServer } from "node:http";
+import { createServer } from "node:http";
 import { resolve } from "node:path";
 
 import { toMcpToolName } from "@invokta/mcp";
@@ -13,6 +15,12 @@ import { createHttpTargetStore } from "./http-target.js";
 import { createPlaygroundOAuth } from "./playground-oauth.js";
 import type { LoadedEngine } from "./load-engine.js";
 import { createPrincipalStore } from "./principal-store.js";
+import {
+  literalLoopbackHost,
+  literalLoopbackOrigin,
+  listenOnLoopback,
+  loopbackOrigins,
+} from "./loopback.js";
 import type { DevtoolsServerAddress, EngineView } from "./server.js";
 import { startDevtoolsServer } from "./server.js";
 import { createTraceStore } from "./trace-store.js";
@@ -30,6 +38,8 @@ interface ServeCommonOptions {
   readonly traceCapacity?: number;
   /** Receives child and build diagnostics in watch mode. */
   readonly onDiagnostic?: (text: string) => void;
+  /** Called with each taken interface port before the next one is tried. */
+  readonly onPortInUse?: (port: number) => void;
 }
 
 export interface ServeEngineOptions extends ServeCommonOptions {
@@ -78,6 +88,40 @@ export type StartServeResult =
 
 const mcpManifestFileName = "invokta.mcp.json";
 
+interface ReservedDevtoolsServer {
+  readonly server: NodeHttpServer;
+  readonly port: number;
+  release(): Promise<void>;
+}
+
+/**
+ * Binds the interface port before anything else starts. The engine host has
+ * to allow the interface origin up front, so the port is held from the moment
+ * that origin is decided rather than probed and released.
+ */
+async function reserveDevtoolsServer(
+  options: ServeCommonOptions,
+): Promise<ReservedDevtoolsServer> {
+  const server = createServer();
+  const port = await listenOnLoopback(server, {
+    ...(options.port === undefined ? {} : { port: options.port }),
+    ...(options.onPortInUse === undefined
+      ? {}
+      : { onPortInUse: options.onPortInUse }),
+  });
+  return {
+    server,
+    port,
+    release: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+        server.closeAllConnections();
+      }),
+  };
+}
+
 async function startWithEngine(
   options: ServeEngineOptions,
 ): Promise<StartServeResult> {
@@ -98,18 +142,24 @@ async function startWithEngine(
       ? {}
       : { capacity: options.traceCapacity },
   );
-  const devtoolsPort = options.port ?? 4100;
-  const allowedOrigin = `http://127.0.0.1:${String(devtoolsPort)}`;
+  const reserved = await reserveDevtoolsServer(options);
+  const allowedOrigins = loopbackOrigins(reserved.port);
 
-  const engineHost = await startEngineHost({
-    engine: options.engine,
-    ...(options.enginePort === undefined ? {} : { port: options.enginePort }),
-    allowedOrigins: [allowedOrigin],
-    authenticate: principals.authenticate,
-    onRecord: (record) => {
-      trace.appendInvocation(record);
-    },
-  });
+  let engineHost: Awaited<ReturnType<typeof startEngineHost>>;
+  try {
+    engineHost = await startEngineHost({
+      engine: options.engine,
+      ...(options.enginePort === undefined ? {} : { port: options.enginePort }),
+      allowedOrigins,
+      authenticate: principals.authenticate,
+      onRecord: (record) => {
+        trace.appendInvocation(record);
+      },
+    });
+  } catch (error) {
+    await reserved.release();
+    throw error;
+  }
 
   // The in-process engine never changes, so the doctor report and the
   // capability descriptions are computed once instead of on every view
@@ -143,7 +193,7 @@ async function startWithEngine(
     module: options.module,
     cwd: options.cwd,
     mcpEndpoint: () =>
-      `http://127.0.0.1:${String(engineHost.address().port)}/mcp`,
+      `${literalLoopbackOrigin(engineHost.address().port)}/mcp`,
     httpTarget: () => httpTarget.resolve(),
     oauthCall: oauth.call,
     entryPoint: (adapter) => entryTarget.for(adapter),
@@ -162,13 +212,14 @@ async function startWithEngine(
       cwd: options.cwd,
       module: options.module,
       enginePort: () => engineHost.address().port,
-      port: devtoolsPort,
+      server: reserved.server,
       ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
     });
   } catch (error) {
     // Start-up failure releases the same resources shutdown does.
     await oauth.close().catch(() => undefined);
     await engineHost.close();
+    await reserved.release();
     throw error;
   }
 
@@ -195,15 +246,15 @@ async function startWithWatch(
       ? {}
       : { capacity: options.traceCapacity },
   );
-  const devtoolsPort = options.port ?? 4100;
-  const allowedOrigin = `http://127.0.0.1:${String(devtoolsPort)}`;
+  const reserved = await reserveDevtoolsServer(options);
+  const allowedOrigins = loopbackOrigins(reserved.port);
 
   const watch = await startWatchMode({
     moduleSpecifier: options.watch.moduleSpecifier,
     exportName: options.watch.exportName,
     cwd: options.cwd,
     buildCommand: options.watch.buildCommand,
-    allowedOrigin,
+    allowedOrigins,
     ...(options.enginePort === undefined
       ? {}
       : { enginePort: options.enginePort }),
@@ -220,9 +271,11 @@ async function startWithWatch(
       : { onDiagnostic: options.onDiagnostic }),
   });
   if (watch.kind === "load-error") {
+    await reserved.release();
     return watch;
   }
   if (watch.kind === "refused") {
+    await reserved.release();
     // The child reports the JSON-safe body, which is shape-compatible with
     // the report: thrown values are already reduced to name/code/message.
     return { kind: "refused", report: watch.doctor as DoctorReport };
@@ -238,7 +291,7 @@ async function startWithWatch(
     },
     cwd: options.cwd,
     mcpEndpoint: () =>
-      `http://127.0.0.1:${String(watch.handles.enginePort())}/mcp`,
+      `${literalLoopbackOrigin(watch.handles.enginePort())}/mcp`,
     httpTarget: () => httpTarget.resolve(),
     oauthCall: oauth.call,
     entryPoint: (adapter) => entryTarget.for(adapter),
@@ -260,13 +313,14 @@ async function startWithWatch(
         exportName: options.watch.exportName,
       },
       enginePort: watch.handles.enginePort,
-      port: devtoolsPort,
+      server: reserved.server,
       ...(options.uiRoot === undefined ? {} : { uiRoot: options.uiRoot }),
     });
   } catch (error) {
     // Start-up failure releases the same resources shutdown does.
     await oauth.close().catch(() => undefined);
     await watch.handles.close();
+    await reserved.release();
     throw error;
   }
 
@@ -274,7 +328,10 @@ async function startWithWatch(
     kind: "started",
     handles: {
       devtoolsAddress: devtools.address(),
-      engineAddress: { host: "127.0.0.1", port: watch.handles.enginePort() },
+      engineAddress: {
+        host: literalLoopbackHost,
+        port: watch.handles.enginePort(),
+      },
       close: async () => {
         await devtools.close();
         await oauth.close();

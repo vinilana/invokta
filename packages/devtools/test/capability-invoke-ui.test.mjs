@@ -914,6 +914,12 @@ describe("capability invocation", () => {
         node.textContent === "Invoke capability",
     );
 
+    const adapterGroup = elements.find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("adapter-switch"),
+    );
+    expect(adapterGroup.getAttribute("aria-label")).toBe("Execution path");
     expect(choices.map((choice) => choice.textContent)).toEqual([
       "Direct",
       "CLI",

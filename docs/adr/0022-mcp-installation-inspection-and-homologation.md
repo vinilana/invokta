@@ -126,3 +126,5 @@ Normative behavior is specified in the
 - Adding persistence, target discovery, configuration import, multiple targets,
   OAuth, resources, prompts, automatic calls, evals, or release gating requires
   another architectural decision.
+- `invokta-devtools open --cli` starts the sibling CLI workbench chartered by
+  ADR 0032; this decision is otherwise unchanged.

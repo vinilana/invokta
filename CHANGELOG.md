@@ -7,6 +7,37 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `invokta-devtools open --cli` starts an idle loopback CLI workbench for
+  installed Invokta CLI inspection and homologation (ADR 0032).
+- `invokta-devtools open` now serves both idle workbenches from one loopback
+  origin and lands on a chooser (ADR 0033): `/` chooses, `/mcp` is the MCP
+  workbench, `/cli` is the CLI workbench, and both the workbench header and an
+  idle workbench's Connect view link back to the chooser and across to the
+  other workbench without restarting the process. `--mcp` is the peer of `--cli`
+  and lands on that workbench directly.
+
+### Changed
+
+- Bare `invokta-devtools` and `invokta-devtools open` land on the workbench
+  chooser instead of opening the MCP workbench directly; `open --mcp` restores
+  the previous landing. The single ready line now carries the workbench path,
+  so a reader that matched the whole line has to match the path too.
+- Invokta DevTools now serves and prints `http://localhost:<port>/` instead of
+  the numeric loopback address. Every loopback authority (`localhost`,
+  `127.0.0.1`, and `[::1]`) still reaches the same server, and an OAuth
+  redirect keeps the literal address RFC 8252 and the MCP client require.
+- A devtools port that is already in use no longer fails the start: `open` and
+  `serve` take the next free port and report
+  `port: <requested> is in use, using <selected> instead` on standard error.
+- Invokta DevTools now uses one product chrome across every shell: the brand
+  lockup is `invokta` + `DevTools`, document titles are `Invokta DevTools`
+  for the chooser and `Invokta DevTools · Project workspace`,
+  `Invokta DevTools · MCP workbench`, and `Invokta DevTools · CLI workbench`
+  for the three surfaces, and the workspace tab formerly labeled Playground is
+  now Capabilities.
+
 ## [0.5.0] - 2026-08-15
 
 ### Added

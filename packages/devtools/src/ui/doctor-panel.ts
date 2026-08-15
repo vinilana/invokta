@@ -82,9 +82,9 @@ function renderDiagnostic(
       {
         type: "button",
         class: "diagnostic-playground",
-        title: `Inspect ${capabilityId} in the Playground`,
+        title: `Inspect ${capabilityId} in Capabilities`,
       },
-      ["Open in Playground"],
+      ["Open in Capabilities"],
     );
     playground.addEventListener("click", () => {
       openCapabilityInPlayground(capabilityId);

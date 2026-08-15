@@ -12,7 +12,7 @@
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
-| `@invokta/devtools` | Development-time engine dev server with per-adapter capability emulation, doctor diagnostics, and installed MCP inspection and homologation |
+| `@invokta/devtools` | Development-time engine dev server with per-adapter capability emulation, doctor diagnostics, installed MCP inspection and homologation, and installed CLI inspection and homologation |
 | `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile, or import of one public GitHub example tree |
 | `create-invokta-capability` | Creation of a standalone atomic capability package |
 | `create-invokta-capability-library` | Creation of a standalone capability-library package |
@@ -57,8 +57,9 @@ while the example owns one replaceable Authorization Server implementation.
 | Cross-cutting hooks | 1: `onEvent` |
 | Auth or PDP implementations | 0 |
 | Containers or runtime plugin systems | 0 |
-| Concurrent attached devtools targets | 1 |
-| Concurrent attached devtools tool calls | 1, explicitly initiated |
+| Devtools workbenches served together | 2: MCP and CLI, each idle until Connect |
+| Concurrent attached devtools targets | 1 per workbench |
+| Concurrent attached devtools tool calls or CLI verbs | 1, explicitly initiated |
 | Concurrent devtools adapter emulations | 4, each in its own process |
 | Devtools playground HTTP targets | 1: the devtools host or one external endpoint |
 | Devtools playground entry points | 1 per adapter: the devtools child or one project entry inside the served directory |
@@ -94,6 +95,20 @@ connect multiple targets, invoke automatically, retry a connected tool call,
 evaluate, judge, certify, or gate a release. Workspace-only Doctor, principals,
 watch, core events, and `engine.invoke` trace claims do not apply to an attached
 external target.
+
+**AE-LIMIT-07 — Installed CLI inspection.** Devtools may spawn one
+explicitly configured executable with `shell: false` and run `list`,
+`describe`, and one explicit `run` against that target, using only the
+published CLI verbs and `--input`. It does not discover or import
+installations, persist connections or credentials, connect multiple
+targets, invoke automatically, retry a verb, evaluate, judge, certify, or
+gate a release. It does not pass `--stdin`, `--format`, actor flags, or
+login flags. Workspace-only Doctor, principals, watch, core events, and
+`engine.invoke` trace claims do not apply to an attached CLI target.
+`verify --cli` is out of scope. Both workbenches are served together from one
+loopback origin and each keeps its own browser session, so a session for one
+never authorizes the other and switching between them carries no target,
+connection, or activity across.
 
 ## Evolution triggers
 

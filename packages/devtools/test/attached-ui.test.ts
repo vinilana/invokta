@@ -417,6 +417,56 @@ describe("attached workbench interface contract", () => {
     expect(app).toContain("retainedActivityOf(targetState)");
   });
 
+  it("ships the attached DevTools chrome, workbench copy, and shortcut overlay", () => {
+    const app = [
+      readFileSync(`${uiDirectory}/attached-app.ts`, "utf8"),
+      readFileSync(`${uiDirectory}/workbench-chrome.ts`, "utf8"),
+    ].join("\n");
+    const styles = readFileSync(`${uiDirectory}/attached-styles.ts`, "utf8");
+    const router = readFileSync(
+      fileURLToPath(new URL("../src/attached-router.ts", import.meta.url)),
+      "utf8",
+    );
+
+    expect(router).toContain("<title>Invokta DevTools · MCP workbench</title>");
+    expect(app).toContain('["DevTools"]');
+    expect(app).not.toContain('["devtools"]');
+    expect(app).toContain('["MCP workbench"]');
+    expect(app).toContain("targetState.connection.server.name");
+    expect(app).toContain("This is the MCP workbench.");
+    expect(app).toContain(
+      "It inspects an installed MCP server without loading an engine.",
+    );
+    expect(app).toContain("Project workspace");
+    expect(app).toContain("invokta-devtools serve dist/engine.js");
+    expect(app).toContain("or yarn devtools inside an engine repo");
+    expect(app).toContain("Attach one MCP server");
+    expect(app).toContain(
+      "Nothing is discovered, imported, invoked, or saved automatically.",
+    );
+    expect(app).toContain("Keyboard shortcuts");
+    expect(app).toContain("Invoke the selected tool");
+    expect(app).toContain("Move between tabs");
+    expect(app).toContain("Toggle this overlay");
+    expect(router).toContain(
+      "The Invokta DevTools interface requires JavaScript.",
+    );
+    expect(router).toContain("Return to Invokta DevTools");
+    expect(router).not.toContain(
+      "The Invokta devtools interface requires JavaScript.",
+    );
+    expect(router).not.toContain("Return to Invokta devtools");
+    expect(app).toContain("invokta-devtools open --cli");
+    expect(app).toContain("CLI workbench");
+    expect(app).not.toContain("Playground");
+    expect(app).not.toContain("Test identities");
+    expect(app).not.toContain("Capabilities");
+    expect(app).not.toContain("Doctor");
+    expect(styles).toMatch(/body\.attached-mode \{[^}]*font-size: 0\.875rem/s);
+    expect(styles).toContain("90rem");
+    expect(styles).not.toContain("96rem");
+  });
+
   it("keeps target data out of browser storage and ships responsive focus styles", () => {
     const app = readFileSync(`${uiDirectory}/attached-app.ts`, "utf8");
     const styles = readFileSync(`${uiDirectory}/attached-styles.ts`, "utf8");

@@ -336,6 +336,9 @@ describe("application tabs", () => {
     );
     expect(shell).toBeDefined();
     expect(brand.textContent).toContain("invokta");
+    expect(brand.textContent).toContain("DevTools");
+    expect(brand.textContent).not.toContain("engine devtools");
+    expect(shell.textContent).toContain("Project workspace");
     expect(shell.textContent).not.toContain("[ local / engine ]");
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(themeGroup.getAttribute("role")).toBe("radiogroup");
@@ -382,7 +385,7 @@ describe("application tabs", () => {
       (node) => node instanceof FakeElement && node.tagName === "BUTTON",
     );
     const capabilities = buttons.find(
-      (button) => button.textContent === "Playground",
+      (button) => button.textContent === "Capabilities",
     );
     const trace = buttons.find((button) => button.textContent === "Activity");
     const diagnostics = buttons.find(
@@ -588,7 +591,7 @@ describe("application tabs", () => {
       (node) => node instanceof FakeElement && node.tagName === "BUTTON",
     );
     const playground = tabButtons.find(
-      (button) => button.textContent === "Playground",
+      (button) => button.textContent === "Capabilities",
     );
     const activity = tabButtons.find(
       (button) => button.textContent === "Activity",
@@ -616,6 +619,78 @@ describe("application tabs", () => {
     });
     document.body.dispatchEvent(typing);
     expect(typing.defaultPrevented).toBe(false);
+  });
+
+  it("opens a Capabilities keyboard shortcuts overlay", async () => {
+    const document = {
+      documentElement: new FakeElement("html"),
+      head: new FakeElement("head"),
+      body: new FakeElement("body"),
+      createElement: (tagName) => new FakeElement(tagName),
+      createElementNS: (_namespace, tagName) => new FakeElement(tagName),
+    };
+    class FakeEventSource extends EventTarget {
+      close() {}
+    }
+    installGlobal("document", document);
+    installGlobal("localStorage", new MemoryStorage());
+    installGlobal("matchMedia", () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    installGlobal("sessionStorage", new MemoryStorage());
+    installGlobal("EventSource", FakeEventSource);
+    installGlobal(
+      "fetch",
+      vi.fn(async (path) => {
+        if (path === "/api/engine") {
+          return jsonResponse({
+            name: "fixture-engine",
+            version: "1.0.0",
+            capabilityCount: 0,
+            engineHost: { host: "127.0.0.1", port: 4101 },
+          });
+        }
+        if (path === "/api/capabilities") return jsonResponse([]);
+        if (path === "/api/principals") return jsonResponse([]);
+        throw new Error(`Unexpected request: ${String(path)}`);
+      }),
+    );
+
+    await import("../src/ui/app.js");
+
+    const help = new Event("keydown", { cancelable: true });
+    Object.defineProperties(help, {
+      key: { value: "?" },
+      target: { value: document.body },
+    });
+    document.body.dispatchEvent(help);
+
+    const overlay = walk(document.body).find(
+      (node) =>
+        node instanceof FakeElement &&
+        node.classList.contains("shortcuts-overlay"),
+    );
+    expect(overlay).toBeDefined();
+    expect(overlay.textContent).toContain("Keyboard shortcuts");
+    expect(overlay.textContent).toContain("Focus the Capabilities search");
+    expect(overlay.textContent).not.toContain("Focus the Playground search");
+    expect(overlay.getAttribute("role")).toBe("dialog");
+
+    const dismiss = new Event("keydown", { cancelable: true });
+    Object.defineProperties(dismiss, {
+      key: { value: "Escape" },
+      target: { value: overlay },
+    });
+    document.body.dispatchEvent(dismiss);
+    expect(
+      walk(document.body).find(
+        (node) =>
+          node instanceof FakeElement &&
+          node.classList.contains("shortcuts-overlay"),
+      ),
+    ).toBeUndefined();
   });
 
   it("deduplicates trace entries replayed after a reconnect", async () => {

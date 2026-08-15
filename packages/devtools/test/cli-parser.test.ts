@@ -33,6 +33,89 @@ describe("invokta-devtools idle workbench parsing", () => {
   });
 });
 
+describe("invokta-devtools open workbench selection", () => {
+  it("parses --cli and --mcp as the workbench to land on", () => {
+    expect(parseDevtoolsCommand(["open", "--cli"])).toEqual({
+      command: "open",
+      workbench: "cli",
+    });
+    expect(parseDevtoolsCommand(["--cli"])).toEqual({
+      command: "open",
+      workbench: "cli",
+    });
+    expect(parseDevtoolsCommand(["open", "--mcp"])).toEqual({
+      command: "open",
+      workbench: "mcp",
+    });
+    expect(parseDevtoolsCommand(["--mcp"])).toEqual({
+      command: "open",
+      workbench: "mcp",
+    });
+  });
+
+  it("accepts a workbench with one loopback port in either form", () => {
+    expect(parseDevtoolsCommand(["open", "--cli", "--port", "4200"])).toEqual({
+      command: "open",
+      workbench: "cli",
+      port: 4200,
+    });
+    expect(parseDevtoolsCommand(["--cli", "--port", "4200"])).toEqual({
+      command: "open",
+      workbench: "cli",
+      port: 4200,
+    });
+    expect(parseDevtoolsCommand(["open", "--port", "4200", "--mcp"])).toEqual({
+      command: "open",
+      workbench: "mcp",
+      port: 4200,
+    });
+  });
+
+  it("keeps bare and open without a workbench on the chooser", () => {
+    expect(parseDevtoolsCommand([])).toEqual({ command: "open" });
+    expect(parseDevtoolsCommand(["open"])).toEqual({ command: "open" });
+    expect(parseDevtoolsCommand(["open", "--port", "4200"])).toEqual({
+      command: "open",
+      port: 4200,
+    });
+    expect(parseDevtoolsCommand(["--port", "4200"])).toEqual({
+      command: "open",
+      port: 4200,
+    });
+  });
+
+  it.each([
+    [["open", "--cli", "extra"], "does not accept positional arguments"],
+    [["open", "--cli", "--cli"], "at most once"],
+    [["--cli", "--cli"], "at most once"],
+    [["open", "--mcp", "--mcp"], "at most once"],
+    [["open", "--cli", "--mcp"], "select one workbench each"],
+    [["--mcp", "--cli"], "select one workbench each"],
+    [["open", "--cli", "--unknown"], 'Unknown option "--unknown"'],
+    [["open", "--cli", "--port", "0"], "between 1 and 65535"],
+    [["verify", "--cli"], 'Unknown option "--cli"'],
+    [["verify", "--mcp"], 'Unknown option "--mcp"'],
+  ] as const)(
+    "rejects invalid open workbench arguments %#",
+    (argv, message) => {
+      expect(() => parseDevtoolsCommand(argv)).toThrow(message);
+    },
+  );
+
+  it("does not parse verify --cli as a CLI verify target", () => {
+    expect(() => parseDevtoolsCommand(["verify", "--cli"])).toThrow(
+      'Unknown option "--cli"',
+    );
+    const verify = parseDevtoolsCommand(["verify", "--stdio", "node"]) as {
+      readonly command: string;
+      readonly target?: { readonly transport?: string };
+    };
+    expect(verify.command).toBe("verify");
+    expect(verify.target?.transport).toBe("stdio");
+    expect(verify).not.toMatchObject({ target: { transport: "cli" } });
+  });
+});
+
 describe("invokta-devtools verify stdio parsing", () => {
   it("preserves an exact structured stdio descriptor", () => {
     expect(

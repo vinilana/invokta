@@ -152,7 +152,7 @@ export function createAdapterSelector(
     {
       class: "adapter-switch",
       role: "radiogroup",
-      "aria-label": "Adapter",
+      "aria-label": "Execution path",
     },
     adapterPresentations.map((presentation) => {
       const button = el(
