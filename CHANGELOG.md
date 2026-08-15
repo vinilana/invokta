@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Invokta DevTools now uses one product chrome across both shells: the brand
+  lockup is `invokta` + `DevTools`, document titles are
+  `Invokta DevTools · Project workspace` and
+  `Invokta DevTools · MCP workbench`, and the workspace tab formerly labeled
+  Playground is now Capabilities.
+
 ## [0.5.0] - 2026-08-15
 
 ### Added

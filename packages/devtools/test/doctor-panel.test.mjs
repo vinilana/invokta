@@ -508,7 +508,7 @@ describe("doctor panel", () => {
         node instanceof FakeElement &&
         node.classList.contains("diagnostic-playground"),
     );
-    expect(playground.textContent).toBe("Open in Playground");
+    expect(playground.textContent).toBe("Open in Capabilities");
     playground.click();
     expect(locationStub.hash).toBe("#capabilities/fixture.broken");
     expect(dispatched).toHaveLength(1);

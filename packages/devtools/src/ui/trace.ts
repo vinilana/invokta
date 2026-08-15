@@ -199,9 +199,9 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
             {
               type: "button",
               class: "trace-open-playground",
-              title: "Edit and re-run this call in the Playground",
+              title: "Edit and re-run this call in Capabilities",
             },
-            ["Open in Playground"],
+            ["Open in Capabilities"],
           );
     playground?.addEventListener("click", () => {
       if (capabilityId === undefined) return;
@@ -250,9 +250,9 @@ function renderEntry(entry: TraceEntryView): HTMLElement {
       {
         type: "button",
         class: "trace-open-playground",
-        title: "Edit and re-run this call in the Playground",
+        title: "Edit and re-run this call in Capabilities",
       },
-      ["Open in Playground"],
+      ["Open in Capabilities"],
     );
     playground.addEventListener("click", () => {
       // Process adapters record a rendered command as the request, so the

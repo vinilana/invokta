@@ -109,7 +109,12 @@ describe("shipped interface bundle", () => {
 
     expect(response.status).toBe(200);
     const page = await response.text();
-    expect(page).toContain("<title>Invokta devtools</title>");
+    expect(page).toContain(
+      "<title>Invokta DevTools · Project workspace</title>",
+    );
+    expect(page).toContain(
+      "The Invokta DevTools interface requires JavaScript.",
+    );
     expect(page).toContain('<html lang="en" data-theme="dark">');
     expect(page).toContain('localStorage.getItem("starlight-theme")');
     expect(page.indexOf("starlight-theme")).toBeLessThan(

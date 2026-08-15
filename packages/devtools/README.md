@@ -1,6 +1,7 @@
 # @invokta/devtools
 
-Local MCP workbench, installation verifier, and engine diagnostics for Invokta.
+Invokta DevTools: a local MCP workbench, installation verifier, and engine
+diagnostics for Invokta.
 The package is a binary supporting application: it contributes no capability,
 runtime adapter, or alternative execution path.
 
@@ -253,14 +254,14 @@ invalid usage, a module that failed to load, a missing export, or a non-engine
 export.
 
 The built-engine interface uses one compact workbench surface across
-Playground, Activity, Diagnostics, and Test identities. Playground summarizes
-top-level input and output fields for scanning and keeps each complete JSON
-Schema available under **Raw JSON Schema**. Invocations use the schema-seeded
-JSON editor and always reach `engine.invoke`.
+Capabilities, Activity, Diagnostics, and Test identities. Capabilities
+summarizes top-level input and output fields for scanning and keeps each
+complete JSON Schema available under **Raw JSON Schema**. Invocations use the
+schema-seeded JSON editor and always reach `engine.invoke`.
 
 ### Adapters
 
-Playground runs one capability call through the execution path you select, so
+Capabilities runs one capability call through the execution path you select, so
 the same arguments can be compared across every path the engine publishes:
 
 | Adapter | What runs | `ExecutionContext.source` |

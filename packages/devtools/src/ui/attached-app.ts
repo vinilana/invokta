@@ -970,7 +970,7 @@ export function mountAttachedApp(
     const brand = el("div", { class: "att-brand" }, [
       createBrandMark(),
       el("span", { class: "att-brand-name" }, ["invokta"]),
-      el("span", { class: "att-product-name" }, ["devtools"]),
+      el("span", { class: "att-product-name" }, ["DevTools"]),
     ]);
     const topbarChildren: Node[] = [brand];
     if (includeTabs) topbarChildren.push(createTabs());
@@ -994,9 +994,16 @@ export function mountAttachedApp(
     const topbar = el("header", { class: "att-topbar" }, [
       el("div", { class: "att-frame att-topbar-inner" }, topbarChildren),
     ]);
+    const heading =
+      targetState.state === "connected" && targetState.connection !== undefined
+        ? targetState.connection.server.name
+        : "MCP workbench";
     const context = el("section", { class: "att-context" }, [
       el("div", { class: "att-frame att-context-inner" }, [
-        el("h1", {}, ["MCP workbench"]),
+        el("div", { class: "att-context-title" }, [
+          el("p", { class: "att-kicker" }, ["MCP workbench"]),
+          el("h1", {}, [heading]),
+        ]),
         el("div", { class: "att-context-meta" }, [
           statusPill(targetState),
           ...(targetState.state === "connected" &&
@@ -1570,7 +1577,22 @@ export function mountAttachedApp(
             feedback.textContent = errorMessage(error);
           });
       });
-      formHost.append(form);
+      const orientation = el("aside", { class: "att-idle-orient" }, [
+        el("h3", {}, ["This is the MCP workbench."]),
+        el("p", {}, [
+          "It inspects an installed MCP server without loading an engine.",
+        ]),
+        el("dl", { class: "att-idle-orient-paths" }, [
+          el("dt", {}, ["Project workspace"]),
+          el("dd", {}, [
+            el("div", { class: "att-mono" }, [
+              "invokta-devtools serve dist/engine.js",
+            ]),
+            el("div", {}, ["or yarn devtools inside an engine repo"]),
+          ]),
+        ]),
+      ]);
+      formHost.append(form, orientation);
     };
 
     paintForm();
@@ -2250,6 +2272,83 @@ export function mountAttachedApp(
     }
   }
 
+  let shortcutsOverlay: HTMLElement | undefined;
+  let shortcutsOpener: HTMLElement | undefined;
+  const closeShortcuts = (): void => {
+    if (shortcutsOverlay === undefined) return;
+    shortcutsOverlay.remove();
+    shortcutsOverlay = undefined;
+    shortcutsOpener?.focus();
+    shortcutsOpener = undefined;
+  };
+  const shortcutEntry = (keys: string, action: string): HTMLElement =>
+    el("div", { class: "att-shortcuts-entry" }, [
+      el("dt", {}, [el("kbd", {}, [keys])]),
+      el("dd", {}, [action]),
+    ]);
+  const toggleShortcuts = (): void => {
+    if (shortcutsOverlay !== undefined) {
+      closeShortcuts();
+      return;
+    }
+    const card = el("div", { class: "att-shortcuts-card", tabindex: "-1" }, [
+      el("h2", { id: "attached-shortcuts-title" }, ["Keyboard shortcuts"]),
+      el("dl", { class: "att-shortcuts-list" }, [
+        shortcutEntry("Ctrl/⌘ + Enter", "Invoke the selected tool"),
+        shortcutEntry("← →", "Move between tabs"),
+        shortcutEntry("?", "Toggle this overlay"),
+      ]),
+      el("p", { class: "att-hint" }, ["Press ? or Escape to close."]),
+    ]);
+    const overlay = el(
+      "div",
+      {
+        class: "att-shortcuts-overlay",
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-labelledby": "attached-shortcuts-title",
+      },
+      [card],
+    );
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeShortcuts();
+    });
+    shortcutsOverlay = overlay;
+    const previous: unknown = ownerDocument.activeElement;
+    shortcutsOpener =
+      typeof previous === "object" &&
+      previous !== null &&
+      previous !== ownerDocument.body &&
+      typeof (previous as { focus?: unknown }).focus === "function"
+        ? (previous as HTMLElement)
+        : undefined;
+    ownerDocument.body.append(overlay);
+    card.focus();
+  };
+  const onShortcutKeydown = (event: KeyboardEvent): void => {
+    if (destroyed) return;
+    if (event.key === "Escape" && shortcutsOverlay !== undefined) {
+      closeShortcuts();
+      event.preventDefault();
+      return;
+    }
+    if (event.key !== "?" || event.ctrlKey || event.metaKey || event.altKey) {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    const tagName = target?.tagName;
+    if (
+      tagName === "INPUT" ||
+      tagName === "TEXTAREA" ||
+      target?.isContentEditable === true
+    ) {
+      return;
+    }
+    event.preventDefault();
+    toggleShortcuts();
+  };
+  ownerDocument.body.addEventListener("keydown", onShortcutKeydown);
+
   shell(
     el("section", { class: "att-card att-loading" }, ["Opening workbench…"]),
     false,
@@ -2303,6 +2402,8 @@ export function mountAttachedApp(
   return {
     destroy() {
       destroyed = true;
+      closeShortcuts();
+      ownerDocument.body.removeEventListener("keydown", onShortcutKeydown);
       stopAuthorizationPolling();
       stopActivityPolling();
       oauthAuthorizationUrl = undefined;

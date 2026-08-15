@@ -108,7 +108,7 @@ const appShellPage = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Invokta devtools</title>
+<title>Invokta DevTools · Project workspace</title>
 ${faviconLink}
 <style>
 html { background: #09090b; color-scheme: dark; }
@@ -124,7 +124,7 @@ try {
 </script>
 </head>
 <body>
-<noscript>The Invokta devtools interface requires JavaScript.</noscript>
+<noscript>The Invokta DevTools interface requires JavaScript.</noscript>
 <script type="module" src="/assets/app.js"></script>
 </body>
 </html>
@@ -138,19 +138,19 @@ const oauthCallbackCopy: Readonly<
 > = {
   success: [
     "Authorization complete",
-    "Return to Invokta devtools. You can close this tab.",
+    "Return to Invokta DevTools. You can close this tab.",
   ],
   rejected: [
     "Authorization was not completed",
-    "Return to Invokta devtools to try again.",
+    "Return to Invokta DevTools to try again.",
   ],
   invalid: [
     "Authorization callback was invalid",
-    "Return to Invokta devtools and start the authorization again.",
+    "Return to Invokta DevTools and start the authorization again.",
   ],
   error: [
     "Authorization failed",
-    "Return to Invokta devtools to review the endpoint.",
+    "Return to Invokta DevTools to review the endpoint.",
   ],
 };
 

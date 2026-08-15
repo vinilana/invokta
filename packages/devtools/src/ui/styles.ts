@@ -388,10 +388,21 @@ nav.tabs button.selected {
 
 .workspace-title {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
   flex: 1 1 auto;
-  gap: 0.65rem;
+  gap: 0.08rem;
   min-width: 0;
+}
+
+.workspace-kicker {
+  margin: 0;
+  color: var(--accent-text);
+  font-size: 0.75rem;
+  font-weight: 680;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .engine-meta {
@@ -2357,9 +2368,6 @@ details.trace-row--adapter { margin: 0; padding: 0; }
 
   .status-dot { forced-color-adjust: none; }
 }
-
-/* DX batch: trace filters and handoff, doctor actions, identity presets,
-   and the shortcuts overlay. Appended only; existing rules are unchanged. */
 
 .trace-row-actions {
   display: flex;

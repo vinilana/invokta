@@ -304,7 +304,7 @@ describe("principals panel", () => {
     expect(container.textContent).toContain("Test identities");
     // Identity is selected next to the adapter switch; this panel manages it.
     expect(container.textContent).toContain(
-      "Manage the development identities the Playground can act as.",
+      "Manage the development identities the Capabilities can act as.",
     );
     expect(container.textContent).toContain("Principal ID");
     expect(container.textContent).not.toContain("Development principals");
