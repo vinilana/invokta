@@ -322,8 +322,8 @@ export function createCliIdleView(options: CliIdleViewOptions): HTMLElement {
       el("dl", { class: "att-idle-orient-paths" }, [
         el("dt", {}, ["MCP workbench"]),
         el("dd", {}, [
-          el("div", { class: "att-mono" }, ["invokta-devtools"]),
-          el("div", {}, ["or invokta-devtools open"]),
+          el("div", { class: "att-mono" }, ["invokta-devtools open --mcp"]),
+          el("div", {}, ["or switch workbench from the header"]),
         ]),
         el("dt", {}, ["Project workspace"]),
         el("dd", {}, [

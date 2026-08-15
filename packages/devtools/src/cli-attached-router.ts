@@ -34,6 +34,8 @@ interface ResolvedBrowserSession {
 export interface AttachedCliRouterOptions {
   readonly controller: AttachedCliSessionController;
   readonly uiRoot: string;
+  /** Where the JSON API is mounted. Defaults to `/api`. */
+  readonly apiPrefix?: string;
   /** Every authority the bound port answers on. */
   allowedAuthorities(): ReadonlySet<string>;
   /** The canonical origin the request target is resolved against. */
@@ -42,6 +44,8 @@ export interface AttachedCliRouterOptions {
 
 export interface AttachedCliRouter {
   handle(request: IncomingMessage, response: ServerResponse): Promise<void>;
+  /** The workbench shell, served by the router at `/` and by the launcher. */
+  shell(response: ServerResponse, apiBase: string, launched: boolean): void;
   clearBrowserSessions(): void;
 }
 
@@ -51,6 +55,7 @@ export function createAttachedCliRouter(
   options: AttachedCliRouterOptions,
 ): AttachedCliRouter {
   const { controller } = options;
+  const api = options.apiPrefix ?? "/api";
   const assets: AttachedCliAssetServer = createAttachedCliAssetServer(
     options.uiRoot,
   );
@@ -429,35 +434,35 @@ export function createAttachedCliRouter(
       return;
     }
 
-    if (path === "/api/session" && method === "GET") {
+    if (path === `${api}/session` && method === "GET") {
       handleSession(request, response);
       return;
     }
-    if (path === "/api/connection") {
+    if (path === `${api}/connection`) {
       await handleConnection(request, response);
       return;
     }
-    if (path === "/api/refresh" && method === "POST") {
+    if (path === `${api}/refresh` && method === "POST") {
       await handleRefresh(request, response);
       return;
     }
-    if (path === "/api/describe" && method === "POST") {
+    if (path === `${api}/describe` && method === "POST") {
       await handleDescribe(request, response);
       return;
     }
-    if (path === "/api/run" && method === "POST") {
+    if (path === `${api}/run` && method === "POST") {
       await handleRun(request, response);
       return;
     }
-    if (path === "/api/catalog" && method === "GET") {
+    if (path === `${api}/catalog` && method === "GET") {
       handleApiRead(request, response, "catalog");
       return;
     }
-    if (path === "/api/activity" && method === "GET") {
+    if (path === `${api}/activity` && method === "GET") {
       handleApiRead(request, response, "activity");
       return;
     }
-    if (path.startsWith("/api/")) {
+    if (path.startsWith(`${api}/`)) {
       sendAttachedCliError(
         response,
         404,
@@ -479,7 +484,7 @@ export function createAttachedCliRouter(
       return;
     }
     if (path === "/") {
-      assets.shell(response);
+      assets.shell(response, api, false);
       return;
     }
     if (path === "/assets/favicon.svg") {
@@ -500,6 +505,9 @@ export function createAttachedCliRouter(
 
   return {
     handle,
+    shell: (response, apiBase, launched) => {
+      assets.shell(response, apiBase, launched);
+    },
     clearBrowserSessions() {
       sessions.clear();
     },

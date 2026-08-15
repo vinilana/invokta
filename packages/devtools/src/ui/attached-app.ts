@@ -2,6 +2,12 @@ import { createCopyButton, formatDuration } from "./clipboard.js";
 import { clear, el, pretty } from "./dom.js";
 import { exampleFromSchema } from "./example-from-schema.js";
 import { createCompactThemeToggle, createThemeToggle } from "./theme.js";
+import {
+  createBrandLockup,
+  createWorkbenchSwitch,
+  mountedWorkbench,
+  workbenchApiBase,
+} from "./workbench-chrome.js";
 
 export type AttachedJsonValue =
   | null
@@ -467,7 +473,10 @@ async function responseJson<Value>(response: Response): Promise<Value> {
  * Adapts the ADR 0022 loopback routes while keeping the session CSRF token in
  * this closure. No target descriptor or credential is written to storage.
  */
-export function createRouteAttachedApi(fetcher: Fetcher = fetch): AttachedApi {
+export function createRouteAttachedApi(
+  fetcher: Fetcher = fetch,
+  apiBase: string = workbenchApiBase(),
+): AttachedApi {
   let csrfToken = "";
 
   const get = async <Value>(path: string): Promise<Value> => {
@@ -497,23 +506,23 @@ export function createRouteAttachedApi(fetcher: Fetcher = fetch): AttachedApi {
 
   return {
     async session() {
-      const response = await get<AttachedSession>("/api/session");
+      const response = await get<AttachedSession>(`${apiBase}/session`);
       csrfToken = response.csrfToken;
       return response;
     },
     connect: (target) =>
-      mutate<AttachedConnectionState>("/api/connection", "POST", target),
+      mutate<AttachedConnectionState>(`${apiBase}/connection`, "POST", target),
     disconnect: () =>
-      mutate<AttachedConnectionState>("/api/connection", "DELETE"),
+      mutate<AttachedConnectionState>(`${apiBase}/connection`, "DELETE"),
     async tools() {
       const response = await get<{ readonly tools: readonly AttachedTool[] }>(
-        "/api/tools",
+        `${apiBase}/tools`,
       );
       return response.tools;
     },
     async callTool(name, argumentsValue) {
       const response = await mutate<{ readonly response: AttachedJsonValue }>(
-        "/api/tools/call",
+        `${apiBase}/tools/call`,
         "POST",
         { name, arguments: argumentsValue },
       );
@@ -522,37 +531,10 @@ export function createRouteAttachedApi(fetcher: Fetcher = fetch): AttachedApi {
     async activity() {
       const response = await get<{
         readonly records: readonly AttachedActivityRecord[];
-      }>("/api/activity");
+      }>(`${apiBase}/activity`);
       return response.records;
     },
   };
-}
-
-function createBrandMark(): SVGSVGElement {
-  const namespace = "http://www.w3.org/2000/svg";
-  const mark = document.createElementNS(namespace, "svg");
-  mark.setAttribute("viewBox", "0 0 51 43");
-  mark.setAttribute("width", "24");
-  mark.setAttribute("height", "20");
-  mark.setAttribute("fill", "none");
-  mark.setAttribute("class", "att-brand-mark");
-  mark.setAttribute("aria-hidden", "true");
-  mark.setAttribute("focusable", "false");
-
-  const strokes = document.createElementNS(namespace, "g");
-  strokes.setAttribute("transform", "translate(-6.5,-10.5)");
-  strokes.setAttribute("stroke-width", "9");
-  strokes.setAttribute("stroke-linecap", "round");
-  strokes.setAttribute("stroke-linejoin", "round");
-  const prompt = document.createElementNS(namespace, "path");
-  prompt.setAttribute("d", "M11 15 L29 32 L11 49");
-  prompt.setAttribute("stroke", "var(--att-accent-text)");
-  const cursor = document.createElementNS(namespace, "path");
-  cursor.setAttribute("d", "M36 49 H53");
-  cursor.setAttribute("stroke", "var(--att-fg)");
-  strokes.append(prompt, cursor);
-  mark.append(strokes);
-  return mark;
 }
 
 let controlSequence = 0;
@@ -743,6 +725,8 @@ export function mountAttachedApp(
 ): AttachedAppHandle {
   type EditablePair = SecretControl & { name: string };
   const ownerDocument = root.ownerDocument;
+  // Present only when the launcher mounted both workbenches on this origin.
+  const launchedWorkbench = mountedWorkbench(ownerDocument);
   ownerDocument.body.classList.add("attached-mode");
   if (
     ownerDocument.head.querySelector('link[href="/assets/attached.css"]') ===
@@ -967,12 +951,10 @@ export function mountAttachedApp(
   };
 
   const shell = (content: HTMLElement, includeTabs: boolean): void => {
-    const brand = el("div", { class: "att-brand" }, [
-      createBrandMark(),
-      el("span", { class: "att-brand-name" }, ["invokta"]),
-      el("span", { class: "att-product-name" }, ["DevTools"]),
-    ]);
-    const topbarChildren: Node[] = [brand];
+    const topbarChildren: Node[] = [createBrandLockup(launchedWorkbench)];
+    if (launchedWorkbench !== undefined) {
+      topbarChildren.push(createWorkbenchSwitch(launchedWorkbench));
+    }
     if (includeTabs) topbarChildren.push(createTabs());
     else
       topbarChildren.push(
@@ -1586,6 +1568,7 @@ export function mountAttachedApp(
           el("dt", {}, ["CLI workbench"]),
           el("dd", {}, [
             el("div", { class: "att-mono" }, ["invokta-devtools open --cli"]),
+            el("div", {}, ["or switch workbench from the header"]),
           ]),
           el("dt", {}, ["Project workspace"]),
           el("dd", {}, [

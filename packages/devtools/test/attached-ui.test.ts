@@ -418,7 +418,10 @@ describe("attached workbench interface contract", () => {
   });
 
   it("ships the attached DevTools chrome, workbench copy, and shortcut overlay", () => {
-    const app = readFileSync(`${uiDirectory}/attached-app.ts`, "utf8");
+    const app = [
+      readFileSync(`${uiDirectory}/attached-app.ts`, "utf8"),
+      readFileSync(`${uiDirectory}/workbench-chrome.ts`, "utf8"),
+    ].join("\n");
     const styles = readFileSync(`${uiDirectory}/attached-styles.ts`, "utf8");
     const router = readFileSync(
       fileURLToPath(new URL("../src/attached-router.ts", import.meta.url)),

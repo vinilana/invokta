@@ -7,6 +7,7 @@ import type {
   CliJsonValue,
   CliSession,
 } from "./cli-contract.js";
+import { workbenchApiBase } from "./workbench-chrome.js";
 
 type Fetcher = typeof fetch;
 
@@ -45,7 +46,10 @@ async function responseJson<Value>(response: Response): Promise<Value> {
   return value as Value;
 }
 
-export function createRouteCliApi(fetcher: Fetcher = fetch): CliApi {
+export function createRouteCliApi(
+  fetcher: Fetcher = fetch,
+  apiBase: string = workbenchApiBase(),
+): CliApi {
   let csrfToken = "";
 
   const get = async <Value>(path: string): Promise<Value> => {
@@ -75,25 +79,26 @@ export function createRouteCliApi(fetcher: Fetcher = fetch): CliApi {
 
   return {
     async session() {
-      const response = await get<CliSession>("/api/session");
+      const response = await get<CliSession>(`${apiBase}/session`);
       csrfToken = response.csrfToken;
       return response;
     },
     connect: (target) =>
-      mutate<CliConnectionState>("/api/connection", "POST", target),
-    disconnect: () => mutate<CliConnectionState>("/api/connection", "DELETE"),
-    refresh: () => mutate<CliConnectionState>("/api/refresh", "POST"),
+      mutate<CliConnectionState>(`${apiBase}/connection`, "POST", target),
+    disconnect: () =>
+      mutate<CliConnectionState>(`${apiBase}/connection`, "DELETE"),
+    refresh: () => mutate<CliConnectionState>(`${apiBase}/refresh`, "POST"),
     async catalog() {
       const response = await get<{
         readonly capabilities: readonly CliCapabilitySummary[];
-      }>("/api/catalog");
+      }>(`${apiBase}/catalog`);
       return response.capabilities;
     },
     describe: (id) =>
-      mutate<CliCapabilityDescription>("/api/describe", "POST", { id }),
+      mutate<CliCapabilityDescription>(`${apiBase}/describe`, "POST", { id }),
     async run(id, input) {
       const response = await mutate<{ readonly result: CliJsonValue }>(
-        "/api/run",
+        `${apiBase}/run`,
         "POST",
         { id, input },
       );
@@ -102,7 +107,7 @@ export function createRouteCliApi(fetcher: Fetcher = fetch): CliApi {
     async activity() {
       const response = await get<{
         readonly records: readonly CliActivityRecord[];
-      }>("/api/activity");
+      }>(`${apiBase}/activity`);
       return response.records;
     },
   };

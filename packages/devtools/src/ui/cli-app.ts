@@ -7,7 +7,6 @@ import {
   cliActivityTable,
   cliErrorMessage,
   cliStatusPill,
-  createCliBrandMark,
 } from "./cli-components.js";
 import {
   type CliActivityRecord,
@@ -25,6 +24,11 @@ import {
 } from "./cli-connection-view.js";
 import { el } from "./dom.js";
 import { createCompactThemeToggle, createThemeToggle } from "./theme.js";
+import {
+  createBrandLockup,
+  createWorkbenchSwitch,
+  mountedWorkbench,
+} from "./workbench-chrome.js";
 
 export type {
   CliActivityRecord,
@@ -65,6 +69,8 @@ export function mountCliApp(
   api: CliApi = createRouteCliApi(),
 ): CliAppHandle {
   const ownerDocument = root.ownerDocument;
+  // Present only when the launcher mounted both workbenches on this origin.
+  const launchedWorkbench = mountedWorkbench(ownerDocument);
   ownerDocument.body.classList.add("attached-mode");
   if (
     ownerDocument.head.querySelector('link[href="/assets/attached.css"]') ===
@@ -195,12 +201,10 @@ export function mountCliApp(
   };
 
   const shell = (content: HTMLElement, includeTabs: boolean): void => {
-    const brand = el("div", { class: "att-brand" }, [
-      createCliBrandMark(),
-      el("span", { class: "att-brand-name" }, ["invokta"]),
-      el("span", { class: "att-product-name" }, ["DevTools"]),
-    ]);
-    const topbarChildren: Node[] = [brand];
+    const topbarChildren: Node[] = [createBrandLockup(launchedWorkbench)];
+    if (launchedWorkbench !== undefined) {
+      topbarChildren.push(createWorkbenchSwitch(launchedWorkbench));
+    }
     if (includeTabs) topbarChildren.push(createTabs());
     else {
       topbarChildren.push(

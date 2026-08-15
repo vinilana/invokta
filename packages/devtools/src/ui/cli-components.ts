@@ -5,32 +5,6 @@ import type {
 } from "./cli-contract.js";
 import { el } from "./dom.js";
 
-export function createCliBrandMark(): SVGSVGElement {
-  const namespace = "http://www.w3.org/2000/svg";
-  const mark = document.createElementNS(namespace, "svg");
-  mark.setAttribute("viewBox", "0 0 51 43");
-  mark.setAttribute("width", "24");
-  mark.setAttribute("height", "20");
-  mark.setAttribute("fill", "none");
-  mark.setAttribute("class", "att-brand-mark");
-  mark.setAttribute("aria-hidden", "true");
-  mark.setAttribute("focusable", "false");
-  const strokes = document.createElementNS(namespace, "g");
-  strokes.setAttribute("transform", "translate(-6.5,-10.5)");
-  strokes.setAttribute("stroke-width", "9");
-  strokes.setAttribute("stroke-linecap", "round");
-  strokes.setAttribute("stroke-linejoin", "round");
-  const prompt = document.createElementNS(namespace, "path");
-  prompt.setAttribute("d", "M11 15 L29 32 L11 49");
-  prompt.setAttribute("stroke", "var(--att-accent-text)");
-  const cursor = document.createElementNS(namespace, "path");
-  cursor.setAttribute("d", "M36 49 H53");
-  cursor.setAttribute("stroke", "var(--att-fg)");
-  strokes.append(prompt, cursor);
-  mark.append(strokes);
-  return mark;
-}
-
 let controlSequence = 0;
 
 export function cliControlId(name: string): string {

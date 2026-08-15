@@ -17,6 +17,7 @@ const cliUiSourceFiles = [
   "cli-components.ts",
   "cli-connection-view.ts",
   "cli-contract.ts",
+  "workbench-chrome.ts",
 ] as const;
 
 function cliUiSource(): string {

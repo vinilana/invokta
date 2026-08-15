@@ -36,29 +36,34 @@ the usage and `--version` (or `-v`) to print the installed version.
 ### invokta-devtools open
 
 ```text
-invokta-devtools [--cli] [--port <number>]
-invokta-devtools open [--cli] [--port <number>]
+invokta-devtools [--mcp | --cli] [--port <number>]
+invokta-devtools open [--mcp | --cli] [--port <number>]
 ```
 
-Bare invocation and `open` are equivalent. Both start an idle loopback
-workbench on `http://localhost:4100/` (or `--port`) that loads no workspace,
-spawns no target, and opens no outbound connection until you select Connect.
-Without `--cli` that workbench is the MCP attach UI: from the Connection view
-you attach either a structured stdio command or a Streamable HTTP URL; the
-attached UI provides Tools, Activity, and Connection validation, and the
-argument editor is seeded from each tool's advertised input schema.
+Bare invocation and `open` are equivalent. Both serve the two idle workbenches
+from one loopback origin on `http://localhost:4100/` (or `--port`) and land on
+the chooser: `/` chooses, `/mcp` is the MCP workbench, and `/cli` is the CLI
+workbench. `--mcp` and `--cli` land on that workbench instead — the ready line
+points at its path — and leave the other one mounted, one click away from the
+switch in the workbench header. Neither loads a workspace, spawns a target, or
+opens an outbound connection until you select Connect, and each keeps its own
+browser session.
 
-With `--cli`, the same ready line starts the CLI workbench instead. Connect
-exactly one structured descriptor — command, arguments, optional working
-directory, and environment. Connect runs `<command> <args...> list` once
-(`shell: false`) and waits for the child to exit. Selecting a capability
-runs `describe <id>`. Run is enabled only after a successful list and
-describe, and only when you press Run, as
+The MCP workbench is the attach UI: from the Connection view you attach either
+a structured stdio command or a Streamable HTTP URL; the attached UI provides
+Tools, Activity, and Connection validation, and the argument editor is seeded
+from each tool's advertised input schema.
+
+The CLI workbench connects exactly one structured descriptor — command,
+arguments, optional working directory, and environment. Connect runs
+`<command> <args...> list` once (`shell: false`) and waits for the child to
+exit. Selecting a capability runs `describe <id>`. Run is enabled only after a
+successful list and describe, and only when you press Run, as
 `<command> <args...> run <id> --input '<json>'`. The workbench never passes
 `--stdin`, `--format`, actor flags, or login flags. Each verb starts a new
 process; DevTools does not supply a principal. The CLI UI exposes Commands,
-Activity, and Connection only. There is no in-session switch to the MCP
-workbench and no `verify --cli` command.
+Activity, and Connection only. Switching workbench carries no target,
+connection, or activity across, and there is no `verify --cli` command.
 
 #### Interactive OAuth
 

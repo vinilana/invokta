@@ -63,18 +63,29 @@ Use `--watch-include <path>` to add a path to the watched set and
 ### invokta-devtools open
 
 ```text
-invokta-devtools [--cli] [--port <number>]
-invokta-devtools open [--cli] [--port <number>]
+invokta-devtools [--mcp | --cli] [--port <number>]
+invokta-devtools open [--mcp | --cli] [--port <number>]
 ```
 
-Bare invocation and `open` are equivalent. Both start an idle loopback UI and
-do not load a workspace, spawn a target, or open an outbound connection until
-you select Connect. Without `--cli` that idle UI is the MCP workbench. With
-`--cli` it is the CLI workbench.
+Bare invocation and `open` are equivalent. Both serve the two idle workbenches
+from one loopback origin and land on the chooser at `/`:
+
+| Path | Surface |
+| --- | --- |
+| `/` | the chooser: which workbench to open |
+| `/mcp` | the MCP workbench |
+| `/cli` | the CLI workbench |
+
+`--mcp` and `--cli` land on that workbench instead — the ready line points at
+its path — and the other one stays mounted, one click away from the switch in
+the workbench header. Neither workbench loads a workspace, spawns a target, or
+opens an outbound connection until you select Connect, and each keeps its own
+browser session: connecting one leaves the other idle.
 
 ```sh
 npx @invokta/devtools
 npx @invokta/devtools open --port 4200
+npx @invokta/devtools open --mcp
 npx @invokta/devtools open --cli
 ```
 
@@ -118,9 +129,11 @@ invokta-devtools --cli [--port <number>]
 invokta-devtools open --cli [--port <number>]
 ```
 
-`--cli` starts an idle loopback CLI workbench. It does not load a workspace,
-spawn a process, or import a module until you select Connect. There is no
-in-session switch to the MCP workbench and no `verify --cli` command.
+`--cli` lands on the idle CLI workbench. It does not load a workspace, spawn a
+process, or import a module until you select Connect. Switching to the MCP
+workbench from the header is a link between two pages: it carries no target,
+connection, or activity across, and it leaves this workbench attached to
+whatever it had. There is no `verify --cli` command.
 
 Connect exactly one structured descriptor: an executable, an argument array,
 an optional working directory, and environment names and values. Connect runs

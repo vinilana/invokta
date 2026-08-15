@@ -10,11 +10,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - `invokta-devtools open --cli` starts an idle loopback CLI workbench for
-  installed Invokta CLI inspection and homologation (ADR 0032). Bare
-  `invokta-devtools` and `open` remain the MCP workbench.
+  installed Invokta CLI inspection and homologation (ADR 0032).
+- `invokta-devtools open` now serves both idle workbenches from one loopback
+  origin and lands on a chooser (ADR 0033): `/` chooses, `/mcp` is the MCP
+  workbench, `/cli` is the CLI workbench, and the workbench header switches
+  between them without restarting the process. `--mcp` is the peer of `--cli`
+  and lands on that workbench directly.
 
 ### Changed
 
+- Bare `invokta-devtools` and `invokta-devtools open` land on the workbench
+  chooser instead of opening the MCP workbench directly; `open --mcp` restores
+  the previous landing. The single ready line now carries the workbench path,
+  so a reader that matched the whole line has to match the path too.
 - Invokta DevTools now serves and prints `http://localhost:<port>/` instead of
   the numeric loopback address. Every loopback authority (`localhost`,
   `127.0.0.1`, and `[::1]`) still reaches the same server, and an OAuth

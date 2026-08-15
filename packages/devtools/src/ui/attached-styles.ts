@@ -211,6 +211,45 @@ body.attached-mode {
   letter-spacing: 0.015em;
 }
 
+.att-brand-link {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 0.45rem;
+}
+
+.att-brand-link:hover .att-brand-name { color: var(--att-accent-text); }
+
+.att-switch {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.125rem;
+  padding: 0.125rem;
+  border: 1px solid var(--att-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--att-surface) 84%, transparent);
+}
+
+.att-switch-option {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  color: var(--att-muted);
+  font-size: 0.75rem;
+  font-weight: 590;
+  text-decoration: none;
+}
+
+.att-switch-option:hover { color: var(--att-fg); }
+
+.att-switch-option[aria-current="page"] {
+  background: var(--att-raised);
+  color: var(--att-fg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+
 .att-tabs,
 .att-segmented {
   display: flex;
@@ -412,6 +451,53 @@ body.attached-mode {
   background: var(--att-raised);
   box-shadow: var(--att-shadow);
 }
+
+.att-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: 0.75rem;
+  margin-block: 0.5rem 0.75rem;
+}
+
+.att-choice {
+  display: block;
+  padding: clamp(1.15rem, 3vw, 1.75rem);
+  border: 1px solid var(--att-line);
+  border-radius: 0.625rem;
+  background: var(--att-raised);
+  box-shadow: var(--att-shadow);
+  color: inherit;
+  text-decoration: none;
+}
+
+.att-choice:hover {
+  border-color: var(--att-accent-text);
+  background: var(--att-surface);
+}
+
+.att-choice h2 {
+  margin-bottom: 0.4rem;
+  font-size: clamp(1.15rem, 1.8vw, 1.4rem);
+}
+
+.att-choice-summary {
+  margin-bottom: 0.5rem;
+  color: var(--att-body);
+}
+
+.att-choice-flag {
+  margin-top: 0.9rem;
+  color: var(--att-muted);
+  font-size: 0.8rem;
+}
+
+.att-choice-note {
+  padding: clamp(1rem, 2.4vw, 1.5rem);
+}
+
+.att-choice-note h3 { margin-bottom: 0.35rem; }
+.att-choice-note p { margin-bottom: 0.35rem; color: var(--att-body); }
+.att-choice-note p:last-child { margin-bottom: 0; }
 
 .att-idle {
   display: grid;
@@ -962,6 +1048,7 @@ body.attached-mode {
 @media (max-width: 46rem) {
   .att-frame { width: min(calc(100% - 0.75rem), 90rem); }
   .att-product-name { display: none; }
+  .att-switch-option { padding-inline: 0.5rem; }
   .att-theme-slot-full { display: none; }
   .att-theme-slot-compact { display: flex; }
   .att-context-inner { align-items: flex-start; flex-direction: column; gap: 0.35rem; }
@@ -997,6 +1084,7 @@ body.attached-mode {
   }
 
   .att-tabs button { padding-inline: 0.5rem; }
+  .att-switch { order: 2; }
   .att-theme-slot-compact { margin-left: auto; }
 
   .att-auth-options {

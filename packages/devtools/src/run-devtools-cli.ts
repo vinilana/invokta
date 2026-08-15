@@ -2,8 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { startAttachedDevtoolsServer } from "./attached-server.js";
-import { startAttachedCliDevtoolsServer } from "./cli-attached-server.js";
 import {
   asRecord,
   describeThrownValue,
@@ -24,6 +22,11 @@ import {
 import type { StartServeOptions, StartServeResult } from "./serve.js";
 import { startServe } from "./serve.js";
 import { runMcpVerification } from "./verify-mcp.js";
+import type {
+  WorkbenchDevtoolsServer,
+  WorkbenchName,
+} from "./workbench-server.js";
+import { startWorkbenchDevtoolsServer } from "./workbench-server.js";
 
 export interface DevtoolsIo {
   readonly writeStdout: (text: string) => void | Promise<void>;
@@ -60,7 +63,8 @@ export interface ServeCommand {
 export interface OpenCommand {
   readonly command: "open";
   readonly port?: number;
-  readonly cli?: true;
+  /** Which workbench to open on. Without one, `open` lands on the chooser. */
+  readonly workbench?: WorkbenchName;
 }
 
 export interface HelpCommand {
@@ -193,8 +197,8 @@ Exit codes:
 const usage = engineUsage.replace(
   "Usage:\n",
   `Usage:
-  invokta-devtools [--cli] [--port <number>]
-  invokta-devtools open [--cli] [--port <number>]
+  invokta-devtools [--mcp | --cli] [--port <number>]
+  invokta-devtools open [--mcp | --cli] [--port <number>]
   invokta-devtools verify --stdio <executable> [--arg <value>]...
     [--cwd <directory>] [--env <child-name>=<source-environment-name>]...
     [--timeout-ms <ms>] [--max-tools <count>] [--json]
@@ -205,8 +209,10 @@ const usage = engineUsage.replace(
   invokta-devtools --help
   invokta-devtools --version
 
---cli starts the idle CLI workbench. Without it, open remains the idle MCP
-workbench. --timeout-ms bounds the initialization and catalog deadlines,
+open serves both idle workbenches on one loopback origin and lands on the
+chooser. --mcp and --cli land on that workbench instead; either one is still
+reachable from the other. --timeout-ms bounds the initialization and catalog
+deadlines,
 --max-tools bounds the accepted tool count, and --json prints the verification
 result as JSON (success to stdout, failure to stderr).
 `,
@@ -298,7 +304,7 @@ function parseOpenArguments(
   args: readonly string[],
 ): Omit<OpenCommand, "command"> {
   let port: number | undefined;
-  let cli = false;
+  let workbench: WorkbenchName | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index] as string;
     if (argument === "--port") {
@@ -311,11 +317,19 @@ function parseOpenArguments(
       index += 1;
       continue;
     }
-    if (argument === "--cli") {
-      if (cli) {
-        throw new UsageError("The --cli option must be provided at most once.");
+    if (argument === "--cli" || argument === "--mcp") {
+      const selected: WorkbenchName = argument === "--cli" ? "cli" : "mcp";
+      if (workbench === selected) {
+        throw new UsageError(
+          `The ${argument} option must be provided at most once.`,
+        );
       }
-      cli = true;
+      if (workbench !== undefined) {
+        throw new UsageError(
+          "The --cli and --mcp options select one workbench each.",
+        );
+      }
+      workbench = selected;
       continue;
     }
     if (argument.startsWith("-")) {
@@ -327,7 +341,7 @@ function parseOpenArguments(
   }
   return {
     ...(port === undefined ? {} : { port }),
-    ...(cli ? { cli: true } : {}),
+    ...(workbench === undefined ? {} : { workbench }),
   };
 }
 
@@ -1307,24 +1321,16 @@ async function runServe(
 }
 
 async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
-  const cli = command.cli === true;
   let requestedPort: number | undefined;
   const onPortInUse = (port: number): void => {
     requestedPort ??= port;
   };
-  let server: Awaited<
-    ReturnType<
-      typeof startAttachedDevtoolsServer | typeof startAttachedCliDevtoolsServer
-    >
-  >;
+  let server: WorkbenchDevtoolsServer;
   try {
-    const startOptions = {
+    server = await startWorkbenchDevtoolsServer({
       onPortInUse,
       ...(command.port === undefined ? {} : { port: command.port }),
-    };
-    server = cli
-      ? await startAttachedCliDevtoolsServer(startOptions)
-      : await startAttachedDevtoolsServer(startOptions);
+    });
   } catch (error) {
     const hint =
       readThrownValueInfo(error).code === "EADDRINUSE"
@@ -1333,7 +1339,7 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
     await writeStderr(
       io,
       renderLines([
-        `${programName}: the ${cli ? "CLI" : "MCP"} workbench could not start.`,
+        `${programName}: the workbenches could not start.`,
         describeThrownValue(error),
         ...hint,
       ]),
@@ -1341,15 +1347,20 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
     return 1;
   }
   const address = server.address();
-  if (cli) {
-    await writeStderr(io, "CLI workbench\n");
-  }
+  await writeStderr(
+    io,
+    command.workbench === undefined
+      ? "workbenches: MCP and CLI\n"
+      : `${command.workbench === "cli" ? "CLI" : "MCP"} workbench\n`,
+  );
   if (requestedPort !== undefined) {
     await writeStderr(io, renderPortInUse(requestedPort, address.port));
   }
   try {
+    // ADR 0021 pins stdout to exactly one ready line; the selected workbench
+    // is the path inside it.
     await io.writeStdout(
-      `Invokta devtools listening on http://${address.host}:${String(address.port)}/\n`,
+      `Invokta devtools listening on http://${address.host}:${String(address.port)}${server.path(command.workbench)}\n`,
     );
   } catch {
     // A gone stdout must not abort a running workbench.
@@ -1361,7 +1372,7 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
   } catch {
     await writeStderr(
       io,
-      `${programName}: the ${cli ? "CLI" : "MCP"} workbench could not close cleanly.\n`,
+      `${programName}: the workbenches could not close cleanly.\n`,
     );
     return 1;
   }

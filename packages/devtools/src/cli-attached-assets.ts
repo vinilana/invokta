@@ -10,7 +10,16 @@ import {
   sendAttachedCliError,
 } from "./cli-attached-http.js";
 
-const shellPage = `<!doctype html>
+/**
+ * The workbench shell. `apiBase` tells the interface where its JSON API is
+ * mounted, and `launched` tells it the peer workbench is reachable from the
+ * same origin, so the chrome can offer the switch.
+ */
+export function attachedCliShellPage(
+  apiBase: string,
+  launched: boolean,
+): string {
+  return `<!doctype html>
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -19,12 +28,13 @@ const shellPage = `<!doctype html>
 ${faviconLink}
 <link rel="stylesheet" href="/assets/attached.css">
 </head>
-<body>
+<body data-invokta-api="${apiBase}"${launched ? ' data-invokta-workbench="cli"' : ""}>
 <noscript>The Invokta DevTools interface requires JavaScript.</noscript>
 <script type="module" src="/assets/cli-app.js"></script>
 </body>
 </html>
 `;
+}
 
 const staticContentTypes: Readonly<Record<string, string>> = {
   ".css": "text/css; charset=utf-8",
@@ -40,7 +50,7 @@ export function defaultAttachedCliUiRoot(): string {
 }
 
 export interface AttachedCliAssetServer {
-  shell(response: ServerResponse): void;
+  shell(response: ServerResponse, apiBase: string, launched: boolean): void;
   favicon(response: ServerResponse): void;
   serve(response: ServerResponse, segments: readonly string[]): Promise<void>;
 }
@@ -117,13 +127,13 @@ export function createAttachedCliAssetServer(
   };
 
   return {
-    shell(response) {
+    shell(response, apiBase, launched) {
       response.writeHead(200, {
         ...attachedCliSecurityHeaders(),
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
       });
-      response.end(shellPage);
+      response.end(attachedCliShellPage(apiBase, launched));
     },
     favicon(response) {
       response.writeHead(200, {

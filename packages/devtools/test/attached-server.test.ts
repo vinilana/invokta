@@ -1143,8 +1143,10 @@ describe("attached devtools server", () => {
     });
     servers.push(second);
 
+    // A parallel test can hold the next port too, so only the first report
+    // is fixed: the walk starts at the port that was asked for.
     expect(second.address().port).toBeGreaterThan(taken);
-    expect(inUse).toStrictEqual([taken]);
+    expect(inUse[0]).toBe(taken);
   });
 
   it("closes the attached controller with the HTTP server", async () => {
