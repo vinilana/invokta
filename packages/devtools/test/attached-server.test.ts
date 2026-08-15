@@ -1073,6 +1073,80 @@ describe("attached devtools server", () => {
     expect(controller.connect).not.toHaveBeenCalled();
   });
 
+  it("advertises localhost and answers on every loopback authority", async () => {
+    const controller = createController();
+    const server = await startOnAvailablePort((port) =>
+      startAttachedDevtoolsServer({ port, controller }),
+    );
+    servers.push(server);
+    const address = server.address();
+    expect(address.host).toBe("localhost");
+
+    for (const authority of [
+      `localhost:${String(address.port)}`,
+      `127.0.0.1:${String(address.port)}`,
+    ]) {
+      const response = await fetch(`http://${authority}/api/session`);
+      expect(response.status, authority).toBe(200);
+      await response.arrayBuffer();
+    }
+  });
+
+  it("keeps the OAuth redirect on the literal loopback address", async () => {
+    const controller = createController();
+    const server = await startOnAvailablePort((port) =>
+      startAttachedDevtoolsServer({ port, controller }),
+    );
+    servers.push(server);
+    const port = server.address().port;
+    // The browser reaches the workbench through localhost; the redirect the
+    // MCP client accepts still names the literal address.
+    const base = `http://localhost:${String(port)}`;
+    const session = await fetch(`${base}/api/session`);
+    const cookie = cookiePair(session);
+    const csrf = ((await session.json()) as { csrfToken: string }).csrfToken;
+
+    const started = await fetch(`${base}/api/connection`, {
+      method: "POST",
+      headers: mutationHeaders(base, cookie, csrf),
+      body: JSON.stringify({
+        transport: "http",
+        url: "https://mcp.example.test/rpc",
+        authentication: { type: "oauth" },
+      }),
+    });
+
+    expect(started.status).toBe(202);
+    expect(controller.beginOAuth).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.anything(),
+      expect.objectContaining({
+        redirectUrl: `http://127.0.0.1:${String(port)}/oauth/callback`,
+      }),
+    );
+  });
+
+  it("walks to a free port when the requested one is taken", async () => {
+    const first = await startOnAvailablePort((port) =>
+      startAttachedDevtoolsServer({ port, controller: createController() }),
+    );
+    servers.push(first);
+    const taken = first.address().port;
+
+    const inUse: number[] = [];
+    const second = await startAttachedDevtoolsServer({
+      port: taken,
+      controller: createController(),
+      onPortInUse: (port) => {
+        inUse.push(port);
+      },
+    });
+    servers.push(second);
+
+    expect(second.address().port).toBeGreaterThan(taken);
+    expect(inUse).toStrictEqual([taken]);
+  });
+
   it("closes the attached controller with the HTTP server", async () => {
     const controller = createController();
     const server = await startOnAvailablePort((port) =>

@@ -6,7 +6,6 @@ import type {
   ServerResponse,
 } from "node:http";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +26,13 @@ import {
 import { faviconLink, faviconSvg } from "./favicon.js";
 import type { HttpTargetStore } from "./http-target.js";
 import { HttpTargetError, parseHttpTarget } from "./http-target.js";
+import {
+  devtoolsHost,
+  devtoolsOrigin,
+  listenOnLoopback,
+  literalLoopbackOrigin,
+  loopbackAuthorities,
+} from "./loopback.js";
 import type { PrincipalStore } from "./principal-store.js";
 import type { AdapterCallCapture, TraceStore } from "./trace-store.js";
 
@@ -83,7 +89,10 @@ export interface DevtoolsServerOptions {
   readonly oauth?: OAuthSession;
   /** The engine host's current MCP endpoint port on loopback. */
   readonly enginePort: () => number;
-  /** Defaults to 4100. */
+  /**
+   * Defaults to 4100. The caller selects the port, because the engine host
+   * has to allow the interface origin before this server binds.
+   */
   readonly port?: number;
   /** Directory holding the built interface bundle. Defaults to `dist/ui`. */
   readonly uiRoot?: string;
@@ -94,8 +103,6 @@ export interface DevtoolsServer {
   close(): Promise<void>;
 }
 
-const defaultPort = 4100;
-const host = "127.0.0.1";
 const apiBodyLimitBytes = 64 * 1024;
 const mcpBodyLimitBytes = 1024 * 1024;
 /** Bounds the whole discovery chain of one OAuth endpoint check. */
@@ -343,14 +350,28 @@ function defaultUiRoot(): string {
 export async function startDevtoolsServer(
   options: DevtoolsServerOptions,
 ): Promise<DevtoolsServer> {
-  const port = options.port ?? defaultPort;
   const uiRoot = options.uiRoot ?? defaultUiRoot();
   const engineEndpoint = (): string =>
-    `http://127.0.0.1:${String(options.enginePort())}/mcp`;
+    `${literalLoopbackOrigin(options.enginePort())}/mcp`;
 
-  let boundAuthority = "";
+  let authorities: ReadonlySet<string> = new Set();
   let ownOrigin = "";
+  let oauthRedirectUrl = "";
   const sseClients = new Set<ServerResponse>();
+
+  /**
+   * The origin a same-origin request carries. A browser sends whichever
+   * loopback authority the developer typed — and an OAuth provider always
+   * redirects to the literal one — so the expected origin follows the request
+   * host instead of one canonical spelling.
+   */
+  const requestOrigin = (request: IncomingMessage): string | undefined => {
+    const requestHost = request.headers.host;
+    if (requestHost === undefined || !authorities.has(requestHost)) {
+      return undefined;
+    }
+    return `http://${requestHost}`;
+  };
 
   const sendTraceFrame = (response: ServerResponse, entry: unknown): void => {
     response.write(`event: trace\ndata: ${JSON.stringify(entry)}\n\n`);
@@ -641,7 +662,10 @@ export async function startDevtoolsServer(
       const state = randomBytes(32).toString("base64url");
       try {
         const authorization = await oauth.begin(target.url, {
-          redirectUrl: `${ownOrigin}/oauth/callback`,
+          // RFC 8252 prefers the literal loopback address over `localhost`,
+          // and the MCP client accepts nothing else, so the redirect never
+          // follows the advertised host.
+          redirectUrl: oauthRedirectUrl,
           state,
         });
         options.httpTarget.set(target);
@@ -983,8 +1007,8 @@ export async function startDevtoolsServer(
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> => {
-    const hostHeader = request.headers.host;
-    if (hostHeader !== boundAuthority) {
+    const expectedOrigin = requestOrigin(request);
+    if (expectedOrigin === undefined) {
       sendJson(response, 403, { error: "forbidden" });
       return;
     }
@@ -993,13 +1017,13 @@ export async function startDevtoolsServer(
     if (
       method !== "GET" &&
       originHeader !== undefined &&
-      originHeader !== ownOrigin
+      originHeader !== expectedOrigin
     ) {
       sendJson(response, 403, { error: "forbidden" });
       return;
     }
 
-    const url = new URL(request.url ?? "/", `http://${boundAuthority}`);
+    const url = new URL(request.url ?? "/", ownOrigin);
     const path = url.pathname;
 
     if (path === "/mcp") {
@@ -1173,19 +1197,16 @@ export async function startDevtoolsServer(
     });
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, () => {
-      server.removeListener("error", reject);
-      resolve();
-    });
+  const boundPort = await listenOnLoopback(server, {
+    ...(options.port === undefined ? {} : { port: options.port }),
+    maxPortAttempts: 1,
   });
-  const boundPort = (server.address() as AddressInfo).port;
-  boundAuthority = `${host}:${String(boundPort)}`;
-  ownOrigin = `http://${boundAuthority}`;
+  authorities = loopbackAuthorities(boundPort);
+  ownOrigin = devtoolsOrigin(boundPort);
+  oauthRedirectUrl = `${literalLoopbackOrigin(boundPort)}/oauth/callback`;
 
   return {
-    address: () => ({ host, port: boundPort }),
+    address: () => ({ host: devtoolsHost, port: boundPort }),
     close: async () => {
       unsubscribe();
       for (const client of sseClients) {

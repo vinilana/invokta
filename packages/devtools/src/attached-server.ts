@@ -6,7 +6,6 @@ import type {
   ServerResponse,
 } from "node:http";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { join, normalize, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -18,6 +17,13 @@ import {
   createAttachedSessionController,
 } from "./attached-session.js";
 import { faviconLink, faviconSvg } from "./favicon.js";
+import {
+  devtoolsHost,
+  devtoolsOrigin,
+  listenOnLoopback,
+  literalLoopbackOrigin,
+  loopbackAuthorities,
+} from "./loopback.js";
 import type { DevtoolsServerAddress } from "./server.js";
 
 export type { AttachedConnectionSummary } from "./attached-session.js";
@@ -26,10 +32,12 @@ export type AttachedServerController = AttachedSessionController;
 
 export interface StartAttachedDevtoolsServerOptions {
   readonly controller?: AttachedServerController;
-  /** Defaults to 4100. */
+  /** Defaults to 4100; a taken port walks to the next free one. */
   readonly port?: number;
   /** Directory holding the built interface bundle. Defaults to `dist/ui`. */
   readonly uiRoot?: string;
+  /** Called with each taken port before the next one is tried. */
+  readonly onPortInUse?: (port: number) => void;
 }
 
 export interface AttachedDevtoolsServer {
@@ -41,8 +49,6 @@ interface BrowserSession {
   csrf: string;
 }
 
-const host = "127.0.0.1";
-const defaultPort = 4100;
 const connectionBodyLimitBytes = 1024 * 1024;
 const callBodyLimitBytes = 10 * 1024 * 1024;
 const oauthCallbackTargetLimitBytes = 8_192;
@@ -361,13 +367,27 @@ export async function startAttachedDevtoolsServer(
   options: StartAttachedDevtoolsServerOptions,
 ): Promise<AttachedDevtoolsServer> {
   const controller = options.controller ?? createAttachedSessionController();
-  const port = options.port ?? defaultPort;
   const uiRoot = options.uiRoot ?? defaultUiRoot();
   const sessions = new Map<string, BrowserSession>();
   let attachedCss: Promise<string | undefined> | undefined;
-  let boundAuthority = "";
+  let authorities: ReadonlySet<string> = new Set();
   let ownOrigin = "";
+  let oauthRedirectUrl = "";
   let closed = false;
+
+  /**
+   * The origin a same-origin request carries. A browser sends whichever
+   * loopback authority the developer typed — and an OAuth provider always
+   * redirects to the literal one — so the expected origin follows the request
+   * host instead of one canonical spelling.
+   */
+  const requestOrigin = (request: IncomingMessage): string | undefined => {
+    const requestHost = oneRawHeader(request, "host");
+    if (requestHost === undefined || !authorities.has(requestHost)) {
+      return undefined;
+    }
+    return `http://${requestHost}`;
+  };
 
   const createSession = ():
     | { readonly id: string; readonly csrf: string }
@@ -403,7 +423,11 @@ export async function startAttachedDevtoolsServer(
     request: IncomingMessage,
     response: ServerResponse,
   ): { readonly id: string; readonly session: BrowserSession } | undefined => {
-    if (oneRawHeader(request, "origin") !== ownOrigin) {
+    const expectedOrigin = requestOrigin(request);
+    if (
+      expectedOrigin === undefined ||
+      oneRawHeader(request, "origin") !== expectedOrigin
+    ) {
       sendErrorBeforeBodyConsumption(
         request,
         response,
@@ -625,7 +649,10 @@ export async function startAttachedDevtoolsServer(
           owner.id,
           body as unknown as McpOAuthClientTarget,
           {
-            redirectUrl: `${ownOrigin}/oauth/callback`,
+            // RFC 8252 prefers the literal loopback address over `localhost`,
+            // and the MCP client accepts nothing else, so the redirect never
+            // follows the advertised host.
+            redirectUrl: oauthRedirectUrl,
             state,
           },
         );
@@ -804,7 +831,8 @@ export async function startAttachedDevtoolsServer(
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> => {
-    if (oneRawHeader(request, "host") !== boundAuthority) {
+    const expectedOrigin = requestOrigin(request);
+    if (expectedOrigin === undefined) {
       sendErrorBeforeBodyConsumption(
         request,
         response,
@@ -818,7 +846,7 @@ export async function startAttachedDevtoolsServer(
     const rawTarget = request.url ?? "/";
     if (
       (method === "POST" || method === "DELETE") &&
-      oneRawHeader(request, "origin") !== ownOrigin
+      oneRawHeader(request, "origin") !== expectedOrigin
     ) {
       sendErrorBeforeBodyConsumption(
         request,
@@ -979,20 +1007,19 @@ export async function startAttachedDevtoolsServer(
     });
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, () => {
-      server.removeListener("error", reject);
-      resolve();
-    });
+  const boundPort = await listenOnLoopback(server, {
+    ...(options.port === undefined ? {} : { port: options.port }),
+    ...(options.onPortInUse === undefined
+      ? {}
+      : { onPortInUse: options.onPortInUse }),
   });
-  const boundPort = (server.address() as AddressInfo).port;
-  boundAuthority = `${host}:${String(boundPort)}`;
-  ownOrigin = `http://${boundAuthority}`;
+  authorities = loopbackAuthorities(boundPort);
+  ownOrigin = devtoolsOrigin(boundPort);
+  oauthRedirectUrl = `${literalLoopbackOrigin(boundPort)}/oauth/callback`;
 
   let closing: Promise<void> | undefined;
   return {
-    address: () => ({ host, port: boundPort }),
+    address: () => ({ host: devtoolsHost, port: boundPort }),
     close: async () => {
       closing ??= (async () => {
         if (closed) return;

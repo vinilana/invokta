@@ -35,12 +35,13 @@ interface MirroredPrincipal {
 }
 
 async function main(): Promise<number> {
-  const [moduleSpecifier, exportName, allowedOrigin, portArgument] =
+  const [moduleSpecifier, exportName, allowedOriginList, portArgument] =
     process.argv.slice(2);
   if (
     moduleSpecifier === undefined ||
     exportName === undefined ||
-    allowedOrigin === undefined
+    allowedOriginList === undefined ||
+    allowedOriginList === ""
   ) {
     emit({ type: "fatal", reason: "invalid-arguments" });
     return 2;
@@ -92,7 +93,7 @@ async function main(): Promise<number> {
     ...(portArgument === undefined || portArgument === "0"
       ? {}
       : { port: Number(portArgument) }),
-    allowedOrigins: [allowedOrigin],
+    allowedOrigins: allowedOriginList.split(","),
     authenticate: (request) => {
       const header = request.headers.get("authorization");
       if (header === null) return null;

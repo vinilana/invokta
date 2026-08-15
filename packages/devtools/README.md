@@ -28,10 +28,15 @@ npx @invokta/devtools verify --stdio node --arg dist/mcp-stdio.js
 ```
 
 `serve` prints one ready line on standard output — `Invokta devtools
-listening on http://127.0.0.1:<port>/` — and keeps the dev server running
+listening on http://localhost:<port>/` — and keeps the dev server running
 until `SIGINT` or `SIGTERM`. The engine `name@version`, the capability count,
 and the watch status accompany it on standard error. Open the printed loopback
 URL to invoke capabilities from the web interface.
+
+The interface binds loopback and answers on `localhost`, `127.0.0.1`, and
+`[::1]` alike. A port already in use is not a failure: the next free port is
+taken and standard error reports `port: <requested> is in use, using
+<selected> instead`.
 
 ## Watch mode
 
@@ -284,7 +289,7 @@ npx @invokta/devtools serve \
 already be built to native ESM. `--export <name>` defaults to `engine`.
 
 Standard output carries exactly one ready line, `Invokta devtools listening on
-http://127.0.0.1:<port>/`; the engine `name@version`, the capability count,
+http://localhost:<port>/`; the engine `name@version`, the capability count,
 and the watch status are written to standard error with the other diagnostics.
 Exit `0` means the dev server shut down cleanly, `1` means the doctor
 preflight reported findings or the server could not start, and `2` means
@@ -407,9 +412,11 @@ route, and nothing is written to disk.
   path is resolved against the current working directory and must already be
   built to native ESM; the error message suggests building first. Run the
   project build (for example `yarn build`) and retry.
-- **`EADDRINUSE` on port 4100.** Another process already holds the default
-  devtools port. The error suggests `--port`; select another loopback port,
-  for example `npx @invokta/devtools serve dist/engine.js --port 4200`.
+- **The interface answered on a port you did not ask for.** The requested
+  port was in use, so the next free one was taken; standard error names both.
+  Pin a port with `--port`, for example
+  `npx @invokta/devtools serve dist/engine.js --port 4200` — that port is
+  taken too if it is free, and walks on from there if it is not.
 - **`verify` fails with `TIMEOUT`.** The verification deadline expired before
   initialization or the paginated `tools/list` completed. Raise it with
   `--timeout-ms <ms>`.

@@ -172,7 +172,8 @@ the value returned by createEngine.
 
 serve preflights the engine with the doctor checks, hosts it with the MCP
 HTTP adapter on loopback, and serves the development interface on
-http://127.0.0.1:4100/ unless --port selects another loopback port.
+http://localhost:4100/ unless --port selects another loopback port. A port
+already in use is reported and the next free one is taken.
 
 --watch requires --build and runs the engine in a replaceable child process:
 project changes run the explicit build command, and only a successful build
@@ -1148,6 +1149,14 @@ function renderServeEngineSummary(engine: LoadedEngine): string | undefined {
   }
 }
 
+/**
+ * A taken port is a routine development condition, not a failure: the server
+ * walks to the next free one and the terminal says which port answered.
+ */
+function renderPortInUse(requested: number, selected: number): string {
+  return `port: ${String(requested)} is in use, using ${String(selected)} instead\n`;
+}
+
 function renderServeFailure(command: EngineCommand, error: unknown): string {
   return renderLines([
     `${programName}: the dev server could not start.`,
@@ -1175,6 +1184,10 @@ async function runServe(
 ): Promise<number> {
   let serveOptions: StartServeOptions;
   let engineSummary: string | undefined;
+  let requestedPort: number | undefined;
+  const onPortInUse = (port: number): void => {
+    requestedPort ??= port;
+  };
   if (command.buildCommand !== undefined) {
     // In watch mode the module belongs to the child host; the parent never
     // imports it, so a rebuild can only ever apply by process replacement.
@@ -1194,6 +1207,7 @@ async function runServe(
       onDiagnostic: (text) => {
         void writeStderr(io, text);
       },
+      onPortInUse,
       ...(command.port === undefined ? {} : { port: command.port }),
       ...(command.enginePort === undefined
         ? {}
@@ -1231,6 +1245,7 @@ async function runServe(
       composedCapabilitiesExport: hasComposedCapabilitiesExport(
         loaded.namespace,
       ),
+      onPortInUse,
       ...(command.port === undefined ? {} : { port: command.port }),
       ...(command.enginePort === undefined
         ? {}
@@ -1266,6 +1281,9 @@ async function runServe(
   const address = result.handles.devtoolsAddress;
   // ADR 0021 pins stdout to exactly this ready line, and `open` prints the
   // same one; the extra startup context is a diagnostic and goes to stderr.
+  if (requestedPort !== undefined) {
+    await writeStderr(io, renderPortInUse(requestedPort, address.port));
+  }
   await writeStderr(
     io,
     renderLines([
@@ -1290,19 +1308,23 @@ async function runServe(
 
 async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
   const cli = command.cli === true;
+  let requestedPort: number | undefined;
+  const onPortInUse = (port: number): void => {
+    requestedPort ??= port;
+  };
   let server: Awaited<
     ReturnType<
       typeof startAttachedDevtoolsServer | typeof startAttachedCliDevtoolsServer
     >
   >;
   try {
+    const startOptions = {
+      onPortInUse,
+      ...(command.port === undefined ? {} : { port: command.port }),
+    };
     server = cli
-      ? await startAttachedCliDevtoolsServer({
-          ...(command.port === undefined ? {} : { port: command.port }),
-        })
-      : await startAttachedDevtoolsServer({
-          ...(command.port === undefined ? {} : { port: command.port }),
-        });
+      ? await startAttachedCliDevtoolsServer(startOptions)
+      : await startAttachedDevtoolsServer(startOptions);
   } catch (error) {
     const hint =
       readThrownValueInfo(error).code === "EADDRINUSE"
@@ -1321,6 +1343,9 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
   const address = server.address();
   if (cli) {
     await writeStderr(io, "CLI workbench\n");
+  }
+  if (requestedPort !== undefined) {
+    await writeStderr(io, renderPortInUse(requestedPort, address.port));
   }
   try {
     await io.writeStdout(

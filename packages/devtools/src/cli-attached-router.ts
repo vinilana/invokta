@@ -34,7 +34,9 @@ interface ResolvedBrowserSession {
 export interface AttachedCliRouterOptions {
   readonly controller: AttachedCliSessionController;
   readonly uiRoot: string;
-  authority(): string;
+  /** Every authority the bound port answers on. */
+  allowedAuthorities(): ReadonlySet<string>;
+  /** The canonical origin the request target is resolved against. */
   origin(): string;
 }
 
@@ -73,6 +75,19 @@ export function createAttachedCliRouter(
     return { id, csrf };
   };
 
+  /**
+   * The origin a same-origin request carries. A browser sends whichever
+   * loopback authority the developer typed, so the expected origin follows
+   * the request host instead of one canonical spelling.
+   */
+  const requestOrigin = (request: IncomingMessage): string | undefined => {
+    const host = oneAttachedCliRawHeader(request, "host");
+    if (host === undefined || !options.allowedAuthorities().has(host)) {
+      return undefined;
+    }
+    return `http://${host}`;
+  };
+
   const sessionFor = (
     request: IncomingMessage,
   ): ResolvedBrowserSession | undefined => {
@@ -88,7 +103,11 @@ export function createAttachedCliRouter(
     request: IncomingMessage,
     response: ServerResponse,
   ): ResolvedBrowserSession | undefined => {
-    if (oneAttachedCliRawHeader(request, "origin") !== options.origin()) {
+    const expectedOrigin = requestOrigin(request);
+    if (
+      expectedOrigin === undefined ||
+      oneAttachedCliRawHeader(request, "origin") !== expectedOrigin
+    ) {
       sendAttachedCliErrorBeforeBodyConsumption(
         request,
         response,
@@ -355,9 +374,9 @@ export function createAttachedCliRouter(
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> => {
-    const authority = options.authority();
     const origin = options.origin();
-    if (oneAttachedCliRawHeader(request, "host") !== authority) {
+    const expectedOrigin = requestOrigin(request);
+    if (expectedOrigin === undefined) {
       sendAttachedCliErrorBeforeBodyConsumption(
         request,
         response,
@@ -371,7 +390,7 @@ export function createAttachedCliRouter(
     const rawTarget = request.url ?? "/";
     if (
       (method === "POST" || method === "DELETE") &&
-      oneAttachedCliRawHeader(request, "origin") !== origin
+      oneAttachedCliRawHeader(request, "origin") !== expectedOrigin
     ) {
       sendAttachedCliErrorBeforeBodyConsumption(
         request,

@@ -1,10 +1,15 @@
 import type { Server as NodeHttpServer } from "node:http";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 
 import { defaultAttachedCliUiRoot } from "./cli-attached-assets.js";
 import { sendAttachedCliError } from "./cli-attached-http.js";
 import { createAttachedCliRouter } from "./cli-attached-router.js";
+import {
+  devtoolsHost,
+  devtoolsOrigin,
+  listenOnLoopback,
+  loopbackAuthorities,
+} from "./loopback.js";
 import {
   type AttachedCliSessionController,
   type AttachedCliSessionState,
@@ -17,8 +22,11 @@ export type AttachedCliServerController = AttachedCliSessionController;
 
 export interface StartAttachedCliDevtoolsServerOptions {
   readonly controller?: AttachedCliServerController;
+  /** Defaults to 4100; a taken port walks to the next free one. */
   readonly port?: number;
   readonly uiRoot?: string;
+  /** Called with each taken port before the next one is tried. */
+  readonly onPortInUse?: (port: number) => void;
 }
 
 export interface AttachedCliDevtoolsServer {
@@ -26,21 +34,17 @@ export interface AttachedCliDevtoolsServer {
   close(): Promise<void>;
 }
 
-const host = "127.0.0.1";
-const defaultPort = 4100;
-
 export async function startAttachedCliDevtoolsServer(
   options: StartAttachedCliDevtoolsServerOptions = {},
 ): Promise<AttachedCliDevtoolsServer> {
   const controller = options.controller ?? createAttachedCliSessionController();
-  const port = options.port ?? defaultPort;
-  let boundAuthority = "";
+  let authorities: ReadonlySet<string> = new Set();
   let ownOrigin = "";
   let closed = false;
   const router = createAttachedCliRouter({
     controller,
     uiRoot: options.uiRoot ?? defaultAttachedCliUiRoot(),
-    authority: () => boundAuthority,
+    allowedAuthorities: () => authorities,
     origin: () => ownOrigin,
   });
 
@@ -59,20 +63,18 @@ export async function startAttachedCliDevtoolsServer(
     });
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, () => {
-      server.removeListener("error", reject);
-      resolve();
-    });
+  const boundPort = await listenOnLoopback(server, {
+    ...(options.port === undefined ? {} : { port: options.port }),
+    ...(options.onPortInUse === undefined
+      ? {}
+      : { onPortInUse: options.onPortInUse }),
   });
-  const boundPort = (server.address() as AddressInfo).port;
-  boundAuthority = `${host}:${String(boundPort)}`;
-  ownOrigin = `http://${boundAuthority}`;
+  authorities = loopbackAuthorities(boundPort);
+  ownOrigin = devtoolsOrigin(boundPort);
 
   let closing: Promise<void> | undefined;
   return {
-    address: () => ({ host, port: boundPort }),
+    address: () => ({ host: devtoolsHost, port: boundPort }),
     close: async () => {
       closing ??= (async () => {
         if (closed) return;

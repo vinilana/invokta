@@ -1218,6 +1218,71 @@ describe("invokta-devtools serve", () => {
     );
   });
 
+  it("walks past a taken port and says which one answered", async () => {
+    const taken = await freePort();
+    const holder = createNetServer();
+    await new Promise<void>((resolve) => {
+      holder.listen(taken, "127.0.0.1", resolve);
+    });
+    const child = spawn(
+      process.execPath,
+      [
+        join("packages/devtools/dist", "cli.js"),
+        "serve",
+        "packages/devtools/test/fixtures/valid-engine.js",
+        "--port",
+        String(taken),
+      ],
+      { cwd: repositoryRoot, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    const readyPattern =
+      /^Invokta devtools listening on http:\/\/localhost:(\d+)\/\n$/u;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error(`serve never became ready: ${stderr}`)),
+          8000,
+        );
+        const poll = setInterval(() => {
+          if (readyPattern.test(stdout)) {
+            clearTimeout(timeout);
+            clearInterval(poll);
+            resolve();
+          }
+        }, 50);
+      });
+
+      // Another parallel test may hold the next port too, so the walk length
+      // is not fixed; the reported port is the one that answered.
+      const selected = Number(readyPattern.exec(stdout)?.[1]);
+      expect(selected).toBeGreaterThan(taken);
+      expect(stderr).toContain(
+        `port: ${String(taken)} is in use, using ${String(selected)} instead`,
+      );
+    } finally {
+      await new Promise<number | null>((resolve) => {
+        child.once("exit", (code) => resolve(code));
+        child.kill("SIGTERM");
+      });
+      await new Promise<void>((resolve) => {
+        holder.close(() => {
+          resolve();
+        });
+      });
+    }
+  }, 20_000);
+
   it("prints the ready line, serves, and shuts down cleanly on SIGTERM", async () => {
     const port = await freePort();
     const child = spawn(
@@ -1243,7 +1308,7 @@ describe("invokta-devtools serve", () => {
     });
 
     // ADR 0021 pins stdout to exactly this line.
-    const readyLine = `Invokta devtools listening on http://127.0.0.1:${String(port)}/\n`;
+    const readyLine = `Invokta devtools listening on http://localhost:${String(port)}/\n`;
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(
         () => reject(new Error(`serve never became ready: ${stderr}`)),

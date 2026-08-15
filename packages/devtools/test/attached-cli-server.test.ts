@@ -345,6 +345,46 @@ describe("attached CLI devtools server", () => {
     expect(controller.connect).not.toHaveBeenCalled();
   });
 
+  it("advertises localhost and answers on every loopback authority", async () => {
+    const controller = createController();
+    const server = await startOnAvailablePort((port) =>
+      startAttachedCliDevtoolsServer({ port, controller }),
+    );
+    servers.push(server);
+    const address = server.address();
+    expect(address.host).toBe("localhost");
+
+    for (const authority of [
+      `localhost:${String(address.port)}`,
+      `127.0.0.1:${String(address.port)}`,
+    ]) {
+      const response = await fetch(`http://${authority}/api/session`);
+      expect(response.status, authority).toBe(200);
+      await response.arrayBuffer();
+    }
+  });
+
+  it("walks to a free port when the requested one is taken", async () => {
+    const first = await startOnAvailablePort((port) =>
+      startAttachedCliDevtoolsServer({ port, controller: createController() }),
+    );
+    servers.push(first);
+    const taken = first.address().port;
+
+    const inUse: number[] = [];
+    const second = await startAttachedCliDevtoolsServer({
+      port: taken,
+      controller: createController(),
+      onPortInUse: (port) => {
+        inUse.push(port);
+      },
+    });
+    servers.push(second);
+
+    expect(second.address().port).toBeGreaterThan(taken);
+    expect(inUse).toStrictEqual([taken]);
+  });
+
   it("does not load an engine module or adapter-runner on startup", async () => {
     const inspectSpy = vi.spyOn(doctor, "inspectEngine");
     const loadSpy = vi.spyOn(loadEngine, "loadEngineModule");

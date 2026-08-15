@@ -41,7 +41,7 @@ invokta-devtools open [--cli] [--port <number>]
 ```
 
 Bare invocation and `open` are equivalent. Both start an idle loopback
-workbench on `http://127.0.0.1:4100/` (or `--port`) that loads no workspace,
+workbench on `http://localhost:4100/` (or `--port`) that loads no workspace,
 spawns no target, and opens no outbound connection until you select Connect.
 Without `--cli` that workbench is the MCP attach UI: from the Connection view
 you attach either a structured stdio command or a Streamable HTTP URL; the
@@ -161,15 +161,16 @@ loopback servers:
 
 - the **engine host**: the `@invokta/mcp` HTTP adapter serving the engine on
   `127.0.0.1` with authentication always in `required` mode; and
-- the **devtools interface** on `http://127.0.0.1:4100/` (or `--port`): the
+- the **devtools interface** on `http://localhost:4100/` (or `--port`): the
   web interface, a JSON API, a live trace event stream, and a same-origin
   `POST /mcp` proxy to the engine host.
 
 Standard output carries exactly one ready line, `Invokta devtools listening on
-http://127.0.0.1:<port>/`. The engine `name@version`, the capability count, and
+http://localhost:<port>/`. The engine `name@version`, the capability count, and
 the watch status accompany it on standard error. Terminate with `SIGINT` or
-`SIGTERM` for a clean shutdown. If the default port is already in use, the
-start failure names `EADDRINUSE` and suggests `--port`.
+`SIGTERM` for a clean shutdown. A port already in use is not a failure: the
+next free port is taken and standard error reports `port: <requested> is in
+use, using <selected> instead`.
 
 #### Adapters
 

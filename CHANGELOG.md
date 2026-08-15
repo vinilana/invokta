@@ -15,6 +15,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Invokta DevTools now serves and prints `http://localhost:<port>/` instead of
+  the numeric loopback address. Every loopback authority (`localhost`,
+  `127.0.0.1`, and `[::1]`) still reaches the same server, and an OAuth
+  redirect keeps the literal address RFC 8252 and the MCP client require.
+- A devtools port that is already in use no longer fails the start: `open` and
+  `serve` take the next free port and report
+  `port: <requested> is in use, using <selected> instead` on standard error.
 - Invokta DevTools now uses one product chrome across both shells: the brand
   lockup is `invokta` + `DevTools`, document titles are
   `Invokta DevTools · Project workspace` and

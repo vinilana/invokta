@@ -13,6 +13,12 @@ import { createHttpTargetStore } from "./http-target.js";
 import { createPlaygroundOAuth } from "./playground-oauth.js";
 import type { LoadedEngine } from "./load-engine.js";
 import { createPrincipalStore } from "./principal-store.js";
+import {
+  literalLoopbackHost,
+  literalLoopbackOrigin,
+  loopbackOrigins,
+  selectLoopbackPort,
+} from "./loopback.js";
 import type { DevtoolsServerAddress, EngineView } from "./server.js";
 import { startDevtoolsServer } from "./server.js";
 import { createTraceStore } from "./trace-store.js";
@@ -30,6 +36,8 @@ interface ServeCommonOptions {
   readonly traceCapacity?: number;
   /** Receives child and build diagnostics in watch mode. */
   readonly onDiagnostic?: (text: string) => void;
+  /** Called with each taken interface port before the next one is tried. */
+  readonly onPortInUse?: (port: number) => void;
 }
 
 export interface ServeEngineOptions extends ServeCommonOptions {
@@ -78,6 +86,19 @@ export type StartServeResult =
 
 const mcpManifestFileName = "invokta.mcp.json";
 
+/**
+ * The interface port is chosen before anything binds, because the engine host
+ * starts first and has to allow the interface origin up front.
+ */
+function selectDevtoolsPort(options: ServeCommonOptions): Promise<number> {
+  return selectLoopbackPort({
+    ...(options.port === undefined ? {} : { port: options.port }),
+    ...(options.onPortInUse === undefined
+      ? {}
+      : { onPortInUse: options.onPortInUse }),
+  });
+}
+
 async function startWithEngine(
   options: ServeEngineOptions,
 ): Promise<StartServeResult> {
@@ -98,13 +119,13 @@ async function startWithEngine(
       ? {}
       : { capacity: options.traceCapacity },
   );
-  const devtoolsPort = options.port ?? 4100;
-  const allowedOrigin = `http://127.0.0.1:${String(devtoolsPort)}`;
+  const devtoolsPort = await selectDevtoolsPort(options);
+  const allowedOrigins = loopbackOrigins(devtoolsPort);
 
   const engineHost = await startEngineHost({
     engine: options.engine,
     ...(options.enginePort === undefined ? {} : { port: options.enginePort }),
-    allowedOrigins: [allowedOrigin],
+    allowedOrigins,
     authenticate: principals.authenticate,
     onRecord: (record) => {
       trace.appendInvocation(record);
@@ -143,7 +164,7 @@ async function startWithEngine(
     module: options.module,
     cwd: options.cwd,
     mcpEndpoint: () =>
-      `http://127.0.0.1:${String(engineHost.address().port)}/mcp`,
+      `${literalLoopbackOrigin(engineHost.address().port)}/mcp`,
     httpTarget: () => httpTarget.resolve(),
     oauthCall: oauth.call,
     entryPoint: (adapter) => entryTarget.for(adapter),
@@ -195,15 +216,15 @@ async function startWithWatch(
       ? {}
       : { capacity: options.traceCapacity },
   );
-  const devtoolsPort = options.port ?? 4100;
-  const allowedOrigin = `http://127.0.0.1:${String(devtoolsPort)}`;
+  const devtoolsPort = await selectDevtoolsPort(options);
+  const allowedOrigins = loopbackOrigins(devtoolsPort);
 
   const watch = await startWatchMode({
     moduleSpecifier: options.watch.moduleSpecifier,
     exportName: options.watch.exportName,
     cwd: options.cwd,
     buildCommand: options.watch.buildCommand,
-    allowedOrigin,
+    allowedOrigins,
     ...(options.enginePort === undefined
       ? {}
       : { enginePort: options.enginePort }),
@@ -238,7 +259,7 @@ async function startWithWatch(
     },
     cwd: options.cwd,
     mcpEndpoint: () =>
-      `http://127.0.0.1:${String(watch.handles.enginePort())}/mcp`,
+      `${literalLoopbackOrigin(watch.handles.enginePort())}/mcp`,
     httpTarget: () => httpTarget.resolve(),
     oauthCall: oauth.call,
     entryPoint: (adapter) => entryTarget.for(adapter),
@@ -274,7 +295,10 @@ async function startWithWatch(
     kind: "started",
     handles: {
       devtoolsAddress: devtools.address(),
-      engineAddress: { host: "127.0.0.1", port: watch.handles.enginePort() },
+      engineAddress: {
+        host: literalLoopbackHost,
+        port: watch.handles.enginePort(),
+      },
       close: async () => {
         await devtools.close();
         await oauth.close();
