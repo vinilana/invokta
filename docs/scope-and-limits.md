@@ -57,7 +57,8 @@ while the example owns one replaceable Authorization Server implementation.
 | Cross-cutting hooks | 1: `onEvent` |
 | Auth or PDP implementations | 0 |
 | Containers or runtime plugin systems | 0 |
-| Concurrent attached devtools targets | 1 |
+| Devtools workbenches served together | 2: MCP and CLI, each idle until Connect |
+| Concurrent attached devtools targets | 1 per workbench |
 | Concurrent attached devtools tool calls or CLI verbs | 1, explicitly initiated |
 | Concurrent devtools adapter emulations | 4, each in its own process |
 | Devtools playground HTTP targets | 1: the devtools host or one external endpoint |
@@ -104,7 +105,10 @@ targets, invoke automatically, retry a verb, evaluate, judge, certify, or
 gate a release. It does not pass `--stdin`, `--format`, actor flags, or
 login flags. Workspace-only Doctor, principals, watch, core events, and
 `engine.invoke` trace claims do not apply to an attached CLI target.
-`verify --cli` is out of scope.
+`verify --cli` is out of scope. Both workbenches are served together from one
+loopback origin and each keeps its own browser session, so a session for one
+never authorizes the other and switching between them carries no target,
+connection, or activity across.
 
 ## Evolution triggers
 

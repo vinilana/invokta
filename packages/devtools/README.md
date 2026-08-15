@@ -1,6 +1,6 @@
 # @invokta/devtools
 
-Invokta DevTools: a local MCP workbench, installed CLI inspection,
+Invokta DevTools: local MCP and CLI workbenches for installed targets, an
 installation verifier, and engine diagnostics for Invokta.
 The package is a binary supporting application: it contributes no capability,
 runtime adapter, or alternative execution path.
@@ -79,9 +79,12 @@ from one loopback origin and land on the chooser at `/`:
 `--mcp` and `--cli` land on that workbench instead — the ready line points at
 its path — and the other one stays mounted. The workbench header carries the
 way back to the chooser and the switch to the other workbench, and an idle
-workbench repeats both as links next to its Connect form. Neither workbench loads a workspace, spawns a target, or
-opens an outbound connection until you select Connect, and each keeps its own
-browser session: connecting one leaves the other idle.
+workbench repeats both as links next to its Connect form.
+
+Neither workbench loads a workspace, spawns a target, or opens an outbound
+connection until you select Connect, and each keeps its own browser session:
+connecting one leaves the other idle, and switching carries no target,
+connection, or activity across.
 
 ```sh
 npx @invokta/devtools

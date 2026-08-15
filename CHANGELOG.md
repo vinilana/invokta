@@ -31,11 +31,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - A devtools port that is already in use no longer fails the start: `open` and
   `serve` take the next free port and report
   `port: <requested> is in use, using <selected> instead` on standard error.
-- Invokta DevTools now uses one product chrome across both shells: the brand
-  lockup is `invokta` + `DevTools`, document titles are
-  `Invokta DevTools · Project workspace` and
-  `Invokta DevTools · MCP workbench`, and the workspace tab formerly labeled
-  Playground is now Capabilities.
+- Invokta DevTools now uses one product chrome across every shell: the brand
+  lockup is `invokta` + `DevTools`, document titles are `Invokta DevTools`
+  for the chooser and `Invokta DevTools · Project workspace`,
+  `Invokta DevTools · MCP workbench`, and `Invokta DevTools · CLI workbench`
+  for the three surfaces, and the workspace tab formerly labeled Playground is
+  now Capabilities.
 
 ## [0.5.0] - 2026-08-15
 

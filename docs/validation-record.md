@@ -16,8 +16,9 @@
   devtools adapter emulation accepted in ADR 0028; selectable HTTP
   authentication accepted in ADR 0029; project entry points accepted in ADR
   0030; advertised authorization servers and OAuth discovery inspection
-  accepted in ADR 0031; and CLI installation inspection and homologation
-  accepted in ADR 0032
+  accepted in ADR 0031; CLI installation inspection and homologation
+  accepted in ADR 0032; and the workbench launcher with workbench selection
+  accepted in ADR 0033
 
 ## Reuse evidence
 
