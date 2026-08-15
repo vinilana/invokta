@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `invokta-devtools open --cli` starts an idle loopback CLI workbench for
+  installed Invokta CLI inspection and homologation (ADR 0032). Bare
+  `invokta-devtools` and `open` remain the MCP workbench.
+
 ### Changed
 
 - Invokta DevTools now uses one product chrome across both shells: the brand

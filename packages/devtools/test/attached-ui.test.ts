@@ -453,7 +453,8 @@ describe("attached workbench interface contract", () => {
       "The Invokta devtools interface requires JavaScript.",
     );
     expect(server).not.toContain("Return to Invokta devtools");
-    expect(app).not.toContain("open --cli");
+    expect(app).toContain("invokta-devtools open --cli");
+    expect(app).toContain("CLI workbench");
     expect(app).not.toContain("Playground");
     expect(app).not.toContain("Test identities");
     expect(app).not.toContain("Capabilities");

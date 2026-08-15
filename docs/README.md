@@ -50,6 +50,8 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0029](./adr/0029-selectable-http-authentication-in-devtools.md) and with
   project entry points by
   [ADR 0030](./adr/0030-project-entry-points-in-devtools-emulation.md)
+- CLI installation inspection and homologation —
+  [ADR 0032](./adr/0032-cli-installation-inspection-and-homologation.md)
 
 ## Guides and examples
 

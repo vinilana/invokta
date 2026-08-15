@@ -1,7 +1,7 @@
 # @invokta/devtools
 
-Invokta DevTools: a local MCP workbench, installation verifier, and engine
-diagnostics for Invokta.
+Invokta DevTools: a local MCP workbench, installed CLI inspection,
+installation verifier, and engine diagnostics for Invokta.
 The package is a binary supporting application: it contributes no capability,
 runtime adapter, or alternative execution path.
 
@@ -58,20 +58,24 @@ Use `--watch-include <path>` to add a path to the watched set and
 ### invokta-devtools open
 
 ```text
-invokta-devtools [--port <number>]
-invokta-devtools open [--port <number>]
+invokta-devtools [--cli] [--port <number>]
+invokta-devtools open [--cli] [--port <number>]
 ```
 
 Bare invocation and `open` are equivalent. Both start an idle loopback UI and
 do not load a workspace, spawn a target, or open an outbound connection until
-you select Connect.
+you select Connect. Without `--cli` that idle UI is the MCP workbench. With
+`--cli` it is the CLI workbench.
 
 ```sh
 npx @invokta/devtools
 npx @invokta/devtools open --port 4200
+npx @invokta/devtools open --cli
 ```
 
-Open the printed loopback URL. Connect either a structured stdio command or a
+Open the printed loopback URL.
+
+On the MCP workbench, connect either a structured stdio command or a
 Streamable HTTP URL from the Connection view. The attached UI provides Tools,
 Activity, and Connection validation.
 
@@ -101,6 +105,40 @@ process exit.
 OAuth is intentionally interactive and UI-only. The `verify` command supports
 none, bearer, and custom-header authentication so it remains deterministic for
 automation and homologation pipelines.
+
+### invokta-devtools open --cli
+
+```text
+invokta-devtools --cli [--port <number>]
+invokta-devtools open --cli [--port <number>]
+```
+
+`--cli` starts an idle loopback CLI workbench. It does not load a workspace,
+spawn a process, or import a module until you select Connect. There is no
+in-session switch to the MCP workbench and no `verify --cli` command.
+
+Connect exactly one structured descriptor: an executable, an argument array,
+an optional working directory, and environment names and values. Connect runs
+`<command> <args...> list` once with `shell: false` and waits for the child
+to exit. Selecting a capability runs `describe <id>`. Run is enabled only
+after a successful list and describe, and only when you press Run:
+
+```text
+<command> <args...> run <id> --input '<json>'
+```
+
+The workbench never passes `--stdin`, `--format`, actor flags, or login
+flags. Each verb starts a new process and that process exits. DevTools does
+not supply a principal; the attached CLI remains the composition root.
+
+The CLI UI provides Commands, Activity, and Connection validation. Activity
+records the verb, capability id, exit code, duration, and outcome only. It
+does not store argv, environment values, or stream bodies.
+
+```sh
+npx @invokta/devtools open --cli
+npx @invokta/devtools open --cli --port 4200
+```
 
 ### invokta-devtools verify
 
@@ -408,3 +446,5 @@ Installed-target inspection is chartered by
 [ADR 0022](../../docs/adr/0022-mcp-installation-inspection-and-homologation.md),
 with interactive OAuth accepted by
 [ADR 0023](../../docs/adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md).
+Installed CLI inspection is chartered by
+[ADR 0032](../../docs/adr/0032-cli-installation-inspection-and-homologation.md).

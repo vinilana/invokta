@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startAttachedDevtoolsServer } from "./attached-server.js";
+import { startAttachedCliDevtoolsServer } from "./cli-attached-server.js";
 import {
   asRecord,
   describeThrownValue,
@@ -59,6 +60,7 @@ export interface ServeCommand {
 export interface OpenCommand {
   readonly command: "open";
   readonly port?: number;
+  readonly cli?: true;
 }
 
 export interface HelpCommand {
@@ -190,8 +192,8 @@ Exit codes:
 const usage = engineUsage.replace(
   "Usage:\n",
   `Usage:
-  invokta-devtools [--port <number>]
-  invokta-devtools open [--port <number>]
+  invokta-devtools [--cli] [--port <number>]
+  invokta-devtools open [--cli] [--port <number>]
   invokta-devtools verify --stdio <executable> [--arg <value>]...
     [--cwd <directory>] [--env <child-name>=<source-environment-name>]...
     [--timeout-ms <ms>] [--max-tools <count>] [--json]
@@ -202,9 +204,10 @@ const usage = engineUsage.replace(
   invokta-devtools --help
   invokta-devtools --version
 
---timeout-ms bounds the initialization and catalog deadlines, --max-tools
-bounds the accepted tool count, and --json prints the verification result as
-JSON (success to stdout, failure to stderr).
+--cli starts the idle CLI workbench. Without it, open remains the idle MCP
+workbench. --timeout-ms bounds the initialization and catalog deadlines,
+--max-tools bounds the accepted tool count, and --json prints the verification
+result as JSON (success to stdout, failure to stderr).
 `,
 );
 
@@ -294,6 +297,7 @@ function parseOpenArguments(
   args: readonly string[],
 ): Omit<OpenCommand, "command"> {
   let port: number | undefined;
+  let cli = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index] as string;
     if (argument === "--port") {
@@ -306,6 +310,13 @@ function parseOpenArguments(
       index += 1;
       continue;
     }
+    if (argument === "--cli") {
+      if (cli) {
+        throw new UsageError("The --cli option must be provided at most once.");
+      }
+      cli = true;
+      continue;
+    }
     if (argument.startsWith("-")) {
       throw new UsageError(`Unknown option ${quote(argument)}.`);
     }
@@ -313,7 +324,10 @@ function parseOpenArguments(
       "The open command does not accept positional arguments.",
     );
   }
-  return port === undefined ? {} : { port };
+  return {
+    ...(port === undefined ? {} : { port }),
+    ...(cli ? { cli: true } : {}),
+  };
 }
 
 const environmentNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -1275,11 +1289,20 @@ async function runServe(
 }
 
 async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
-  let server: Awaited<ReturnType<typeof startAttachedDevtoolsServer>>;
+  const cli = command.cli === true;
+  let server: Awaited<
+    ReturnType<
+      typeof startAttachedDevtoolsServer | typeof startAttachedCliDevtoolsServer
+    >
+  >;
   try {
-    server = await startAttachedDevtoolsServer({
-      ...(command.port === undefined ? {} : { port: command.port }),
-    });
+    server = cli
+      ? await startAttachedCliDevtoolsServer({
+          ...(command.port === undefined ? {} : { port: command.port }),
+        })
+      : await startAttachedDevtoolsServer({
+          ...(command.port === undefined ? {} : { port: command.port }),
+        });
   } catch (error) {
     const hint =
       readThrownValueInfo(error).code === "EADDRINUSE"
@@ -1288,7 +1311,7 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
     await writeStderr(
       io,
       renderLines([
-        `${programName}: the MCP workbench could not start.`,
+        `${programName}: the ${cli ? "CLI" : "MCP"} workbench could not start.`,
         describeThrownValue(error),
         ...hint,
       ]),
@@ -1296,6 +1319,9 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
     return 1;
   }
   const address = server.address();
+  if (cli) {
+    await writeStderr(io, "CLI workbench\n");
+  }
   try {
     await io.writeStdout(
       `Invokta devtools listening on http://${address.host}:${String(address.port)}/\n`,
@@ -1310,7 +1336,7 @@ async function runOpen(command: OpenCommand, io: DevtoolsIo): Promise<number> {
   } catch {
     await writeStderr(
       io,
-      `${programName}: the MCP workbench could not close cleanly.\n`,
+      `${programName}: the ${cli ? "CLI" : "MCP"} workbench could not close cleanly.\n`,
     );
     return 1;
   }

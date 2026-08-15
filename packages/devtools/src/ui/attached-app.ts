@@ -1583,6 +1583,10 @@ export function mountAttachedApp(
           "It inspects an installed MCP server without loading an engine.",
         ]),
         el("dl", { class: "att-idle-orient-paths" }, [
+          el("dt", {}, ["CLI workbench"]),
+          el("dd", {}, [
+            el("div", { class: "att-mono" }, ["invokta-devtools open --cli"]),
+          ]),
           el("dt", {}, ["Project workspace"]),
           el("dd", {}, [
             el("div", { class: "att-mono" }, [

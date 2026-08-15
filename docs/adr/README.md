@@ -38,3 +38,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0029](0029-selectable-http-authentication-in-devtools.md) | Selectable HTTP authentication in the engine devtools | Accepted | 2026-08-13 |
 | [0030](0030-project-entry-points-in-devtools-emulation.md) | Project entry points in devtools emulation | Accepted | 2026-08-13 |
 | [0031](0031-oauth-discovery-inspection-and-advertised-servers.md) | OAuth discovery inspection and advertised authorization servers | Accepted | 2026-08-13 |
+| [0032](0032-cli-installation-inspection-and-homologation.md) | CLI installation inspection and homologation | Accepted | 2026-08-15 |

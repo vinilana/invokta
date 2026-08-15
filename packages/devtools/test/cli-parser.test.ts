@@ -33,6 +33,74 @@ describe("invokta-devtools idle workbench parsing", () => {
   });
 });
 
+describe("invokta-devtools open --cli parsing", () => {
+  it("parses open --cli and bare --cli as the CLI workbench", () => {
+    expect(parseDevtoolsCommand(["open", "--cli"])).toEqual({
+      command: "open",
+      cli: true,
+    });
+    expect(parseDevtoolsCommand(["--cli"])).toEqual({
+      command: "open",
+      cli: true,
+    });
+  });
+
+  it("accepts --cli with one loopback port in either form", () => {
+    expect(parseDevtoolsCommand(["open", "--cli", "--port", "4200"])).toEqual({
+      command: "open",
+      cli: true,
+      port: 4200,
+    });
+    expect(parseDevtoolsCommand(["--cli", "--port", "4200"])).toEqual({
+      command: "open",
+      cli: true,
+      port: 4200,
+    });
+    expect(parseDevtoolsCommand(["open", "--port", "4200", "--cli"])).toEqual({
+      command: "open",
+      cli: true,
+      port: 4200,
+    });
+  });
+
+  it("keeps bare and open without --cli as the MCP workbench", () => {
+    expect(parseDevtoolsCommand([])).toEqual({ command: "open" });
+    expect(parseDevtoolsCommand(["open"])).toEqual({ command: "open" });
+    expect(parseDevtoolsCommand(["open", "--port", "4200"])).toEqual({
+      command: "open",
+      port: 4200,
+    });
+    expect(parseDevtoolsCommand(["--port", "4200"])).toEqual({
+      command: "open",
+      port: 4200,
+    });
+  });
+
+  it.each([
+    [["open", "--cli", "extra"], "does not accept positional arguments"],
+    [["open", "--cli", "--cli"], "at most once"],
+    [["--cli", "--cli"], "at most once"],
+    [["open", "--cli", "--unknown"], 'Unknown option "--unknown"'],
+    [["open", "--cli", "--port", "0"], "between 1 and 65535"],
+    [["verify", "--cli"], 'Unknown option "--cli"'],
+  ] as const)("rejects invalid open --cli arguments %#", (argv, message) => {
+    expect(() => parseDevtoolsCommand(argv)).toThrow(message);
+  });
+
+  it("does not parse verify --cli as a CLI verify target", () => {
+    expect(() => parseDevtoolsCommand(["verify", "--cli"])).toThrow(
+      'Unknown option "--cli"',
+    );
+    const verify = parseDevtoolsCommand(["verify", "--stdio", "node"]) as {
+      readonly command: string;
+      readonly target?: { readonly transport?: string };
+    };
+    expect(verify.command).toBe("verify");
+    expect(verify.target?.transport).toBe("stdio");
+    expect(verify).not.toMatchObject({ target: { transport: "cli" } });
+  });
+});
+
 describe("invokta-devtools verify stdio parsing", () => {
   it("preserves an exact structured stdio descriptor", () => {
     expect(
