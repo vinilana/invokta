@@ -390,7 +390,28 @@ export async function writeStarterProject(
           flag: "wx",
         });
       } else {
-        await fileSystem.symlink(entry.target, path);
+        try {
+          await fileSystem.symlink(entry.target, path);
+        } catch (symlinkError) {
+          if (readErrorCode(symlinkError) !== "EPERM") throw symlinkError;
+          // Symlink creation requires elevated privileges on some platforms.
+          // Fall back to a regular file with the target's contents.
+          const linkDir = entry.path.lastIndexOf("/");
+          const resolvedTarget =
+            linkDir === -1
+              ? entry.target
+              : `${entry.path.slice(0, linkDir)}/${entry.target}`;
+          const targetEntry = plan.entries.find(
+            (e) => e.kind === "file" && e.path === resolvedTarget,
+          );
+          if (targetEntry === undefined || targetEntry.kind !== "file") {
+            throw symlinkError;
+          }
+          await fileSystem.writeFile(path, targetEntry.contents, {
+            encoding: "utf8",
+            flag: "wx",
+          });
+        }
       }
       createdEntries.push(path);
     }

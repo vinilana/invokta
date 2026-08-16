@@ -313,6 +313,37 @@ describe("createStarterProject", () => {
     expect(readlinkSync(join(target, "CLAUDE.md"))).toBe("external-agents.md");
   });
 
+  it("falls back to a regular file when symlink creation fails with EPERM", async () => {
+    const cwd = createWorkingDirectory();
+    const target = join(cwd, "my-engine");
+    const fileSystem: ScaffoldFileSystem = {
+      ...defaultScaffoldFileSystem,
+      async symlink() {
+        const error = new Error(
+          "fixture link failure",
+        ) as NodeJS.ErrnoException;
+        error.code = "EPERM";
+        throw error;
+      },
+    };
+
+    const result = await createStarterProject({
+      cwd,
+      target: "my-engine",
+      invoktaVersion: "1.2.3",
+      packageManager: "npm",
+      profile: "complete",
+      fileSystem,
+    });
+
+    expect(result.files).toContain("CLAUDE.md");
+    expect(lstatSync(join(target, "CLAUDE.md")).isFile()).toBe(true);
+    expect(lstatSync(join(target, "CLAUDE.md")).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(target, "CLAUDE.md"), "utf8")).toBe(
+      readFileSync(join(target, "AGENTS.md"), "utf8"),
+    );
+  });
+
   it("normalizes a symbolic-link creation failure and rolls back", async () => {
     const cwd = createWorkingDirectory();
     const target = join(cwd, "my-engine");
