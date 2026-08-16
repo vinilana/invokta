@@ -42,10 +42,66 @@ jobs:
         run: yarn audit
 
       - name: Dry-run public packages
-        run: |
-          for package_directory in ./packages/core ./packages/cli ./packages/mcp ./packages/tooling ./packages/installer ./packages/deploy ./packages/devtools ./packages/create-invokta-engine ./packages/create-invokta-capability ./packages/create-invokta-capability-library; do
-            npm pack --dry-run "$package_directory"
-          done
+        run: yarn release:pack
 
       - name: Verify clean release package contents
         run: yarn release:verify
+
+  publish:
+    name: Publish directly to npm latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm
+    concurrency:
+      group: npm-release
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js and npm registry
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install trusted-publishing npm
+        run: npm install --global npm@11
+
+      - name: Publish packages directly to latest
+        run: yarn release:publish "$GITHUB_REF_NAME"
+
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub Release after npm publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "GitHub Release $GITHUB_REF_NAME already exists."
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
