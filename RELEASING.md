@@ -13,8 +13,8 @@ Create a protected GitHub environment named `npm` and configure:
 - deployment tag access restricted to `v*`; and
 - no npm token secret.
 
-For every package listed in `scripts/release/package-set.sh`, configure an npm
-trusted publisher with these exact values:
+For every package listed in `scripts/release/release-packages.json`, configure
+an npm trusted publisher with these exact values:
 
 - repository: `vinilana/invokta`;
 - workflow filename: `security-and-release.yml`;

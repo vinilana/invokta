@@ -24,7 +24,14 @@ function read(relativePath: string): string {
 }
 
 describe("release automation", () => {
-  it("keeps the ordered public package set in one versioned source", () => {
+  it("keeps publisher and verifier metadata in one machine-readable source", () => {
+    const manifest = JSON.parse(
+      read("scripts/release/release-packages.json"),
+    ) as Array<{
+      directory: string;
+      name: string;
+      requiredFiles: string[];
+    }>;
     const output = execFileSync(
       "bash",
       [
@@ -34,6 +41,12 @@ describe("release automation", () => {
       { cwd: repositoryRoot, encoding: "utf8" },
     );
 
+    expect(
+      manifest.map(({ directory, name }) => `packages/${directory}|${name}`),
+    ).toEqual(expectedPackages);
+    expect(
+      manifest.every(({ requiredFiles }) => requiredFiles.length > 0),
+    ).toBe(true);
     expect(output.trim().split("\n")).toEqual(expectedPackages);
 
     for (const entry of expectedPackages) {
@@ -43,6 +56,12 @@ describe("release automation", () => {
       };
       expect(manifest.name).toBe(expectedName);
     }
+
+    const verifier = read("scripts/verify-release-packages.mjs");
+    expect(verifier).toContain(
+      'import { releasePackages as publicPackages } from "./release/release-packages.mjs";',
+    );
+    expect(verifier).not.toContain("const publicPackages = [");
   });
 
   it("publishes stable packages directly to latest through OIDC and supports reruns", () => {

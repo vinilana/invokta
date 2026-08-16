@@ -1,0 +1,69 @@
+[
+  {
+    "directory": "core",
+    "name": "@invokta/core",
+    "requiredFiles": ["dist/index.js", "dist/index.d.ts"]
+  },
+  {
+    "directory": "cli",
+    "name": "@invokta/cli",
+    "requiredFiles": ["dist/index.js", "dist/index.d.ts"]
+  },
+  {
+    "directory": "mcp",
+    "name": "@invokta/mcp",
+    "requiredFiles": ["dist/index.js", "dist/index.d.ts"]
+  },
+  {
+    "directory": "tooling",
+    "name": "@invokta/tooling",
+    "requiredFiles": ["dist/index.js", "dist/index.d.ts", "dist/cli.js"]
+  },
+  {
+    "directory": "installer",
+    "name": "@invokta/installer",
+    "requiredFiles": [
+      "dist/cli.js",
+      "dist/engine-cli.js",
+      "dist/engine-cli.d.ts",
+      "registry/capabilities.json",
+      "registry/README.md"
+    ]
+  },
+  {
+    "directory": "deploy",
+    "name": "@invokta/deploy",
+    "requiredFiles": [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/bin.js",
+      "dist/scaffold-public.js",
+      "dist/scaffold-public.d.ts"
+    ]
+  },
+  {
+    "directory": "devtools",
+    "name": "@invokta/devtools",
+    "requiredFiles": [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/cli.js",
+      "dist/ui/app.js"
+    ]
+  },
+  {
+    "directory": "create-invokta-engine",
+    "name": "create-invokta-engine",
+    "requiredFiles": ["dist/bin.js"]
+  },
+  {
+    "directory": "create-invokta-capability",
+    "name": "create-invokta-capability",
+    "requiredFiles": ["dist/bin.js"]
+  },
+  {
+    "directory": "create-invokta-capability-library",
+    "name": "create-invokta-capability-library",
+    "requiredFiles": ["dist/bin.js"]
+  }
+]
