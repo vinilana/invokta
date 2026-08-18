@@ -1,0 +1,183 @@
+---
+title: Load engine tools into ADK or eve
+description: Connect a Google ADK agent or a Vercel eve agent to an Invokta engine without a framework-specific adapter.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Yes. `@invokta/mcp` already produces a spec-compliant MCP stdio server and a
+stateless Streamable HTTP server at the `2025-11-25` baseline (see
+[ADR 0006](https://github.com/vinilana/invokta/blob/main/docs/adr/0006-isolated-official-mcp-sdk-and-protocol-2025-11-25.md)).
+Any standards-compliant MCP client can attach to either transport and load the
+engine's capabilities as tools — that includes
+[Google's Agent Development Kit (ADK)](https://adk.dev/) `McpToolset` and
+[Vercel's eve](https://eve.dev/) `defineMcpClientConnection`, the same way the
+[MCP stdio consumer recipe](/recipes/mcp-stdio-consumer/) attaches a plain
+harness.
+
+No Invokta package is specific to either framework, and none is needed. The
+official adapters remain CLI and MCP (see
+[scope and limits](/concepts/scope-and-limits/)); ADK and eve are simply two
+more MCP hosts consuming the same tool contract that Claude Code, Cursor, or
+`support-harness` already consume.
+
+## Choose a transport
+
+| Deployment | Transport | Why |
+| --- | --- | --- |
+| ADK running next to your own infrastructure | stdio or Streamable HTTP | ADK can spawn the engine as a local subprocess for development, or call a deployed engine over HTTPS for production. |
+| eve running on Vercel's hosted runtime | Streamable HTTP only | eve executes your agent remotely; it cannot spawn a subprocess on your machine, so it always needs a network-addressable `/mcp` endpoint. |
+
+Every example below targets
+[`hello-engine`](https://github.com/vinilana/invokta/tree/main/examples/hello-engine),
+the same engine used throughout [getting started](/getting-started/first-engine/).
+It publishes one tool: `onboarding_create-welcome-message`.
+
+## Load tools into an ADK agent
+
+<Tabs>
+  <TabItem label="stdio (local)">
+    ```python
+    from google.adk.agents import LlmAgent
+    from google.adk.tools.mcp_tool import McpToolset
+    from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
+    from mcp import StdioServerParameters
+
+    root_agent = LlmAgent(
+        model="gemini-flash-latest",
+        name="onboarding_agent",
+        tools=[
+            McpToolset(
+                connection_params=StdioConnectionParams(
+                    server_params=StdioServerParameters(
+                        command="node",
+                        args=["examples/hello-engine/dist/mcp-stdio.js"],
+                    ),
+                ),
+            ),
+        ],
+    )
+    ```
+
+    ADK launches and supervises `mcp-stdio.js` as a child process, exactly like
+    the official MCP client in the
+    [stdio consumer recipe](/recipes/mcp-stdio-consumer/). This suits local
+    development or a sidecar deployment where ADK and the engine share a host.
+  </TabItem>
+  <TabItem label="Streamable HTTP (remote)">
+    ```python
+    from google.adk.agents import LlmAgent
+    from google.adk.tools.mcp_tool import McpToolset
+    from google.adk.tools.mcp_tool.mcp_session_manager import (
+        StreamableHTTPConnectionParams,
+    )
+
+    root_agent = LlmAgent(
+        model="gemini-flash-latest",
+        name="onboarding_agent",
+        tools=[
+            McpToolset(
+                connection_params=StreamableHTTPConnectionParams(
+                    url="https://hello-engine.example.com/mcp",
+                    headers={
+                        "authorization": "Bearer replace-with-a-local-secret",
+                    },
+                ),
+            ),
+        ],
+    )
+    ```
+
+    Point `url` at the engine's deployed `/mcp` endpoint. The `headers` object
+    is delivered on every request unmodified, so it must carry whatever
+    credential the engine's `authenticate` hook expects.
+  </TabItem>
+</Tabs>
+
+## Load tools into an eve agent
+
+Create `agent/connections/hello-engine.ts`; the filename becomes the
+connection name eve exposes to the model:
+
+```ts
+import { connect } from "@vercel/connect/eve";
+import { defineMcpClientConnection } from "eve/connections";
+
+export default defineMcpClientConnection({
+  url: "https://hello-engine.example.com/mcp",
+  description: "Hello Engine: onboarding welcome-message capability.",
+  auth: connect("hello-engine/myagent"),
+});
+```
+
+eve discovers `onboarding_create-welcome-message` and calls it by its
+qualified name, `hello-engine__onboarding_create-welcome-message`. The model
+never sees the configured `url` or credential — eve brokers both the same way
+`connect()` brokers any other connection's auth, and the underlying request
+still lands on the engine's `authenticate` hook as a normal HTTP call.
+
+<Aside type="note" title="eve needs an HTTPS endpoint eve.dev's runtime can reach">
+  Loopback addresses and unauthenticated development mode (as used in
+  [getting started](/getting-started/first-engine/)) only work for a server
+  eve can dial directly. Deploy the engine's MCP HTTP entry point with
+  `auth.mode: "required"` before connecting a hosted eve agent to it — see
+  [`@invokta/deploy`](/guides/deployment/).
+</Aside>
+
+## Match the authentication boundary
+
+Neither framework changes how the engine authenticates a request: both send
+plain HTTP headers, and the engine's `authenticate` hook maps them to a
+`Principal` exactly as described in
+[HTTP authentication](/guides/http-authentication/). The static bearer check
+in `hello-engine`'s `mcp-http.ts` is a local demonstration only; for
+production, follow [Authenticate with API keys](/recipes/auth/api-key/) or
+one of the other [authentication recipes](/recipes/auth/) and pass the issued
+credential through ADK's `headers` or eve's `auth: connect(...)`.
+
+<Aside type="caution" title="No auth mode never satisfies an authenticated capability">
+  `auth.mode: "dangerously-disabled-for-development"` supplies no principal.
+  Neither ADK nor eve can call a capability whose `access` rule requires
+  authentication against a server started this way.
+</Aside>
+
+## Run it
+
+Build the repository and start the HTTP entry point used by both remote
+examples above:
+
+```sh
+yarn build
+HELLO_ENGINE_DEMO_TOKEN='replace-with-a-local-secret' \
+  node examples/hello-engine/dist/mcp-http.js
+```
+
+Confirm the endpoint answers before pointing a framework at it:
+
+```sh
+curl -sS http://127.0.0.1:3000/mcp \
+  -H 'authorization: Bearer replace-with-a-local-secret' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
+```
+
+For the stdio example, no server process needs to be started manually — ADK
+spawns `examples/hello-engine/dist/mcp-stdio.js` itself.
+
+## Verify it
+
+This repository's build and the
+[generated engine MCP conformance gate](https://github.com/vinilana/invokta/blob/main/docs/adr/0026-generated-engine-mcp-conformance-gate.md)
+validate the Invokta side of this boundary:
+
+```sh
+yarn workspace @invokta/example-hello test
+yarn workspace @invokta/example-hello typecheck
+yarn workspace @invokta/example-hello build
+```
+
+The ADK or eve project itself lives outside this repository's workspace, so
+validate that half with the framework's own tooling — ADK's `adk web` or
+`adk run` against the `curl` smoke check above, or eve's local dev server
+(`eve dev`) — pointed at the same authenticated endpoint.
