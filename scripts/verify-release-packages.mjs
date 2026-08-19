@@ -16,6 +16,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { releasePackages as publicPackages } from "./release/release-packages.mjs";
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = mkdtempSync(join(tmpdir(), "invokta-release-verify-"));
 const checkoutDirectory = join(temporaryRoot, "checkout");
@@ -25,70 +27,10 @@ const generatedDirectory = join(temporaryRoot, "generated");
 const scriptExecutable = execFileSync("which", ["script"], {
   encoding: "utf8",
 }).trim();
-const distEntryFiles = ["dist/index.js", "dist/index.d.ts"];
 const repositoryUrl = "git+https://github.com/vinilana/invokta.git";
 const issuesUrl = "https://github.com/vinilana/invokta/issues";
 const documentationUrl = "https://docs.invokta.dev";
 const packageAuthor = "Vini Lana <vini@aicoders.academy>";
-const publicPackages = [
-  { directory: "core", name: "@invokta/core", requiredFiles: distEntryFiles },
-  { directory: "cli", name: "@invokta/cli", requiredFiles: distEntryFiles },
-  { directory: "mcp", name: "@invokta/mcp", requiredFiles: distEntryFiles },
-  {
-    directory: "tooling",
-    name: "@invokta/tooling",
-    // The dev-only package also ships the `invokta` executable.
-    requiredFiles: [...distEntryFiles, "dist/cli.js"],
-  },
-  {
-    directory: "devtools",
-    name: "@invokta/devtools",
-    // The dev-only package ships the executable and the interface bundle.
-    requiredFiles: [...distEntryFiles, "dist/cli.js", "dist/ui/app.js"],
-  },
-  {
-    directory: "installer",
-    name: "@invokta/installer",
-    // The installer is binary-first; its only import API is the engine subpath.
-    requiredFiles: [
-      "dist/cli.js",
-      "dist/engine-cli.js",
-      "dist/engine-cli.d.ts",
-      "registry/capabilities.json",
-      "registry/README.md",
-    ],
-  },
-  {
-    directory: "deploy",
-    name: "@invokta/deploy",
-    // The toolkit ships both an import API and the `invokta-deploy` executable.
-    requiredFiles: [
-      ...distEntryFiles,
-      "dist/bin.js",
-      "dist/scaffold-public.js",
-      "dist/scaffold-public.d.ts",
-    ],
-  },
-  {
-    directory: "create-invokta-engine",
-    name: "create-invokta-engine",
-    // The creator is binary-only and ships no import API.
-    requiredFiles: ["dist/bin.js"],
-  },
-  {
-    directory: "create-invokta-capability",
-    name: "create-invokta-capability",
-    // The creator is binary-only and ships no import API.
-    requiredFiles: ["dist/bin.js"],
-  },
-  {
-    directory: "create-invokta-capability-library",
-    name: "create-invokta-capability-library",
-    // The creator is binary-only and ships no import API.
-    requiredFiles: ["dist/bin.js"],
-  },
-];
-
 function run(command, args, options = {}) {
   const standardInput = options.input === undefined ? "inherit" : "pipe";
   const result = spawnSync(command, args, {
