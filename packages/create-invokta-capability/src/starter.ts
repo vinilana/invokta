@@ -112,7 +112,7 @@ function renderPackageManifest(
     devDependencies: {
       "@types/node": "26.1.2",
       typescript: "7.0.2",
-      vitest: "4.1.10",
+      vitest: "^4.1.10",
     },
   };
   return `${JSON.stringify(manifest, null, 2)}\n`;
