@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- The scaffolded projects now request `vitest` as `^4.1.10` instead of the exact
+  `4.1.10`. The exact pin left two `vitest` versions in the dependency graph —
+  the pinned one and the `vitest@*` peer that `@vitejs/devtools-vitest` resolves
+  to the latest release — and npm 10's dependency resolver crashed on that peer
+  set with `Cannot read properties of null (reading 'edgesOut')`, so
+  `create-invokta-engine`, `create-invokta-capability`, and
+  `create-invokta-capability-library` failed to install dependencies on the npm
+  that ships with Node 22.
+
 ## [0.6.0] - 2026-08-15
 
 ### Added

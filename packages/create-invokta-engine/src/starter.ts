@@ -358,7 +358,7 @@ function renderPackageManifest(
     ...(hasMcp ? { "@invokta/tooling": invoktaVersion } : {}),
     "@types/node": "26.1.2",
     typescript: "7.0.2",
-    vitest: "4.1.10",
+    vitest: "^4.1.10",
   };
   const manifest = {
     name: projectName,
