@@ -7,8 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-20
+
 ### Fixed
 
+- `create-invokta-engine` falls back to a regular file copy when a symbolic
+  link cannot be created. Creating `CLAUDE.md` as a link to `AGENTS.md` fails
+  with `EPERM` on Windows without Developer Mode, which failed the whole
+  scaffold with `WRITE_FAILED`.
 - The scaffolded projects now request `vitest` as `^4.1.10` instead of the exact
   `4.1.10`. The exact pin left two `vitest` versions in the dependency graph —
   the pinned one and the `vitest@*` peer that `@vitejs/devtools-vitest` resolves
@@ -346,7 +352,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/vinilana/invokta/releases/tag/v0.6.1
 [0.6.0]: https://github.com/vinilana/invokta/releases/tag/v0.6.0
 [0.5.0]: https://github.com/vinilana/invokta/releases/tag/v0.5.0
 [0.4.0]: https://github.com/vinilana/invokta/releases/tag/v0.4.0

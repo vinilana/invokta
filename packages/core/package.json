@@ -1,6 +1,6 @@
 {
   "name": "@invokta/core",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Typed capability contracts and execution runtime for Invokta Action Engines.",
   "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",

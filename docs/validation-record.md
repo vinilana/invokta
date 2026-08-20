@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-08-15
+- Last reviewed: 2026-08-20
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
@@ -40,9 +40,9 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 2,917 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 2,933 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  78.47% statements, 73.98% branches, 82.85% functions, and 79.97% lines.
+  78.48% statements, 73.99% branches, 82.86% functions, and 79.97% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.

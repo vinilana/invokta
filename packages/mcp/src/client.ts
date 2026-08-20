@@ -190,7 +190,7 @@ export class McpClientError extends Error {
 
 const MAX_MESSAGE_BYTES = 10 * 1024 * 1024;
 const CLIENT_NAME = "invokta-mcp-client";
-const CLIENT_VERSION = "0.6.0";
+const CLIENT_VERSION = "0.6.1";
 const HTTP_HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const HTTP_WHITESPACE_AT_START_OR_END = /^(?:[\t ])|(?:[\t ])$/;
