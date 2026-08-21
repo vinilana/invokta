@@ -13,7 +13,7 @@
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
 | `@invokta/devtools` | Development-time engine dev server with per-adapter capability emulation, doctor diagnostics, installed MCP inspection and homologation, and installed CLI inspection and homologation |
-| `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile, or import of one public GitHub example tree |
+| `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile, import of one public GitHub example tree, or guided generation from one local OpenAPI 3.1 contract |
 | `create-invokta-capability` | Creation of a standalone atomic capability package |
 | `create-invokta-capability-library` | Creation of a standalone capability-library package |
 
@@ -63,6 +63,15 @@ while the example owns one replaceable Authorization Server implementation.
 | Concurrent devtools adapter emulations | 4, each in its own process |
 | Devtools playground HTTP targets | 1: the devtools host or one external endpoint |
 | Devtools playground entry points | 1 per adapter: the devtools child or one project entry inside the served directory |
+| OpenAPI import input | 1 local OpenAPI 3.1.x JSON or YAML entry document |
+| OpenAPI import aggregate bytes and documents | 10 MiB and 64 local documents |
+| OpenAPI import operations | 500 discovered, 100 eligible, and 100 selected/generated |
+| OpenAPI import parsed nodes | 100,000; YAML aliases are rejected |
+| OpenAPI import document/reference/schema depth | 64 |
+| OpenAPI import schema nodes | 1,000 reachable by one operation |
+| Generated OpenAPI runtime URL | 8,192 UTF-8 bytes |
+| Generated OpenAPI runtime request body | 10 MiB serialized JSON |
+| Generated OpenAPI runtime response body | 10 MiB streamed bytes |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,
@@ -109,6 +118,16 @@ login flags. Workspace-only Doctor, principals, watch, core events, and
 loopback origin and each keeps its own browser session, so a session for one
 never authorizes the other and switching between them carries no target,
 connection, or activity across.
+
+**AE-LIMIT-08 — Guided OpenAPI import.** The engine creator may parse one
+explicit local OpenAPI 3.1.x JSON or YAML contract, resolve bounded local
+references contained by its directory, display a bounded operation catalog,
+and generate selected operation wrappers plus an engine-owned HTTP dependency.
+It does not fetch remote contracts or references, invoke an operation, read or
+copy credentials, interpret OpenAPI at runtime, acquire OAuth tokens, generate
+multipart or binary clients, or claim that an API mirror is a qualified domain
+Action Engine. Unsupported endpoints remain visible and unselected. Generated
+adapters continue to use the one shared engine and `engine.invoke` path.
 
 ## Evolution triggers
 

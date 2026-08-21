@@ -404,3 +404,18 @@ authentication headers. Profile creation without `--example` still starts no
 creator-owned network request. `--no-install` skips only the package manager.
 Sanitized diagnostics are `EXAMPLE_INVALID`, `EXAMPLE_UNAVAILABLE`, and
 `EXAMPLE_FAILED`.
+
+**AE-CREATE-OPENAPI-01..14 — Guided OpenAPI capability import.**
+`create-invokta-engine --openapi <local-file>` analyzes one bounded local
+OpenAPI 3.1.x JSON or YAML contract without contacting the described service.
+It displays every discovered HTTP operation, selects every eligible operation
+by default, and lets interactive or automated callers exclude operations by a
+stable selector before the existing final confirmation and transactional write.
+The generated project contains only the selected capability candidates and an
+engine-owned HTTP dependency that infers supported server, parameter, JSON
+body, response, and upstream authentication mechanics. It generates only
+credential variable names, keeps upstream security separate from capability
+access, and leaves every adapter on the shared `engine.invoke` path. Unsupported
+or ambiguous mechanics remain visibly ineligible instead of being weakened or
+guessed. Exact syntax, mappings, reasons, limits, diagnostics, and generated
+runtime boundaries are defined by ADR 0034.
