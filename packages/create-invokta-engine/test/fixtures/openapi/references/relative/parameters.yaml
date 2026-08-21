@@ -1,0 +1,6 @@
+WidgetId:
+  name: widgetId
+  in: path
+  required: true
+  schema:
+    $ref: "./schemas.yaml#/WidgetId"

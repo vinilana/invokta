@@ -1,0 +1,19 @@
+openapi: 3.1.1
+info:
+  title: Escaping reference
+  version: 1.0.0
+paths:
+  /escape:
+    get:
+      operationId: escapingReference
+      parameters:
+        - $ref: "../outside.yaml#/Parameter"
+      responses:
+        "204":
+          description: No content
+  /supported:
+    get:
+      operationId: supportedOperation
+      responses:
+        "204":
+          description: No content

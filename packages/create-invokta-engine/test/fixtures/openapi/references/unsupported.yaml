@@ -1,0 +1,25 @@
+openapi: 3.1.1
+info:
+  title: Unsupported references
+  version: 1.0.0
+paths:
+  /absolute:
+    get:
+      operationId: absoluteReference
+      parameters:
+        - $ref: "/tmp/invokta-openapi-parameter.yaml#/Parameter"
+      responses:
+        "204":
+          description: No content
+  /remote:
+    get:
+      operationId: remoteReference
+      responses:
+        "200":
+          $ref: "https://api.example.test/openapi.yaml#/components/responses/Widget"
+  /supported:
+    get:
+      operationId: supportedOperation
+      responses:
+        "204":
+          description: No content

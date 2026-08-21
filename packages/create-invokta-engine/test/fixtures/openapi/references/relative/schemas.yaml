@@ -1,0 +1,20 @@
+WidgetId:
+  type: string
+WidgetInput:
+  type: object
+  properties:
+    name:
+      type: string
+  required:
+    - name
+  additionalProperties: false
+Widget:
+  allOf:
+    - $ref: "#/WidgetInput"
+    - type: object
+      properties:
+        id:
+          $ref: "#/WidgetId"
+      required:
+        - id
+      additionalProperties: false

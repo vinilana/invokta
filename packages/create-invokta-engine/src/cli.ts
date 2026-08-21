@@ -9,6 +9,15 @@ import {
   resolveExampleReference,
 } from "./example.js";
 import { installProjectDependencies, selectPackageManager } from "./install.js";
+import { loadOpenApiDocument, OpenApiImportError } from "./openapi.js";
+import {
+  buildOpenApiStarterOperations,
+  discoverOpenApiOperations,
+  type OpenApiOperationCandidate,
+  type OpenApiStarterOperationPlan,
+  selectOpenApiOperations,
+} from "./openapi-discovery.js";
+import { createOpenApiStarterFiles } from "./openapi-starter.js";
 import {
   isPackageManager,
   type PackageManager,
@@ -18,6 +27,7 @@ import { createBoundedPromptInput, promptInputLimits } from "./prompt.js";
 import {
   assertCreatableStarterTarget,
   planStarterProject,
+  planStarterProjectEntries,
   validateStarterTargetSyntax,
   writeStarterProject,
 } from "./scaffold.js";
@@ -31,6 +41,8 @@ const helpText = `Usage:
     [--profile complete|mcp-stdio|mcp-http|cli]
     [--example <name|github-url>]
     [--example-path <subdir>]
+    [--openapi <local-json-or-yaml-file>]
+    [--exclude <operation-id|METHOD:/path>]...
     [--package-manager npm|pnpm|yarn]
     [--no-install]
     [--yes]
@@ -49,6 +61,8 @@ const profilePrompt =
   "  3. MCP HTTP\n" +
   "  4. CLI\n" +
   "Choose a profile (1): ";
+const openApiSelectionPrompt =
+  "Exclude operations by number (comma-separated, Enter keeps all): ";
 const promptDecoder = new TextDecoder("utf-8", { fatal: true });
 const unsafeTerminalCharacterPattern = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 
@@ -121,6 +135,8 @@ interface CreateArguments {
   readonly profile?: EngineStarterProfile;
   readonly example?: string;
   readonly examplePath?: string;
+  readonly openApi?: string;
+  readonly exclusions: readonly string[];
   readonly packageManager?: PackageManager;
   readonly noInstall: boolean;
   readonly yes: boolean;
@@ -136,6 +152,9 @@ function parseCreateArguments(
   let exampleSeen = false;
   let examplePath: string | undefined;
   let examplePathSeen = false;
+  let openApi: string | undefined;
+  let openApiSeen = false;
+  const exclusions: string[] = [];
   let packageManager: PackageManager | undefined;
   let packageManagerSeen = false;
   let noInstall = false;
@@ -186,6 +205,26 @@ function parseCreateArguments(
       index += 1;
       continue;
     }
+    if (argument === "--openapi") {
+      if (openApiSeen) return undefined;
+      openApiSeen = true;
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("-") || value === "") {
+        return undefined;
+      }
+      openApi = value;
+      index += 1;
+      continue;
+    }
+    if (argument === "--exclude") {
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("-") || value === "") {
+        return undefined;
+      }
+      exclusions.push(value);
+      index += 1;
+      continue;
+    }
     if (argument === "--package-manager") {
       if (packageManagerSeen) return undefined;
       packageManagerSeen = true;
@@ -208,11 +247,16 @@ function parseCreateArguments(
   if (yes && target === undefined) return undefined;
   if (examplePath !== undefined && example === undefined) return undefined;
   if (example !== undefined && profile !== undefined) return undefined;
+  if (openApi !== undefined && example !== undefined) return undefined;
+  if (openApi !== undefined && examplePath !== undefined) return undefined;
+  if (exclusions.length > 0 && openApi === undefined) return undefined;
   return {
     ...(target === undefined ? {} : { target }),
     ...(profile === undefined ? {} : { profile }),
     ...(example === undefined ? {} : { example }),
     ...(examplePath === undefined ? {} : { examplePath }),
+    ...(openApi === undefined ? {} : { openApi }),
+    exclusions: Object.freeze(exclusions),
     ...(packageManager === undefined ? {} : { packageManager }),
     noInstall,
     yes,
@@ -341,6 +385,99 @@ async function promptForProfile(
   throw new CreatorError("PROMPT_INVALID");
 }
 
+function countScalars(value: string): number {
+  let count = 0;
+  for (const _ of value) count += 1;
+  return count;
+}
+
+function validateOpenApiExclusionLimits(exclusions: readonly string[]): void {
+  if (
+    exclusions.length > 500 ||
+    exclusions.some((exclusion) => countScalars(exclusion) > 1_024)
+  ) {
+    throw new CreatorError("OPENAPI_LIMIT_EXCEEDED");
+  }
+}
+
+function renderOpenApiCatalog(
+  candidates: readonly OpenApiOperationCandidate[],
+): string {
+  const lines = [
+    "OpenAPI operations (eligible operations are selected by default):",
+  ];
+  for (const [index, candidate] of candidates.entries()) {
+    const operationId =
+      candidate.operationId === undefined
+        ? ""
+        : ` (${sanitizeDiagnosticDetail(candidate.operationId)})`;
+    if (candidate.eligibility.eligible) {
+      lines.push(
+        `  [x] ${String(index + 1)}. ${sanitizeDiagnosticDetail(candidate.selector)}${operationId}`,
+      );
+    } else {
+      lines.push(
+        `  [ ] ${String(index + 1)}. ${sanitizeDiagnosticDetail(candidate.selector)}${operationId} (${candidate.eligibility.reason})`,
+      );
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function parseOpenApiCatalogExclusions(
+  answer: string,
+  candidates: readonly OpenApiOperationCandidate[],
+): readonly string[] | undefined {
+  if (answer === "") return Object.freeze([]);
+  if (!/^\d+(?:\s*,\s*\d+)*$/u.test(answer)) return undefined;
+  const numbers = answer.split(",").map((token) => Number(token.trim()));
+  if (new Set(numbers).size !== numbers.length) return undefined;
+  const exclusions: string[] = [];
+  for (const number of numbers) {
+    const candidate = candidates[number - 1];
+    if (
+      !Number.isSafeInteger(number) ||
+      candidate === undefined ||
+      !candidate.eligibility.eligible
+    ) {
+      return undefined;
+    }
+    exclusions.push(candidate.selector);
+  }
+  return Object.freeze(exclusions);
+}
+
+async function promptForOpenApiSelection(
+  io: CreateEngineIo,
+  terminal: CreateEngineTerminal,
+  candidates: readonly OpenApiOperationCandidate[],
+  explicitExclusions: readonly string[],
+): Promise<readonly OpenApiOperationCandidate[]> {
+  selectOpenApiOperations(candidates, explicitExclusions);
+  const prompt = `${renderOpenApiCatalog(candidates)}${openApiSelectionPrompt}`;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const answer = await readPromptAnswer(io, terminal, prompt);
+    const catalogExclusions = parseOpenApiCatalogExclusions(answer, candidates);
+    if (catalogExclusions !== undefined) {
+      try {
+        return selectOpenApiOperations(candidates, [
+          ...explicitExclusions,
+          ...catalogExclusions,
+        ]);
+      } catch (error) {
+        if (
+          !(error instanceof OpenApiImportError) ||
+          error.code !== "OPENAPI_SELECTION_INVALID"
+        ) {
+          throw error;
+        }
+      }
+    }
+    if (attempt === 3) throw new CreatorError("PROMPT_INVALID");
+  }
+  throw new CreatorError("PROMPT_INVALID");
+}
+
 function escapeTerminalCharacter(character: string): string {
   const codePoint = character.codePointAt(0);
   if (codePoint === undefined) return "";
@@ -379,6 +516,49 @@ function renderExampleConfirmation(
     ? "without installing dependencies"
     : `and install dependencies with ${packageManager}`;
   return `Create from GitHub example ${quoteTerminalValue(exampleLabel)} in ${quoteTerminalValue(normalizedTarget)} ${installation}? (y/N) `;
+}
+
+function renderOpenApiConnectionSummary(
+  operations: readonly OpenApiStarterOperationPlan[],
+): string {
+  const environmentNames = new Set<string>();
+  const authenticationTypes = new Set<string>();
+  for (const operation of operations) {
+    environmentNames.add(operation.connection.baseUrl.environmentVariable);
+    for (const alternative of operation.security.alternatives) {
+      for (const scheme of alternative) {
+        authenticationTypes.add(scheme.type);
+        for (const name of Object.values(scheme.environmentVariables)) {
+          if (name !== undefined) environmentNames.add(name);
+        }
+      }
+    }
+  }
+  const authentication =
+    authenticationTypes.size === 0
+      ? "anonymous upstream access"
+      : `upstream ${[...authenticationTypes].sort().join(", ")} authentication`;
+  return `Connection configuration: ${String(environmentNames.size)} runtime environment variable(s); ${authentication}.`;
+}
+
+function renderOpenApiConfirmation(
+  sourcePath: string,
+  profile: EngineStarterProfile,
+  normalizedTarget: string,
+  packageManager: PackageManager,
+  noInstall: boolean,
+  selectedCount: number,
+  eligibleCount: number,
+  operations: readonly OpenApiStarterOperationPlan[],
+): string {
+  const installation = noInstall
+    ? "without installing dependencies"
+    : `and install dependencies with ${packageManager}`;
+  const noun = eligibleCount === 1 ? "operation" : "operations";
+  return (
+    `${renderOpenApiConnectionSummary(operations)}\n` +
+    `Create the ${profileLabels[profile]} scaffold from OpenAPI ${quoteTerminalValue(sourcePath)} with ${String(selectedCount)} of ${String(eligibleCount)} eligible ${noun} in ${quoteTerminalValue(normalizedTarget)} ${installation}? (y/N) `
+  );
 }
 
 async function promptForConfirmation(
@@ -438,6 +618,7 @@ export async function runCreateEngineCli(
 
   const cwd = options.cwd ?? process.cwd();
   try {
+    validateOpenApiExclusionLimits(parsed.exclusions);
     const target = parsed.target ?? (await promptForTarget(cwd, io, terminal));
     const environment = options.env ?? process.env;
     const packageManager = selectPackageManager(
@@ -499,6 +680,92 @@ export async function runCreateEngineCli(
     const invoktaVersion = await (
       options.loadPackageVersion ?? loadDefaultPackageVersion
     )();
+    if (parsed.openApi !== undefined) {
+      const targetMeta = validateStarterTargetSyntax(cwd, target);
+      const document = await loadOpenApiDocument({
+        cwd,
+        path: parsed.openApi,
+      });
+      const candidates = discoverOpenApiOperations(document);
+      const eligibleCount = candidates.filter(
+        (candidate) => candidate.eligibility.eligible,
+      ).length;
+      if (eligibleCount === 0) {
+        if (interactive) {
+          try {
+            await io.writeStderr(renderOpenApiCatalog(candidates));
+          } catch {
+            throw new CreatorError("PROMPT_ABORTED");
+          }
+        }
+        throw new OpenApiImportError("OPENAPI_UNSUPPORTED");
+      }
+      const selectedCandidates = interactive
+        ? await promptForOpenApiSelection(
+            io,
+            terminal,
+            candidates,
+            parsed.exclusions,
+          )
+        : selectOpenApiOperations(candidates, parsed.exclusions);
+      const operations = buildOpenApiStarterOperations(
+        document,
+        selectedCandidates,
+      );
+      const entries = createOpenApiStarterFiles({
+        projectName: targetMeta.projectName,
+        invoktaVersion,
+        packageManager,
+        profile,
+        selectedOperations: operations,
+      });
+      const plan = await planStarterProjectEntries({
+        cwd,
+        target,
+        profile,
+        entries,
+      });
+
+      if (interactive) {
+        const confirmed = await promptForConfirmation(
+          io,
+          terminal,
+          renderOpenApiConfirmation(
+            parsed.openApi,
+            profile,
+            plan.normalizedTarget,
+            packageManager,
+            parsed.noInstall,
+            operations.length,
+            eligibleCount,
+            operations,
+          ),
+        );
+        if (!confirmed) {
+          await io.writeStdout(cancellationText);
+          return 0;
+        }
+      }
+
+      const project = await writeStarterProject(plan);
+      if (!parsed.noInstall) {
+        await (options.install ?? installProjectDependencies)({
+          directory: project.directory,
+          packageManager,
+        });
+      }
+      const capabilityNoun =
+        operations.length === 1 ? "capability" : "capabilities";
+      await io.writeStdout(
+        renderSuccess(
+          project.projectName,
+          `from OpenAPI with ${String(operations.length)} ${capabilityNoun}`,
+          packageManager,
+          parsed.noInstall,
+        ),
+      );
+      return 0;
+    }
     const plan = await planStarterProject({
       cwd,
       target,
@@ -541,6 +808,11 @@ export async function runCreateEngineCli(
     );
     return 0;
   } catch (error) {
+    if (error instanceof OpenApiImportError) {
+      const normalized = new CreatorError(error.code);
+      await writeDiagnostic(io, renderCreatorDiagnostic(normalized));
+      return normalized.exitCode;
+    }
     if (error instanceof CreatorError) {
       await writeDiagnostic(io, renderCreatorDiagnostic(error));
       return error.exitCode;

@@ -1,9 +1,10 @@
 # create-invokta-engine
 
 Create a standalone TypeScript Action Engine with one deterministic capability
-and a selected execution profile, or import a public GitHub example tree as the
-project template. Every generated profile entry point imports the same engine
-and reaches capability execution through `engine.invoke` or an official Invokta
+and a selected execution profile, import selected capabilities from a local
+OpenAPI contract, or import a public GitHub example tree as the project
+template. Every generated profile entry point imports the same engine and
+reaches capability execution through `engine.invoke` or an official Invokta
 adapter.
 
 ## Commands
@@ -13,6 +14,8 @@ create-invokta-engine [project-directory]
   [--profile complete|mcp-stdio|mcp-http|cli]
   [--example <name|github-url>]
   [--example-path <subdir>]
+  [--openapi <local-json-or-yaml-file>]
+  [--exclude <operation-id|METHOD:/path>]...
   [--package-manager npm|pnpm|yarn]
   [--no-install]
   [--yes]
@@ -45,10 +48,12 @@ Terminal automation should make its choices explicit:
 ```sh
 create-invokta-engine my-engine --profile complete --no-install --yes
 create-invokta-engine my-engine --example auth-clerk-engine --no-install --yes
+create-invokta-engine my-engine --openapi ./openapi.yaml --no-install --yes
 ```
 
-`--example` and `--profile` are mutually exclusive. `--example-path` requires
-`--example`.
+`--example` and `--openapi` are mutually exclusive. `--example-path` requires
+`--example`, and `--exclude` requires `--openapi`. OpenAPI import may be
+combined with any starter profile.
 
 The invoking package manager is inferred from `npm_config_user_agent`, with npm
 as the fallback. Use `--package-manager` to choose explicitly. `--no-install`
@@ -134,6 +139,38 @@ only the selected subtree, and rewrites `package.json` `name` to the project
 directory name. Private repositories, SSH, tokens, and non-GitHub hosts are
 unsupported. Template dependency completeness belongs to the example author.
 
+## OpenAPI capability import
+
+`--openapi` analyzes a local OpenAPI 3.1 JSON or YAML document and generates
+ordinary TypeScript capabilities for supported HTTP operations. It does not
+contact the described API while importing.
+
+Every eligible operation is selected by default. In an interactive terminal,
+the command displays a numbered catalog and asks which operation numbers to
+exclude. For automation, repeat `--exclude` with a unique `operationId` or a
+canonical `METHOD:/path` selector:
+
+```sh
+create-invokta-engine my-engine \
+  --profile cli \
+  --openapi ./openapi.yaml \
+  --exclude deleteAccount \
+  --exclude 'POST:/internal/reindex' \
+  --no-install \
+  --yes
+```
+
+The importer infers server precedence, server-variable defaults, parameter
+locations and serialization, JSON request and success-response contracts, and
+anonymous, API-key, Basic, or Bearer upstream authentication. Generated
+credentials are environment-variable names only; values remain runtime
+configuration in `upstream.env.example`. Unsupported operations stay visible
+with a stable reason and are never generated with weakened behavior.
+
+The result is a source-generated starting point, not a trusted API mirror.
+Review capability names, domain boundaries, `access` rules, upstream base URLs,
+and credential handling before deployment.
+
 ## Prompt and target safety
 
 Each answer is strict UTF-8 and limited to 4,096 encoded bytes including the
@@ -162,11 +199,13 @@ install failure preserves the complete generated project for retry.
 | Exit | Meaning |
 | ---: | --- |
 | `0` | Help, version, creation, or normal cancellation succeeded |
-| `1` | Prompt interruption, target safety, filesystem, example, or installation failed |
-| `2` | Usage, required interaction, prompt input, path, name, or example reference was invalid |
+| `1` | Prompt interruption, target safety, filesystem, import, or installation failed |
+| `2` | Usage, required interaction, prompt input, path, name, or import input was invalid |
 
 Creator diagnostics are `INTERACTIVE_REQUIRED`, `PROMPT_INVALID`,
 `PROMPT_ABORTED`, `TARGET_INVALID`, `TARGET_UNSAFE`, `TARGET_NOT_EMPTY`,
 `SCAFFOLD_CONFLICT`, `WRITE_FAILED`, `INSTALL_FAILED`, `EXAMPLE_INVALID`,
-`EXAMPLE_UNAVAILABLE`, and `EXAMPLE_FAILED`. They never include a rejected
-answer or argument, environment value, child error, stack, or cause.
+`EXAMPLE_UNAVAILABLE`, `EXAMPLE_FAILED`, `OPENAPI_INVALID`,
+`OPENAPI_UNAVAILABLE`, `OPENAPI_UNSUPPORTED`, `OPENAPI_SELECTION_INVALID`, and
+`OPENAPI_LIMIT_EXCEEDED`. They never include a rejected answer or argument,
+environment value, document fragment, credential, child error, stack, or cause.

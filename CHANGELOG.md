@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `create-invokta-engine --openapi` imports supported operations from a bounded
+  local OpenAPI 3.1 JSON or YAML contract. Eligible endpoints are selected by
+  default, interactive and repeatable `--exclude` selection removes unwanted
+  capabilities, and generated source infers supported server, parameter, JSON
+  body, response, and upstream authentication mechanics without importing
+  credentials or contacting the described API.
+
 ## [0.6.1] - 2026-08-20
 
 ### Fixed

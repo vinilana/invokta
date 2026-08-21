@@ -12,6 +12,12 @@ export const creatorErrorMessages = Object.freeze({
   EXAMPLE_INVALID: "The example reference is invalid.",
   EXAMPLE_UNAVAILABLE: "The example could not be resolved or downloaded.",
   EXAMPLE_FAILED: "The example project could not be created.",
+  OPENAPI_INVALID: "The OpenAPI document is invalid.",
+  OPENAPI_UNAVAILABLE: "The OpenAPI document could not be read.",
+  OPENAPI_UNSUPPORTED:
+    "The OpenAPI document has no supported operation to import.",
+  OPENAPI_SELECTION_INVALID: "The OpenAPI operation selection is invalid.",
+  OPENAPI_LIMIT_EXCEEDED: "The OpenAPI import exceeds a supported limit.",
 } as const);
 
 export type CreatorErrorCode = keyof typeof creatorErrorMessages;
@@ -30,6 +36,11 @@ const creatorErrorExitCodes = Object.freeze({
   EXAMPLE_INVALID: 2,
   EXAMPLE_UNAVAILABLE: 1,
   EXAMPLE_FAILED: 1,
+  OPENAPI_INVALID: 2,
+  OPENAPI_UNAVAILABLE: 1,
+  OPENAPI_UNSUPPORTED: 1,
+  OPENAPI_SELECTION_INVALID: 2,
+  OPENAPI_LIMIT_EXCEEDED: 1,
 } as const) satisfies Readonly<Record<CreatorErrorCode, CreatorExitCode>>;
 
 const unsafeDiagnosticCharacterPattern = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;

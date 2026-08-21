@@ -177,8 +177,10 @@ Invokta supplies the shared runtime mechanics and delivery adapters:
   deployed endpoints, and inspects OAuth discovery readiness;
 - `create-invokta-engine` creates a `complete`, `cli`, `mcp-stdio`, or
   `mcp-http` standalone starter; the `complete` profile includes direct, CLI,
-  MCP stdio, and MCP HTTP entry points, and `--example` bootstraps a project
-  from an official example or any public GitHub template instead;
+  MCP stdio, and MCP HTTP entry points, `--openapi` generates selected
+  capabilities from a bounded local OpenAPI 3.1 contract, and `--example`
+  bootstraps a project from an official example or any public GitHub template
+  instead;
 - `create-invokta-capability` creates a standalone atomic capability package;
   and
 - `create-invokta-capability-library` creates a standalone capability-library

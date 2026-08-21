@@ -1,0 +1,13 @@
+openapi: 3.1.1
+info:
+  title: YAML alias
+  version: 1.0.0
+paths:
+  /widgets:
+    get:
+      responses: &successResponses
+        "204":
+          description: No content
+  /gadgets:
+    get:
+      responses: *successResponses

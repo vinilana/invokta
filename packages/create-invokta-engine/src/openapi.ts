@@ -1,12 +1,16 @@
-import { type FileHandle, open } from "node:fs/promises";
-import { resolve } from "node:path";
+import { type FileHandle, open, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import { parseDocument } from "yaml";
 
 const maxEntryDocumentBytes = 10_485_760;
+const maxLocalDocuments = 64;
 const maxDocumentDepth = 64;
 const maxParsedNodes = 100_000;
+const maxReferenceDepth = 64;
 const openApiVersionPattern = /^3\.1\.\d+$/u;
+const uriSchemePattern = /^[A-Za-z][A-Za-z\d+.-]*:/u;
+const unsupportedReference = Object.freeze({});
 
 export type OpenApiObject = Readonly<Record<string, unknown>>;
 
@@ -57,17 +61,20 @@ function isObject(value: unknown): value is OpenApiObject {
   return prototype === Object.prototype || prototype === null;
 }
 
-async function readBoundedRegularFile(path: string): Promise<Uint8Array> {
+async function readBoundedRegularFile(
+  path: string,
+  maximumBytes: number,
+): Promise<Uint8Array> {
   let handle: FileHandle | undefined;
   try {
     handle = await open(path, "r");
     const status = await handle.stat();
     if (!status.isFile()) throw new OpenApiImportError("OPENAPI_UNAVAILABLE");
-    if (status.size > maxEntryDocumentBytes) {
+    if (status.size > maximumBytes) {
       throw new OpenApiImportError("OPENAPI_LIMIT_EXCEEDED");
     }
 
-    const buffer = new Uint8Array(maxEntryDocumentBytes + 1);
+    const buffer = new Uint8Array(maximumBytes + 1);
     let length = 0;
     while (length < buffer.byteLength) {
       const result = await handle.read(
@@ -79,7 +86,7 @@ async function readBoundedRegularFile(path: string): Promise<Uint8Array> {
       if (result.bytesRead === 0) break;
       length += result.bytesRead;
     }
-    if (length > maxEntryDocumentBytes) {
+    if (length > maximumBytes) {
       throw new OpenApiImportError("OPENAPI_LIMIT_EXCEEDED");
     }
     return buffer.slice(0, length);
@@ -91,18 +98,19 @@ async function readBoundedRegularFile(path: string): Promise<Uint8Array> {
   }
 }
 
-function assertBoundedJsonValue(root: unknown): void {
+function assertBoundedJsonValue(
+  root: unknown,
+  parsedNodeCount: { value: number },
+): void {
   const stack: Array<Readonly<{ value: unknown; depth: number }>> = [
     { value: root, depth: 1 },
   ];
-  let parsedNodes = 0;
-
   while (stack.length > 0) {
     const current = stack.pop();
     if (current === undefined) break;
     const { value, depth } = current;
-    parsedNodes += 1;
-    if (parsedNodes > maxParsedNodes) {
+    parsedNodeCount.value += 1;
+    if (parsedNodeCount.value > maxParsedNodes) {
       throw new OpenApiImportError("OPENAPI_LIMIT_EXCEEDED");
     }
     if (depth > maxDocumentDepth) {
@@ -136,7 +144,10 @@ function assertBoundedJsonValue(root: unknown): void {
   }
 }
 
-function parseOpenApiDocument(source: Uint8Array): OpenApiDocument {
+function parseDocumentValue(
+  source: Uint8Array,
+  parsedNodeCount: { value: number },
+): unknown {
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(source);
@@ -163,7 +174,11 @@ function parseOpenApiDocument(source: Uint8Array): OpenApiDocument {
     throw new OpenApiImportError("OPENAPI_INVALID");
   }
 
-  assertBoundedJsonValue(value);
+  assertBoundedJsonValue(value, parsedNodeCount);
+  return value;
+}
+
+function assertOpenApiDocument(value: unknown): OpenApiDocument {
   if (!isObject(value)) throw new OpenApiImportError("OPENAPI_INVALID");
   if (
     typeof value.openapi !== "string" ||
@@ -180,12 +195,248 @@ function parseOpenApiDocument(source: Uint8Array): OpenApiDocument {
   return value as OpenApiDocument;
 }
 
+function isContainedPath(rootDirectory: string, path: string): boolean {
+  const pathFromRoot = relative(rootDirectory, path);
+  return (
+    pathFromRoot === "" ||
+    (pathFromRoot !== ".." &&
+      !pathFromRoot.startsWith(`..${sep}`) &&
+      !isAbsolute(pathFromRoot))
+  );
+}
+
+function pointerTarget(document: unknown, fragment: string): unknown {
+  let decodedFragment: string;
+  try {
+    decodedFragment = decodeURIComponent(fragment);
+  } catch {
+    return unsupportedReference;
+  }
+  if (decodedFragment === "") return document;
+  if (!decodedFragment.startsWith("/")) return unsupportedReference;
+
+  let current = document;
+  for (const encodedToken of decodedFragment.slice(1).split("/")) {
+    if (/~(?:[^01]|$)/u.test(encodedToken)) return unsupportedReference;
+    const token = encodedToken.replaceAll("~1", "/").replaceAll("~0", "~");
+    if (Array.isArray(current)) {
+      if (!/^(?:0|[1-9]\d*)$/u.test(token)) return unsupportedReference;
+      const index = Number(token);
+      if (!Number.isSafeInteger(index) || index >= current.length) {
+        return unsupportedReference;
+      }
+      current = current[index];
+      continue;
+    }
+    if (!isObject(current) || !Object.hasOwn(current, token)) {
+      return unsupportedReference;
+    }
+    current = current[token];
+  }
+  return current;
+}
+
+interface ReferenceResolutionContext {
+  readonly rootDirectory: string;
+  readonly documents: Map<string, unknown>;
+  readonly byteCount: { value: number };
+  readonly parsedNodeCount: { value: number };
+}
+
+function unsupportedReferenceSyntax(reference: string): boolean {
+  const path = reference.split("#", 1)[0] ?? "";
+  return (
+    reference.indexOf("#") !== reference.lastIndexOf("#") ||
+    path.includes("?") ||
+    path.includes("\0") ||
+    uriSchemePattern.test(path) ||
+    isAbsolute(path) ||
+    path.startsWith("\\\\")
+  );
+}
+
+async function loadReferencedDocument(
+  context: ReferenceResolutionContext,
+  declaringDocumentPath: string,
+  encodedPath: string,
+): Promise<Readonly<{ path: string; value: unknown }> | undefined> {
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(encodedPath);
+  } catch {
+    return undefined;
+  }
+  if (decodedPath.includes("\0")) return undefined;
+
+  const candidatePath = resolve(dirname(declaringDocumentPath), decodedPath);
+  if (!isContainedPath(context.rootDirectory, candidatePath)) return undefined;
+
+  let canonicalPath: string;
+  try {
+    canonicalPath = await realpath(candidatePath);
+  } catch {
+    return undefined;
+  }
+  if (!isContainedPath(context.rootDirectory, canonicalPath)) return undefined;
+
+  if (context.documents.has(canonicalPath)) {
+    return { path: canonicalPath, value: context.documents.get(canonicalPath) };
+  }
+  if (context.documents.size >= maxLocalDocuments) {
+    throw new OpenApiImportError("OPENAPI_LIMIT_EXCEEDED");
+  }
+
+  const remainingBytes = maxEntryDocumentBytes - context.byteCount.value;
+  let source: Uint8Array;
+  try {
+    source = await readBoundedRegularFile(canonicalPath, remainingBytes);
+  } catch (error) {
+    if (
+      error instanceof OpenApiImportError &&
+      error.code === "OPENAPI_LIMIT_EXCEEDED"
+    ) {
+      throw error;
+    }
+    return undefined;
+  }
+  context.byteCount.value += source.byteLength;
+  const value = parseDocumentValue(source, context.parsedNodeCount);
+  context.documents.set(canonicalPath, value);
+  return { path: canonicalPath, value };
+}
+
+async function resolveReferences(
+  value: unknown,
+  declaringDocumentPath: string,
+  context: ReferenceResolutionContext,
+  depth: number,
+  activeReferences: ReadonlySet<string>,
+): Promise<unknown> {
+  if (depth > maxReferenceDepth) {
+    throw new OpenApiImportError("OPENAPI_LIMIT_EXCEEDED");
+  }
+  if (Array.isArray(value)) {
+    const result: unknown[] = [];
+    for (const member of value) {
+      result.push(
+        await resolveReferences(
+          member,
+          declaringDocumentPath,
+          context,
+          depth,
+          activeReferences,
+        ),
+      );
+    }
+    return result;
+  }
+  if (!isObject(value)) return value;
+
+  if (typeof value.$ref === "string") {
+    const reference = value.$ref;
+    if (unsupportedReferenceSyntax(reference)) return unsupportedReference;
+    const hashIndex = reference.indexOf("#");
+    const encodedPath =
+      hashIndex === -1 ? reference : reference.slice(0, hashIndex);
+    const fragment = hashIndex === -1 ? "" : reference.slice(hashIndex + 1);
+    const targetDocument =
+      encodedPath === ""
+        ? {
+            path: declaringDocumentPath,
+            value: context.documents.get(declaringDocumentPath),
+          }
+        : await loadReferencedDocument(
+            context,
+            declaringDocumentPath,
+            encodedPath,
+          );
+    if (targetDocument?.value === undefined) return unsupportedReference;
+
+    const target = pointerTarget(targetDocument.value, fragment);
+    if (target === unsupportedReference) return unsupportedReference;
+    const referenceKey = `${targetDocument.path}#${fragment}`;
+    if (activeReferences.has(referenceKey)) return unsupportedReference;
+    const nextActiveReferences = new Set(activeReferences);
+    nextActiveReferences.add(referenceKey);
+    const resolvedTarget = await resolveReferences(
+      target,
+      targetDocument.path,
+      context,
+      depth + 1,
+      nextActiveReferences,
+    );
+    if (resolvedTarget === unsupportedReference) return unsupportedReference;
+
+    const siblings = Object.fromEntries(
+      Object.entries(value).filter(([name]) => name !== "$ref"),
+    );
+    if (Object.keys(siblings).length === 0) return resolvedTarget;
+    if (!isObject(resolvedTarget)) return unsupportedReference;
+    const resolvedSiblings = await resolveReferences(
+      siblings,
+      declaringDocumentPath,
+      context,
+      depth,
+      activeReferences,
+    );
+    if (!isObject(resolvedSiblings)) return unsupportedReference;
+    return { ...resolvedTarget, ...resolvedSiblings };
+  }
+
+  const result: Record<string, unknown> = Object.create(null) as Record<
+    string,
+    unknown
+  >;
+  for (const [name, member] of Object.entries(value)) {
+    result[name] = await resolveReferences(
+      member,
+      declaringDocumentPath,
+      context,
+      depth,
+      activeReferences,
+    );
+  }
+  return result;
+}
+
+/** Tests whether resolved OpenAPI data contains an unsupported reference marker. */
+export function containsUnsupportedOpenApiReference(value: unknown): boolean {
+  const pending = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === unsupportedReference) return true;
+    if (Array.isArray(current)) {
+      pending.push(...current);
+    } else if (isObject(current)) {
+      pending.push(...Object.values(current));
+    }
+  }
+  return false;
+}
+
 /** Loads one strict, byte-bounded local OpenAPI 3.1 entry document. */
 export async function loadOpenApiDocument(
   options: LoadOpenApiDocumentOptions,
 ): Promise<OpenApiDocument> {
-  const bytes = await readBoundedRegularFile(
-    resolve(options.cwd, options.path),
+  const requestedPath = resolve(options.cwd, options.path);
+  let entryPath: string;
+  try {
+    entryPath = await realpath(requestedPath);
+  } catch {
+    throw new OpenApiImportError("OPENAPI_UNAVAILABLE");
+  }
+  const bytes = await readBoundedRegularFile(entryPath, maxEntryDocumentBytes);
+  const parsedNodeCount = { value: 0 };
+  const rawDocument = assertOpenApiDocument(
+    parseDocumentValue(bytes, parsedNodeCount),
   );
-  return parseOpenApiDocument(bytes);
+  const context: ReferenceResolutionContext = {
+    rootDirectory: dirname(entryPath),
+    documents: new Map([[entryPath, rawDocument]]),
+    byteCount: { value: bytes.byteLength },
+    parsedNodeCount,
+  };
+  return assertOpenApiDocument(
+    await resolveReferences(rawDocument, entryPath, context, 0, new Set()),
+  );
 }
