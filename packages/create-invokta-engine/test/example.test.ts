@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import {
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { link, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -377,6 +383,18 @@ describe("diagnostic sanitization", () => {
   });
 });
 
+describe("official example portability", () => {
+  it("keeps the self-hosted OAuth instructions as a regular file", () => {
+    const instructions = new URL(
+      "../../../examples/auth-self-hosted-oauth-engine/CLAUDE.md",
+      import.meta.url,
+    );
+
+    expect(lstatSync(instructions).isFile()).toBe(true);
+    expect(readFileSync(instructions, "utf8")).toContain("AGENTS.md");
+  });
+});
+
 describe("createExampleProject", () => {
   it("downloads a subtree, rewrites package name, and copies files", async () => {
     const cwd = createWorkingDirectory();
@@ -506,6 +524,93 @@ describe("createExampleProject", () => {
         readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
       ).toThrow();
     }
+  });
+
+  it("ignores links outside the selected template subtree", async () => {
+    for (const [index, typeflag] of (["1", "2"] as const).entries()) {
+      const cwd = createWorkingDirectory();
+      const archive = buildRawTarGz([
+        { name: "repo-main/", typeflag: "5" },
+        {
+          name: "repo-main/templates/engine/package.json",
+          content: '{"name":"template","private":true}\n',
+          typeflag: "0",
+        },
+        {
+          name: "repo-main/templates/engine/src/engine.ts",
+          content: "export const ready = true;\n",
+          typeflag: "0",
+        },
+        {
+          name: "repo-main/examples/other/AGENTS.md",
+          content: "instructions\n",
+          typeflag: "0",
+        },
+        {
+          name: "repo-main/examples/other/CLAUDE.md",
+          typeflag,
+          linkpath: "AGENTS.md",
+        },
+      ]);
+      const target = `my-engine-${String(index + 1)}`;
+
+      const project = await createExampleProject({
+        cwd,
+        target,
+        example: {
+          owner: "acme",
+          repository: "repo",
+          branch: "main",
+          filePath: "templates/engine",
+          label: "acme/repo/templates/engine",
+        },
+        fetch: createFetch({ archive }),
+      });
+
+      expect(project.files).toEqual(["package.json", "src/engine.ts"]);
+      expect(
+        JSON.parse(
+          readFileSync(join(project.directory, "package.json"), "utf8"),
+        ),
+      ).toMatchObject({ name: target, private: true });
+      expect(
+        readFileSync(join(project.directory, "src/engine.ts"), "utf8"),
+      ).toBe("export const ready = true;\n");
+    }
+  });
+
+  it("rejects a Windows path escape outside the selected subtree", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = buildRawTarGz([
+      {
+        name: "repo-main/templates/engine/package.json",
+        content: '{"name":"template"}\n',
+        typeflag: "0",
+      },
+      {
+        name: "repo-main\\sibling\\..\\outside.txt",
+        content: "unsafe\n",
+        typeflag: "0",
+      },
+    ]);
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: {
+          owner: "acme",
+          repository: "repo",
+          branch: "main",
+          filePath: "templates/engine",
+          label: "acme/repo/templates/engine",
+        },
+        fetch: createFetch({ archive }),
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+    expect(() =>
+      readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
+    ).toThrow();
   });
 
   it("rejects ContiguousFile entries that exceed extract limits", async () => {
@@ -718,6 +823,7 @@ describe("createExampleProject", () => {
       "repo-main/../outside.txt",
       "C:/windows/package.json",
       "C:\\windows\\package.json",
+      "repo-main\\..\\outside.txt",
       "//server/share/package.json",
       "\\\\server\\share\\package.json",
     ];
