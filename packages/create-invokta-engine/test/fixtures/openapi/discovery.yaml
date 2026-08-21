@@ -1,0 +1,98 @@
+openapi: 3.1.1
+info:
+  title: Discovery fixture
+  version: 1.0.0
+servers:
+  - url: https://root.example.test/v1
+components:
+  securitySchemes:
+    unsupportedOAuth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://identity.example.test/token
+          scopes: {}
+paths:
+  /alias-a:
+    get:
+      operationId: sharedAlias
+      responses:
+        "204":
+          description: Empty success
+  /alias-b:
+    get:
+      operationId: sharedAlias
+      responses:
+        "204":
+          description: Empty success
+  /bad-parameter:
+    get:
+      operationId: badParameter
+      parameters:
+        - name: q
+          in: query
+          allowReserved: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Empty success
+  /no-success:
+    get:
+      operationId: noSuccess
+      responses:
+        default:
+          description: Default is not an explicit success
+  /oauth:
+    get:
+      operationId: oauthOperation
+      security:
+        - unsupportedOAuth: []
+      responses:
+        "204":
+          description: Empty success
+  /operation-server:
+    servers:
+      - url: https://path.example.test/v2
+    get:
+      operationId: operationServer
+      servers:
+        - url: https://operation.example.test/v3
+      responses:
+        "204":
+          description: Empty success
+  /path-server:
+    servers:
+      - url: https://path.example.test/v2
+    get:
+      operationId: pathServer
+      responses:
+        "204":
+          description: Empty success
+  /root-server:
+    get:
+      operationId: rootServer
+      responses:
+        "204":
+          description: Empty success
+  /upload:
+    post:
+      operationId: uploadFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  contentEncoding: base64
+      responses:
+        "204":
+          description: Empty success
+  /without-operation-id:
+    get:
+      responses:
+        "204":
+          description: Empty success
