@@ -15,6 +15,7 @@ const requiredRecipeRoutes = [
   "/recipes/domain-authorization/",
   "/recipes/capability-composition/",
   "/recipes/mcp-stdio-consumer/",
+  "/recipes/agent-framework-tool-loading/",
   "/recipes/external-provider/",
   "/recipes/auth/jwt-bearer/",
   "/recipes/auth/supabase/",
