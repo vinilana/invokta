@@ -41,3 +41,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0032](0032-cli-installation-inspection-and-homologation.md) | CLI installation inspection and homologation | Accepted | 2026-08-15 |
 | [0033](0033-workbench-launcher-and-selection.md) | Workbench launcher and workbench selection | Accepted | 2026-08-15 |
 | [0034](0034-harness-config-variants-and-vscode-remote-user-scope.md) | Harness configuration variants and VS Code remote user scope | Accepted | 2026-08-22 |
+| [0035](0035-example-archive-path-and-subtree-validation.md) | Example archive path and subtree validation | Accepted | 2026-08-21 |

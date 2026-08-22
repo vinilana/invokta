@@ -400,7 +400,11 @@ Before mutation the creator verifies `package.json` at the example root. After
 confirmation it downloads only from `codeload.github.com`, extracts the selected
 subtree, rewrites `package.json` `name` to the project directory name, and
 copies regular files through the existing exclusive-create and rollback
-boundary. Archive links and path escapes are rejected. Creator-owned example
+boundary. Links and unsupported entry types in the selected subtree are
+rejected; types outside it are ignored because those entries are never
+extracted, and prefix-neighbor paths are not members of the subtree. Raw USTAR,
+PAX, and GNU paths are validated before platform normalization; backslashes and
+path escapes are rejected across the whole archive. Creator-owned example
 network hosts are only `api.github.com` and `codeload.github.com`, with no
 authentication headers. Profile creation without `--example` still starts no
 creator-owned network request. `--no-install` skips only the package manager.

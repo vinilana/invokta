@@ -27,7 +27,9 @@ Each delivered change is normative through its accepted architecture decision:
 - Interactive engine creator profiles —
   [ADR 0018](./adr/0018-interactive-engine-creator-profiles.md)
 - GitHub example import for `create-invokta-engine` —
-  [ADR 0020](./adr/0020-github-example-import-for-engine-creator.md)
+  [ADR 0020](./adr/0020-github-example-import-for-engine-creator.md), amended
+  with portable path and selected-subtree validation by
+  [ADR 0035](./adr/0035-example-archive-path-and-subtree-validation.md)
 - Engine devtools dev server —
   [ADR 0021](./adr/0021-engine-devtools-dev-server.md)
 - MCP installation inspection and homologation —
@@ -58,6 +60,16 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0033](./adr/0033-workbench-launcher-and-selection.md)
 - Harness configuration variants and VS Code remote user scope —
   [ADR 0034](./adr/0034-harness-config-variants-and-vscode-remote-user-scope.md)
+
+## Design notes
+
+Proposals under review. They are not delivered behavior and do not override a
+contract or ADR; each one records the boundary it would need before it becomes
+an architecture decision.
+
+- [Connector brokers and request-time credentials](./connector-brokers.md) —
+  integrating Vercel Connect or another connector broker without extending the
+  core
 
 ## Guides and examples
 
