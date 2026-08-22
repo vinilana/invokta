@@ -1,10 +1,19 @@
 import type { EngineError } from "@invokta/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createDatadogLogStore } from "../src/infrastructure/datadog-log-store.js";
-import { createNewRelicTelemetryReader } from "../src/infrastructure/new-relic-telemetry-reader.js";
+import {
+  createDatadogLogStore,
+  datadogConnector,
+} from "../src/infrastructure/datadog-log-store.js";
+import {
+  createNewRelicTelemetryReader,
+  newRelicConnector,
+} from "../src/infrastructure/new-relic-telemetry-reader.js";
 import { requestProviderJson } from "../src/infrastructure/provider-http.js";
-import { createSentryIssueTracker } from "../src/infrastructure/sentry-issue-tracker.js";
+import {
+  createSentryIssueTracker,
+  sentryConnector,
+} from "../src/infrastructure/sentry-issue-tracker.js";
 import {
   type ObservabilityStub,
   type ObservabilityStubOptions,
@@ -35,6 +44,66 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   await stub?.close();
   stub = undefined;
+});
+
+describe("typed observability connectors", () => {
+  it("constructs one port per provider without network I/O", () => {
+    let requests = 0;
+    const fetchImplementation: typeof fetch = async () => {
+      requests += 1;
+      return new Response();
+    };
+    const sentry = sentryConnector.create(
+      { authToken: "sentry-token", organization: "acme" },
+      { fetch: fetchImplementation },
+    );
+    const datadog = datadogConnector.create(
+      { apiKey: "dd-key", applicationKey: "dd-app-key" },
+      { fetch: fetchImplementation },
+    );
+    const newRelic = newRelicConnector.create(
+      { userKey: "nr-key", accountId: 123 },
+      { fetch: fetchImplementation },
+    );
+
+    expect(sentryConnector.name).toBe("sentry");
+    expect(datadogConnector.name).toBe("datadog");
+    expect(newRelicConnector.name).toBe("new-relic");
+    expect(Object.keys(sentry.ports)).toEqual(["issues"]);
+    expect(Object.keys(datadog.ports)).toEqual(["logs"]);
+    expect(Object.keys(newRelic.ports)).toEqual(["telemetry"]);
+    expect(requests).toBe(0);
+  });
+
+  it("sanitizes invalid private connector configuration", () => {
+    const dependencies = { fetch: globalThis.fetch };
+
+    expect(() =>
+      sentryConnector.create(
+        { authToken: "", organization: "acme" },
+        dependencies,
+      ),
+    ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      sentryConnector.create(
+        {
+          authToken: "token",
+          organization: "acme",
+          baseUrl: "https://secret@example.com",
+        },
+        dependencies,
+      ),
+    ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      datadogConnector.create(
+        { apiKey: "", applicationKey: "app-key" },
+        dependencies,
+      ),
+    ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      newRelicConnector.create({ userKey: "key", accountId: 0 }, dependencies),
+    ).toThrow("Connector configuration is invalid.");
+  });
 });
 
 describe("the Sentry issue tracker outbound connector", () => {

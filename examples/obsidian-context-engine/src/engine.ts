@@ -3,7 +3,7 @@ import { createEngine } from "@invokta/core";
 import type { ObsidianContextDependencies } from "./application/ports.js";
 import { createListContextRoots } from "./capabilities/list-context-roots.js";
 import { createOpenContextNode } from "./capabilities/open-context-node.js";
-import { createFilesystemObsidianVault } from "./infrastructure/filesystem-obsidian-vault.js";
+import { filesystemObsidianConnector } from "./infrastructure/filesystem-obsidian-vault.js";
 
 export function createObsidianContextEngine(
   dependencies: ObsidianContextDependencies,
@@ -33,7 +33,6 @@ export function createConfiguredObsidianContextEngine(
   if (vaultPath === undefined || vaultPath.trim() === "") {
     throw new Error("OBSIDIAN_VAULT_PATH is required.");
   }
-  return createObsidianContextEngine({
-    graph: createFilesystemObsidianVault({ vaultPath }),
-  });
+  const connector = filesystemObsidianConnector.create({ vaultPath }, {});
+  return createObsidianContextEngine({ graph: connector.ports.graph });
 }

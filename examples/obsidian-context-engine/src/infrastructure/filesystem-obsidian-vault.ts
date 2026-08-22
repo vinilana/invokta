@@ -2,8 +2,9 @@ import type { Dirent, Stats } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 
-import { EngineError } from "@invokta/core";
+import { defineConnector, EngineError } from "@invokta/core";
 import { parseDocument } from "yaml";
+import { z } from "zod";
 
 import type {
   JsonValue,
@@ -50,6 +51,29 @@ export interface FilesystemObsidianVaultOptions {
   readonly maxFrontmatterDepth?: number;
   readonly maxFrontmatterArrayLength?: number;
 }
+
+export type FilesystemObsidianConnectorDependencies = Readonly<
+  Record<string, never>
+>;
+
+const positiveSafeInteger = z.number().int().positive().safe();
+const nonnegativeSafeInteger = z.number().int().nonnegative().safe();
+const filesystemObsidianConnectorConfig = z.object({
+  vaultPath: z.string().refine((value) => value.trim() !== ""),
+  exposedFrontmatterKeys: z
+    .array(z.string().min(1).max(100))
+    .max(defaultMaxFrontmatterProperties)
+    .refine((keys) => new Set(keys).size === keys.length)
+    .optional(),
+  maxFiles: positiveSafeInteger.optional(),
+  maxNoteBytes: positiveSafeInteger.optional(),
+  maxTotalBytes: positiveSafeInteger.optional(),
+  maxDirectoryEntries: positiveSafeInteger.optional(),
+  maxFrontmatterCharacters: positiveSafeInteger.optional(),
+  maxFrontmatterProperties: positiveSafeInteger.optional(),
+  maxFrontmatterDepth: nonnegativeSafeInteger.optional(),
+  maxFrontmatterArrayLength: positiveSafeInteger.optional(),
+});
 
 interface ParsedNode extends VaultNodeSummary {
   readonly kind: string | null;
@@ -657,3 +681,39 @@ export function createFilesystemObsidianVault(
     },
   };
 }
+
+export const filesystemObsidianConnector = defineConnector({
+  name: "filesystem-obsidian",
+  config: filesystemObsidianConnectorConfig,
+  create(config, _dependencies: FilesystemObsidianConnectorDependencies) {
+    const options: FilesystemObsidianVaultOptions = {
+      vaultPath: config.vaultPath,
+      ...(config.exposedFrontmatterKeys === undefined
+        ? {}
+        : { exposedFrontmatterKeys: config.exposedFrontmatterKeys }),
+      ...(config.maxFiles === undefined ? {} : { maxFiles: config.maxFiles }),
+      ...(config.maxNoteBytes === undefined
+        ? {}
+        : { maxNoteBytes: config.maxNoteBytes }),
+      ...(config.maxTotalBytes === undefined
+        ? {}
+        : { maxTotalBytes: config.maxTotalBytes }),
+      ...(config.maxDirectoryEntries === undefined
+        ? {}
+        : { maxDirectoryEntries: config.maxDirectoryEntries }),
+      ...(config.maxFrontmatterCharacters === undefined
+        ? {}
+        : { maxFrontmatterCharacters: config.maxFrontmatterCharacters }),
+      ...(config.maxFrontmatterProperties === undefined
+        ? {}
+        : { maxFrontmatterProperties: config.maxFrontmatterProperties }),
+      ...(config.maxFrontmatterDepth === undefined
+        ? {}
+        : { maxFrontmatterDepth: config.maxFrontmatterDepth }),
+      ...(config.maxFrontmatterArrayLength === undefined
+        ? {}
+        : { maxFrontmatterArrayLength: config.maxFrontmatterArrayLength }),
+    };
+    return { ports: { graph: createFilesystemObsidianVault(options) } };
+  },
+});

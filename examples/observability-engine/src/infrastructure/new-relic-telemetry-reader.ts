@@ -1,7 +1,11 @@
+import { defineConnector } from "@invokta/core";
+import { z } from "zod";
+
 import type { TelemetryReader } from "../application/ports.js";
 import type { ServiceTelemetry } from "../domain/incident-context.js";
 import {
   asRecord,
+  isCredentialFreeHttpUrl,
   providerFailure,
   providerUrl,
   requestProviderJson,
@@ -11,7 +15,18 @@ export interface NewRelicTelemetryReaderOptions {
   readonly userKey: string;
   readonly accountId: number;
   readonly graphqlUrl?: string;
+  readonly fetch?: typeof globalThis.fetch;
 }
+
+export interface NewRelicConnectorDependencies {
+  readonly fetch: typeof globalThis.fetch;
+}
+
+const newRelicConnectorConfig = z.object({
+  userKey: z.string().min(1),
+  accountId: z.number().int().positive().safe(),
+  graphqlUrl: z.string().refine(isCredentialFreeHttpUrl).optional(),
+});
 
 const defaultGraphqlUrl = "https://api.newrelic.com/graphql";
 
@@ -99,6 +114,7 @@ export function createNewRelicTelemetryReader(
           body: JSON.stringify({ query: graphQl }),
         },
         signal,
+        options.fetch,
       );
       const response = asRecord(payload);
       if (Array.isArray(response?.errors) && response.errors.length > 0) {
@@ -126,3 +142,22 @@ export function createNewRelicTelemetryReader(
     },
   };
 }
+
+export const newRelicConnector = defineConnector({
+  name: "new-relic",
+  config: newRelicConnectorConfig,
+  create(config, dependencies: NewRelicConnectorDependencies) {
+    return {
+      ports: {
+        telemetry: createNewRelicTelemetryReader({
+          userKey: config.userKey,
+          accountId: config.accountId,
+          ...(config.graphqlUrl === undefined
+            ? {}
+            : { graphqlUrl: config.graphqlUrl }),
+          fetch: dependencies.fetch,
+        }),
+      },
+    };
+  },
+});

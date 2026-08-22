@@ -104,7 +104,11 @@ deploy CLI. The generated authentication hook fails closed until implemented,
 and HTTP profiles ignore `.env` and `.env.*` while retaining `.env.example`.
 
 Generated `README.md`, `AGENTS.md`, and `develop-invokta-project` skill guidance
-describe only the selected channels. `CLAUDE.md` is a real relative symbolic
+describe only the selected channels. The project instructions and skill also
+distinguish capabilities, engine-owned ports, and typed outbound connectors,
+including synchronous configuration validation, explicit dependencies,
+cancellation, bounded work, failure sanitization, and port-only injection.
+`CLAUDE.md` is a real relative symbolic
 link to `AGENTS.md`; unsupported link creation fails and rolls back rather than
 copying the instructions. Generated Invokta dependencies exactly match the
 creator version. All generated entries become project-owned and are never

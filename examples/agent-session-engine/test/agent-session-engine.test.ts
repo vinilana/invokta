@@ -14,7 +14,10 @@ import type { EngineError, EngineEvent, Principal } from "@invokta/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAgentSession } from "../src/domain/agent-session.js";
 import { createAgentSessionEngine } from "../src/engine.js";
-import { createFileAgentSessionStore } from "../src/infrastructure/file-agent-session-store.js";
+import {
+  createFileAgentSessionStore,
+  fileAgentSessionConnector,
+} from "../src/infrastructure/file-agent-session-store.js";
 
 const principal: Principal = {
   id: "agent:coordinator",
@@ -61,6 +64,19 @@ async function createTestEngine(events?: EngineEvent[]) {
 }
 
 describe("the agent session engine example", () => {
+  it("exposes sessions through a typed filesystem connector", () => {
+    const connector = fileAgentSessionConnector.create(
+      { dataDirectory: "/tmp/agent-sessions" },
+      {},
+    );
+
+    expect(fileAgentSessionConnector.name).toBe("file-agent-sessions");
+    expect(Object.keys(connector.ports)).toEqual(["sessions"]);
+    expect(() =>
+      fileAgentSessionConnector.create({ dataDirectory: "" }, {}),
+    ).toThrow("Connector configuration is invalid.");
+  });
+
   it("validates the filesystem connector configuration synchronously", () => {
     expect(() => createFileAgentSessionStore({ dataDirectory: "" })).toThrow(
       "dataDirectory must not be empty.",

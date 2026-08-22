@@ -5,9 +5,9 @@ import { createComposeReferenceAsset } from "./capabilities/compose-reference-as
 import { createEditAsset } from "./capabilities/edit-asset.js";
 import { createGenerateCampaignSeries } from "./capabilities/generate-campaign-series.js";
 import { createRenderTextAsset } from "./capabilities/render-text-asset.js";
-import { createNanoBananaReferenceComposer } from "./infrastructure/nano-banana-reference-composer.js";
-import { createOpenAiImageProvider } from "./infrastructure/openai-image-provider.js";
-import { createSeedreamCampaignGenerator } from "./infrastructure/seedream-campaign-generator.js";
+import { nanoBananaConnector } from "./infrastructure/nano-banana-reference-composer.js";
+import { openAiImageConnector } from "./infrastructure/openai-image-provider.js";
+import { seedreamConnector } from "./infrastructure/seedream-campaign-generator.js";
 
 export function createImageEngine(dependencies: ImageEngineDependencies) {
   return createEngine({
@@ -68,23 +68,35 @@ export function createConfiguredImageEngine(
   const seedreamModel = optionalValue(environment.SEEDREAM_IMAGE_MODEL);
   const geminiBaseUrl = optionalValue(environment.GEMINI_BASE_URL);
   const nanoBananaModel = optionalValue(environment.NANO_BANANA_IMAGE_MODEL);
-  const openAi = createOpenAiImageProvider({
-    apiKey: requiredCredential(environment, "OPENAI_API_KEY"),
-    ...(openAiBaseUrl === undefined ? {} : { baseUrl: openAiBaseUrl }),
-    ...(openAiModel === undefined ? {} : { model: openAiModel }),
-  });
-  return createImageEngine({
-    editor: openAi,
-    textRenderer: openAi,
-    campaignGenerator: createSeedreamCampaignGenerator({
+  const transport = { fetch: globalThis.fetch };
+  const openAi = openAiImageConnector.create(
+    {
+      apiKey: requiredCredential(environment, "OPENAI_API_KEY"),
+      ...(openAiBaseUrl === undefined ? {} : { baseUrl: openAiBaseUrl }),
+      ...(openAiModel === undefined ? {} : { model: openAiModel }),
+    },
+    transport,
+  );
+  const seedream = seedreamConnector.create(
+    {
       apiKey: requiredCredential(environment, "ARK_API_KEY"),
       ...(seedreamBaseUrl === undefined ? {} : { baseUrl: seedreamBaseUrl }),
       ...(seedreamModel === undefined ? {} : { model: seedreamModel }),
-    }),
-    referenceComposer: createNanoBananaReferenceComposer({
+    },
+    transport,
+  );
+  const nanoBanana = nanoBananaConnector.create(
+    {
       apiKey: requiredCredential(environment, "GEMINI_API_KEY"),
       ...(geminiBaseUrl === undefined ? {} : { baseUrl: geminiBaseUrl }),
       ...(nanoBananaModel === undefined ? {} : { model: nanoBananaModel }),
-    }),
+    },
+    transport,
+  );
+  return createImageEngine({
+    editor: openAi.ports.editor,
+    textRenderer: openAi.ports.textRenderer,
+    campaignGenerator: seedream.ports.campaignGenerator,
+    referenceComposer: nanoBanana.ports.referenceComposer,
   });
 }

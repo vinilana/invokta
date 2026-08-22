@@ -36,9 +36,12 @@ direct / CLI / MCP stdio / MCP HTTP
 - `src/capabilities/collect-incident-context.ts` owns the stable Zod 4
   contracts, limits, timeout, and handler.
 - `src/infrastructure/` is the only layer that knows the external HTTP
-  contracts.
+  contracts. Sentry, Datadog, and New Relic each export a `defineConnector`
+  definition with a private configuration schema and explicit `fetch`
+  dependency.
 - `src/engine.ts` is the composition root; it reads credentials and account
-  configuration from the environment and injects the outbound connectors.
+  configuration from the environment, constructs the connectors, and injects
+  only their `issues`, `logs`, and `telemetry` ports.
 
 The Sentry connector uses the organization issues endpoint and maps `service` to
 a Sentry project slug. The Datadog connector searches v2 log events with a

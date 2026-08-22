@@ -26,17 +26,26 @@ export function providerFailure(
   });
 }
 
+export function isCredentialFreeHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      url.username === "" &&
+      url.password === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function providerEndpoint(baseUrl: string, path: string): URL {
-  const base = new URL(baseUrl);
-  if (
-    (base.protocol !== "https:" && base.protocol !== "http:") ||
-    base.username !== "" ||
-    base.password !== ""
-  ) {
+  if (!isCredentialFreeHttpUrl(baseUrl)) {
     throw new TypeError(
       "Provider base URL must be a credential-free HTTP(S) URL.",
     );
   }
+  const base = new URL(baseUrl);
   const normalizedPath = `${base.pathname.replace(/\/+$/u, "")}/`;
   return new URL(path.replace(/^\/+/, ""), `${base.origin}${normalizedPath}`);
 }

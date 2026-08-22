@@ -50,9 +50,12 @@ direct / CLI / MCP stdio / MCP HTTP
 - `src/capabilities/` owns the stable Zod 4 contracts, defaults, access rules,
   timeouts, and handlers.
 - `src/infrastructure/` is the only layer that knows the three outbound HTTP
-  contracts.
+  contracts. Each provider exports a `defineConnector` definition with a
+  private Zod configuration schema and an explicit `fetch` dependency.
 - `src/engine.ts` is the composition root. It reads credentials and optional
-  model/base-URL overrides, constructs the outbound connectors, and injects them.
+  model/base-URL overrides, constructs the outbound connectors, and injects
+  only their named ports. The OpenAI connector provides both `editor` and
+  `textRenderer`; Seedream and Nano Banana each provide one focused port.
 - CLI and MCP inbound adapters receive the engine and can execute a capability
   only through `engine.invoke`.
 

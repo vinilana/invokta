@@ -11,6 +11,9 @@ import {
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { defineConnector } from "@invokta/core";
+import { z } from "zod";
+
 import type {
   AgentSessionStore,
   CreateSessionResult,
@@ -29,6 +32,16 @@ export interface FileAgentSessionStoreOptions {
   readonly lockTimeoutMs?: number;
   readonly staleLockMs?: number;
 }
+
+export type FileAgentSessionConnectorDependencies = Readonly<
+  Record<string, never>
+>;
+
+const fileAgentSessionConnectorConfig = z.object({
+  dataDirectory: z.string().refine((value) => value.trim() !== ""),
+  lockTimeoutMs: z.number().int().positive().safe().optional(),
+  staleLockMs: z.number().int().positive().safe().optional(),
+});
 
 interface LockRecord {
   readonly ownerId: string | null;
@@ -303,3 +316,23 @@ export function createFileAgentSessionStore(
     },
   };
 }
+
+export const fileAgentSessionConnector = defineConnector({
+  name: "file-agent-sessions",
+  config: fileAgentSessionConnectorConfig,
+  create(config, _dependencies: FileAgentSessionConnectorDependencies) {
+    return {
+      ports: {
+        sessions: createFileAgentSessionStore({
+          dataDirectory: config.dataDirectory,
+          ...(config.lockTimeoutMs === undefined
+            ? {}
+            : { lockTimeoutMs: config.lockTimeoutMs }),
+          ...(config.staleLockMs === undefined
+            ? {}
+            : { staleLockMs: config.staleLockMs }),
+        }),
+      },
+    };
+  },
+});

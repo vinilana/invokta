@@ -45,9 +45,9 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 2,990 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 2,996 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  78.54% statements, 74.06% branches, 82.79% functions, and 80.05% lines.
+  78.55% statements, 74.00% branches, 82.85% functions, and 80.06% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
@@ -68,10 +68,11 @@ consumer can use the protocol surface without coupling to engine code.
 - Capability composition preserves explicit imports and fails deterministically
   on effective-ID collisions.
 - Network- and filesystem-backed examples construct outbound connectors
-  explicitly, reject invalid configuration before I/O, inject only engine-owned
-  ports into capabilities, propagate cancellation, translate external values,
-  bound provider and filesystem work, and keep credentials and raw external
-  payloads out of public errors and internal causes.
+  explicitly through `defineConnector`, reject invalid configuration before
+  I/O, inject only engine-owned ports into capabilities, propagate cancellation,
+  translate external values, bound provider and filesystem work, and keep
+  credentials and raw external payloads out of public errors and internal
+  causes.
 - Core connector tests prove inert definition, synchronous Standard Schema
   transformation, frozen lossless configuration, opaque dependency identity,
   frozen named-port containers, sanitized configuration failures, and explicit
@@ -83,6 +84,10 @@ consumer can use the protocol surface without coupling to engine code.
   `create-invokta-engine --example` resolution, download, package-name rewrite,
   cancellation before archive download, and mutual exclusion with `--profile`
   without live network access.
+- Generated engine `AGENTS.md` and `develop-invokta-project` guidance distinguish
+  capabilities from outbound connectors and preserve explicit, port-only
+  connector composition without adding a generated connector to the minimal
+  deterministic starter.
 - Packed creator smoke tests generate the exact `complete`, `mcp-stdio`,
   `mcp-http`, and `cli` file sets from release tarballs. Every profile installs,
   type-checks, tests, builds, and invokes the shared capability directly and

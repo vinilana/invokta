@@ -36,6 +36,10 @@ revisions, a synced temporary file, and atomic rename. A lock left by a
 terminated process becomes recoverable after 30 seconds; elapsed time alone
 never permits one live process to steal another process's lock.
 
+`fileAgentSessionConnector` uses `defineConnector` to validate private directory
+and lock configuration synchronously, performs no filesystem I/O while it is
+constructed, and exposes only the `sessions` port to the engine composition.
+
 The example makes these operational limits explicit:
 
 - 256 tasks per session;

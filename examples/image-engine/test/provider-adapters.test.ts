@@ -2,9 +2,18 @@ import type { EngineError } from "@invokta/core";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ReferenceImage } from "../src/application/ports.js";
-import { createNanoBananaReferenceComposer } from "../src/infrastructure/nano-banana-reference-composer.js";
-import { createOpenAiImageProvider } from "../src/infrastructure/openai-image-provider.js";
-import { createSeedreamCampaignGenerator } from "../src/infrastructure/seedream-campaign-generator.js";
+import {
+  createNanoBananaReferenceComposer,
+  nanoBananaConnector,
+} from "../src/infrastructure/nano-banana-reference-composer.js";
+import {
+  createOpenAiImageProvider,
+  openAiImageConnector,
+} from "../src/infrastructure/openai-image-provider.js";
+import {
+  createSeedreamCampaignGenerator,
+  seedreamConnector,
+} from "../src/infrastructure/seedream-campaign-generator.js";
 
 const generatedData = Buffer.from("generated png").toString("base64");
 const referenceData = Buffer.from("reference png").toString("base64");
@@ -20,6 +29,56 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+describe("typed image connectors", () => {
+  it("constructs provider ports without performing network I/O", () => {
+    let requests = 0;
+    const fetchImplementation: typeof fetch = async () => {
+      requests += 1;
+      return new Response();
+    };
+    const openAi = openAiImageConnector.create(
+      { apiKey: "openai-key" },
+      { fetch: fetchImplementation },
+    );
+    const seedream = seedreamConnector.create(
+      { apiKey: "ark-key" },
+      { fetch: fetchImplementation },
+    );
+    const nanoBanana = nanoBananaConnector.create(
+      { apiKey: "gemini-key" },
+      { fetch: fetchImplementation },
+    );
+
+    expect(openAiImageConnector.name).toBe("openai-images");
+    expect(seedreamConnector.name).toBe("seedream");
+    expect(nanoBananaConnector.name).toBe("nano-banana");
+    expect(Object.keys(openAi.ports)).toEqual(["editor", "textRenderer"]);
+    expect(Object.keys(seedream.ports)).toEqual(["campaignGenerator"]);
+    expect(Object.keys(nanoBanana.ports)).toEqual(["referenceComposer"]);
+    expect(requests).toBe(0);
+  });
+
+  it("sanitizes invalid private connector configuration", () => {
+    const dependencies = { fetch: globalThis.fetch };
+
+    expect(() =>
+      openAiImageConnector.create({ apiKey: "" }, dependencies),
+    ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      openAiImageConnector.create(
+        { apiKey: "key", baseUrl: "https://secret@example.com" },
+        dependencies,
+      ),
+    ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      seedreamConnector.create({ apiKey: "" }, dependencies),
+    ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      nanoBananaConnector.create({ apiKey: "" }, dependencies),
+    ).toThrow("Connector configuration is invalid.");
+  });
+});
 
 describe("the OpenAI GPT Image 2 outbound connector", () => {
   it("uses the generations endpoint for high-fidelity text assets", async () => {

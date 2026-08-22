@@ -1,3 +1,6 @@
+import { defineConnector } from "@invokta/core";
+import { z } from "zod";
+
 import type {
   CampaignImageGenerator,
   ImageAsset,
@@ -8,6 +11,7 @@ import {
 } from "../domain/image.js";
 import {
   asRecord,
+  isCredentialFreeHttpUrl,
   providerEndpoint,
   providerFailure,
   requestProviderJson,
@@ -19,6 +23,16 @@ export interface SeedreamCampaignGeneratorOptions {
   readonly model?: string;
   readonly fetch?: typeof globalThis.fetch;
 }
+
+export interface SeedreamConnectorDependencies {
+  readonly fetch: typeof globalThis.fetch;
+}
+
+const seedreamConnectorConfig = z.object({
+  apiKey: z.string().min(1),
+  baseUrl: z.string().refine(isCredentialFreeHttpUrl).optional(),
+  model: z.string().min(1).optional(),
+});
 
 const defaultBaseUrl = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const defaultModel = "seedream-5-0-260128";
@@ -96,3 +110,20 @@ export function createSeedreamCampaignGenerator(
     },
   };
 }
+
+export const seedreamConnector = defineConnector({
+  name: "seedream",
+  config: seedreamConnectorConfig,
+  create(config, dependencies: SeedreamConnectorDependencies) {
+    return {
+      ports: {
+        campaignGenerator: createSeedreamCampaignGenerator({
+          apiKey: config.apiKey,
+          ...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
+          ...(config.model === undefined ? {} : { model: config.model }),
+          fetch: dependencies.fetch,
+        }),
+      },
+    };
+  },
+});

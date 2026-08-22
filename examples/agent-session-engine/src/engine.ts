@@ -7,7 +7,7 @@ import { createGetSession } from "./capabilities/get-session.js";
 import { createRecordHookEvent } from "./capabilities/record-hook-event.js";
 import { createStartSession } from "./capabilities/start-session.js";
 import { createUpdateTask } from "./capabilities/update-task.js";
-import { createFileAgentSessionStore } from "./infrastructure/file-agent-session-store.js";
+import { fileAgentSessionConnector } from "./infrastructure/file-agent-session-store.js";
 
 export interface AgentSessionEngineOptions {
   readonly onEvent?: (event: EngineEvent) => void | Promise<void>;
@@ -48,10 +48,12 @@ export function createDefaultAgentSessionEngine(
   environment: NodeJS.ProcessEnv = process.env,
   cwd = process.cwd(),
 ) {
+  const connector = fileAgentSessionConnector.create(
+    { dataDirectory: resolveAgentSessionDataDirectory(environment, cwd) },
+    {},
+  );
   return createAgentSessionEngine({
-    sessions: createFileAgentSessionStore({
-      dataDirectory: resolveAgentSessionDataDirectory(environment, cwd),
-    }),
+    sessions: connector.ports.sessions,
     now: () => new Date(),
   });
 }

@@ -30,6 +30,9 @@ follow an outgoing node ID and repeat
 This avoids text ranking and does not return the entire vault in one invocation.
 The `VaultKnowledgeGraph` port keeps Obsidian-specific parsing replaceable by an
 indexed database or another knowledge source without changing either capability.
+`filesystemObsidianConnector` uses `defineConnector` to validate private vault
+configuration synchronously and exposes only the `graph` port at the composition
+root. Constructing it reads no files.
 
 ## Frontmatter contract
 

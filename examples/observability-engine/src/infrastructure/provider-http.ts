@@ -4,6 +4,19 @@ export type ProviderName = "sentry" | "datadog" | "new-relic";
 
 const maximumProviderResponseBytes = 64 * 1024 * 1024;
 
+export function isCredentialFreeHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username === "" &&
+      url.password === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function providerUrl(value: string, optionName: string): URL {
   let url: URL;
   try {
@@ -11,11 +24,7 @@ export function providerUrl(value: string, optionName: string): URL {
   } catch {
     throw new TypeError(`${optionName} must be a credential-free HTTP(S) URL.`);
   }
-  if (
-    (url.protocol !== "http:" && url.protocol !== "https:") ||
-    url.username !== "" ||
-    url.password !== ""
-  ) {
+  if (!isCredentialFreeHttpUrl(value)) {
     throw new TypeError(`${optionName} must be a credential-free HTTP(S) URL.`);
   }
   return url;
@@ -109,10 +118,11 @@ export async function requestProviderJson(
   url: URL,
   init: RequestInit,
   signal: AbortSignal,
+  fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(url, { ...init, signal });
+    response = await fetchImplementation(url, { ...init, signal });
   } catch {
     if (signal.aborted) throw signal.reason;
     throw providerFailure(
