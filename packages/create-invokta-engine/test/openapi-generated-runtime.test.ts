@@ -542,17 +542,21 @@ async function capturedFailure(promise: Promise<unknown>): Promise<unknown> {
 
 function compileGeneratedProject(): void {
   try {
-    execFileSync(
-      process.execPath,
-      [
+    for (const config of ["tsconfig.json", "tsconfig.test.json"]) {
+      const arguments_ = [
         compilerPath,
         "-p",
-        join(projectDirectory, "tsconfig.json"),
+        join(projectDirectory, config),
         "--pretty",
         "false",
-      ],
-      { cwd: projectDirectory, encoding: "utf8", stdio: "pipe" },
-    );
+      ];
+      if (config === "tsconfig.test.json") arguments_.push("--noEmit");
+      execFileSync(process.execPath, arguments_, {
+        cwd: projectDirectory,
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+    }
   } catch (error) {
     const stderr =
       typeof error === "object" &&

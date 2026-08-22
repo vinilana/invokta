@@ -1220,7 +1220,7 @@ ${fakePortMembers}
 }
 
 describe("generated OpenAPI engine", () => {
-  it.each(${json(contractCases)})(
+  it.each(${json(contractCases)} as const)(
     "validates $selector contract without calling upstream",
     async ({ capabilityId, portName }) => {
       const invoke = vi.fn(async () => ({}));
@@ -1243,7 +1243,7 @@ describe("generated OpenAPI engine", () => {
     },
   );
 
-  it.each(${json(successCases)})(
+  it.each(${json(successCases)} as const)(
     "invokes $selector for declared status $status when a witness is proven",
     async ({ capabilityId, portName, input, output }) => {
       const invoke = vi.fn(async () => output);

@@ -66,6 +66,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Generated OpenAPI test tables now preserve literal capability IDs, and the
+  runtime fixture type-checks the generated test project so a scaffold cannot
+  pass repository tests while its own `npm run check` fails.
 - Hardened generated OpenAPI engines so operation paths cannot replace the
   configured server origin before credentials are applied, combined security
   schemes cannot overwrite one destination, multi-success output schemas keep
