@@ -1,0 +1,6 @@
+WidgetInput:
+  required: true
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/WidgetInput"

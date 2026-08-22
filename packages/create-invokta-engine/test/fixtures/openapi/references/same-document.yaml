@@ -1,0 +1,68 @@
+openapi: 3.1.1
+info:
+  title: Same-document references
+  version: 1.0.0
+security:
+  - ApiKey: []
+paths:
+  /widgets/{widgetId}:
+    post:
+      operationId: replaceWidget
+      parameters:
+        - $ref: "#/components/parameters/WidgetId"
+      requestBody:
+        $ref: "#/components/requestBodies/WidgetInput"
+      responses:
+        "200":
+          $ref: "#/components/responses/WidgetResponse"
+components:
+  parameters:
+    WidgetId:
+      name: widgetId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/WidgetId"
+  requestBodies:
+    WidgetInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/WidgetInput"
+  responses:
+    WidgetResponse:
+      description: Replaced widget
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Widget"
+  schemas:
+    WidgetId:
+      type: string
+    WidgetInput:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+      additionalProperties: false
+    Widget:
+      allOf:
+        - $ref: "#/components/schemas/WidgetInput"
+        - type: object
+          properties:
+            id:
+              $ref: "#/components/schemas/WidgetId"
+          required:
+            - id
+          additionalProperties: false
+  securitySchemes:
+    ApiKey:
+      $ref: "#/x-security-schemes/ApiKey"
+x-security-schemes:
+  ApiKey:
+    type: apiKey
+    in: header
+    name: X-Api-Key

@@ -9,6 +9,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- `create-invokta-engine --openapi` imports supported operations from a bounded
+  local OpenAPI 3.1.x JSON or YAML contract. Eligible endpoints are selected by
+  default, interactive and repeatable `--exclude` selection removes unwanted
+  capabilities, and generated source infers supported server, parameter, JSON
+  body, response, and upstream authentication mechanics without importing
+  credentials or contacting the described API.
+
 - ADR 0036 and the outbound connector authoring guide define provider- and
   technology-specific port implementations as explicit custom-engine
   dependencies, with construction-time configuration validation, finite access
@@ -44,6 +51,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- OpenAPI-generated engines now compose their inferred HTTP integration through
+  one typed outbound connector and inject only narrow operation ports into
+  capabilities. Generated connector construction synchronously validates and
+  snapshots allowlisted configuration, while connector response validation
+  translates schema-invalid external data to a sanitized execution failure.
 - The image, observability, Obsidian, and agent-session examples now compose
   their provider and filesystem implementations through `defineConnector` and
   inject only named engine-owned ports. Generated engine instructions and the
@@ -54,6 +66,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Generated OpenAPI test tables now preserve literal capability IDs, and the
+  runtime fixture type-checks the generated test project so a scaffold cannot
+  pass repository tests while its own `npm run check` fails.
+- Hardened generated OpenAPI engines so operation paths cannot replace the
+  configured server origin before credentials are applied, combined security
+  schemes cannot overwrite one destination, multi-success output schemas keep
+  their required object root, repeated path placeholders are all substituted,
+  and generated fake-port tests always execute contract and isolation coverage,
+  adding successful response variants when bounded valid witnesses are proven
+  and asserting stable response facts after validation transforms.
+- Bounded and memoized local OpenAPI reference resolution, aligned parameter
+  eligibility with non-null runtime serialization and constrained `deepObject`
+  values, and made generated module basenames deterministic, length-bounded,
+  collision-checked after bounding, and portable across Windows device-name
+  rules.
+- Bounded generated-test witness construction, proof, and source serialization
+  before allocating from schema length or item bounds, and prevented the
+  sampler from constructing or executing document-controlled regular
+  expressions.
 - The Firecrawl outbound connector now truncates provider batches at the
   requested page limit and bounds follow-up pagination requests to 50 by
   default, preventing oversized or empty provider batches from creating

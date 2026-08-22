@@ -1,0 +1,5 @@
+Parameter:
+  name: value
+  in: query
+  schema:
+    type: string

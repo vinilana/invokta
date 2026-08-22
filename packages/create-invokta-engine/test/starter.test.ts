@@ -119,6 +119,7 @@ describe("createStarterFiles", () => {
     expect(manifest.dependencies).toEqual({
       "@invokta/deploy": "0.6.1",
       tar: "7.5.22",
+      yaml: "2.9.0",
     });
   });
 

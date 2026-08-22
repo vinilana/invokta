@@ -1,0 +1,153 @@
+openapi: 3.1.1
+info:
+  title: Connection planning fixture
+  version: 1.0.0
+servers:
+  - url: https://{region}.api.example.test/{version}
+    variables:
+      region:
+        default: us
+      version:
+        default: v1
+components:
+  securitySchemes:
+    HeaderApiKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    BasicAuth:
+      type: http
+      scheme: basic
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - HeaderApiKey: []
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Check API health
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  healthy:
+                    type: boolean
+                required:
+                  - healthy
+                additionalProperties: false
+  /session:
+    get:
+      operationId: readSession
+      summary: Read the current session
+      security:
+        - BasicAuth: []
+      responses:
+        "200":
+          description: Current session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject:
+                    type: string
+                required:
+                  - subject
+                additionalProperties: false
+  /token:
+    get:
+      summary: Inspect the current token
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Token accepted
+  /widgets/{widgetId}:
+    parameters:
+      - name: widgetId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    post:
+      operationId: createWidget
+      summary: Create a widget
+      description: Creates one widget using every supported input location.
+      parameters:
+        - name: tags
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: verbose
+          in: query
+          schema:
+            type: boolean
+        - name: X-Trace-Id
+          in: header
+          schema:
+            type: string
+        - name: session
+          in: cookie
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+              required:
+                - name
+              additionalProperties: false
+      responses:
+        "200":
+          description: Existing widget
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  created:
+                    const: false
+                required:
+                  - id
+                  - created
+                additionalProperties: false
+        "201":
+          description: New widget
+          content:
+            application/widget+json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  created:
+                    const: true
+                required:
+                  - id
+                  - created
+                additionalProperties: false
+        "204":
+          description: Accepted without a representation

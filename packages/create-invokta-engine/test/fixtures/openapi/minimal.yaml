@@ -1,0 +1,25 @@
+openapi: 3.1.1
+info:
+  title: Minimal API
+  version: 1.0.0
+servers:
+  - url: https://api.example.test/v1
+paths:
+  /widgets:
+    get:
+      operationId: listWidgets
+      responses:
+        "200":
+          description: Widgets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  widgets:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - widgets
+                additionalProperties: false

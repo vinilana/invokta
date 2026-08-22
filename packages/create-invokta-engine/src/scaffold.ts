@@ -75,6 +75,14 @@ export interface CreateStarterProjectOptions {
   readonly fileSystem?: ScaffoldFileSystem;
 }
 
+export interface PlanStarterProjectEntriesOptions {
+  readonly cwd: string;
+  readonly target: string;
+  readonly profile: EngineStarterProfile;
+  readonly entries: readonly StarterEntry[];
+  readonly fileSystem?: ScaffoldFileSystem;
+}
+
 export interface StarterProject {
   readonly directory: string;
   readonly projectName: string;
@@ -106,6 +114,26 @@ const starterProjectPlanStates = new WeakMap<
   StarterProjectPlan,
   StarterProjectPlanState
 >();
+
+function snapshotStarterEntries(
+  entries: readonly StarterEntry[],
+): readonly StarterEntry[] {
+  return Object.freeze(
+    entries.map((entry) =>
+      entry.kind === "file"
+        ? Object.freeze({
+            kind: "file" as const,
+            path: entry.path,
+            contents: entry.contents,
+          })
+        : Object.freeze({
+            kind: "symlink" as const,
+            path: entry.path,
+            target: entry.target,
+          }),
+    ),
+  );
+}
 
 function countScalars(value: string): number {
   let count = 0;
@@ -331,6 +359,47 @@ async function rollback(
   return !failed;
 }
 
+function createStarterProjectPlan(
+  options: Readonly<{
+    cwd: string;
+    target: ResolvedTarget;
+    profile: EngineStarterProfile;
+    entries: readonly StarterEntry[];
+    fileSystem: ScaffoldFileSystem;
+  }>,
+): StarterProjectPlan {
+  const entries = snapshotStarterEntries(options.entries);
+  const plan: StarterProjectPlan = Object.freeze({
+    directory: options.target.directory,
+    projectName: options.target.projectName,
+    normalizedTarget: options.target.normalizedTarget,
+    profile: options.profile,
+    entries,
+  });
+  starterProjectPlanStates.set(plan, {
+    cwd: options.cwd,
+    target: options.target,
+    fileSystem: options.fileSystem,
+  });
+  return plan;
+}
+
+/** Builds an immutable transaction plan for already-rendered starter entries. */
+export async function planStarterProjectEntries(
+  options: PlanStarterProjectEntriesOptions,
+): Promise<StarterProjectPlan> {
+  const fileSystem = options.fileSystem ?? defaultScaffoldFileSystem;
+  const target = resolveTarget(options.cwd, options.target);
+  await inspectTarget(options.cwd, target, fileSystem);
+  return createStarterProjectPlan({
+    cwd: options.cwd,
+    target,
+    profile: options.profile,
+    entries: options.entries,
+    fileSystem,
+  });
+}
+
 /** Builds a complete immutable scaffold plan without mutating the filesystem. */
 export async function planStarterProject(
   options: CreateStarterProjectOptions,
@@ -344,19 +413,13 @@ export async function planStarterProject(
     packageManager: options.packageManager,
     profile: options.profile,
   });
-  const plan: StarterProjectPlan = Object.freeze({
-    directory: target.directory,
-    projectName: target.projectName,
-    normalizedTarget: target.normalizedTarget,
-    profile: options.profile,
-    entries,
-  });
-  starterProjectPlanStates.set(plan, {
+  return createStarterProjectPlan({
     cwd: options.cwd,
     target,
+    profile: options.profile,
+    entries,
     fileSystem,
   });
-  return plan;
 }
 
 /** Commits a planned starter after revalidating every target boundary. */

@@ -64,6 +64,8 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0036](./adr/0036-engine-owned-outbound-connectors.md)
 - Typed connector definitions with explicit port injection —
   [ADR 0037](./adr/0037-typed-connector-definitions.md)
+- Guided OpenAPI capability import —
+  [ADR 0038](./adr/0038-guided-openapi-capability-import.md)
 
 ## Design notes
 

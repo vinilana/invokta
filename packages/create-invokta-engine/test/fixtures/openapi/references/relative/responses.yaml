@@ -1,0 +1,6 @@
+WidgetResponse:
+  description: Updated widget
+  content:
+    application/json:
+      schema:
+        $ref: "./schemas.yaml#/Widget"

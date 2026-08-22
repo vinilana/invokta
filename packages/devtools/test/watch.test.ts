@@ -268,20 +268,15 @@ describe("serve --watch", () => {
 
     try {
       child.stderr.setEncoding("utf8");
+      let stderrTail = "";
+      let sawReady = false;
+      child.stderr.on("data", (chunk: string) => {
+        const combined = `${stderrTail}${chunk}`;
+        if (combined.includes('"type":"ready"')) sawReady = true;
+        stderrTail = combined.slice(-256);
+      });
       await waitFor(
-        () =>
-          new Promise<true | undefined>((resolvePromise) => {
-            const onData = (chunk: string): void => {
-              if (!chunk.includes('"type":"ready"')) return;
-              child.stderr.off("data", onData);
-              resolvePromise(true);
-            };
-            child.stderr.on("data", onData);
-            setTimeout(() => {
-              child.stderr.off("data", onData);
-              resolvePromise(undefined);
-            }, 500);
-          }),
+        async () => (sawReady ? true : undefined),
         15_000,
         "the engine host ready message",
       );

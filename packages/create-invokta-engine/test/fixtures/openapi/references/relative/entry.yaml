@@ -1,0 +1,21 @@
+openapi: 3.1.1
+info:
+  title: Relative local references
+  version: 1.0.0
+security:
+  - ApiKey: []
+paths:
+  /widgets/{widgetId}:
+    put:
+      operationId: updateWidget
+      parameters:
+        - $ref: "./parameters.yaml#/WidgetId"
+      requestBody:
+        $ref: "./request-bodies.yaml#/WidgetInput"
+      responses:
+        "200":
+          $ref: "./responses.yaml#/WidgetResponse"
+components:
+  securitySchemes:
+    ApiKey:
+      $ref: "./security.yaml#/ApiKey"
