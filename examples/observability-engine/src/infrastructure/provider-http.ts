@@ -84,6 +84,7 @@ async function readBoundedText(response: Response): Promise<string> {
     declaredLength !== null &&
     declaredLength > maximumProviderResponseBytes
   ) {
+    await response.body?.cancel().catch(() => undefined);
     throw new RangeError(
       "Provider response exceeds the configured byte limit.",
     );

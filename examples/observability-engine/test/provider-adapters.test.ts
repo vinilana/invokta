@@ -354,13 +354,21 @@ describe("provider failure boundaries", () => {
   });
 
   it("rejects a response above the 64 MiB provider limit", async () => {
+    let responseCancelled = false;
     vi.stubGlobal(
       "fetch",
       vi.fn(
         async () =>
-          new Response("{}", {
-            headers: { "content-length": String(64 * 1024 * 1024 + 1) },
-          }),
+          new Response(
+            new ReadableStream({
+              cancel() {
+                responseCancelled = true;
+              },
+            }),
+            {
+              headers: { "content-length": String(64 * 1024 * 1024 + 1) },
+            },
+          ),
       ),
     );
 
@@ -376,6 +384,7 @@ describe("provider failure boundaries", () => {
       message: "sentry returned an unreadable payload.",
       publicDetails: { provider: "sentry" },
     });
+    expect(responseCancelled).toBe(true);
   });
 
   it.each([

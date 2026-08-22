@@ -8,7 +8,12 @@ import {
   defineConnector,
 } from "../src/index.js";
 
-function connectorConfigSchema<Input, Output>(
+function connectorConfigSchema<
+  Input,
+  Output extends Readonly<Record<string, unknown>> = Readonly<
+    Record<string, unknown>
+  >,
+>(
   validate: (
     value: unknown,
   ) =>
@@ -187,7 +192,9 @@ describe("connector authoring", () => {
     ]) {
       const connector = defineConnector({
         name: "unsafe-config",
-        config: connectorConfigSchema(() => ({ value })),
+        config: connectorConfigSchema(() => ({
+          value: value as unknown as Readonly<Record<string, unknown>>,
+        })),
         create: () => ({ ports: { reader: {} } }),
       });
 
@@ -211,6 +218,21 @@ describe("connector authoring", () => {
         create,
       }),
     ).toThrow("Connector configuration schema is malformed.");
+    for (const standard of [
+      { vendor: "test", validate: () => ({ value: {} }) },
+      { version: 2, vendor: "test", validate: () => ({ value: {} }) },
+      { version: 1, vendor: 42, validate: () => ({ value: {} }) },
+    ]) {
+      expect(() =>
+        defineConnector({
+          name: "malformed-standard-schema",
+          config: {
+            "~standard": standard,
+          } as unknown as typeof config,
+          create,
+        }),
+      ).toThrow("Connector configuration schema is malformed.");
+    }
     expect(() =>
       defineConnector({
         name: "missing-factory",

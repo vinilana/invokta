@@ -4,7 +4,12 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 import { snapshotLosslessJson } from "./schema.js";
 
-export interface ConnectorConfigSchema<Input = unknown, Output = Input> {
+type ConnectorConfiguration = Readonly<Record<string, unknown>>;
+
+export interface ConnectorConfigSchema<
+  Input = unknown,
+  Output extends ConnectorConfiguration = ConnectorConfiguration,
+> {
   readonly "~standard": StandardSchemaV1.Props<Input, Output>;
 }
 
@@ -183,17 +188,25 @@ export function defineConnector<
   }
 
   let standard: unknown;
+  let version: unknown;
+  let vendor: unknown;
   let validate: unknown;
   try {
     standard = config["~standard"];
     if (!isRecord(standard) || nodeUtilTypes.isProxy(standard)) {
       throw new TypeError();
     }
+    version = readDataProperty(standard, "version");
+    vendor = readDataProperty(standard, "vendor");
     validate = readDataProperty(standard, "validate");
   } catch {
     throw new TypeError("Connector configuration schema is malformed.");
   }
-  if (typeof validate !== "function") {
+  if (
+    version !== 1 ||
+    typeof vendor !== "string" ||
+    typeof validate !== "function"
+  ) {
     throw new TypeError("Connector configuration schema is malformed.");
   }
   if (typeof create !== "function") {

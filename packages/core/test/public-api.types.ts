@@ -3,12 +3,17 @@ import { z } from "zod";
 
 import {
   type AccessRule,
+  type ConnectorConfigSchema,
   createEngine,
   defineCapability,
   defineConnector,
   type InferSchemaInput,
   type InferSchemaOutput,
 } from "../src/index.js";
+
+// @ts-expect-error Connector configuration must validate to an object root.
+const scalarConnectorConfig: ConnectorConfigSchema = z.string();
+void scalarConnectorConfig;
 
 const typedConnector = defineConnector({
   name: "typed-reader",

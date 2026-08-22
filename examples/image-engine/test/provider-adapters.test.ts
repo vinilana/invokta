@@ -274,13 +274,21 @@ describe("the OpenAI GPT Image 2 outbound connector", () => {
   });
 
   it("rejects a declared response above the 64 MiB provider limit", async () => {
+    let responseCancelled = false;
     const provider = createOpenAiImageProvider({
       apiKey: "openai-test-key",
       fetch: vi.fn(
         async () =>
-          new Response("{}", {
-            headers: { "content-length": String(64 * 1024 * 1024 + 1) },
-          }),
+          new Response(
+            new ReadableStream({
+              cancel() {
+                responseCancelled = true;
+              },
+            }),
+            {
+              headers: { "content-length": String(64 * 1024 * 1024 + 1) },
+            },
+          ),
       ),
     });
 
@@ -298,6 +306,7 @@ describe("the OpenAI GPT Image 2 outbound connector", () => {
       message: "OpenAI returned an unreadable response.",
       publicDetails: { provider: "openai" },
     });
+    expect(responseCancelled).toBe(true);
   });
 });
 

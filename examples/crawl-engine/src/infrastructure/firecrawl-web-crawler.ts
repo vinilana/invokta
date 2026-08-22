@@ -95,6 +95,7 @@ async function readBoundedText(
 ): Promise<string> {
   const declaredLength = responseLength(response);
   if (declaredLength !== null && declaredLength > maximumBytes) {
+    await response.body?.cancel().catch(() => undefined);
     throw new RangeError(
       "Firecrawl response exceeds the configured byte limit.",
     );

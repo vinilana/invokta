@@ -57,7 +57,6 @@ export type FilesystemObsidianConnectorDependencies = Readonly<
 >;
 
 const positiveSafeInteger = z.number().int().positive().safe();
-const nonnegativeSafeInteger = z.number().int().nonnegative().safe();
 const filesystemObsidianConnectorConfig = z.object({
   vaultPath: z.string().refine((value) => value.trim() !== ""),
   exposedFrontmatterKeys: z
@@ -71,7 +70,7 @@ const filesystemObsidianConnectorConfig = z.object({
   maxDirectoryEntries: positiveSafeInteger.optional(),
   maxFrontmatterCharacters: positiveSafeInteger.optional(),
   maxFrontmatterProperties: positiveSafeInteger.optional(),
-  maxFrontmatterDepth: nonnegativeSafeInteger.optional(),
+  maxFrontmatterDepth: positiveSafeInteger.optional(),
   maxFrontmatterArrayLength: positiveSafeInteger.optional(),
 });
 

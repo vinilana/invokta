@@ -47,7 +47,7 @@ consumer can use the protocol surface without coupling to engine code.
 
 - `yarn run check` passes typecheck, lint, formatting, 2,996 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  78.55% statements, 74.00% branches, 82.85% functions, and 80.06% lines.
+  78.54% statements, 74.02% branches, 82.78% functions, and 80.07% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
@@ -74,10 +74,12 @@ consumer can use the protocol surface without coupling to engine code.
   credentials and raw external payloads out of public errors and internal
   causes.
 - Core connector tests prove inert definition, synchronous Standard Schema
-  transformation, frozen lossless configuration, opaque dependency identity,
-  frozen named-port containers, sanitized configuration failures, and explicit
-  injection into capabilities. The crawl composition root exercises the same
-  public helper without publishing connector metadata through its engine.
+  v1 validation and transformation, object-rooted frozen lossless configuration,
+  opaque dependency identity, frozen named-port containers, sanitized
+  configuration failures, and explicit injection into capabilities. The crawl
+  composition root exercises the same public helper without publishing connector
+  metadata through its engine. Provider examples cancel declared-oversized
+  response bodies before returning their bounded failures.
 - The creators, installer, and deploy packages remain outside the capability
   call graph and exercise only their documented project creation, local
   configuration, and generation authority. Injected fetch harnesses cover

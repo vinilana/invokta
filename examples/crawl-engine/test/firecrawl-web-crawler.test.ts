@@ -199,10 +199,20 @@ describe("the Firecrawl outbound connector", () => {
       },
     });
     const payloadBytes = new TextEncoder().encode(payload).byteLength;
+    let responseCancelled = false;
     const fetchImplementation: typeof globalThis.fetch = async () =>
-      new Response(payload, {
-        headers: { "content-length": String(payloadBytes) },
-      });
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(payload));
+            controller.close();
+          },
+          cancel() {
+            responseCancelled = true;
+          },
+        }),
+        { headers: { "content-length": String(payloadBytes) } },
+      );
     const controller = new AbortController();
 
     await expect(
@@ -216,6 +226,7 @@ describe("the Firecrawl outbound connector", () => {
       message: "Firecrawl returned an unreadable payload.",
       publicDetails: { provider: "firecrawl" },
     });
+    expect(responseCancelled).toBe(true);
 
     await expect(
       createFirecrawlWebCrawler({

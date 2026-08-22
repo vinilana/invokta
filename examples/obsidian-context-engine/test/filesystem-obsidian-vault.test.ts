@@ -51,6 +51,15 @@ describe("the filesystem Obsidian knowledge graph", () => {
     expect(() =>
       filesystemObsidianConnector.create({ vaultPath: "" }, {}),
     ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      filesystemObsidianConnector.create(
+        {
+          vaultPath: "/path/that/does/not/exist",
+          maxFrontmatterDepth: 0,
+        },
+        {},
+      ),
+    ).toThrow("Connector configuration is invalid.");
   });
 
   it("performs no filesystem I/O during connector construction", () => {
