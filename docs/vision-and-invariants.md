@@ -80,6 +80,13 @@ positive integer no greater than `2_147_483_647`.
 `capabilities`. `logger` and `onEvent` are optional. The resulting public API
 provides `invoke`, `list`, and `describe`.
 
+**AE-CONNECTOR-00 — Optional authoring definition.** `defineConnector` MAY define
+a named connector factory with a Standard Schema configuration contract, opaque
+explicit dependencies, and one or more named engine-owned ports. Definition and
+creation are synchronous and perform no external I/O. Capabilities receive only
+the ports they use; connector definitions and instances are not independently
+invocable or published by an engine.
+
 **AE-SCHEMA-01 — Existing standards.** `input` and `output` MUST be simultaneously
 compatible with Standard Schema v1, for validation and inference, and Standard
 JSON Schema v1, for description in adapters. The framework MUST NOT invent

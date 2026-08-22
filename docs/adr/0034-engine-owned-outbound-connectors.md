@@ -39,8 +39,10 @@ direct / CLI / MCP -> engine.invoke -> capability -> port -> outbound connector
 
 An outbound connector is an outbound adapter in hexagonal-architecture terms.
 The more specific name distinguishes it from Invokta's inbound CLI and MCP
-adapters. It is not a capability, a port, a core primitive, or a separately
-invocable action. It is also unrelated to client products that use “MCP
+adapters. It is not a capability, a port, or a separately invocable action.
+ADR 0035 adds an optional core authoring definition without turning the
+connector instance into a runtime primitive. The concept is also unrelated to
+client products that use “MCP
 connector” for an installed MCP server, and it is not capability composition
 through `composeCapabilities`. Provider authentication performed by an outbound
 connector identifies the engine to that provider; it is distinct from MCP HTTP
@@ -123,9 +125,10 @@ dependencies require them.
 Invokta will not publish an official connector package or provider catalog as a
 result of this decision. Reusable connector packages may exist outside the
 runtime, but they implement engine- or domain-owned ports and compose through
-ordinary explicit imports. A shared connector API, test kit, lifecycle
-contract, or provider package requires repeated evidence across independent
-engines and a later architectural decision.
+ordinary explicit imports. ADR 0035 adds the optional `defineConnector`
+authoring contract after repeated construction evidence; a shared behavioral
+test kit, lifecycle contract, or provider package still requires a later
+architectural decision.
 
 ## Consequences
 
@@ -136,8 +139,9 @@ engines and a later architectural decision.
   root, including startup and shutdown order.
 - CLI and MCP continue to execute the capability through the single
   `engine.invoke` path; connectors create no provider bypass.
-- The convention adds terminology and authoring constraints without changing a
-  public package, core type, error taxonomy, or runtime limit.
+- The original convention added terminology without a public API; ADR 0035
+  later adds an optional core authoring type without changing the error taxonomy
+  or runtime pipeline.
 - Engine authors must write provider translation, sanitization, cancellation,
   and operational-limit code explicitly, and large compositions may require
   more wiring.

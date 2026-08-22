@@ -10,7 +10,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | --- | --- | --- | --- |
 | Domain API | Define, compose, list, describe, and invoke capabilities | Name domain actions and own compatible contracts | Generic model-call API |
 | Schemas | Accept Standard Schema and Standard JSON Schema; validate input and output | Choose a compatible schema library and domain constraints | A new schema language or universal converter |
-| Dependencies | Accept factories and closures | Define ports and wire model, data, and tool connectors | Container, service locator, connector registry, or lifecycle framework |
+| Dependencies | Define typed connector factories and accept explicit closures | Define ports and wire model, data, and tool connectors | Container, service locator, connector registry, or lifecycle framework |
 | Direct execution | Run the common `engine.invoke` pipeline | Supply trusted principal, signal, and dependencies | Distributed executor or background jobs |
 | CLI | `list`, `describe`, `run`, JSON I/O, and stable exit codes | Own the executable, local principal, and untrusted-input bounds | Login, actor flags, or plugin discovery |
 | MCP | Map capabilities to tools over stdio and stateless HTTP | Own process composition and deployment | Resources, prompts, tasks, sessions, or resumption |
@@ -34,7 +34,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Supporting packages | 7 |
 | Official inbound adapters | 2: CLI and MCP |
 | MCP transports | 2: stdio and stateless Streamable HTTP |
-| Core primitives | 4: Capability, Engine, Context, Principal |
+| Core primitives | 5: Capability, Connector Definition, Engine, Context, Principal |
 | Required capability fields | 5 |
 | Runtime pipeline stages | 6 |
 | Invocation error codes | 7 |

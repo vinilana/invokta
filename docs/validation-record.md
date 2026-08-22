@@ -18,10 +18,10 @@
   0030; advertised authorization servers and OAuth discovery inspection
   accepted in ADR 0031; CLI installation inspection and homologation
   accepted in ADR 0032; and the workbench launcher with workbench selection
-  accepted in ADR 0033.
-- Architectural conventions: ADR 0034 adds engine-owned outbound connectors
-  without changing a public package API, core primitive, error code, or
-  execution path.
+  accepted in ADR 0033; and typed connector definitions accepted in ADR 0035.
+- Architectural conventions: ADR 0034 defines engine-owned outbound connectors;
+  ADR 0035 adds their optional typed core authoring definition without changing
+  capability contracts, the error-code taxonomy, or the execution path.
 
 ## Reuse evidence
 
@@ -45,9 +45,9 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 2,982 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 2,990 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  78.50% statements, 73.98% branches, 82.77% functions, and 80.03% lines.
+  78.54% statements, 74.06% branches, 82.79% functions, and 80.05% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
@@ -72,6 +72,11 @@ consumer can use the protocol surface without coupling to engine code.
   ports into capabilities, propagate cancellation, translate external values,
   bound provider and filesystem work, and keep credentials and raw external
   payloads out of public errors and internal causes.
+- Core connector tests prove inert definition, synchronous Standard Schema
+  transformation, frozen lossless configuration, opaque dependency identity,
+  frozen named-port containers, sanitized configuration failures, and explicit
+  injection into capabilities. The crawl composition root exercises the same
+  public helper without publishing connector metadata through its engine.
 - The creators, installer, and deploy packages remain outside the capability
   call graph and exercise only their documented project creation, local
   configuration, and generation authority. Injected fetch harnesses cover

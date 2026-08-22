@@ -6,7 +6,7 @@
 
 | Package | Responsibility |
 | --- | --- |
-| `@invokta/core` | Capability contracts, composition, execution, errors, and events |
+| `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
 | `@invokta/tooling` | Development-time validation of capability composition |
@@ -23,8 +23,9 @@ not create another capability execution path.
 
 ## Ownership
 
-**AE-SCOPE-02 — Framework.** Invokta provides typed capability definitions,
-runtime validation, eager composition, direct execution, minimal context,
+**AE-SCOPE-02 — Framework.** Invokta provides typed capability and connector
+definitions, runtime capability validation, synchronous private connector
+configuration validation, eager composition, direct execution, minimal context,
 access enforcement, events, CLI and MCP adapters, and narrowly scoped supporting
 tools.
 
@@ -35,7 +36,9 @@ engine built by the user.
 
 **AE-SCOPE-04 — Evolution by extraction.** New abstractions require repeated
 evidence across real engines. They are not added because they may eventually be
-useful.
+useful. The optional connector definition is extracted from repeated network and
+filesystem construction boundaries; connector implementations remain engine
+owned.
 
 An official example may demonstrate a complete host-owned integration without
 making its identity provider, token issuer, persistence, account policy, or
@@ -51,7 +54,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Supporting packages | 7: tooling, installer, deploy, devtools, and three project creators |
 | Official inbound adapters | CLI and MCP |
 | MCP transports | stdio and stateless Streamable HTTP |
-| Core primitives | Capability, Engine, Context, and Principal |
+| Core primitives | Capability, Connector Definition, Engine, Context, and Principal |
 | Required capability fields | 5 |
 | Invocation pipeline stages | 6 |
 | Invocation error codes | 7 |

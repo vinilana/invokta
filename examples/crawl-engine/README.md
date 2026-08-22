@@ -41,7 +41,8 @@ direct / CLI / MCP stdio / MCP HTTP
 - `src/capabilities/` owns the stable Zod 4 contracts, access rules, timeouts,
   and handlers.
 - `src/infrastructure/firecrawl-web-crawler.ts` is the only module that knows the
-  Firecrawl HTTP contract and implements the outbound connector.
+  Firecrawl HTTP contract. Its `defineConnector` definition validates private
+  configuration and provides the `WebCrawler` port.
 - `src/engine.ts` is the composition root; it reads the credential from the
   environment and injects the connector and permission checker.
 

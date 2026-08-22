@@ -2,7 +2,10 @@ import type { EngineError } from "@invokta/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { parseCrawlTarget } from "../src/domain/crawl-target.js";
-import { createFirecrawlWebCrawler } from "../src/infrastructure/firecrawl-web-crawler.js";
+import {
+  createFirecrawlWebCrawler,
+  firecrawlConnector,
+} from "../src/infrastructure/firecrawl-web-crawler.js";
 import {
   type FirecrawlStub,
   type FirecrawlStubOptions,
@@ -29,14 +32,17 @@ function createCrawler(
     readonly maxStatusRequests?: number;
   } = {},
 ) {
-  return createFirecrawlWebCrawler({
-    apiKey,
-    baseUrl: server.baseUrl,
-    pollIntervalMs: overrides.pollIntervalMs ?? 5,
-    ...(overrides.maxStatusRequests === undefined
-      ? {}
-      : { maxStatusRequests: overrides.maxStatusRequests }),
-  });
+  return firecrawlConnector.create(
+    {
+      apiKey,
+      baseUrl: server.baseUrl,
+      pollIntervalMs: overrides.pollIntervalMs ?? 5,
+      ...(overrides.maxStatusRequests === undefined
+        ? {}
+        : { maxStatusRequests: overrides.maxStatusRequests }),
+    },
+    { fetch: globalThis.fetch },
+  ).ports.crawler;
 }
 
 afterEach(async () => {
@@ -59,7 +65,7 @@ describe("the Firecrawl outbound connector", () => {
   it("performs no provider I/O during construction", () => {
     const fetchImplementation = vi.fn<typeof globalThis.fetch>();
 
-    createFirecrawlWebCrawler({ apiKey, fetch: fetchImplementation });
+    firecrawlConnector.create({ apiKey }, { fetch: fetchImplementation });
 
     expect(fetchImplementation).not.toHaveBeenCalled();
   });

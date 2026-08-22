@@ -160,9 +160,9 @@ models, outbound connectors, scripts, templates, evaluations, and outcome
 quality. Invokta supplies the shared runtime mechanics and inbound delivery
 adapters:
 
-- `@invokta/core` defines capabilities, validates Standard Schema input and
-  output, enforces access rules, propagates cancellation, and emits minimal
-  invocation events;
+- `@invokta/core` defines capabilities and typed connector factories, validates
+  their Standard Schema contracts, enforces capability access rules, propagates
+  cancellation, and emits minimal invocation events;
 - `@invokta/cli` provides `list`, `describe`, and `run` without bypassing
   `engine.invoke`;
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure

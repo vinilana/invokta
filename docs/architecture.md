@@ -40,10 +40,14 @@ produces a `Principal`; authorization remains inside `invoke`.
 
 **AE-CONNECTOR-01 — Construction.** A custom engine owns each outbound port and
 explicitly injects its connector implementation at the composition root.
-Connector factories MUST synchronously validate required configuration,
-provider-appropriate endpoints and credential placement, and finite safe-integer
-limits within their documented ranges. Importing or constructing a connector
-MUST NOT perform external I/O.
+An engine MAY use `defineConnector` to capture a non-empty internal name, a
+Standard Schema configuration contract, opaque dependencies, and a synchronous
+factory for one or more named ports. Definition performs no validation or
+factory call. Creation MUST validate and snapshot a lossless JSON configuration
+object before the connector callback runs. Connector-specific validation still
+MUST cover required configuration, provider-appropriate endpoints and credential
+placement, and finite safe-integer limits within their documented ranges.
+Importing, defining, or constructing a connector MUST NOT perform external I/O.
 
 **AE-CONNECTOR-02 — Invocation.** Every connector operation that may wait MUST
 accept and propagate the invocation signal and stop connector-owned waits when
@@ -59,6 +63,7 @@ payloads. It MUST preserve observed cancellation and sanitize provider failures,
 including internal causes, so credentials and unfiltered payloads do not enter
 public errors, diagnostics, events, logs, or snapshots. Connectors add no error
 code or execution path; ADR 0034 defines the complete authoring boundary.
+ADR 0035 defines the optional typed construction helper.
 
 ## Normative pipeline
 

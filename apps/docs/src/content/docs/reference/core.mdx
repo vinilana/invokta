@@ -1,13 +1,13 @@
 ---
 title: '@invokta/core'
-description: Complete public API reference for capability contracts, engine execution, schemas, events, errors, and composition.
+description: Complete public API reference for capability and connector contracts, engine execution, schemas, events, errors, and composition.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-`@invokta/core` contains the Action Engine contract and runtime. It has no CLI,
-MCP, HTTP, model SDK, identity SDK, outbound connector, or application framework
-dependency.
+`@invokta/core` contains the Action Engine contract and runtime. It defines the
+optional connector authoring contract but has no CLI, MCP, HTTP, model SDK,
+identity SDK, provider connector, or application framework dependency.
 
 ## Install
 
@@ -28,6 +28,7 @@ The package root exposes these public groups:
 | Group | Exports |
 | --- | --- |
 | Capability | `defineCapability`, `CapabilityDefinition`, `AnyCapability`, `CapabilityMap`, `CapabilityAnnotations`, `AccessRule` |
+| Connector | `defineConnector`, `ConnectorConfigSchema`, `ConnectorDefinition`, `ConnectorFactory`, `ConnectorInstance`, `ConnectorPorts`, `InferConnectorConfigInput`, `InferConnectorConfigOutput` |
 | Engine | `createEngine`, `Engine`, `EngineDefinition`, `InvokeOptions`, `CapabilitySummary`, `CapabilityDescription` |
 | Schema | `EngineSchema`, `EngineJsonSchema`, `InferSchemaInput`, `InferSchemaOutput` |
 | Identity and context | `Principal`, `ExecutionContext`, `ExecutionSource`, `EngineLogger` |
@@ -89,6 +90,82 @@ interface CapabilityAnnotations {
 Annotations are copied metadata and map to MCP tool hints. The core does not
 enforce side effects, retries, rollback, idempotency, or network access from
 these values.
+
+## `defineConnector`
+
+```ts
+function defineConnector<
+  Name extends string,
+  ConfigSchema extends ConnectorConfigSchema,
+  Dependencies,
+  Ports extends ConnectorPorts,
+>(
+  definition: ConnectorDefinition<
+    Name,
+    ConfigSchema,
+    Dependencies,
+    Ports
+  >,
+): ConnectorFactory<Name, ConfigSchema, Dependencies, Ports>;
+```
+
+`defineConnector` captures a connector definition without validating
+configuration, invoking the connector factory, performing I/O, registering a
+provider, or changing an engine. The returned factory has a literal `name` and a
+synchronous `create(config, dependencies)` operation.
+
+```ts
+const firecrawl = defineConnector({
+  name: 'firecrawl',
+  config: z.object({
+    apiKey: z.string().min(1),
+    baseUrl: z.string().url().optional(),
+  }),
+  create(config, dependencies: { fetch: typeof globalThis.fetch }) {
+    return {
+      ports: {
+        crawler: createFirecrawlWebCrawler({
+          ...config,
+          fetch: dependencies.fetch,
+        }),
+      },
+    };
+  },
+});
+
+const connector = firecrawl.create(
+  { apiKey: environment.FIRECRAWL_API_KEY },
+  { fetch: globalThis.fetch },
+);
+
+const engine = createCrawlEngine({
+  crawler: connector.ports.crawler,
+  permissions,
+});
+```
+
+The configuration schema needs Standard Schema v1 validation but not Standard
+JSON Schema. Validation must complete synchronously and transform to a lossless
+JSON object. The core copies and freezes that validated object before the
+connector callback runs. Opaque dependencies such as transports, SDK clients,
+clocks, and pools are passed through by identity and are not configuration.
+
+The callback returns at least one named port. The core shallow-copies and freezes
+the connector instance and ports container while preserving port implementation
+identity. The name, configuration, dependencies, and connector instance are not
+published through `createEngine`, `ExecutionContext`, `list`, `describe`, CLI,
+or MCP. Capabilities receive only the narrow ports they use.
+
+Configuration validation failures throw a sanitized `TypeError` with
+`Connector configuration is invalid.` Async validation throws
+`Connector configuration validation must be synchronous.` Definition errors
+reject an empty name, malformed schema, or missing factory before creation.
+Creation rejects a missing ports record or an empty ports record. Exceptions
+thrown by the connector callback after successful validation are preserved.
+
+The helper does not provide discovery, automatic wiring, runtime lookup,
+provider packages, retries, or lifecycle. Existing ordinary TypeScript connector
+factories remain valid.
 
 ## Schema contract
 

@@ -14,8 +14,9 @@ and failure translation.
 An outbound connector is an authoring convention for a provider- or
 technology-specific outbound adapter that crosses from engine logic into an
 external system or data source. Pure in-memory implementations, test doubles,
-and policy rules are dependencies but not connectors. This is not a new Invokta
-runtime primitive: Invokta does not register, discover, initialize, or expose
+and policy rules are dependencies but not connectors. Invokta's optional
+`defineConnector` helper validates private construction configuration and
+returns named ports, but it does not register, discover, initialize, or expose
 connectors through `ExecutionContext`.
 
 This recipe follows the `crawl-engine` example, which publishes a stable web
@@ -42,6 +43,7 @@ direct / CLI / MCP
 | Port | An engine-owned, provider-neutral TypeScript interface describing what a capability needs. |
 | Dependency | Any value explicitly passed into a capability or engine factory. Port implementations, domain policies, and permission checkers are all dependencies; only some dependencies are connectors. |
 | Outbound connector | A provider- or technology-specific implementation of one or more outbound ports that crosses into an external system or data source. In hexagonal terms, it is an outbound adapter. |
+| Connector definition | An optional `defineConnector` authoring value with private Standard Schema configuration, opaque dependencies, and named ports. It is not an engine registry. |
 | Inbound adapter | A delivery boundary such as CLI or MCP. It translates a request and calls `engine.invoke`; it does not call a connector or capability handler directly. |
 | Composition root | Application code that reads deployment configuration, creates connectors and other dependencies, and passes them to the engine factory. |
 
@@ -84,7 +86,6 @@ keep its public contract if Firecrawl is replaced by another `WebCrawler`.
    export interface FirecrawlWebCrawlerOptions {
      readonly apiKey: string;
      readonly baseUrl?: string;
-     readonly fetch?: typeof globalThis.fetch;
      readonly pollIntervalMs?: number;
      readonly maxStatusRequests?: number;
      readonly maxPaginationRequests?: number;
@@ -93,12 +94,11 @@ keep its public contract if Firecrawl is replaced by another `WebCrawler`.
 
    export function createFirecrawlWebCrawler(
      options: FirecrawlWebCrawlerOptions,
+     fetchImplementation: typeof globalThis.fetch,
    ): WebCrawler {
      if (options.apiKey === "") {
        throw new TypeError("A Firecrawl API key is required.");
      }
-
-     const fetchImplementation = options.fetch ?? globalThis.fetch;
 
      return {
        async scrapePage({ target }, { signal }) {
@@ -125,17 +125,41 @@ keep its public contract if Firecrawl is replaced by another `WebCrawler`.
        },
      };
    }
+
+   export const firecrawlConnector = defineConnector({
+     name: "firecrawl",
+     config: z.object({
+       apiKey: z.string().min(1),
+       baseUrl: z.string().url().optional(),
+       maxResponseBytes: z.number().int().min(1),
+     }),
+     create(
+       config,
+       dependencies: { readonly fetch: typeof globalThis.fetch },
+     ) {
+       return {
+         ports: {
+           crawler: createFirecrawlWebCrawler(
+             config,
+             dependencies.fetch,
+           ),
+         },
+       };
+     },
+   });
    ```
 
-   Pass configuration into the factory explicitly. The connector must not read
-   `process.env`, perform network I/O during import or construction, or expose
-   its provider client to capabilities. Injecting `fetch` or an SDK client is
-   optional, but it makes the provider boundary easy to test.
+   `defineConnector` separates private, schema-validated deployment
+   configuration from opaque dependencies such as `fetch`, an SDK client, a
+   clock, or a pool. The connector must not read `process.env`, perform network
+   I/O during import or construction, or expose its provider client to
+   capabilities.
 
-   Validate required configuration synchronously in the factory. Reject invalid
-   endpoint schemes, embedded endpoint credentials, and numeric limits outside
-   their documented finite safe-integer ranges before any filesystem, network,
-   SDK, or other external I/O begins.
+   Configuration validation is synchronous. Its transformed value must be a
+   lossless JSON object and is frozen before the connector callback runs. Reject
+   invalid endpoint schemes, embedded endpoint credentials, and numeric limits
+   outside their documented finite safe-integer ranges before any filesystem,
+   network, SDK, or other external I/O begins.
 
    Here `readBoundedJson` incrementally enforces the byte limit and decodes
    JSON without retaining the raw body in an error. The
@@ -231,8 +255,16 @@ keep its public contract if Firecrawl is replaced by another `WebCrawler`.
        throw new Error("FIRECRAWL_API_KEY is required.");
      }
 
+     const connector = firecrawlConnector.create(
+       {
+         apiKey,
+         maxResponseBytes: 64 * 1024 * 1024,
+       },
+       { fetch: globalThis.fetch },
+     );
+
      return createCrawlEngine({
-       crawler: createFirecrawlWebCrawler({ apiKey }),
+       crawler: connector.ports.crawler,
        permissions: createAttributeCrawlPermissionChecker(),
      });
    }
@@ -255,28 +287,29 @@ keep its public contract if Firecrawl is replaced by another `WebCrawler`.
 
 ## Implement several ports with one connector
 
-One provider integration may implement several related ports when they share a
+One connector definition may provide several related ports when they share a
 cohesive provider configuration and transport boundary:
 
 ```ts
-export interface HubSpotConnector {
-  readonly customers: CustomerDirectory;
-  readonly deals: DealRepository;
-  readonly activities: ActivityWriter;
-}
+const hubspotConnector = defineConnector({
+  name: "hubspot",
+  config: hubspotConfigSchema,
+  create(config, dependencies: HubSpotDependencies) {
+    const client = createHubSpotClient(config, dependencies.fetch);
+    return {
+      ports: {
+        customers: createHubSpotCustomerDirectory(client),
+        deals: createHubSpotDealRepository(client),
+        activities: createHubSpotActivityWriter(client),
+      },
+    };
+  },
+});
 
-export function createHubSpotConnector(
-  options: HubSpotConnectorOptions,
-): HubSpotConnector {
-  const client = createHubSpotClient(options);
-  return {
-    customers: createHubSpotCustomerDirectory(client),
-    deals: createHubSpotDealRepository(client),
-    activities: createHubSpotActivityWriter(client),
-  };
-}
-
-const hubspot = createHubSpotConnector({ accessToken });
+const hubspot = hubspotConnector.create(
+  { accessToken },
+  { fetch: globalThis.fetch },
+).ports;
 const engine = createSupportEngine({
   customers: hubspot.customers,
   deals: hubspot.deals,

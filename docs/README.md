@@ -58,6 +58,8 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0033](./adr/0033-workbench-launcher-and-selection.md)
 - Engine-owned outbound connectors through explicit ports —
   [ADR 0034](./adr/0034-engine-owned-outbound-connectors.md)
+- Typed connector definitions with explicit port injection —
+  [ADR 0035](./adr/0035-typed-connector-definitions.md)
 
 ## Guides and examples
 

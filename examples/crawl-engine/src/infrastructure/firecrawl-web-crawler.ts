@@ -1,4 +1,5 @@
-import { EngineError } from "@invokta/core";
+import { defineConnector, EngineError } from "@invokta/core";
+import { z } from "zod";
 
 import type { WebCrawler } from "../application/ports.js";
 import type { DiscoveredLink, ScrapedPage } from "../domain/page.js";
@@ -18,6 +19,33 @@ const defaultPollIntervalMs = 1_000;
 const defaultMaxStatusRequests = 300;
 const defaultMaxPaginationRequests = 50;
 const defaultMaxResponseBytes = 64 * 1024 * 1024;
+
+function isCredentialFreeHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username === "" &&
+      url.password === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+const safeInteger = z.number().refine(Number.isSafeInteger);
+const firecrawlConnectorConfigSchema = z.object({
+  apiKey: z.string().min(1),
+  baseUrl: z.string().refine(isCredentialFreeHttpUrl).optional(),
+  pollIntervalMs: safeInteger.min(0).optional(),
+  maxStatusRequests: safeInteger.min(1).optional(),
+  maxPaginationRequests: safeInteger.min(0).optional(),
+  maxResponseBytes: safeInteger.min(1).optional(),
+});
+
+export interface FirecrawlConnectorDependencies {
+  readonly fetch: typeof globalThis.fetch;
+}
 
 function crawlerFailure(
   message: string,
@@ -414,3 +442,35 @@ export function createFirecrawlWebCrawler(
     },
   };
 }
+
+/**
+ * Typed connector definition used by the composition root. Capabilities receive
+ * only the returned WebCrawler port and never observe provider configuration.
+ */
+export const firecrawlConnector = defineConnector({
+  name: "firecrawl",
+  config: firecrawlConnectorConfigSchema,
+  create(config, dependencies: FirecrawlConnectorDependencies) {
+    return {
+      ports: {
+        crawler: createFirecrawlWebCrawler({
+          apiKey: config.apiKey,
+          ...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
+          ...(config.pollIntervalMs === undefined
+            ? {}
+            : { pollIntervalMs: config.pollIntervalMs }),
+          ...(config.maxStatusRequests === undefined
+            ? {}
+            : { maxStatusRequests: config.maxStatusRequests }),
+          ...(config.maxPaginationRequests === undefined
+            ? {}
+            : { maxPaginationRequests: config.maxPaginationRequests }),
+          ...(config.maxResponseBytes === undefined
+            ? {}
+            : { maxResponseBytes: config.maxResponseBytes }),
+          fetch: dependencies.fetch,
+        }),
+      },
+    };
+  },
+});
