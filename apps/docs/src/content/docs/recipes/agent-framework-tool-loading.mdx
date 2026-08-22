@@ -90,7 +90,7 @@ It publishes one tool: `onboarding_create-welcome-message`.
 
     Point `url` at the engine's deployed `/mcp` endpoint. The `headers` object
     is delivered on every request unmodified, so it must carry whatever
-    credential the engine's `authenticate` hook expects.
+    credential the HTTP adapter's `authenticate` hook expects.
   </TabItem>
 </Tabs>
 
@@ -114,7 +114,7 @@ eve discovers `onboarding_create-welcome-message` and calls it by its
 qualified name, `hello-engine__onboarding_create-welcome-message`. The model
 never sees the configured `url` or credential — eve brokers both the same way
 `connect()` brokers any other connection's auth, and the underlying request
-still lands on the engine's `authenticate` hook as a normal HTTP call.
+still lands on the `serveMcpHttp` `authenticate` hook as a normal HTTP call.
 
 <Aside type="note" title="eve needs an HTTPS endpoint eve.dev's runtime can reach">
   Loopback addresses and unauthenticated development mode (as used in
@@ -126,9 +126,9 @@ still lands on the engine's `authenticate` hook as a normal HTTP call.
 
 ## Match the authentication boundary
 
-Neither framework changes how the engine authenticates a request: both send
-plain HTTP headers, and the engine's `authenticate` hook maps them to a
-`Principal` exactly as described in
+Neither framework changes how a request is authenticated: both send plain
+HTTP headers, and the `serveMcpHttp` adapter's `authenticate` hook maps them
+to a `Principal` exactly as described in
 [HTTP authentication](/guides/http-authentication/). The static bearer check
 in `hello-engine`'s `mcp-http.ts` is a local demonstration only; for
 production, follow [Authenticate with API keys](/recipes/auth/api-key/) or
@@ -173,7 +173,6 @@ validate the Invokta side of this boundary:
 
 ```sh
 yarn workspace @invokta/example-hello test
-yarn workspace @invokta/example-hello typecheck
 yarn workspace @invokta/example-hello build
 ```
 
