@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-08-20
+- Last reviewed: 2026-08-22
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
@@ -18,7 +18,10 @@
   0030; advertised authorization servers and OAuth discovery inspection
   accepted in ADR 0031; CLI installation inspection and homologation
   accepted in ADR 0032; and the workbench launcher with workbench selection
-  accepted in ADR 0033
+  accepted in ADR 0033; and typed connector definitions accepted in ADR 0037.
+- Architectural conventions: ADR 0036 defines engine-owned outbound connectors;
+  ADR 0037 adds their optional typed core authoring definition without changing
+  capability contracts, the error-code taxonomy, or the execution path.
 
 ## Reuse evidence
 
@@ -29,10 +32,12 @@ execution channels:
 | --- | --- | --- |
 | `examples/hello-engine` | Minimal onboarding action | Direct, CLI, MCP stdio, MCP HTTP |
 | `examples/support-engine` | Ticket classification with domain authorization | Direct, CLI, MCP stdio, MCP HTTP, independent MCP harness |
-| `examples/crawl-engine` | Outbound web provider behind a port | Direct, CLI, MCP stdio, MCP HTTP |
-| `examples/image-engine` | Replaceable multi-provider image routing | Direct, CLI, MCP stdio, MCP HTTP |
+| `examples/crawl-engine` | Firecrawl outbound connector behind `WebCrawler` | Direct, CLI, MCP stdio, MCP HTTP |
+| `examples/image-engine` | Replaceable multi-provider image connectors | Direct, CLI, MCP stdio, MCP HTTP |
+| `examples/observability-engine` | Bounded Sentry, Datadog, and New Relic connectors | Direct, CLI, MCP stdio, MCP HTTP |
+| `examples/obsidian-context-engine` | Bounded read-only filesystem connector | Direct, CLI, MCP stdio, MCP HTTP |
 | `examples/composed-engine` | Local, atomic, and library capability composition | Direct, CLI, MCP stdio, MCP HTTP, tooling build gate |
-| `examples/agent-session-engine` | Durable task and handoff state | Direct, CLI, MCP stdio, MCP HTTP, harness hooks |
+| `examples/agent-session-engine` | Durable task and handoff state through a filesystem connector | Direct, CLI, MCP stdio, MCP HTTP, harness hooks |
 
 The support harness uses the official MCP client and imports no Invokta runtime
 package. Tool discovery and invocation therefore demonstrate that an independent
@@ -40,9 +45,9 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 2,933 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 3,014 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  78.48% statements, 73.99% branches, 82.86% functions, and 79.97% lines.
+  78.59% statements, 74.04% branches, 82.87% functions, and 80.13% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
@@ -54,7 +59,7 @@ consumer can use the protocol surface without coupling to engine code.
 
 - Input and output use the same Standard Schema and Standard JSON Schema
   declarations across direct, CLI, and MCP execution.
-- All adapters converge on `engine.invoke`; none duplicates validation,
+- All inbound adapters converge on `engine.invoke`; none duplicates validation,
   authorization, execution, or output validation.
 - MCP stdio keeps stdout protocol-only and propagates cancellation within one
   connection lifetime.
@@ -62,12 +67,29 @@ consumer can use the protocol surface without coupling to engine code.
   creates no cross-request session state.
 - Capability composition preserves explicit imports and fails deterministically
   on effective-ID collisions.
+- Network- and filesystem-backed examples construct outbound connectors
+  explicitly through `defineConnector`, reject invalid configuration before
+  I/O, inject only engine-owned ports into capabilities, propagate cancellation,
+  translate external values, bound provider and filesystem work, and keep
+  credentials and raw external payloads out of public errors and internal
+  causes.
+- Core connector tests prove inert definition, synchronous Standard Schema
+  v1 validation and transformation, object-rooted frozen lossless configuration,
+  opaque dependency identity, frozen named-port containers, sanitized
+  configuration failures, and explicit injection into capabilities. The crawl
+  composition root exercises the same public helper without publishing connector
+  metadata through its engine. Provider examples cancel declared-oversized
+  response bodies before returning their bounded failures.
 - The creators, installer, and deploy packages remain outside the capability
   call graph and exercise only their documented project creation, local
   configuration, and generation authority. Injected fetch harnesses cover
   `create-invokta-engine --example` resolution, download, package-name rewrite,
   cancellation before archive download, and mutual exclusion with `--profile`
   without live network access.
+- Generated engine `AGENTS.md` and `develop-invokta-project` guidance distinguish
+  capabilities from outbound connectors and preserve explicit, port-only
+  connector composition without adding a generated connector to the minimal
+  deterministic starter.
 - Packed creator smoke tests generate the exact `complete`, `mcp-stdio`,
   `mcp-http`, and `cli` file sets from release tarballs. Every profile installs,
   type-checks, tests, builds, and invokes the shared capability directly and
@@ -90,8 +112,8 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Ownership conclusions
 
-Invokta supplies stable contracts, a small execution kernel, adapters, explicit
-composition, and bounded supporting tools. Custom engines continue to own model
+Invokta supplies stable contracts, a small execution kernel, inbound adapters,
+explicit composition, and bounded supporting tools. Custom engines continue to own model
 and data providers, prompts, domain policies, evaluation, observability,
 dependency lifecycle, and production risk controls.
 

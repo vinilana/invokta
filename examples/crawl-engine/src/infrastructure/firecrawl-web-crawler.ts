@@ -1,4 +1,5 @@
-import { EngineError } from "@invokta/core";
+import { defineConnector, EngineError } from "@invokta/core";
+import { z } from "zod";
 
 import type { WebCrawler } from "../application/ports.js";
 import type { DiscoveredLink, ScrapedPage } from "../domain/page.js";
@@ -9,12 +10,42 @@ export interface FirecrawlWebCrawlerOptions {
   readonly fetch?: typeof globalThis.fetch;
   readonly pollIntervalMs?: number;
   readonly maxStatusRequests?: number;
+  readonly maxPaginationRequests?: number;
+  readonly maxResponseBytes?: number;
 }
 
 const defaultBaseUrl = "https://api.firecrawl.dev";
 const defaultPollIntervalMs = 1_000;
 const defaultMaxStatusRequests = 300;
-const maximumCauseLength = 512;
+const defaultMaxPaginationRequests = 50;
+const defaultMaxResponseBytes = 64 * 1024 * 1024;
+
+function isCredentialFreeHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username === "" &&
+      url.password === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+const safeInteger = z.number().refine(Number.isSafeInteger);
+const firecrawlConnectorConfigSchema = z.object({
+  apiKey: z.string().min(1),
+  baseUrl: z.string().refine(isCredentialFreeHttpUrl).optional(),
+  pollIntervalMs: safeInteger.min(0).optional(),
+  maxStatusRequests: safeInteger.min(1).optional(),
+  maxPaginationRequests: safeInteger.min(0).optional(),
+  maxResponseBytes: safeInteger.min(1).optional(),
+});
+
+export interface FirecrawlConnectorDependencies {
+  readonly fetch: typeof globalThis.fetch;
+}
 
 function crawlerFailure(
   message: string,
@@ -49,6 +80,49 @@ function readNumber(
 ): number | null {
   const value = record[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function responseLength(response: Response): number | null {
+  const raw = response.headers.get("content-length");
+  if (raw === null || !/^\d+$/u.test(raw)) return null;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+async function readBoundedText(
+  response: Response,
+  maximumBytes: number,
+): Promise<string> {
+  const declaredLength = responseLength(response);
+  if (declaredLength !== null && declaredLength > maximumBytes) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new RangeError(
+      "Firecrawl response exceeds the configured byte limit.",
+    );
+  }
+  if (response.body === null) return "";
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let totalBytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maximumBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new RangeError(
+          "Firecrawl response exceeds the configured byte limit.",
+        );
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -105,21 +179,53 @@ function toDiscoveredLink(value: unknown): DiscoveredLink | null {
 }
 
 /**
- * Firecrawl adapter for the {@link WebCrawler} port. It is the only module that
- * knows the provider's HTTP contract; the capability contracts stay unchanged
- * when this adapter is replaced.
+ * Firecrawl outbound connector for the {@link WebCrawler} port. It is the only
+ * module that knows the provider's HTTP contract; the capability contracts stay
+ * unchanged when this connector is replaced.
  */
 export function createFirecrawlWebCrawler(
   options: FirecrawlWebCrawlerOptions,
 ): WebCrawler {
   const apiKey = options.apiKey;
   if (apiKey === "") throw new TypeError("A Firecrawl API key is required.");
-  const base = new URL(options.baseUrl ?? defaultBaseUrl);
+  let base: URL;
+  try {
+    base = new URL(options.baseUrl ?? defaultBaseUrl);
+  } catch {
+    throw new TypeError("baseUrl must be a credential-free HTTP(S) URL.");
+  }
+  if (
+    (base.protocol !== "http:" && base.protocol !== "https:") ||
+    base.username !== "" ||
+    base.password !== ""
+  ) {
+    throw new TypeError("baseUrl must be a credential-free HTTP(S) URL.");
+  }
   const basePrefix = `${base.origin}${base.pathname.replace(/\/+$/u, "")}`;
   const fetchImplementation = options.fetch ?? globalThis.fetch;
   const pollIntervalMs = options.pollIntervalMs ?? defaultPollIntervalMs;
+  if (!Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 0) {
+    throw new TypeError("pollIntervalMs must be a non-negative safe integer.");
+  }
   const maxStatusRequests =
     options.maxStatusRequests ?? defaultMaxStatusRequests;
+  if (!Number.isSafeInteger(maxStatusRequests) || maxStatusRequests < 1) {
+    throw new TypeError("maxStatusRequests must be a positive safe integer.");
+  }
+  const maxPaginationRequests =
+    options.maxPaginationRequests ?? defaultMaxPaginationRequests;
+  if (
+    !Number.isSafeInteger(maxPaginationRequests) ||
+    maxPaginationRequests < 0
+  ) {
+    throw new TypeError(
+      "maxPaginationRequests must be a non-negative safe integer.",
+    );
+  }
+  const maxResponseBytes = options.maxResponseBytes ?? defaultMaxResponseBytes;
+  if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes < 1) {
+    throw new TypeError("maxResponseBytes must be a positive safe integer.");
+  }
 
   const endpoint = (path: string): URL => new URL(`${basePrefix}${path}`);
 
@@ -127,11 +233,11 @@ export function createFirecrawlWebCrawler(
     let next: URL;
     try {
       next = new URL(rawUrl);
-    } catch (cause) {
+    } catch {
       throw crawlerFailure(
         "Firecrawl returned an unexpected pagination target.",
         { provider: "firecrawl" },
-        cause,
+        new Error("The Firecrawl pagination target was not a valid URL."),
       );
     }
     if (next.origin !== base.origin) {
@@ -162,34 +268,47 @@ export function createFirecrawlWebCrawler(
         ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
         signal,
       });
-    } catch (cause) {
-      if (signal.aborted) throw cause;
+    } catch {
+      if (signal.aborted) throw signal.reason;
       throw crawlerFailure(
         "The Firecrawl request could not be completed.",
         { provider: "firecrawl" },
-        cause,
+        new Error("The Firecrawl transport request failed."),
       );
     }
 
+    if (signal.aborted) throw signal.reason;
+
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
+      await response.body?.cancel().catch(() => undefined);
       throw crawlerFailure(
         "Firecrawl rejected the request.",
         { provider: "firecrawl", status: response.status },
         new Error(
-          `Firecrawl responded with status ${String(response.status)}: ${detail.slice(0, maximumCauseLength)}`,
+          `Firecrawl responded with status ${String(response.status)}.`,
         ),
       );
     }
 
-    let payload: unknown;
+    let text: string;
     try {
-      payload = await response.json();
-    } catch (cause) {
+      text = await readBoundedText(response, maxResponseBytes);
+    } catch {
+      if (signal.aborted) throw signal.reason;
       throw crawlerFailure(
         "Firecrawl returned an unreadable payload.",
         { provider: "firecrawl" },
-        cause,
+        new Error("The Firecrawl response could not be read safely."),
+      );
+    }
+    let payload: unknown;
+    try {
+      payload = JSON.parse(text) as unknown;
+    } catch {
+      throw crawlerFailure(
+        "Firecrawl returned an unreadable payload.",
+        { provider: "firecrawl" },
+        new Error("The Firecrawl response was not valid JSON."),
       );
     }
     const record = asRecord(payload);
@@ -295,22 +414,64 @@ export function createFirecrawlWebCrawler(
 
       const pages: ScrapedPage[] = [];
       let batch: Readonly<Record<string, unknown>> | null = status;
+      let paginationRequests = 0;
       while (batch !== null && pages.length < limit) {
         const data = batch.data;
         if (Array.isArray(data)) {
           for (const item of data) {
             const page = toScrapedPage(item, target.url);
             if (page !== null) pages.push(page);
+            if (pages.length >= limit) break;
           }
         }
         const next = readString(batch, "next");
-        batch =
-          next === null || pages.length >= limit
-            ? null
-            : await readCrawlStatus(sameOriginEndpoint(next), signal);
+        if (next === null || pages.length >= limit) {
+          batch = null;
+        } else {
+          if (paginationRequests >= maxPaginationRequests) {
+            throw crawlerFailure(
+              "The Firecrawl crawl result exceeded its pagination limit.",
+              { provider: "firecrawl" },
+            );
+          }
+          batch = await readCrawlStatus(sameOriginEndpoint(next), signal);
+          paginationRequests += 1;
+        }
       }
 
       return { pages };
     },
   };
 }
+
+/**
+ * Typed connector definition used by the composition root. Capabilities receive
+ * only the returned WebCrawler port and never observe provider configuration.
+ */
+export const firecrawlConnector = defineConnector({
+  name: "firecrawl",
+  config: firecrawlConnectorConfigSchema,
+  create(config, dependencies: FirecrawlConnectorDependencies) {
+    return {
+      ports: {
+        crawler: createFirecrawlWebCrawler({
+          apiKey: config.apiKey,
+          ...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
+          ...(config.pollIntervalMs === undefined
+            ? {}
+            : { pollIntervalMs: config.pollIntervalMs }),
+          ...(config.maxStatusRequests === undefined
+            ? {}
+            : { maxStatusRequests: config.maxStatusRequests }),
+          ...(config.maxPaginationRequests === undefined
+            ? {}
+            : { maxPaginationRequests: config.maxPaginationRequests }),
+          ...(config.maxResponseBytes === undefined
+            ? {}
+            : { maxResponseBytes: config.maxResponseBytes }),
+          fetch: dependencies.fetch,
+        }),
+      },
+    };
+  },
+});

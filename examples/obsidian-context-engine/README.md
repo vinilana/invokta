@@ -30,6 +30,9 @@ follow an outgoing node ID and repeat
 This avoids text ranking and does not return the entire vault in one invocation.
 The `VaultKnowledgeGraph` port keeps Obsidian-specific parsing replaceable by an
 indexed database or another knowledge source without changing either capability.
+`filesystemObsidianConnector` uses `defineConnector` to validate private vault
+configuration synchronously and exposes only the `graph` port at the composition
+root. Constructing it reads no files.
 
 ## Frontmatter contract
 
@@ -62,7 +65,7 @@ topics:
 ---
 ```
 
-The filesystem adapter applies these rules:
+The filesystem connector applies these rules:
 
 - `id` is the public identity and must match
   `[A-Za-z0-9][A-Za-z0-9._:/-]*` with at most 200 characters;
@@ -95,7 +98,7 @@ yarn workspace @invokta/example-obsidian-context build
 yarn workspace @invokta/example-obsidian-context test
 ```
 
-The adapter reads `.md` files only. It ignores every `.obsidian` directory and
+The connector reads `.md` files only. It ignores every `.obsidian` directory and
 all symbolic links, does not modify the vault, and returns only relative source
 paths. The configured absolute path never enters capability inputs, outputs,
 events, or normal diagnostics.
@@ -252,7 +255,7 @@ contribute to `invalidNodeCount`. Exceeding a vault-wide scan limit, unreadable
 UTF-8, or duplicate stable IDs fails as `EXECUTION_FAILED`. Cancellation is
 checked during traversal and reading.
 
-The adapter rebuilds its bounded view on every invocation, so calls reflect the
+The connector rebuilds its bounded view on every invocation, so calls reflect the
 current filesystem without introducing framework lifecycle or cache concepts.
 
 ## Inspect and gate this engine

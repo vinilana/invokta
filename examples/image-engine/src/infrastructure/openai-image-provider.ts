@@ -1,3 +1,6 @@
+import { defineConnector } from "@invokta/core";
+import { z } from "zod";
+
 import type {
   ImageAsset,
   ImageEditor,
@@ -12,6 +15,7 @@ import {
 } from "../domain/image.js";
 import {
   asRecord,
+  isCredentialFreeHttpUrl,
   providerEndpoint,
   providerFailure,
   requestProviderJson,
@@ -25,6 +29,16 @@ export interface OpenAiImageProviderOptions {
 }
 
 export interface OpenAiImageProvider extends ImageEditor, TextImageRenderer {}
+
+export interface OpenAiImageConnectorDependencies {
+  readonly fetch: typeof globalThis.fetch;
+}
+
+const openAiImageConnectorConfig = z.object({
+  apiKey: z.string().min(1),
+  baseUrl: z.string().refine(isCredentialFreeHttpUrl).optional(),
+  model: z.string().min(1).optional(),
+});
 
 const defaultBaseUrl = "https://api.openai.com/v1";
 const defaultModel = "gpt-image-2";
@@ -136,3 +150,17 @@ export function createOpenAiImageProvider(
     },
   };
 }
+
+export const openAiImageConnector = defineConnector({
+  name: "openai-images",
+  config: openAiImageConnectorConfig,
+  create(config, dependencies: OpenAiImageConnectorDependencies) {
+    const provider = createOpenAiImageProvider({
+      apiKey: config.apiKey,
+      ...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
+      ...(config.model === undefined ? {} : { model: config.model }),
+      fetch: dependencies.fetch,
+    });
+    return { ports: { editor: provider, textRenderer: provider } };
+  },
+});

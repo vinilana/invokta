@@ -50,11 +50,14 @@ direct / CLI / MCP stdio / MCP HTTP
 - `src/capabilities/` owns the stable Zod 4 contracts, defaults, access rules,
   timeouts, and handlers.
 - `src/infrastructure/` is the only layer that knows the three outbound HTTP
-  contracts.
+  contracts. Each provider exports a `defineConnector` definition with a
+  private Zod configuration schema and an explicit `fetch` dependency.
 - `src/engine.ts` is the composition root. It reads credentials and optional
-  model/base-URL overrides, constructs the adapters, and injects them.
-- CLI and MCP adapters receive the engine and can execute a capability only
-  through `engine.invoke`.
+  model/base-URL overrides, constructs the outbound connectors, and injects
+  only their named ports. The OpenAI connector provides both `editor` and
+  `textRenderer`; Seedream and Nano Banana each provide one focused port.
+- CLI and MCP inbound adapters receive the engine and can execute a capability
+  only through `engine.invoke`.
 
 The example uses built-in `fetch`, `FormData`, and `Blob`, so it adds no provider
 SDK dependencies. A production engine may use official SDKs behind the same
@@ -170,7 +173,8 @@ boundary.
 | Nano Banana timeout | 150 seconds |
 
 Aspect ratio defaults to `1:1` and accepts `1:1`, `3:2`, `2:3`, `16:9`, or
-`9:16`. Every adapter propagates the invocation's `AbortSignal` to `fetch`.
+`9:16`. Every outbound connector propagates the invocation's `AbortSignal` to
+`fetch`.
 
 The engine performs one provider request per invocation and implements no retry,
 fallback, cache, queue, or concurrency policy. Provider rejection, malformed

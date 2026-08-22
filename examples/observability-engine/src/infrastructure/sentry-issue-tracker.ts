@@ -1,8 +1,13 @@
+import { defineConnector } from "@invokta/core";
+import { z } from "zod";
+
 import type { IssueTracker } from "../application/ports.js";
 import type { IssueSummary } from "../domain/incident-context.js";
 import {
   asRecord,
+  isCredentialFreeHttpUrl,
   providerFailure,
+  providerUrl,
   readOptionalString,
   readRequiredString,
   requestProviderJson,
@@ -12,7 +17,18 @@ export interface SentryIssueTrackerOptions {
   readonly authToken: string;
   readonly organization: string;
   readonly baseUrl?: string;
+  readonly fetch?: typeof globalThis.fetch;
 }
+
+export interface SentryConnectorDependencies {
+  readonly fetch: typeof globalThis.fetch;
+}
+
+const sentryConnectorConfig = z.object({
+  authToken: z.string().min(1),
+  organization: z.string().min(1),
+  baseUrl: z.string().refine(isCredentialFreeHttpUrl).optional(),
+});
 
 const defaultBaseUrl = "https://sentry.io";
 
@@ -60,7 +76,10 @@ export function createSentryIssueTracker(
   if (options.organization === "") {
     throw new TypeError("A Sentry organization is required.");
   }
-  const baseUrl = new URL(options.baseUrl ?? defaultBaseUrl);
+  const baseUrl = providerUrl(
+    options.baseUrl ?? defaultBaseUrl,
+    "Sentry baseUrl",
+  );
 
   return {
     async searchServiceIssues(request, { signal }) {
@@ -85,6 +104,7 @@ export function createSentryIssueTracker(
           },
         },
         signal,
+        options.fetch,
       );
       if (!Array.isArray(payload)) {
         throw providerFailure(
@@ -100,3 +120,20 @@ export function createSentryIssueTracker(
     },
   };
 }
+
+export const sentryConnector = defineConnector({
+  name: "sentry",
+  config: sentryConnectorConfig,
+  create(config, dependencies: SentryConnectorDependencies) {
+    return {
+      ports: {
+        issues: createSentryIssueTracker({
+          authToken: config.authToken,
+          organization: config.organization,
+          ...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
+          fetch: dependencies.fetch,
+        }),
+      },
+    };
+  },
+});

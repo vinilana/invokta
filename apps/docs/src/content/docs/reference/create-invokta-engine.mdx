@@ -149,7 +149,10 @@ Generated authentication fails closed until implemented. HTTP profiles ignore
 `AGENTS.md` records profile-specific architecture and test-first constraints.
 `CLAUDE.md` is an actual relative symbolic link to it. The generated
 `develop-invokta-project` skill adds project-specific RED/GREEN/REFACTOR and
-single-`engine.invoke` guidance without runtime discovery or behavior.
+single-`engine.invoke` guidance without runtime discovery or behavior. It also
+guides authors to keep external integrations behind engine-owned ports and use
+`defineConnector` for typed private configuration, explicit dependencies,
+bounded cancellation-aware work, sanitized failures, and port-only injection.
 
 ## GitHub example import
 

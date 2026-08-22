@@ -462,6 +462,13 @@ describe("createStarterFiles", () => {
       /^---\nname: develop-invokta-project\ndescription: .+\n---\n/u,
     );
     expect(skill).toContain("Keep every execution channel on `engine.invoke`");
+    expect(skill).toContain(
+      "Use `defineConnector` for provider- or technology-specific implementations",
+    );
+    expect(skill).toContain("Capabilities receive only the ports they use");
+    expect(skill).toContain(
+      "Connector construction must validate configuration synchronously and perform no external I/O",
+    );
     expect(skill).toContain("Run `npm run check`");
     expect(skill).not.toContain("TODO");
     expect(metadata).toContain('display_name: "Develop Invokta Action Engine"');
@@ -477,6 +484,11 @@ describe("createStarterFiles", () => {
       instructions && "contents" in instructions ? instructions.contents : "",
     ).toContain(
       "Keep the generated direct, CLI, MCP stdio, MCP HTTP entry points on the single `engine.invoke` path.",
+    );
+    expect(
+      instructions && "contents" in instructions ? instructions.contents : "",
+    ).toContain(
+      "Use `defineConnector` for provider- or technology-specific outbound integrations",
     );
     expect(files.find((file) => file.path === "CLAUDE.md")).toEqual({
       kind: "symlink",

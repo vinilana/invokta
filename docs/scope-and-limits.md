@@ -6,7 +6,7 @@
 
 | Package | Responsibility |
 | --- | --- |
-| `@invokta/core` | Capability contracts, composition, execution, errors, and events |
+| `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
 | `@invokta/tooling` | Development-time validation of capability composition |
@@ -23,18 +23,22 @@ not create another capability execution path.
 
 ## Ownership
 
-**AE-SCOPE-02 — Framework.** Invokta provides typed capability definitions,
-runtime validation, eager composition, direct execution, minimal context,
+**AE-SCOPE-02 — Framework.** Invokta provides typed capability and connector
+definitions, runtime capability validation, synchronous private connector
+configuration validation, eager composition, direct execution, minimal context,
 access enforcement, events, CLI and MCP adapters, and narrowly scoped supporting
 tools.
 
-**AE-SCOPE-03 — Custom engine.** Capabilities, prompts, models, data and tool
-integrations, business rules, domain authorization, evals, metrics, and
-dependency lifecycle belong to the engine built by the user.
+**AE-SCOPE-03 — Custom engine.** Capabilities, prompts, models, engine-owned
+ports, outbound connectors for model, data, and tool integrations, business rules,
+domain authorization, evals, metrics, and dependency lifecycle belong to the
+engine built by the user.
 
 **AE-SCOPE-04 — Evolution by extraction.** New abstractions require repeated
 evidence across real engines. They are not added because they may eventually be
-useful.
+useful. The optional connector definition is extracted from repeated network and
+filesystem construction boundaries; connector implementations remain engine
+owned.
 
 An official example may demonstrate a complete host-owned integration without
 making its identity provider, token issuer, persistence, account policy, or
@@ -48,9 +52,9 @@ while the example owns one replaceable Authorization Server implementation.
 | --- | --- |
 | Framework runtime packages | 3: core, CLI, and MCP |
 | Supporting packages | 7: tooling, installer, deploy, devtools, and three project creators |
-| Official adapters | CLI and MCP |
+| Official inbound adapters | CLI and MCP |
 | MCP transports | stdio and stateless Streamable HTTP |
-| Core primitives | Capability, Engine, Context, and Principal |
+| Core primitives | Capability, Connector Definition, Engine, Context, and Principal |
 | Required capability fields | 5 |
 | Invocation pipeline stages | 6 |
 | Invocation error codes | 7 |
@@ -75,7 +79,8 @@ on values imported by the application.
 
 **AE-LIMIT-03 — AI and quality.** Invokta does not provide a model router,
 context compiler, memory, RAG abstraction, prompt registry, official provider
-adapters, semantic cache, economics engine, eval runner, automated judge,
+connectors or connector catalog, connector lifecycle, semantic cache, economics
+engine, eval runner, automated judge,
 release gate, or canary platform.
 
 **AE-LIMIT-04 — Security.** Invokta does not provide an identity provider,

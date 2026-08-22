@@ -9,6 +9,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- ADR 0036 and the outbound connector authoring guide define provider- and
+  technology-specific port implementations as explicit custom-engine
+  dependencies, with construction-time configuration validation, finite access
+  deadlines, no core registry, and no alternate execution path. The crawl,
+  image, observability, Obsidian, and agent-session examples provide canonical
+  network and filesystem patterns.
+- ADR 0037 adds the optional `defineConnector` core authoring API for
+  synchronous Standard Schema configuration, opaque dependencies, and frozen
+  named-port containers. Connector definitions remain explicitly composed and
+  do not add runtime registration, discovery, lifecycle, or another invocation
+  path; the Firecrawl example provides the canonical capability integration.
 - The `auth-jwt-bearer`, `auth-auth0`, `auth-cognito`, and `auth-workos`
   examples now accept ordered OAuth challenge scopes and serialize them into
   the 401 Bearer challenge, so an OAuth-capable MCP client learns what to ask
@@ -33,11 +44,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- The image, observability, Obsidian, and agent-session examples now compose
+  their provider and filesystem implementations through `defineConnector` and
+  inject only named engine-owned ports. Generated engine instructions and the
+  `develop-invokta-project` skill now teach the same connector boundary while
+  keeping the starter itself deterministic and provider-free.
 - `composed-engine` runs `check-capabilities` through the published `invokta`
   binary instead of a relative path into `packages/tooling/dist`.
 
 ### Fixed
 
+- The Firecrawl outbound connector now truncates provider batches at the
+  requested page limit and bounds follow-up pagination requests to 50 by
+  default, preventing oversized or empty provider batches from creating
+  unbounded work.
 - `create-invokta-engine --example` now ignores links and unsupported archive
   entry types outside the selected template subtree while still rejecting them
   inside it and rejecting path escapes across the whole archive. This restores

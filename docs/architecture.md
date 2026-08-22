@@ -13,21 +13,57 @@ flowchart LR
   VALIDATE --> ACCESS[Enforce access]
   ACCESS --> CAP[Capability.run]
   CAP --> OUTPUT[Validate output]
-  CAP --> DEPS[Engine-injected dependencies]
+  CAP --> PORT[Engine-owned port]
+  PORT --> CONNECTOR[Outbound connector]
+  CONNECTOR --> PROVIDER[External provider or data source]
 ```
 
 **AE-ARCH-01 — Direction.** The core MUST NOT import the CLI, MCP, HTTP, a model
-SDK, or an identity SDK. Adapters import only the core's public API. Capabilities
-MAY import interfaces and rules from the custom engine.
+SDK, or an identity SDK. Inbound adapters import only the core's public API.
+Capabilities MAY import interfaces and rules from the custom engine.
 
 **AE-ARCH-02 — Simple injection.** Repository, model, data, and tool interfaces
 belong to the custom engine. Implementations enter through a factory or closure
-at the composition root. The framework MUST NOT register ports or provide a
-service container, lifecycle, or formal modules.
+at the composition root. An outbound connector is a provider- or
+technology-specific implementation of one or more of those engine-owned ports.
+Capabilities receive only the ports they use; provider clients, credentials,
+and connector registries MUST NOT enter capability contracts or
+`ExecutionContext`. The framework MUST NOT register ports or provide a connector
+catalog, service container, lifecycle, or formal modules. ADR 0036 defines this
+authoring boundary.
 
-**AE-ARCH-03 — Single path.** No adapter MAY call `run` directly. All adapters use
-`engine.invoke`. Authentication produces a `Principal`; authorization remains
-inside `invoke`.
+**AE-ARCH-03 — Single path.** No inbound adapter MAY call `run` or an outbound
+connector directly. All inbound adapters use `engine.invoke`. Authentication
+produces a `Principal`; authorization remains inside `invoke`.
+
+## Outbound connectors
+
+**AE-CONNECTOR-01 — Construction.** A custom engine owns each outbound port and
+explicitly injects its connector implementation at the composition root.
+An engine MAY use `defineConnector` to capture a non-empty internal name, a
+Standard Schema configuration contract, opaque dependencies, and a synchronous
+factory for one or more named ports. Definition performs no validation or
+factory call. Creation MUST validate and snapshot a lossless JSON configuration
+object before the connector callback runs. Connector-specific validation still
+MUST cover required configuration, provider-appropriate endpoints and credential
+placement, and finite safe-integer limits within their documented ranges.
+Importing, defining, or constructing a connector MUST NOT perform external I/O.
+
+**AE-CONNECTOR-02 — Invocation.** Every connector operation that may wait MUST
+accept and propagate the invocation signal and stop connector-owned waits when
+it is aborted. Connector work performed during `access` MUST have its own finite
+client or operation deadline because capability timeout begins after
+authorization. Every capability that invokes a connector during `run` MUST set
+a finite `timeoutMs`. Polling, pagination, batches, response sizes, concurrency,
+fan-out, and opt-in retries MUST have explicit finite bounds where applicable.
+
+**AE-CONNECTOR-03 — Translation and failure.** A connector MUST validate
+external responses and return port-owned domain values rather than raw provider
+payloads. It MUST preserve observed cancellation and sanitize provider failures,
+including internal causes, so credentials and unfiltered payloads do not enter
+public errors, diagnostics, events, logs, or snapshots. Connectors add no error
+code or execution path; ADR 0036 defines the complete authoring boundary.
+ADR 0037 defines the optional typed construction helper.
 
 ## Normative pipeline
 

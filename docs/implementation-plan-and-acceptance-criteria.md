@@ -33,7 +33,8 @@ persistence, configuration field, or operational limit:
 | `AE-SCHEMA-01..02` | Valid input and output transform; invalid values produce distinct codes; non-object roots are rejected |
 | `AE-ACCESS-01` | Public, authenticated, and function access are covered; denial never calls `run` |
 | `AE-CTX-01`, `AE-PRINCIPAL-01` | Context contains only normative fields; identity is validated, snapshotted, and isolated |
-| `AE-ARCH-01..03` | Import-graph and adapter tests prove dependency direction and the single invocation path |
+| `AE-ARCH-01..03` | Import-graph and inbound-adapter tests prove dependency direction, explicit injection, and the single invocation path |
+| `AE-CONNECTOR-00..03` | Public type and runtime tests prove inert connector definition, synchronous Standard Schema transformation, lossless configuration snapshots, opaque dependency identity, frozen named-port containers, sanitized configuration failures, and capability-only publication; representative network and filesystem connectors prove port-only injection, applicable access or operation deadlines, signal propagation, bounded work, domain response translation, sanitized failures, and canary-secret redaction |
 | `AE-PIPE-01`, `AE-ERR-01` | Tests instrument stage order, cancellation, timeout, seven codes, and sanitization |
 | `AE-OBS-01` | Three minimal events preserve order and contain no payloads or credentials |
 | `AE-CLI-01..02` | Integration covers commands, input channels, UTF-8 failure, writers, and exit codes |

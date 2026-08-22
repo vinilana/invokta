@@ -3,11 +3,55 @@ import { z } from "zod";
 
 import {
   type AccessRule,
+  type ConnectorConfigSchema,
   createEngine,
   defineCapability,
+  defineConnector,
   type InferSchemaInput,
   type InferSchemaOutput,
 } from "../src/index.js";
+
+// @ts-expect-error Connector configuration must validate to an object root.
+const scalarConnectorConfig: ConnectorConfigSchema = z.string();
+void scalarConnectorConfig;
+
+const typedConnector = defineConnector({
+  name: "typed-reader",
+  config: z.object({
+    limit: z.string().transform((value) => Number(value)),
+  }),
+  create(config, dependencies: { readonly prefix: string }) {
+    expectTypeOf(config).toEqualTypeOf<{ limit: number }>();
+    expectTypeOf(dependencies).toEqualTypeOf<{
+      readonly prefix: string;
+    }>();
+    return {
+      ports: {
+        reader: {
+          read: () => `${dependencies.prefix}:${String(config.limit)}`,
+        },
+      },
+    };
+  },
+});
+
+expectTypeOf(typedConnector.name).toEqualTypeOf<"typed-reader">();
+const typedConnectorInstance = typedConnector.create(
+  { limit: "2" },
+  { prefix: "items" },
+);
+expectTypeOf(
+  typedConnectorInstance.ports.reader.read(),
+).toEqualTypeOf<string>();
+
+// @ts-expect-error Connector creation accepts the configuration schema input.
+typedConnector.create({ limit: 2 }, { prefix: "items" });
+
+// @ts-expect-error Connector dependencies are explicit and required.
+typedConnector.create({ limit: "2" });
+
+// @ts-expect-error Connector instances expose only their declared named ports.
+typedConnectorInstance.ports.writer;
 
 const input = z.object({
   value: z.string().transform((value) => value.length),

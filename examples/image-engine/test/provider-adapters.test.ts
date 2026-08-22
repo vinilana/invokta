@@ -2,9 +2,18 @@ import type { EngineError } from "@invokta/core";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ReferenceImage } from "../src/application/ports.js";
-import { createNanoBananaReferenceComposer } from "../src/infrastructure/nano-banana-reference-composer.js";
-import { createOpenAiImageProvider } from "../src/infrastructure/openai-image-provider.js";
-import { createSeedreamCampaignGenerator } from "../src/infrastructure/seedream-campaign-generator.js";
+import {
+  createNanoBananaReferenceComposer,
+  nanoBananaConnector,
+} from "../src/infrastructure/nano-banana-reference-composer.js";
+import {
+  createOpenAiImageProvider,
+  openAiImageConnector,
+} from "../src/infrastructure/openai-image-provider.js";
+import {
+  createSeedreamCampaignGenerator,
+  seedreamConnector,
+} from "../src/infrastructure/seedream-campaign-generator.js";
 
 const generatedData = Buffer.from("generated png").toString("base64");
 const referenceData = Buffer.from("reference png").toString("base64");
@@ -21,7 +30,57 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("the OpenAI GPT Image 2 adapter", () => {
+describe("typed image connectors", () => {
+  it("constructs provider ports without performing network I/O", () => {
+    let requests = 0;
+    const fetchImplementation: typeof fetch = async () => {
+      requests += 1;
+      return new Response();
+    };
+    const openAi = openAiImageConnector.create(
+      { apiKey: "openai-key" },
+      { fetch: fetchImplementation },
+    );
+    const seedream = seedreamConnector.create(
+      { apiKey: "ark-key" },
+      { fetch: fetchImplementation },
+    );
+    const nanoBanana = nanoBananaConnector.create(
+      { apiKey: "gemini-key" },
+      { fetch: fetchImplementation },
+    );
+
+    expect(openAiImageConnector.name).toBe("openai-images");
+    expect(seedreamConnector.name).toBe("seedream");
+    expect(nanoBananaConnector.name).toBe("nano-banana");
+    expect(Object.keys(openAi.ports)).toEqual(["editor", "textRenderer"]);
+    expect(Object.keys(seedream.ports)).toEqual(["campaignGenerator"]);
+    expect(Object.keys(nanoBanana.ports)).toEqual(["referenceComposer"]);
+    expect(requests).toBe(0);
+  });
+
+  it("sanitizes invalid private connector configuration", () => {
+    const dependencies = { fetch: globalThis.fetch };
+
+    expect(() =>
+      openAiImageConnector.create({ apiKey: "" }, dependencies),
+    ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      openAiImageConnector.create(
+        { apiKey: "key", baseUrl: "https://secret@example.com" },
+        dependencies,
+      ),
+    ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      seedreamConnector.create({ apiKey: "" }, dependencies),
+    ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      nanoBananaConnector.create({ apiKey: "" }, dependencies),
+    ).toThrow("Connector configuration is invalid.");
+  });
+});
+
+describe("the OpenAI GPT Image 2 outbound connector", () => {
   it("uses the generations endpoint for high-fidelity text assets", async () => {
     const fetchImplementation = vi.fn<typeof globalThis.fetch>(
       async (_input, _init) =>
@@ -59,6 +118,84 @@ describe("the OpenAI GPT Image 2 adapter", () => {
       output_format: "png",
       n: 1,
     });
+  });
+
+  it("preserves cancellation while reading a provider response", async () => {
+    const controller = new AbortController();
+    const cancellation = new Error("The invocation was cancelled.");
+    const fetchImplementation = vi.fn<typeof globalThis.fetch>(
+      async (_input, init) =>
+        new Response(
+          new ReadableStream({
+            start(streamController) {
+              init?.signal?.addEventListener(
+                "abort",
+                () => streamController.error(init.signal?.reason),
+                { once: true },
+              );
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+    );
+    const provider = createOpenAiImageProvider({
+      apiKey: "openai-test-key",
+      fetch: fetchImplementation,
+    });
+
+    const render = provider.render(
+      {
+        prompt: "A poster.",
+        requiredText: "Hello",
+        aspectRatio: "1:1",
+      },
+      { signal: controller.signal },
+    );
+    controller.abort(cancellation);
+
+    await expect(render).rejects.toBe(cancellation);
+  });
+
+  it.each([
+    {
+      boundary: "transport error",
+      fetch: vi.fn<typeof globalThis.fetch>(async () => {
+        throw new Error("transport-secret-canary");
+      }),
+      canary: "transport-secret-canary",
+    },
+    {
+      boundary: "malformed provider payload",
+      fetch: vi.fn<typeof globalThis.fetch>(
+        async () => new Response("secret-canary"),
+      ),
+      canary: "secret-canary",
+    },
+  ])("sanitizes the $boundary cause", async ({ fetch, canary }) => {
+    const provider = createOpenAiImageProvider({
+      apiKey: "openai-test-key",
+      fetch,
+    });
+
+    const failure = await provider
+      .render(
+        {
+          prompt: "A poster.",
+          requiredText: "Hello",
+          aspectRatio: "1:1",
+        },
+        { signal },
+      )
+      .then(
+        () => undefined,
+        (error: unknown) => error as EngineError,
+      );
+
+    expect(failure).toMatchObject({
+      code: "EXECUTION_FAILED",
+      publicDetails: { provider: "openai" },
+    });
+    expect(String(failure?.cause)).not.toContain(canary);
   });
 
   it("uses the multipart edits endpoint and preserves every reference", async () => {
@@ -100,9 +237,10 @@ describe("the OpenAI GPT Image 2 adapter", () => {
     );
   });
 
-  it("normalizes provider rejection without exposing the credential", async () => {
+  it("normalizes provider rejection without exposing connector secrets", async () => {
+    const providerResponseSecret = "provider-response-secret-canary";
     const fetchImplementation = vi.fn(async () =>
-      jsonResponse({ error: { message: "quota exceeded" } }, 429),
+      jsonResponse({ error: { message: providerResponseSecret } }, 429),
     );
     const provider = createOpenAiImageProvider({
       apiKey: "secret-openai-key",
@@ -129,16 +267,28 @@ describe("the OpenAI GPT Image 2 adapter", () => {
       publicDetails: { provider: "openai", status: 429 },
     });
     expect(JSON.stringify(failure)).not.toContain("secret-openai-key");
+    expect(String(failure?.cause)).not.toContain(providerResponseSecret);
+    expect(String(failure?.cause)).toBe(
+      "Error: OpenAI responded with status 429.",
+    );
   });
 
   it("rejects a declared response above the 64 MiB provider limit", async () => {
+    let responseCancelled = false;
     const provider = createOpenAiImageProvider({
       apiKey: "openai-test-key",
       fetch: vi.fn(
         async () =>
-          new Response("{}", {
-            headers: { "content-length": String(64 * 1024 * 1024 + 1) },
-          }),
+          new Response(
+            new ReadableStream({
+              cancel() {
+                responseCancelled = true;
+              },
+            }),
+            {
+              headers: { "content-length": String(64 * 1024 * 1024 + 1) },
+            },
+          ),
       ),
     });
 
@@ -156,10 +306,11 @@ describe("the OpenAI GPT Image 2 adapter", () => {
       message: "OpenAI returned an unreadable response.",
       publicDetails: { provider: "openai" },
     });
+    expect(responseCancelled).toBe(true);
   });
 });
 
-describe("the BytePlus Seedream 5.0 adapter", () => {
+describe("the BytePlus Seedream 5.0 outbound connector", () => {
   it("requests a bounded coherent high-resolution campaign series", async () => {
     const fetchImplementation = vi.fn<typeof globalThis.fetch>(
       async (_input, _init) =>
@@ -238,7 +389,7 @@ describe("the BytePlus Seedream 5.0 adapter", () => {
   });
 });
 
-describe("the Google Nano Banana 2 adapter", () => {
+describe("the Google Nano Banana 2 outbound connector", () => {
   it("uses the latest stable model for multi-reference composition", async () => {
     const fetchImplementation = vi.fn<typeof globalThis.fetch>(
       async (_input, _init) =>

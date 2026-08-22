@@ -4,7 +4,10 @@ import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createFilesystemObsidianVault } from "../src/infrastructure/filesystem-obsidian-vault.js";
+import {
+  createFilesystemObsidianVault,
+  filesystemObsidianConnector,
+} from "../src/infrastructure/filesystem-obsidian-vault.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -37,6 +40,36 @@ afterEach(async () => {
 });
 
 describe("the filesystem Obsidian knowledge graph", () => {
+  it("exposes the graph through a typed filesystem connector", () => {
+    const connector = filesystemObsidianConnector.create(
+      { vaultPath: "/path/that/does/not/exist" },
+      {},
+    );
+
+    expect(filesystemObsidianConnector.name).toBe("filesystem-obsidian");
+    expect(Object.keys(connector.ports)).toEqual(["graph"]);
+    expect(() =>
+      filesystemObsidianConnector.create({ vaultPath: "" }, {}),
+    ).toThrow("Connector configuration is invalid.");
+    expect(() =>
+      filesystemObsidianConnector.create(
+        {
+          vaultPath: "/path/that/does/not/exist",
+          maxFrontmatterDepth: 0,
+        },
+        {},
+      ),
+    ).toThrow("Connector configuration is invalid.");
+  });
+
+  it("performs no filesystem I/O during connector construction", () => {
+    expect(() =>
+      createFilesystemObsidianVault({
+        vaultPath: "/path/that/does/not/exist",
+      }),
+    ).not.toThrow();
+  });
+
   it("lists explicit root indexes with bounded, allowlisted frontmatter", async () => {
     const vaultPath = await createVault();
     const outsidePath = join(await createVault(), "outside.md");

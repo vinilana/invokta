@@ -42,3 +42,5 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0033](0033-workbench-launcher-and-selection.md) | Workbench launcher and workbench selection | Accepted | 2026-08-15 |
 | [0034](0034-harness-config-variants-and-vscode-remote-user-scope.md) | Harness configuration variants and VS Code remote user scope | Accepted | 2026-08-22 |
 | [0035](0035-example-archive-path-and-subtree-validation.md) | Example archive path and subtree validation | Accepted | 2026-08-21 |
+| [0036](0036-engine-owned-outbound-connectors.md) | Engine-owned outbound connectors through explicit ports | Accepted | 2026-08-22 |
+| [0037](0037-typed-connector-definitions.md) | Typed connector definitions with explicit port injection | Accepted | 2026-08-22 |

@@ -1,7 +1,6 @@
 import { EngineError } from "@invokta/core";
 
 const maximumProviderResponseBytes = 64 * 1024 * 1024;
-const maximumCauseCharacters = 512;
 
 export interface ProviderHttpRequest {
   readonly provider: string;
@@ -27,17 +26,26 @@ export function providerFailure(
   });
 }
 
+export function isCredentialFreeHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      url.username === "" &&
+      url.password === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function providerEndpoint(baseUrl: string, path: string): URL {
-  const base = new URL(baseUrl);
-  if (
-    (base.protocol !== "https:" && base.protocol !== "http:") ||
-    base.username !== "" ||
-    base.password !== ""
-  ) {
+  if (!isCredentialFreeHttpUrl(baseUrl)) {
     throw new TypeError(
       "Provider base URL must be a credential-free HTTP(S) URL.",
     );
   }
+  const base = new URL(baseUrl);
   const normalizedPath = `${base.pathname.replace(/\/+$/u, "")}/`;
   return new URL(path.replace(/^\/+/, ""), `${base.origin}${normalizedPath}`);
 }
@@ -55,6 +63,7 @@ async function readBoundedText(response: Response): Promise<string> {
     declaredLength !== null &&
     declaredLength > maximumProviderResponseBytes
   ) {
+    await response.body?.cancel().catch(() => undefined);
     throw new RangeError(
       "Provider response exceeds the configured byte limit.",
     );
@@ -93,22 +102,24 @@ export async function requestProviderJson(
       ...request.init,
       signal: request.signal,
     });
-  } catch (cause) {
-    if (request.signal.aborted) throw cause;
+  } catch {
+    if (request.signal.aborted) throw request.signal.reason;
     throw providerFailure(
       request.requestFailureMessage,
       { provider: request.provider },
-      cause,
+      new Error(`${request.providerLabel} transport request failed.`),
     );
   }
 
+  if (request.signal.aborted) throw request.signal.reason;
+
   if (!response.ok) {
-    const detail = await readBoundedText(response).catch(() => "");
+    await response.body?.cancel().catch(() => undefined);
     throw providerFailure(
       request.rejectionMessage,
       { provider: request.provider, status: response.status },
       new Error(
-        `${request.providerLabel} responded with status ${String(response.status)}: ${detail.slice(0, maximumCauseCharacters)}`,
+        `${request.providerLabel} responded with status ${String(response.status)}.`,
       ),
     );
   }
@@ -116,21 +127,22 @@ export async function requestProviderJson(
   let text: string;
   try {
     text = await readBoundedText(response);
-  } catch (cause) {
+  } catch {
+    if (request.signal.aborted) throw request.signal.reason;
     throw providerFailure(
       `${request.providerLabel} returned an unreadable response.`,
       { provider: request.provider },
-      cause,
+      new Error(`${request.providerLabel} response could not be read safely.`),
     );
   }
 
   try {
     return JSON.parse(text) as unknown;
-  } catch (cause) {
+  } catch {
     throw providerFailure(
       `${request.providerLabel} returned an unreadable response.`,
       { provider: request.provider },
-      cause,
+      new Error(`${request.providerLabel} response was not valid JSON.`),
     );
   }
 }

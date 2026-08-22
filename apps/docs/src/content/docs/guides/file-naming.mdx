@@ -1,6 +1,6 @@
 ---
 title: File naming and project structure
-description: Name capabilities, provider adapters, services, domain files, composition roots, and tests by their architectural responsibility.
+description: Name capabilities, outbound connectors, services, domain files, composition roots, and tests by their architectural responsibility.
 ---
 
 Invokta engines use filenames to make dependency direction visible. A reader
@@ -64,16 +64,16 @@ The filename does not need to repeat its directory. Prefer
 `capabilities/classify-ticket.ts` over
 `capabilities/classify-ticket-capability.ts`.
 
-## Name an external provider wrapper
+## Name an outbound connector
 
-An outbound provider adapter uses this pattern:
+An outbound connector uses this pattern:
 
 ```text
 src/infrastructure/<provider>-<port-role>.ts
 ```
 
 `<provider>` is the stable product or technology name in kebab-case.
-`<port-role>` is the engine-owned interface that the adapter implements, also
+`<port-role>` is the engine-owned interface that the connector implements, also
 converted to kebab-case. Name the module from the domain-facing port, not from a
 provider SDK class or endpoint.
 
@@ -99,14 +99,15 @@ This makes replacements legible: `FirecrawlWebCrawler` and
 `InternalWebCrawler` can both satisfy `WebCrawler` without changing a
 capability.
 
-Use `<provider>-<bounded-context>-provider.ts` only when one cohesive adapter
+Use `<provider>-<bounded-context>-provider.ts` only when one cohesive connector
 intentionally implements several related ports and no single port role names
-it accurately. `openai-image-provider.ts` is an example: the adapter owns one
+it accurately. `openai-image-provider.ts` is an example: the connector owns one
 image-provider boundary while implementing both `ImageEditor` and
 `TextImageRenderer`. Do not use the broader `-provider` suffix for a one-port
-adapter when a precise role is available.
+connector when a precise role is available. A filename need not include the
+generic word `connector`.
 
-A provider-neutral mechanism shared by several adapters may use its mechanism
+A provider-neutral mechanism shared by several connectors may use its mechanism
 as the name, such as `provider-http.ts`. It remains inside `infrastructure/` and
 must not become a provider registry or leak provider payloads into capability
 contracts.
@@ -138,8 +139,8 @@ not a default suffix for dependency-injected code. A name such as
 | Domain concept | `src/domain/<concept>.ts` | Own provider-neutral entities, values, policies, and invariants. |
 | Outbound ports | `src/application/ports.ts` | Keep a small engine's interfaces together; split to `application/<port-role>.ts` when they acquire separate owners. |
 | Application operation | `src/application/<verb>-<object>.ts` | Use only for orchestration reused outside one capability. |
-| Provider adapter | `src/infrastructure/<provider>-<port-role>.ts` | Pair the implementation qualifier with the engine-owned port role. |
-| Local or technology adapter | `src/infrastructure/<technology-or-strategy>-<port-role>.ts` | Examples include `file-agent-session-store.ts` and `in-memory-ticket-repository.ts`. |
+| Outbound connector | `src/infrastructure/<provider-or-technology>-<port-role>.ts` | Pair the external implementation qualifier with the engine-owned port role. Filesystem-backed implementations such as `file-agent-session-store.ts` cross an external data-source boundary and are connectors. |
+| Local port implementation | `src/infrastructure/<strategy>-<port-role>.ts` | Use for engine-local policy or state, such as `attribute-crawl-permission-checker.ts` or `in-memory-ticket-repository.ts`; pure in-memory implementations and test doubles are not outbound connectors. |
 | Engine factory | `src/engine.ts` | Construct dependencies and call `createEngine`; start no transport here. |
 | Capability composition | `src/capabilities.ts` | Use when imported and local capability maps need a separate, side-effect-free composition module. |
 | Inbound entrypoint | `src/direct.ts`, `src/cli.ts`, `src/mcp-stdio.ts`, or `src/mcp-http.ts` | Keep each host thin and route execution through `engine.invoke`. |
@@ -150,14 +151,14 @@ not a default suffix for dependency-injected code. A name such as
 Keep a schema beside its owner. A capability input or output schema belongs in
 the capability module until several related capabilities share it. A persisted
 domain record schema belongs with the application or domain concept that
-defines that record. A provider response validator stays inside the provider
-adapter because it is not a public engine contract.
+defines that record. A provider response validator stays inside the outbound
+connector because it is not a public engine contract.
 
 ## Split by responsibility, not file size
 
 Keep parsing, response validation, error translation, and request construction
-in one provider adapter while they change together. Split a module only when a
-part has a distinct owner or is reused by another adapter. When an integration
+in one connector while they change together. Split a module only when a part has
+a distinct owner or is reused by another connector. When an integration
 does need several files, retain the same grammar inside a provider directory:
 
 ```text
@@ -167,7 +168,7 @@ src/infrastructure/firecrawl/
   firecrawl-contract.ts
 ```
 
-Here `firecrawl-client.ts` is a low-level protocol client used by the adapter;
+Here `firecrawl-client.ts` is a low-level protocol client used by the connector;
 capabilities still depend only on `WebCrawler`. Do not inject the provider
 client directly into a capability or treat the directory as a runtime plugin.
 
@@ -178,12 +179,12 @@ Before adding a file, ask:
 1. Does the directory identify the layer that owns this code?
 2. Does the filename identify a business concept, action, port role, or concrete
    implementation?
-3. For an outbound adapter, can a reader see both the provider or technology and
+3. For an outbound connector, can a reader see both the provider or technology and
    the engine-owned role?
 4. Would replacing the provider leave the port and capability names unchanged?
 5. Is a generic word such as `service`, `provider`, `client`, or `utils` hiding a
    more precise responsibility?
 
-See [Wrap an external provider](/recipes/external-provider/) for a complete
+See [Build an outbound connector](/recipes/external-provider/) for a complete
 implementation and [Inject a dependency](/recipes/dependency-injection/) for
 provider-neutral ports and composition-root wiring.

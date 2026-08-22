@@ -1,3 +1,6 @@
+import { defineConnector } from "@invokta/core";
+import { z } from "zod";
+
 import type {
   ImageAsset,
   ReferenceImageComposer,
@@ -10,6 +13,7 @@ import {
 } from "../domain/image.js";
 import {
   asRecord,
+  isCredentialFreeHttpUrl,
   providerEndpoint,
   providerFailure,
   requestProviderJson,
@@ -21,6 +25,16 @@ export interface NanoBananaReferenceComposerOptions {
   readonly model?: string;
   readonly fetch?: typeof globalThis.fetch;
 }
+
+export interface NanoBananaConnectorDependencies {
+  readonly fetch: typeof globalThis.fetch;
+}
+
+const nanoBananaConnectorConfig = z.object({
+  apiKey: z.string().min(1),
+  baseUrl: z.string().refine(isCredentialFreeHttpUrl).optional(),
+  model: z.string().min(1).optional(),
+});
 
 const defaultBaseUrl = "https://generativelanguage.googleapis.com/v1beta";
 const defaultModel = "gemini-3.1-flash-image";
@@ -120,3 +134,20 @@ export function createNanoBananaReferenceComposer(
     },
   };
 }
+
+export const nanoBananaConnector = defineConnector({
+  name: "nano-banana",
+  config: nanoBananaConnectorConfig,
+  create(config, dependencies: NanoBananaConnectorDependencies) {
+    return {
+      ports: {
+        referenceComposer: createNanoBananaReferenceComposer({
+          apiKey: config.apiKey,
+          ...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
+          ...(config.model === undefined ? {} : { model: config.model }),
+          fetch: dependencies.fetch,
+        }),
+      },
+    };
+  },
+});

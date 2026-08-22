@@ -60,6 +60,10 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0033](./adr/0033-workbench-launcher-and-selection.md)
 - Harness configuration variants and VS Code remote user scope —
   [ADR 0034](./adr/0034-harness-config-variants-and-vscode-remote-user-scope.md)
+- Engine-owned outbound connectors through explicit ports —
+  [ADR 0036](./adr/0036-engine-owned-outbound-connectors.md)
+- Typed connector definitions with explicit port injection —
+  [ADR 0037](./adr/0037-typed-connector-definitions.md)
 
 ## Design notes
 
@@ -82,6 +86,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [Self-hosted OAuth recipe](../apps/docs/src/content/docs/recipes/auth/self-hosted-oauth.mdx)
 - [OAuth client interoperability release checklist](./oauth-client-interoperability-checklist.md)
 - [Integrating a PDP through a capability access rule](./capability-authorization.md)
+- [Building an outbound connector](../apps/docs/src/content/docs/recipes/external-provider.mdx)
 - [Authoring and composing community capabilities](./capability-composition.md)
 - [Installing Action Engines in MCP clients](../apps/docs/src/content/docs/reference/installer.mdx)
 - [Scope and maturity matrix](./scope-matrix.md)
@@ -89,7 +94,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)
 - [`auth-self-hosted-oauth-engine`: self-hosted OAuth and production deployment example](../examples/auth-self-hosted-oauth-engine/)
 - [`support-harness`: private MCP consumer](../examples/support-harness/)
-- [`crawl-engine`: outbound provider integration with Firecrawl](../examples/crawl-engine/)
+- [`crawl-engine`: outbound Firecrawl connector behind an engine-owned port](../examples/crawl-engine/)
 - [`cursor-agent-routing-engine`: versioned Cursor subagent and model routing policy](../examples/cursor-agent-routing-engine/)
 - [`image-engine`: multi-provider image production by use case](../examples/image-engine/)
 - [`observability-engine`: Sentry, Datadog, and New Relic incident context](../examples/observability-engine/)
