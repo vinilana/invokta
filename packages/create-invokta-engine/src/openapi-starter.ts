@@ -684,6 +684,9 @@ function sampleString(
   schema: Readonly<Record<string, unknown>>,
   budget: WitnessBudget,
 ): string {
+  if (schema.pattern !== undefined) {
+    throw new TypeError("A generated OpenAPI test value could not be derived.");
+  }
   const minimum =
     typeof schema.minLength === "number" ? Math.max(0, schema.minLength) : 0;
   const maximum =
@@ -696,19 +699,11 @@ function sampleString(
   if (minimum > budget.remaining) {
     throw new TypeError("A generated OpenAPI test value could not be derived.");
   }
-  const expression =
-    typeof schema.pattern === "string"
-      ? new RegExp(schema.pattern, "u")
-      : undefined;
-  if (minimum === 0 && (expression === undefined || expression.test(""))) {
-    return "";
-  }
+  if (minimum === 0) return "";
   const length = Math.max(1, minimum);
   if (length <= maximum) {
     consumeWitnessUnits(budget, length);
-    const candidate = "x".repeat(length);
-    if (expression === undefined || expression.test(candidate))
-      return candidate;
+    return "x".repeat(length);
   }
   throw new TypeError("A generated OpenAPI test value could not be derived.");
 }
@@ -769,7 +764,7 @@ function witnessMatches(
   if (schemaValue === false) return false;
   const schema = asSchemaObject(schemaValue);
   if (schema === undefined) return false;
-  if (schema.format !== undefined) return false;
+  if (schema.format !== undefined || schema.pattern !== undefined) return false;
 
   if (
     Object.hasOwn(schema, "const") &&
@@ -820,12 +815,6 @@ function witnessMatches(
       return false;
     if (typeof schema.maxLength === "number" && length > schema.maxLength)
       return false;
-    if (
-      typeof schema.pattern === "string" &&
-      !new RegExp(schema.pattern, "u").test(value)
-    ) {
-      return false;
-    }
   }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return false;

@@ -328,7 +328,7 @@ const patternFallbackOperation = stringQueryOperation({
   exportName: "patternFallback",
   moduleName: "pattern-fallback",
   path: "/pattern-fallback",
-  schema: Object.freeze({ type: "string", pattern: "^z{17}$" }),
+  schema: Object.freeze({ type: "string", pattern: "^(x+)+y$" }),
 });
 
 const defaultedResponseSchema = Object.freeze({

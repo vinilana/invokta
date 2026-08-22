@@ -31,7 +31,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   collision-checked after bounding, and portable across Windows device-name
   rules.
 - Bounded generated-test witness construction, proof, and source serialization
-  before allocating from schema length or item bounds.
+  before allocating from schema length or item bounds, and prevented the
+  sampler from constructing or executing document-controlled regular
+  expressions.
 
 ## [0.6.1] - 2026-08-20
 

@@ -126,6 +126,47 @@ function occurrences(source: string, value: string): number {
 }
 
 describe("createOpenApiStarterFiles", () => {
+  it("never constructs or executes document-controlled witness patterns", () => {
+    const pattern = "^(x+)+y$";
+    const operation = samplerOperation("hostile-pattern", {
+      type: "string",
+      pattern,
+    });
+    const originalRegExp = globalThis.RegExp;
+    const regexpConstructor = vi
+      .spyOn(globalThis, "RegExp")
+      .mockImplementation(function guardedRegExp(
+        source?: string | RegExp,
+        flags?: string,
+      ) {
+        if (source === pattern) {
+          throw new Error("document-controlled RegExp construction attempted");
+        }
+        return Reflect.construct(originalRegExp, [source, flags]) as RegExp;
+      } as RegExpConstructor);
+
+    try {
+      const contents = fileContents(
+        createOpenApiStarterFiles({
+          projectName: "pattern-engine",
+          invoktaVersion: "1.2.3",
+          packageManager: "npm",
+          profile: "cli",
+          selectedOperations: Object.freeze([operation]),
+        }),
+      );
+      const generatedTest = contents.get("test/engine.test.ts") ?? "";
+
+      expect(occurrences(generatedTest, '"openapi.hostile-pattern"')).toBe(1);
+      expect(generatedTest.length).toBeLessThan(8_192);
+      expect(
+        regexpConstructor.mock.calls.some(([source]) => source === pattern),
+      ).toBe(false);
+    } finally {
+      regexpConstructor.mockRestore();
+    }
+  });
+
   it("bounds nested sampler allocations and generated witness source", () => {
     const operations = Object.freeze([
       samplerOperation("within-string-budget", {
