@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -634,6 +634,24 @@ afterAll(() => {
 });
 
 describe("generated OpenAPI runtime", () => {
+  it("reports missing connector configuration as one compact CLI diagnostic", () => {
+    const result = spawnSync(process.execPath, ["dist/cli.js", "list"], {
+      cwd: projectDirectory,
+      encoding: "utf8",
+      env: Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([name]) => !name.startsWith("OPENAPI_"),
+        ),
+      ),
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      '{"code":"EXECUTION_FAILED","message":"Connector configuration is invalid."}\n',
+    );
+  });
+
   it("publishes a literal object root for multiple successful responses", () => {
     const engine = engineModule.createOpenApiEngine({
       ports: {

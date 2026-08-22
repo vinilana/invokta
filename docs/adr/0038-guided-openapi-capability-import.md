@@ -242,8 +242,11 @@ decision.
 Only environment variable names are generated. Values from the process
 environment, an OpenAPI example/default/extension, a URL user-info field, or a
 local dotenv file are never read or copied during import.
-`upstream.env.example` lists names and safe instructions without credential
-values, preserving the deploy-owned `.env.example` bytes in HTTP profiles.
+`upstream.env.example` lists names and safe required, alternative, or optional
+purpose instructions without credential values, preserving the deploy-owned
+`.env.example` bytes in HTTP profiles. The generated README repeats the safe
+configuration purpose and includes a directly runnable input example whenever
+the bounded schema witness generator can prove one.
 Names are deterministic and collision-free within one generated project; their
 exact spelling is creator-version template output rather than a cross-release
 configuration guarantee. Upstream security says how the generated dependency
@@ -291,6 +294,13 @@ cancellation, and response validation follow the existing engine error
 taxonomy. Public errors, logs, tests, and generated documentation never contain
 credentials, request or response bodies, or credential-bearing URLs. Runtime
 diagnostics do not echo raw OpenAPI values.
+
+Generated executable entry points catch only this known connector configuration
+failure. They reserve standard output for results or protocol data, write the
+single compact JSON diagnostic
+`{"code":"EXECUTION_FAILED","message":"Connector configuration is invalid."}`
+to standard error without a stack, and exit with status 1. Unexpected startup
+failures are not reclassified by this boundary.
 
 The operation path is appended as path data and is never interpreted as an
 absolute or network-path URL. After path and non-credential parameter

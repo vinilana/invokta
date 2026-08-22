@@ -716,8 +716,38 @@ export const engine = createOpenApiEngine({
 `;
 }
 
-function renderDirect(capabilityId: string): string {
-  return `import { engine } from "./engine.js";
+function renderStartupModule(): string {
+  return `const diagnostic = Object.freeze({
+  code: "EXECUTION_FAILED",
+  message: "Connector configuration is invalid.",
+});
+
+export function reportConnectorConfigurationFailure(error: unknown): boolean {
+  if (
+    !(error instanceof TypeError) ||
+    error.message !== diagnostic.message
+  ) {
+    return false;
+  }
+  process.stderr.write(\`\${JSON.stringify(diagnostic)}\\n\`);
+  process.exitCode = 1;
+  return true;
+}
+`;
+}
+
+function renderDirect(operation: OpenApiStarterOperation): string {
+  let defaultInput: unknown;
+  try {
+    defaultInput = sampleJsonSchema(operation.inputSchema);
+  } catch {
+    defaultInput = undefined;
+  }
+  const inputFallback =
+    defaultInput === undefined
+      ? `(() => { throw new TypeError("A JSON input argument is required."); })()`
+      : JSON.stringify(JSON.stringify(defaultInput));
+  return `import { reportConnectorConfigurationFailure } from "./openapi/startup.js";
 
 function parseInput(text: string): Record<string, unknown> {
   const value: unknown = JSON.parse(text);
@@ -727,14 +757,47 @@ function parseInput(text: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-const input = parseInput(process.argv[2] ?? "{}");
-const result = await engine.invoke(
-  ${JSON.stringify(capabilityId)},
-  input,
-  { source: "direct", principal: null },
-);
+try {
+  const input = parseInput(process.argv[2] ?? ${inputFallback});
+  const { engine } = await import("./engine.js");
+  const result = await engine.invoke(
+    ${JSON.stringify(operation.capabilityId)},
+    input,
+    { source: "direct", principal: null },
+  );
 
-process.stdout.write(\`\${JSON.stringify(result)}\\n\`);
+  process.stdout.write(\`\${JSON.stringify(result)}\\n\`);
+} catch (error) {
+  if (!reportConnectorConfigurationFailure(error)) throw error;
+}
+`;
+}
+
+function renderCli(): string {
+  return `import { runCli } from "@invokta/cli";
+
+import { reportConnectorConfigurationFailure } from "./openapi/startup.js";
+
+try {
+  const { engine } = await import("./engine.js");
+  process.exitCode = await runCli(engine, { principal: null });
+} catch (error) {
+  if (!reportConnectorConfigurationFailure(error)) throw error;
+}
+`;
+}
+
+function renderMcpStdio(): string {
+  return `import { serveMcpStdio } from "@invokta/mcp";
+
+import { reportConnectorConfigurationFailure } from "./openapi/startup.js";
+
+try {
+  const { engine } = await import("./engine.js");
+  await serveMcpStdio(engine, { principal: null });
+} catch (error) {
+  if (!reportConnectorConfigurationFailure(error)) throw error;
+}
 `;
 }
 
@@ -1268,13 +1331,21 @@ function adaptReadme(
   const first = operations[0];
   if (first === undefined)
     throw new TypeError("At least one operation is required.");
+  let directInput = "<valid JSON object>";
+  try {
+    directInput = JSON.stringify(sampleJsonSchema(first.inputSchema));
+  } catch {
+    // Keep an explicit placeholder when no bounded witness can be proven.
+  }
+  const quotedDirectInput = `'${directInput.replaceAll("'", `'"'"'`)}'`;
   return contents
     .replace(
       "with one\ndeterministic capability",
       `with ${String(operations.length)} generated OpenAPI capabilities`,
     )
     .replaceAll("onboarding.create-welcome-message", first.capabilityId)
-    .replace('--input \'{"name":"Ada"}\'', "--input '{}'");
+    .replace("npm run direct -- Ada", `npm run direct -- ${quotedDirectInput}`)
+    .replace('--input \'{"name":"Ada"}\'', `--input ${quotedDirectInput}`);
 }
 
 const reviewInstruction =
@@ -1287,10 +1358,91 @@ function appendReviewInstruction(contents: string): string {
 function adaptMcpHttpModule(contents: string): string {
   return contents
     .replace(
-      'import { serveMcpHttp } from "@invokta/mcp";\n',
-      'import { serveMcpHttp } from "@invokta/mcp";\n\nimport { engine } from "./engine.js";\n',
+      '} from "./env.js";\n',
+      '} from "./env.js";\nimport { reportConnectorConfigurationFailure } from "./openapi/startup.js";\n',
     )
-    .replace('  const { engine } = await import("./engine.js");\n', "");
+    .replace(
+      "  reportStartupFailure(error);",
+      "  if (!reportConnectorConfigurationFailure(error)) {\n    reportStartupFailure(error);\n  }",
+    );
+}
+
+interface EnvironmentInstruction {
+  readonly name: string;
+  readonly instructions: readonly string[];
+}
+
+function environmentInstructions(
+  operations: readonly OpenApiStarterOperation[],
+): readonly EnvironmentInstruction[] {
+  const instructions = new Map<string, Set<string>>();
+  const add = (name: string, instruction: string): void => {
+    const current = instructions.get(name) ?? new Set<string>();
+    current.add(instruction);
+    instructions.set(name, current);
+  };
+  for (const operation of operations) {
+    const baseUrl = operationBaseUrl(operation);
+    add(
+      baseUrl.environmentVariable,
+      `${baseUrl.default === undefined ? "Required base URL" : "Optional base URL override"} for \`${operation.capabilityId}\`.`,
+    );
+    const alternatives = operation.security.alternatives;
+    const hasAnonymous = alternatives.some(
+      (alternative) => alternative.length === 0,
+    );
+    for (const alternative of alternatives) {
+      for (const scheme of alternative) {
+        const kind =
+          scheme.type === "basic"
+            ? "Basic credential"
+            : scheme.type === "bearer"
+              ? "Bearer token"
+              : "API key";
+        for (const name of Object.values(scheme.environmentVariables)) {
+          if (name === undefined) continue;
+          add(
+            name,
+            `${alternatives.length === 1 && !hasAnonymous ? "Required" : "Credential alternative"} ${kind.toLowerCase()} for \`${operation.capabilityId}\`.`,
+          );
+        }
+      }
+    }
+  }
+  return Object.freeze(
+    [...instructions]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, values]) =>
+        Object.freeze({
+          name,
+          instructions: Object.freeze([...values].sort()),
+        }),
+      ),
+  );
+}
+
+function renderUpstreamEnvironmentExample(
+  instructions: readonly EnvironmentInstruction[],
+): string {
+  return `${instructions
+    .map(
+      ({ name, instructions: details }) =>
+        `${details.map((detail) => `# ${detail.replaceAll("`", "")}`).join("\n")}\n${name}=`,
+    )
+    .join("\n\n")}\n`;
+}
+
+function appendUpstreamConfiguration(
+  contents: string,
+  instructions: readonly EnvironmentInstruction[],
+): string {
+  const rows = instructions
+    .map(
+      ({ name, instructions: details }) =>
+        `| \`${name}\` | ${details.join(" ")} |`,
+    )
+    .join("\n");
+  return `${contents.trimEnd()}\n\n## Configure the upstream API\n\nSet only the variables required by the capabilities you keep. Copy\n\`upstream.env.example\` to your preferred secret-management workflow; never\ncommit credential values.\n\n| Variable | Purpose |\n| --- | --- |\n${rows}\n`;
 }
 
 function environmentNames(
@@ -1360,6 +1512,7 @@ export function createOpenApiStarterFiles(
   }
   assertUniquePortableModuleNames(operations);
   const envNames = environmentNames(operations);
+  const upstreamInstructions = environmentInstructions(operations);
   const replacements = new Map<string, StarterEntry>();
   for (const entry of createStarterFiles(options)) {
     if (entry.path === "src/capabilities/create-welcome-message.ts") continue;
@@ -1373,8 +1526,16 @@ export function createOpenApiStarterFiles(
     if (entry.path === "src/direct.ts") {
       replacements.set(
         entry.path,
-        generatedFile(entry.path, renderDirect(first.capabilityId)),
+        generatedFile(entry.path, renderDirect(first)),
       );
+      continue;
+    }
+    if (entry.path === "src/cli.ts") {
+      replacements.set(entry.path, generatedFile(entry.path, renderCli()));
+      continue;
+    }
+    if (entry.path === "src/mcp-stdio.ts") {
+      replacements.set(entry.path, generatedFile(entry.path, renderMcpStdio()));
       continue;
     }
     if (entry.path === "test/engine.test.ts") {
@@ -1389,7 +1550,12 @@ export function createOpenApiStarterFiles(
         entry.path,
         generatedFile(
           entry.path,
-          appendReviewInstruction(adaptReadme(entry.contents, operations)),
+          appendReviewInstruction(
+            appendUpstreamConfiguration(
+              adaptReadme(entry.contents, operations),
+              upstreamInstructions,
+            ),
+          ),
         ),
       );
       continue;
@@ -1438,9 +1604,10 @@ export function createOpenApiStarterFiles(
       renderFetchConnector(operations, envNames),
     ),
     generatedFile("src/openapi/ports.ts", renderPorts(operations)),
+    generatedFile("src/openapi/startup.ts", renderStartupModule()),
     generatedFile(
       "upstream.env.example",
-      `${envNames.map((name) => `${name}=`).join("\n")}\n`,
+      renderUpstreamEnvironmentExample(upstreamInstructions),
     ),
   ]) {
     replacements.set(entry.path, entry);

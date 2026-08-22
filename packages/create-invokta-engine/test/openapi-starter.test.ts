@@ -344,9 +344,10 @@ describe("createOpenApiStarterFiles", () => {
     }
   });
 
-  it("emits names-only inferred connection configuration and forwards the same names", () => {
+  it("documents names-only inferred connection configuration and forwards the same names", () => {
     const contents = fileContents(createFiles());
     const environmentTemplate = contents.get("upstream.env.example") ?? "";
+    const readme = contents.get("README.md") ?? "";
     const manifest = JSON.parse(contents.get("invokta.mcp.json") ?? "") as {
       readonly capabilityIds: readonly string[];
       readonly server: { readonly forwardEnv: readonly string[] };
@@ -367,6 +368,18 @@ describe("createOpenApiStarterFiles", () => {
     expect(environmentTemplate).not.toContain("root.example.test");
     expect(environmentTemplate).not.toContain("path.example.test");
     expect(environmentTemplate).not.toContain("operation.example.test");
+    expect(environmentTemplate).toContain("# Optional base URL override for");
+    expect(readme).toContain("## Configure the upstream API");
+    expect(readme).toContain("`OPENAPI_ROOT_SERVER_BASE_URL`");
+    expect(readme).toContain("Optional base URL override");
+    expect(readme).not.toContain("root.example.test");
+  });
+
+  it("generates a runnable direct command from a proven input witness", () => {
+    const readme = fileContents(createFiles("cli")).get("README.md") ?? "";
+
+    expect(readme).toContain("npm run direct -- '{}'");
+    expect(readme).not.toContain("npm run direct -- Ada");
   });
 
   it.each([
@@ -383,10 +396,13 @@ describe("createOpenApiStarterFiles", () => {
       const contents = fileContents(createFiles(profile));
 
       for (const path of paths) {
-        expect(contents.get(path)).toContain(
-          'import { engine } from "./engine.js";',
-        );
+        const source = contents.get(path) ?? "";
+        expect(source).toContain('await import("./engine.js")');
+        expect(source).toContain("reportConnectorConfigurationFailure");
       }
+      expect(contents.get("src/openapi/startup.ts")).toContain(
+        'message: "Connector configuration is invalid."',
+      );
     },
   );
 
