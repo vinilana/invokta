@@ -723,6 +723,14 @@ function readEntrySize(entry: unknown): number {
   return typeof size === "number" && Number.isFinite(size) ? size : 0;
 }
 
+function readRawEntryPath(entry: unknown): string | undefined {
+  if (typeof entry !== "object" || entry === null) return undefined;
+  const header = (entry as { readonly header?: unknown }).header;
+  if (typeof header !== "object" || header === null) return undefined;
+  const path = (header as { readonly path?: unknown }).path;
+  return typeof path === "string" ? path : undefined;
+}
+
 const regularFileEntryTypes = new Set([
   "File",
   "OldFile",
@@ -785,8 +793,9 @@ function isInSelectedSubtree(
 /**
  * node-tar silently skips unsupported typeflags (e.g. SparseFile) before
  * filter/onentry. Parse with the same Parser so PAX/directory size semantics
- * stay aligned, and fail closed when an ignored or unsupported entry would be
- * retained in the selected subtree.
+ * stay aligned, inspect the Header path before ReadEntry applies Windows
+ * separator normalization, and fail closed when an ignored or unsupported
+ * entry would be retained in the selected subtree.
  */
 async function assertArchiveHeadersSafe(
   archivePath: string,
@@ -820,7 +829,13 @@ async function assertArchiveHeadersSafe(
     parser.on("entry", (entry) => {
       const type = readEntryType(entry) ?? "";
       const entryPath = String((entry as { path?: unknown }).path ?? "");
-      if (entryPath === "" || isUnsafeArchivePath(entryPath)) {
+      const rawEntryPath = readRawEntryPath(entry);
+      if (
+        entryPath === "" ||
+        rawEntryPath === undefined ||
+        isUnsafeArchivePath(rawEntryPath) ||
+        isUnsafeArchivePath(entryPath)
+      ) {
         rejected = true;
       } else {
         rootPath ??= archiveRootPath(entryPath);
@@ -837,7 +852,13 @@ async function assertArchiveHeadersSafe(
 
     parser.on("ignoredEntry", (entry) => {
       const entryPath = String((entry as { path?: unknown }).path ?? "");
-      if (entryPath === "" || isUnsafeArchivePath(entryPath)) {
+      const rawEntryPath = readRawEntryPath(entry);
+      if (
+        entryPath === "" ||
+        rawEntryPath === undefined ||
+        isUnsafeArchivePath(rawEntryPath) ||
+        isUnsafeArchivePath(entryPath)
+      ) {
         rejected = true;
       } else {
         rootPath ??= archiveRootPath(entryPath);

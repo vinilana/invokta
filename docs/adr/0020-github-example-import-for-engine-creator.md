@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-06
+- Amended by: [ADR 0035](./0035-example-archive-path-and-subtree-validation.md)
 
 ## Context
 
@@ -51,13 +52,10 @@ repository tarball from `codeload.github.com`, extracts only the selected
 subtree into a temporary directory, requires the staged `package.json` to be a
 regular file, rewrites its `name` to the project directory name, and copies
 regular files into the empty target with exclusive creation and the existing
-rollback rule. Within the selected subtree, archive symbolic links, hard links,
-and non-directory entry types other than regular files (`File`, `OldFile`,
-`ContiguousFile`) are rejected. Entries outside the selected subtree are never
-extracted and do not invalidate an otherwise safe template merely because of
-their type. Absolute paths, Windows drive/UNC paths, backslash-separated paths,
-and parent-directory segments are rejected across the whole archive. Extracted
-directory and regular-file counts are bounded.
+rollback rule. Archive symbolic links, hard links, absolute paths, Windows
+drive/UNC paths, parent-directory segments, and non-directory entry types other
+than regular files (`File`, `OldFile`, `ContiguousFile`) are rejected.
+Extracted directory and regular-file counts are bounded.
 
 Allowed creator-owned network hosts for example mode are `api.github.com` and
 `codeload.github.com` only. The creator sends no authentication headers and

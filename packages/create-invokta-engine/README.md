@@ -132,7 +132,11 @@ same way `create-next-app` does. The creator verifies `package.json` is a
 regular file, downloads from `codeload.github.com` after confirmation, copies
 only the selected subtree, and rewrites `package.json` `name` to the project
 directory name. Private repositories, SSH, tokens, and non-GitHub hosts are
-unsupported. Template dependency completeness belongs to the example author.
+unsupported. Links and unsupported archive types are rejected in the exact
+selected subtree but ignored outside it because they are not extracted. Unsafe
+paths, including raw backslash paths, reject the whole archive consistently on
+POSIX and Windows. Template dependency completeness belongs to the example
+author.
 
 ## Prompt and target safety
 
