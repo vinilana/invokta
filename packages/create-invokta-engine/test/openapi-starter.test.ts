@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createOpenApiStarterFiles,
@@ -92,7 +92,153 @@ function createFiles(
   });
 }
 
+function samplerOperation(
+  name: string,
+  schema: Readonly<Record<string, unknown>>,
+): OpenApiStarterOperation {
+  return Object.freeze({
+    ...selectedOperations[0],
+    operationId: name,
+    capabilityId: `openapi.${name}`,
+    exportName: name.replace(/-([a-z])/gu, (_, letter: string) =>
+      letter.toUpperCase(),
+    ),
+    moduleName: name,
+    selector: `GET:/${name}`,
+    path: `/${name}`,
+    inputSchema: Object.freeze({
+      type: "object",
+      properties: Object.freeze({ value: schema }),
+      required: Object.freeze(["value"]),
+      additionalProperties: false,
+    }),
+    outputSchema: Object.freeze({
+      type: "object",
+      properties: Object.freeze({ status: Object.freeze({ const: 204 }) }),
+      required: Object.freeze(["status"]),
+      additionalProperties: false,
+    }),
+  });
+}
+
+function occurrences(source: string, value: string): number {
+  return source.split(value).length - 1;
+}
+
 describe("createOpenApiStarterFiles", () => {
+  it("bounds nested sampler allocations and generated witness source", () => {
+    const operations = Object.freeze([
+      samplerOperation("within-string-budget", {
+        type: "string",
+        minLength: 4_000,
+      }),
+      samplerOperation("over-string-budget", {
+        type: "string",
+        minLength: 4_097,
+      }),
+      samplerOperation("edge-string-budget", {
+        type: "string",
+        minLength: 4_096,
+      }),
+      samplerOperation("within-array-budget", {
+        type: "array",
+        minItems: 2_000,
+        items: true,
+      }),
+      samplerOperation("over-array-budget", {
+        type: "array",
+        minItems: 4_097,
+        items: true,
+      }),
+      samplerOperation("edge-array-budget", {
+        type: "array",
+        minItems: 4_096,
+        items: true,
+      }),
+      samplerOperation("huge-array-budget", {
+        type: "array",
+        minItems: Number.MAX_SAFE_INTEGER,
+        items: true,
+      }),
+      samplerOperation("huge-string-budget", {
+        type: "string",
+        minLength: Number.MAX_SAFE_INTEGER,
+      }),
+    ]);
+    const originalRepeat = String.prototype.repeat;
+    const originalArrayFrom = Array.from;
+    const repeat = vi
+      .spyOn(String.prototype, "repeat")
+      .mockImplementation(function guardedRepeat(this: string, count) {
+        if (count > 4_096) throw new Error("oversized repeat attempted");
+        return originalRepeat.call(this, count);
+      });
+    const arrayFrom = vi.spyOn(Array, "from").mockImplementation(((
+      items: unknown,
+      ...rest: unknown[]
+    ) => {
+      const length =
+        typeof items === "object" &&
+        items !== null &&
+        "length" in items &&
+        typeof items.length === "number"
+          ? items.length
+          : undefined;
+      if (length !== undefined && length > 4_096) {
+        throw new Error("oversized Array.from attempted");
+      }
+      return Reflect.apply(originalArrayFrom, Array, [items, ...rest]);
+    }) as typeof Array.from);
+
+    try {
+      const contents = fileContents(
+        createOpenApiStarterFiles({
+          projectName: "sampler-engine",
+          invoktaVersion: "1.2.3",
+          packageManager: "npm",
+          profile: "cli",
+          selectedOperations: operations,
+        }),
+      );
+      const generatedTest = contents.get("test/engine.test.ts") ?? "";
+
+      expect(occurrences(generatedTest, '"openapi.within-string-budget"')).toBe(
+        2,
+      );
+      expect(occurrences(generatedTest, '"openapi.over-string-budget"')).toBe(
+        1,
+      );
+      expect(occurrences(generatedTest, '"openapi.edge-string-budget"')).toBe(
+        1,
+      );
+      expect(occurrences(generatedTest, '"openapi.within-array-budget"')).toBe(
+        2,
+      );
+      expect(occurrences(generatedTest, '"openapi.over-array-budget"')).toBe(1);
+      expect(occurrences(generatedTest, '"openapi.edge-array-budget"')).toBe(1);
+      expect(occurrences(generatedTest, '"openapi.huge-array-budget"')).toBe(1);
+      expect(occurrences(generatedTest, '"openapi.huge-string-budget"')).toBe(
+        1,
+      );
+      expect(generatedTest.length).toBeLessThan(40_000);
+      expect(repeat.mock.calls.some(([count]) => count >= 4_096)).toBe(false);
+      expect(
+        arrayFrom.mock.calls.some(([items]) => {
+          return (
+            typeof items === "object" &&
+            items !== null &&
+            "length" in items &&
+            typeof items.length === "number" &&
+            items.length >= 4_096
+          );
+        }),
+      ).toBe(false);
+    } finally {
+      repeat.mockRestore();
+      arrayFrom.mockRestore();
+    }
+  });
+
   it("rejects duplicate final module basenames before files can be overwritten", () => {
     const first = selectedOperations[0];
     const duplicate = Object.freeze({

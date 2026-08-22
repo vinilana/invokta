@@ -637,14 +637,6 @@ function asSchemaObject(
     : undefined;
 }
 
-function mergeSamples(left: unknown, right: unknown): unknown {
-  const leftObject = asSchemaObject(left);
-  const rightObject = asSchemaObject(right);
-  return leftObject !== undefined && rightObject !== undefined
-    ? { ...leftObject, ...rightObject }
-    : right;
-}
-
 function sampleNumber(schema: Readonly<Record<string, unknown>>): number {
   const multiple =
     typeof schema.multipleOf === "number" && schema.multipleOf > 0
@@ -667,7 +659,31 @@ function sampleNumber(schema: Readonly<Record<string, unknown>>): number {
   return value;
 }
 
-function sampleString(schema: Readonly<Record<string, unknown>>): string {
+const witnessUnitLimit = 4_096;
+
+interface WitnessBudget {
+  remaining: number;
+}
+
+function consumeWitnessUnits(budget: WitnessBudget, count: number): void {
+  if (!Number.isSafeInteger(count) || count < 0 || count > budget.remaining) {
+    throw new TypeError("A generated OpenAPI test value could not be derived.");
+  }
+  budget.remaining -= count;
+}
+
+function spendWitnessUnits(budget: WitnessBudget, count = 1): boolean {
+  if (!Number.isSafeInteger(count) || count < 0 || count > budget.remaining) {
+    return false;
+  }
+  budget.remaining -= count;
+  return true;
+}
+
+function sampleString(
+  schema: Readonly<Record<string, unknown>>,
+  budget: WitnessBudget,
+): string {
   const minimum =
     typeof schema.minLength === "number" ? Math.max(0, schema.minLength) : 0;
   const maximum =
@@ -677,49 +693,59 @@ function sampleString(schema: Readonly<Record<string, unknown>>): string {
   if (minimum > maximum) {
     throw new TypeError("A generated OpenAPI test value could not be derived.");
   }
-  const candidates = [
-    "",
-    "x".repeat(Math.max(1, minimum)),
-    "0".repeat(Math.max(1, minimum)),
-    "test".padEnd(minimum, "x"),
-  ];
+  if (minimum > budget.remaining) {
+    throw new TypeError("A generated OpenAPI test value could not be derived.");
+  }
   const expression =
     typeof schema.pattern === "string"
       ? new RegExp(schema.pattern, "u")
       : undefined;
-  const match = candidates.find((candidate) => {
-    if (candidate.length < minimum || candidate.length > maximum) return false;
-    return expression === undefined || expression.test(candidate);
-  });
-  if (match !== undefined) return match;
+  if (minimum === 0 && (expression === undefined || expression.test(""))) {
+    return "";
+  }
+  const length = Math.max(1, minimum);
+  if (length <= maximum) {
+    consumeWitnessUnits(budget, length);
+    const candidate = "x".repeat(length);
+    if (expression === undefined || expression.test(candidate))
+      return candidate;
+  }
   throw new TypeError("A generated OpenAPI test value could not be derived.");
 }
 
-interface WitnessBudget {
-  remaining: number;
-}
-
-function jsonValuesEqual(left: unknown, right: unknown): boolean {
+function jsonValuesEqual(
+  left: unknown,
+  right: unknown,
+  budget: WitnessBudget,
+): boolean {
+  if (!spendWitnessUnits(budget)) return false;
   if (Object.is(left, right)) return true;
   if (Array.isArray(left) && Array.isArray(right)) {
-    return (
-      left.length === right.length &&
-      left.every((member, index) => jsonValuesEqual(member, right[index]))
-    );
+    if (left.length !== right.length) return false;
+    for (const [index, member] of left.entries()) {
+      if (!jsonValuesEqual(member, right[index], budget)) return false;
+    }
+    return true;
   }
   const leftObject = asSchemaObject(left);
   const rightObject = asSchemaObject(right);
   if (leftObject === undefined || rightObject === undefined) return false;
-  const leftNames = Object.keys(leftObject);
-  const rightNames = Object.keys(rightObject);
-  return (
-    leftNames.length === rightNames.length &&
-    leftNames.every(
-      (name) =>
-        Object.hasOwn(rightObject, name) &&
-        jsonValuesEqual(leftObject[name], rightObject[name]),
-    )
-  );
+  let leftCount = 0;
+  let rightCount = 0;
+  for (const name in leftObject) {
+    if (!Object.hasOwn(leftObject, name)) continue;
+    leftCount += 1;
+    if (
+      !Object.hasOwn(rightObject, name) ||
+      !jsonValuesEqual(leftObject[name], rightObject[name], budget)
+    ) {
+      return false;
+    }
+  }
+  for (const name in rightObject) {
+    if (Object.hasOwn(rightObject, name)) rightCount += 1;
+  }
+  return leftCount === rightCount;
 }
 
 function valueHasType(value: unknown, type: unknown): boolean {
@@ -745,11 +771,14 @@ function witnessMatches(
   if (schema === undefined) return false;
   if (schema.format !== undefined) return false;
 
-  if (Object.hasOwn(schema, "const") && !jsonValuesEqual(value, schema.const))
+  if (
+    Object.hasOwn(schema, "const") &&
+    !jsonValuesEqual(value, schema.const, budget)
+  )
     return false;
   if (
     Array.isArray(schema.enum) &&
-    !schema.enum.some((member) => jsonValuesEqual(value, member))
+    !schema.enum.some((member) => jsonValuesEqual(value, member, budget))
   ) {
     return false;
   }
@@ -772,16 +801,21 @@ function witnessMatches(
   ) {
     return false;
   }
-  if (
-    Array.isArray(schema.oneOf) &&
-    schema.oneOf.filter((member) => witnessMatches(member, value, budget))
-      .length !== 1
-  ) {
-    return false;
+  if (Array.isArray(schema.oneOf)) {
+    let matches = 0;
+    for (const member of schema.oneOf) {
+      if (witnessMatches(member, value, budget)) matches += 1;
+      if (matches > 1) return false;
+    }
+    if (matches !== 1) return false;
   }
 
   if (typeof value === "string") {
-    const length = Array.from(value).length;
+    let length = 0;
+    for (const _character of value) {
+      if (!spendWitnessUnits(budget)) return false;
+      length += 1;
+    }
     if (typeof schema.minLength === "number" && length < schema.minLength)
       return false;
     if (typeof schema.maxLength === "number" && length > schema.maxLength)
@@ -819,6 +853,7 @@ function witnessMatches(
     }
   }
   if (Array.isArray(value)) {
+    if (!spendWitnessUnits(budget, value.length)) return false;
     if (typeof schema.minItems === "number" && value.length < schema.minItems)
       return false;
     if (typeof schema.maxItems === "number" && value.length > schema.maxItems)
@@ -845,7 +880,10 @@ function witnessMatches(
     ) {
       return false;
     }
-    for (const [name, member] of Object.entries(object)) {
+    for (const name in object) {
+      if (!Object.hasOwn(object, name)) continue;
+      if (!spendWitnessUnits(budget)) return false;
+      const member = object[name];
       if (Object.hasOwn(properties, name)) {
         if (!witnessMatches(properties[name], member, budget)) return false;
       } else if (schema.additionalProperties === false) {
@@ -861,7 +899,11 @@ function witnessMatches(
   return true;
 }
 
-function sampleJsonSchemaCandidate(schemaValue: unknown): unknown {
+function sampleJsonSchemaCandidate(
+  schemaValue: unknown,
+  budget: WitnessBudget,
+): unknown {
+  consumeWitnessUnits(budget, 1);
   if (schemaValue === true) return null;
   if (schemaValue === false) {
     throw new TypeError("A generated OpenAPI test value could not be derived.");
@@ -877,7 +919,7 @@ function sampleJsonSchemaCandidate(schemaValue: unknown): unknown {
     if (Array.isArray(union) && union.length > 0) {
       for (const member of union) {
         try {
-          return sampleJsonSchemaCandidate(member);
+          return sampleJsonSchemaCandidate(member, budget);
         } catch {
           // Try the next declared alternative.
         }
@@ -885,11 +927,7 @@ function sampleJsonSchemaCandidate(schemaValue: unknown): unknown {
     }
   }
   if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
-    return schema.allOf.reduce(
-      (sample, member) =>
-        mergeSamples(sample, sampleJsonSchemaCandidate(member)),
-      {},
-    );
+    return sampleJsonSchemaCandidate(schema.allOf[0], budget);
   }
 
   const declaredTypes = Array.isArray(schema.type)
@@ -898,28 +936,45 @@ function sampleJsonSchemaCandidate(schemaValue: unknown): unknown {
   const type = declaredTypes.find((value) => value !== "null");
   if (type === "object" || schema.properties !== undefined) {
     const properties = asSchemaObject(schema.properties) ?? {};
-    const required = Array.isArray(schema.required)
-      ? schema.required.filter(
-          (name): name is string => typeof name === "string",
-        )
-      : [];
-    return Object.fromEntries(
-      required.map((name) => [
-        name,
-        sampleJsonSchemaCandidate(properties[name]),
-      ]),
-    );
+    const result: Record<string, unknown> = Object.create(null) as Record<
+      string,
+      unknown
+    >;
+    if (!Array.isArray(schema.required)) return result;
+    for (const name of schema.required) {
+      if (typeof name !== "string") continue;
+      consumeWitnessUnits(budget, 1);
+      result[name] = sampleJsonSchemaCandidate(properties[name], budget);
+    }
+    return result;
   }
   if (type === "array" || schema.items !== undefined) {
     const minimum =
       typeof schema.minItems === "number" ? Math.max(0, schema.minItems) : 0;
     const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
     const length = Math.max(minimum, prefix.length);
-    return Array.from({ length }, (_, index) =>
-      sampleJsonSchemaCandidate(prefix[index] ?? schema.items ?? true),
-    );
+    const maximum =
+      typeof schema.maxItems === "number"
+        ? Math.max(0, schema.maxItems)
+        : Number.POSITIVE_INFINITY;
+    if (length > maximum) {
+      throw new TypeError(
+        "A generated OpenAPI test value could not be derived.",
+      );
+    }
+    consumeWitnessUnits(budget, length);
+    const result: unknown[] = [];
+    for (let index = 0; index < length; index += 1) {
+      result.push(
+        sampleJsonSchemaCandidate(
+          prefix[index] ?? schema.items ?? true,
+          budget,
+        ),
+      );
+    }
+    return result;
   }
-  if (type === "string") return sampleString(schema);
+  if (type === "string") return sampleString(schema, budget);
   if (type === "integer" || type === "number") return sampleNumber(schema);
   if (type === "boolean") return false;
   if (type === "null") return null;
@@ -927,24 +982,63 @@ function sampleJsonSchemaCandidate(schemaValue: unknown): unknown {
 }
 
 function sampleJsonSchema(schemaValue: unknown): unknown {
-  const candidates: unknown[] = [];
+  const proofBudget = { remaining: witnessUnitLimit };
   const schema = asSchemaObject(schemaValue);
+  const proven = (candidate: unknown): boolean =>
+    witnessMatches(schemaValue, candidate, proofBudget);
   if (schema !== undefined) {
-    if (Object.hasOwn(schema, "const")) candidates.push(schema.const);
-    if (Array.isArray(schema.enum)) candidates.push(...schema.enum);
-    if (Object.hasOwn(schema, "default")) candidates.push(schema.default);
+    if (Object.hasOwn(schema, "const") && proven(schema.const)) {
+      return schema.const;
+    }
+    if (Array.isArray(schema.enum)) {
+      for (const member of schema.enum) {
+        if (proven(member)) return member;
+      }
+    }
+    if (Object.hasOwn(schema, "default") && proven(schema.default)) {
+      return schema.default;
+    }
   }
   try {
-    candidates.push(sampleJsonSchemaCandidate(schemaValue));
+    const candidate = sampleJsonSchemaCandidate(schemaValue, {
+      remaining: witnessUnitLimit,
+    });
+    if (proven(candidate)) return candidate;
   } catch {
     // A declared const, enum member, or default can still be a proven witness.
   }
-  for (const candidate of candidates) {
-    if (witnessMatches(schemaValue, candidate, { remaining: 4_096 })) {
-      return candidate;
+  throw new TypeError("A generated OpenAPI test value could not be derived.");
+}
+
+function witnessValueFitsBudget(
+  value: unknown,
+  budget: WitnessBudget,
+): boolean {
+  if (!spendWitnessUnits(budget)) return false;
+  if (typeof value === "string") {
+    for (const _character of value) {
+      if (!spendWitnessUnits(budget)) return false;
+    }
+    return true;
+  }
+  if (Array.isArray(value)) {
+    for (const member of value) {
+      if (!witnessValueFitsBudget(member, budget)) return false;
+    }
+    return true;
+  }
+  const object = asSchemaObject(value);
+  if (object === undefined) return true;
+  for (const name in object) {
+    if (!Object.hasOwn(object, name)) continue;
+    if (
+      !spendWitnessUnits(budget) ||
+      !witnessValueFitsBudget(object[name], budget)
+    ) {
+      return false;
     }
   }
-  throw new TypeError("A generated OpenAPI test value could not be derived.");
+  return true;
 }
 
 function renderGeneratedTest(
@@ -977,7 +1071,16 @@ function renderGeneratedTest(
               }),
         };
         if (
-          !witnessMatches(operation.outputSchema, output, { remaining: 4_096 })
+          !witnessMatches(operation.outputSchema, output, {
+            remaining: witnessUnitLimit,
+          })
+        ) {
+          continue;
+        }
+        const sourceBudget = { remaining: witnessUnitLimit };
+        if (
+          !witnessValueFitsBudget(input, sourceBudget) ||
+          !witnessValueFitsBudget(output, sourceBudget)
         ) {
           continue;
         }
@@ -1032,9 +1135,9 @@ describe("generated OpenAPI engine", () => {
       };
       const engine = createOpenApiEngine({ upstream });
 
-      await expect(
-        engine.invoke(capabilityId, input, { principal: null }),
-      ).resolves.toEqual(output);
+      const result = await engine.invoke(capabilityId, input, { principal: null });
+      expect(result.status).toBe(output.status);
+      expect(Object.hasOwn(result, "body")).toBe(Object.hasOwn(output, "body"));
       expect(upstream.invoke).toHaveBeenCalledTimes(1);
     },
   );

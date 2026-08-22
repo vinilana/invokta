@@ -316,6 +316,7 @@ enforces these inclusive maxima before generation:
 | Selected/generated operations | 100 |
 | Schema nodes reachable by one operation | 1,000 |
 | Generated TypeScript module basename | 64 ASCII characters |
+| Generated-test witness units | 4,096 |
 | One `--exclude` selector | 1,024 Unicode scalars |
 | Repeated `--exclude` arguments | 500 |
 | Serialized runtime URL | 8,192 UTF-8 bytes |
@@ -331,6 +332,14 @@ work unit is charged before visiting a previously unresolved parsed node;
 copying a `$ref` sibling overlay additionally charges each copied property.
 This bound applies before the corresponding allocation or copy and prevents a
 branching local-reference graph from expanding exponentially.
+
+The generated-test sampler charges witness units for schema/value visits,
+container members or slots, and string Unicode scalars as applicable.
+Construction, proof, and the combined input/output values serialized into one
+successful test row each enforce the inclusive 4,096-unit maximum. A numeric
+length or item bound is charged before any proportional allocation. Exceeding a
+sampler budget omits that optional successful invocation while retaining the
+operation's universal contract and fake-port-isolation test.
 
 The new sanitized diagnostics are:
 

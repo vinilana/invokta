@@ -331,6 +331,57 @@ const patternFallbackOperation = stringQueryOperation({
   schema: Object.freeze({ type: "string", pattern: "^z{17}$" }),
 });
 
+const defaultedResponseSchema = Object.freeze({
+  type: "object",
+  properties: Object.freeze({
+    label: Object.freeze({ type: "string", default: "generated" }),
+  }),
+  additionalProperties: false,
+});
+
+const defaultedResponseOperation = Object.freeze({
+  selector: "GET:/defaulted-response",
+  capabilityId: "widgets.defaulted-response",
+  exportName: "defaultedResponse",
+  moduleName: "defaulted-response",
+  method: "GET",
+  path: "/defaulted-response",
+  title: "Defaulted response",
+  description: "Exercises output validation that transforms the fake response.",
+  connection: Object.freeze({
+    serverSource: "root",
+    serverUrls: Object.freeze(["https://api.example.test/v1"]),
+    baseUrl: Object.freeze({
+      environmentVariable: "OPENAPI_DEFAULTED_RESPONSE_BASE_URL",
+      default: "https://api.example.test/v1",
+    }),
+  }),
+  inputSchema: Object.freeze({
+    type: "object",
+    properties: Object.freeze({}),
+    additionalProperties: false,
+  }),
+  outputSchema: Object.freeze({
+    type: "object",
+    properties: Object.freeze({
+      status: Object.freeze({ const: 200 }),
+      body: defaultedResponseSchema,
+    }),
+    required: Object.freeze(["status", "body"]),
+    additionalProperties: false,
+  }),
+  parameters: Object.freeze([]),
+  requestBody: undefined,
+  successResponses: Object.freeze([
+    Object.freeze({
+      status: "200",
+      mediaType: "application/json",
+      schema: defaultedResponseSchema,
+    }),
+  ]),
+  security: Object.freeze({ alternatives: Object.freeze([Object.freeze([])]) }),
+} as const satisfies OpenApiStarterOperation);
+
 interface GeneratedUpstream {
   readonly invoke: (request: unknown) => Promise<Record<string, unknown>>;
 }
@@ -472,6 +523,7 @@ beforeAll(async () => {
         createWidgetOperation,
         emptyStringOperation,
         patternFallbackOperation,
+        defaultedResponseOperation,
       ]),
     }),
     projectDirectory,
@@ -525,6 +577,13 @@ describe("generated OpenAPI runtime", () => {
     expect(
       generatedTest.match(/"capabilityId": "widgets\.pattern-fallback"/gu),
     ).toHaveLength(1);
+    expect(
+      generatedTest.match(/"capabilityId": "widgets\.defaulted-response"/gu),
+    ).toHaveLength(2);
+    expect(generatedTest).toContain(
+      'expect(Object.hasOwn(result, "body")).toBe(Object.hasOwn(output, "body"));',
+    );
+    expect(generatedTest).not.toContain("resolves.toEqual(output)");
     expect(runGeneratedProjectTests).not.toThrow();
   });
 
