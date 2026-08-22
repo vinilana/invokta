@@ -73,9 +73,9 @@ agent.
 | Example engine | Capabilities | Engine-owned integrations and rules | Durable outcome |
 | --- | --- | --- | --- |
 | Video Production Engine | `video.transcribe-source`, `video.plan-edit`, `video.generate-voiceover`, `video.generate-visual`, `video.generate-cutscene`, `video.apply-edit` | ElevenLabs STT, Cartesia TTS, GPT Image 2.0, Seedance 2.0, brand pacing, and trusted scripts for cuts, zooms, captions, mixing, and rendering | A transcript, edit plan, generated assets, and rendered video with evidence |
-| Social Carousel Engine | `carousel.prepare-series`, `carousel.render-series`, `carousel.assess-readiness` | Approved carousel formats, hook and CTA policy, Figma or design-system references, and a GPT Image 2.0 adapter | An ordered, on-brand carousel that is ready to publish or has explicit blockers |
+| Social Carousel Engine | `carousel.prepare-series`, `carousel.render-series`, `carousel.assess-readiness` | Approved carousel formats, hook and CTA policy, Figma or design-system references, and a GPT Image 2.0 connector | An ordered, on-brand carousel that is ready to publish or has explicit blockers |
 | Commercial Proposal Engine | `sales.prepare-proposal`, `sales.render-proposal`, `sales.assess-proposal-readiness` | CRM context, approved pricing and claims, the existing proposal template, case studies, and visual identity | A customer-specific proposal and a readiness decision |
-| Appointment Scheduling Engine | `appointments.list-valid-slots`, `appointments.schedule`, `appointments.reschedule`, `appointments.cancel` | Clinic rules, authorization, buffers, and an authorized Google Calendar adapter | Valid appointment options and a confirmed calendar write or stable conflict |
+| Appointment Scheduling Engine | `appointments.list-valid-slots`, `appointments.schedule`, `appointments.reschedule`, `appointments.cancel` | Clinic rules, authorization, buffers, and an authorized Google Calendar connector | Valid appointment options and a confirmed calendar write or stable conflict |
 | Recruiting and Selection Engine | `recruiting.screen-candidate`, `recruiting.record-screening`, `recruiting.notify-review` | The job rubric, candidate responses, the recruiting system, review thresholds, and Slack notifications | An evidence-backed screening record and a human-review notification |
 
 The consumer still decides which capability to call and in what order. Invokta
@@ -135,9 +135,11 @@ agent, application, or automation
 | Skill | Packaged instructions, knowledge, and resources for an agent | Teaches an agent when and how to invoke an action without owning the action's runtime contract |
 | Loop | The decision to continue, stop, or choose the next action | Invokes Action Engines while retaining control of iteration and stopping conditions |
 | Graph | Nodes, dependencies, branches, and execution order | Uses Action Engines as contracted nodes without absorbing their domain implementation |
+| Port | A provider-neutral interface owned by a custom engine | Describes what capability code needs from a dependency |
+| Outbound connector | A provider- or technology-specific port implementation | Crosses from engine logic into an external system without becoming a public action |
 | Action Engine | A reusable domain outcome with runtime-validated contracts, access, execution, and stable failures | Provides the callable boundary shared by agents, applications, loops, graphs, and interfaces |
 
-The same system can use all six concepts. The separation lets orchestration and
+The same system can use all of these concepts. The separation lets orchestration and
 agent behavior change without duplicating the domain action, while the engine
 can change its AI implementation without rewriting its consumers. See the
 [framework-neutral category definition](./docs/action-engines.md) for the full
@@ -154,8 +156,9 @@ Use that boundary to build engines for media production, implementation
 planning, context retrieval, code review, campaign production, document
 generation, appointment scheduling, recruiting, support operations, or another
 domain outcome. Your team owns the domain contract, business rules, prompts,
-models, data integrations, scripts, templates, evaluations, and outcome quality.
-Invokta supplies the shared runtime mechanics and delivery adapters:
+models, outbound connectors, scripts, templates, evaluations, and outcome
+quality. Invokta supplies the shared runtime mechanics and inbound delivery
+adapters:
 
 - `@invokta/core` defines capabilities, validates Standard Schema input and
   output, enforces access rules, propagates cancellation, and emits minimal
@@ -242,8 +245,8 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
   [`auth-self-hosted-oauth-engine`](./examples/auth-self-hosted-oauth-engine/)
   for a production-oriented Authorization Server, PostgreSQL, and Compose
   integration that remains outside the framework runtime;
-- [`crawl-engine`](./examples/crawl-engine/) for an outbound provider
-  integration, crawling the web with Firecrawl behind a port, with target rules
+- [`crawl-engine`](./examples/crawl-engine/) for an outbound connector,
+  crawling the web with Firecrawl behind a `WebCrawler` port, with target rules
   that run before authorization;
 - [`cursor-agent-routing-engine`](./examples/cursor-agent-routing-engine/) for
   deterministic Cursor subagent and model selection by development use case;
@@ -272,7 +275,8 @@ Every example that exports a constructed engine runs the same development
 toolchain a generated project gets: `devtools` serves it through
 [Invokta DevTools](./packages/devtools/), `devtools:doctor` runs the read-only
 engine checks, and `check:mcp` is the build-time MCP conformance gate. The
-provider-backed engines, which need credentials to compose, gate their tool
+externally backed engines, which need deployment configuration to compose, gate
+their tool
 names in their own tests and verify the built stdio adapter with
 `devtools:verify` instead. `yarn run check` runs both gates over every built
 example.

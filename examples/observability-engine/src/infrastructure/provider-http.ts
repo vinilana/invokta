@@ -2,7 +2,7 @@ import { EngineError } from "@invokta/core";
 
 export type ProviderName = "sentry" | "datadog" | "new-relic";
 
-const maximumCauseLength = 512;
+const maximumProviderResponseBytes = 64 * 1024 * 1024;
 
 export function providerFailure(
   provider: ProviderName,
@@ -45,6 +45,48 @@ export function readOptionalString(
   return typeof value === "string" && value !== "" ? value : null;
 }
 
+function responseLength(response: Response): number | null {
+  const raw = response.headers.get("content-length");
+  if (raw === null || !/^\d+$/u.test(raw)) return null;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+async function readBoundedText(response: Response): Promise<string> {
+  const declaredLength = responseLength(response);
+  if (
+    declaredLength !== null &&
+    declaredLength > maximumProviderResponseBytes
+  ) {
+    throw new RangeError(
+      "Provider response exceeds the configured byte limit.",
+    );
+  }
+  if (response.body === null) return "";
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let totalBytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maximumProviderResponseBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new RangeError(
+          "Provider response exceeds the configured byte limit.",
+        );
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 export async function requestProviderJson(
   provider: ProviderName,
   url: URL,
@@ -54,36 +96,51 @@ export async function requestProviderJson(
   let response: Response;
   try {
     response = await fetch(url, { ...init, signal });
-  } catch (cause) {
-    if (signal.aborted) throw cause;
+  } catch {
+    if (signal.aborted) throw signal.reason;
     throw providerFailure(
       provider,
       `The ${provider} request could not be completed.`,
       undefined,
-      cause,
+      new Error(`${provider} transport request failed.`),
     );
   }
 
+  if (signal.aborted) throw signal.reason;
+
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
+    await response.body?.cancel().catch(() => undefined);
     throw providerFailure(
       provider,
       `${provider} rejected the request.`,
       response.status,
       new Error(
-        `${provider} responded with status ${String(response.status)}: ${detail.slice(0, maximumCauseLength)}`,
+        `${provider} responded with status ${String(response.status)}.`,
       ),
     );
   }
 
+  let text: string;
   try {
-    return await response.json();
-  } catch (cause) {
+    text = await readBoundedText(response);
+  } catch {
+    if (signal.aborted) throw signal.reason;
     throw providerFailure(
       provider,
       `${provider} returned an unreadable payload.`,
       undefined,
-      cause,
+      new Error(`${provider} response could not be read safely.`),
+    );
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw providerFailure(
+      provider,
+      `${provider} returned an unreadable payload.`,
+      undefined,
+      new Error(`${provider} response was not valid JSON.`),
     );
   }
 }

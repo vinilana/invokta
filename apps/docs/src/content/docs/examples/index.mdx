@@ -9,7 +9,7 @@ import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
 The repository examples apply the same Invokta contracts to different domain
 outcomes. Each engine keeps direct, CLI, and MCP execution on `engine.invoke`,
-while its own package owns ports, policies, limits, and provider integrations.
+while its own package owns ports, policies, limits, and outbound connectors.
 
 ## Choose by problem
 
@@ -18,7 +18,7 @@ while its own package owns ports, policies, limits, and provider integrations.
 | Learn the smallest complete path | `hello-engine` |
 | Inject dependencies and enforce domain authorization | `support-engine` |
 | Consume an engine from a private MCP harness | `support-harness` |
-| Wrap web or SaaS providers behind domain ports | `crawl-engine`, `image-engine`, or `observability-engine` |
+| Build outbound connectors behind domain ports | `crawl-engine`, `image-engine`, or `observability-engine` |
 | Build development workflow actions | `spec-engine`, `review-engine`, or `agent-session-engine` |
 | Publish deterministic agent-routing policy | `cursor-agent-routing-engine` |
 | Navigate local project knowledge progressively | `obsidian-context-engine` |
@@ -31,7 +31,7 @@ while its own package owns ports, policies, limits, and provider integrations.
 | --- | --- |
 | `hello-engine`, `support-engine`, `support-harness`, `cursor-agent-routing-engine`, `spec-engine`, `review-engine`, `community-capabilities`, `composed-engine` | No external provider credential for direct, CLI, stdio, or tests |
 | `agent-session-engine` | A writable data directory; the session ID and directory have local defaults |
-| `obsidian-context-engine` | `OBSIDIAN_VAULT_PATH` pointing to the directory the read-only adapter may inspect |
+| `obsidian-context-engine` | `OBSIDIAN_VAULT_PATH` pointing to the directory the read-only connector may inspect |
 | `crawl-engine` | `FIRECRAWL_API_KEY` |
 | `image-engine` | `OPENAI_API_KEY`, `ARK_API_KEY`, and `GEMINI_API_KEY` |
 | `observability-engine` | Sentry, Datadog, and New Relic credentials plus their organization or account identifiers |
@@ -47,7 +47,7 @@ so review provider data handling and billing before running them.
 - **Independent consumers:** `support-harness` uses only MCP stdio and does not
   import the engine runtime.
 - **Replaceable providers:** the crawl, image, and observability engines keep
-  vendor clients behind domain-owned ports.
+  vendor-specific connectors behind domain-owned ports.
 - **Domain-owned workflows:** the spec and review engines keep ordering,
   revisions, and gates outside the framework runtime.
 - **Durable local state:** the agent-session engine owns persistence,
@@ -219,8 +219,9 @@ transfers unchanged to your own engine:
 | `devtools:doctor` | Runs the read-only engine checks and reports whether an `invokta.mcp.json` manifest sits next to the project. |
 | `check:mcp` | The build-time MCP conformance gate: it fails when two capability IDs derive the same portable MCP tool name, before an adapter starts or the engine is installed. |
 
-The provider-backed engines — crawl, image, observability, and Obsidian — need
-credentials to compose, so they publish no constructed engine for `serve` or
+The externally backed engines — crawl, image, observability, and Obsidian — need
+deployment configuration to compose, so they publish no constructed engine for
+`serve` or
 `check-mcp` to import. They gate their portable tool names in their own tests
 and ship `devtools:verify`, which runs initialization and the complete
 `tools/list` against the built stdio adapter without calling a tool.

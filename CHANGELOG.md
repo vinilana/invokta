@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- ADR 0034 and the outbound connector authoring guide define provider- and
+  technology-specific port implementations as explicit custom-engine
+  dependencies, with no core registry or alternate execution path. The crawl,
+  image, and observability examples provide the canonical tested patterns.
 - The `auth-jwt-bearer`, `auth-auth0`, `auth-cognito`, and `auth-workos`
   examples now accept ordered OAuth challenge scopes and serialize them into
   the 401 Bearer challenge, so an OAuth-capable MCP client learns what to ask
@@ -35,6 +39,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - `composed-engine` runs `check-capabilities` through the published `invokta`
   binary instead of a relative path into `packages/tooling/dist`.
+
+### Fixed
+
+- The Firecrawl outbound connector now truncates provider batches at the
+  requested page limit and bounds follow-up pagination requests to 50 by
+  default, preventing oversized or empty provider batches from creating
+  unbounded work.
 
 ## [0.6.1] - 2026-08-20
 

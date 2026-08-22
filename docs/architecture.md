@@ -13,21 +13,31 @@ flowchart LR
   VALIDATE --> ACCESS[Enforce access]
   ACCESS --> CAP[Capability.run]
   CAP --> OUTPUT[Validate output]
-  CAP --> DEPS[Engine-injected dependencies]
+  CAP --> PORT[Engine-owned port]
+  PORT --> CONNECTOR[Outbound connector]
+  CONNECTOR --> PROVIDER[External provider or data source]
 ```
 
 **AE-ARCH-01 — Direction.** The core MUST NOT import the CLI, MCP, HTTP, a model
-SDK, or an identity SDK. Adapters import only the core's public API. Capabilities
-MAY import interfaces and rules from the custom engine.
+SDK, or an identity SDK. Inbound adapters import only the core's public API.
+Capabilities MAY import interfaces and rules from the custom engine.
 
 **AE-ARCH-02 — Simple injection.** Repository, model, data, and tool interfaces
 belong to the custom engine. Implementations enter through a factory or closure
-at the composition root. The framework MUST NOT register ports or provide a
-service container, lifecycle, or formal modules.
+at the composition root. An outbound connector is a provider- or
+technology-specific implementation of one or more of those engine-owned ports.
+Capabilities receive only the ports they use; provider clients, credentials,
+and connector registries MUST NOT enter capability contracts or
+`ExecutionContext`. Connector import and construction perform no outbound I/O,
+and connector operations propagate the invocation signal, translate provider
+data into domain values, sanitize failures, and bound provider work. Retry and
+dependency lifecycle remain explicit engine-host decisions. The framework MUST
+NOT register ports or provide a connector catalog, service container, lifecycle,
+or formal modules. ADR 0034 defines this authoring boundary.
 
-**AE-ARCH-03 — Single path.** No adapter MAY call `run` directly. All adapters use
-`engine.invoke`. Authentication produces a `Principal`; authorization remains
-inside `invoke`.
+**AE-ARCH-03 — Single path.** No inbound adapter MAY call `run` or an outbound
+connector directly. All inbound adapters use `engine.invoke`. Authentication
+produces a `Principal`; authorization remains inside `invoke`.
 
 ## Normative pipeline
 

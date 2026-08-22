@@ -1,8 +1,9 @@
 import type { EngineError } from "@invokta/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createDatadogLogStore } from "../src/infrastructure/datadog-log-store.js";
 import { createNewRelicTelemetryReader } from "../src/infrastructure/new-relic-telemetry-reader.js";
+import { requestProviderJson } from "../src/infrastructure/provider-http.js";
 import { createSentryIssueTracker } from "../src/infrastructure/sentry-issue-tracker.js";
 import {
   type ObservabilityStub,
@@ -31,11 +32,12 @@ async function startStub(
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await stub?.close();
   stub = undefined;
 });
 
-describe("the Sentry issue tracker adapter", () => {
+describe("the Sentry issue tracker outbound connector", () => {
   it("queries organization issues with a bearer credential and maps the response", async () => {
     const server = await startStub();
 
@@ -74,7 +76,7 @@ describe("the Sentry issue tracker adapter", () => {
   });
 });
 
-describe("the Datadog log store adapter", () => {
+describe("the Datadog log store outbound connector", () => {
   it("searches bounded service logs with both Datadog credentials", async () => {
     const server = await startStub();
 
@@ -113,7 +115,7 @@ describe("the Datadog log store adapter", () => {
   });
 });
 
-describe("the New Relic telemetry reader adapter", () => {
+describe("the New Relic telemetry reader outbound connector", () => {
   it("runs a bounded NRQL aggregate through NerdGraph and maps its row", async () => {
     const server = await startStub();
 
@@ -146,6 +148,115 @@ describe("the New Relic telemetry reader adapter", () => {
 });
 
 describe("provider failure boundaries", () => {
+  it.each([
+    {
+      boundary: "transport error",
+      fetch: vi.fn<typeof globalThis.fetch>(async () => {
+        throw new Error("transport-secret-canary");
+      }),
+      canary: "transport-secret-canary",
+    },
+    {
+      boundary: "malformed provider payload",
+      fetch: vi.fn<typeof globalThis.fetch>(
+        async () => new Response("secret-canary"),
+      ),
+      canary: "secret-canary",
+    },
+  ])("sanitizes the $boundary cause", async ({ fetch, canary }) => {
+    vi.stubGlobal("fetch", fetch);
+
+    const failure = await requestProviderJson(
+      "sentry",
+      new URL("https://sentry.example/issues"),
+      { method: "GET" },
+      new AbortController().signal,
+    ).then(
+      () => undefined,
+      (error: unknown) => error as EngineError,
+    );
+
+    expect(failure).toMatchObject({
+      code: "EXECUTION_FAILED",
+      publicDetails: { provider: "sentry" },
+    });
+    expect(String(failure?.cause)).not.toContain(canary);
+  });
+
+  it("does not retain a provider response secret in the internal cause", async () => {
+    const providerResponseSecret = "provider-response-secret-canary";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ detail: providerResponseSecret }), {
+            status: 502,
+          }),
+      ),
+    );
+
+    const failure = await requestProviderJson(
+      "sentry",
+      new URL("https://sentry.example/issues"),
+      { method: "GET" },
+      new AbortController().signal,
+    ).then(
+      () => undefined,
+      (error: unknown) => error as EngineError,
+    );
+
+    expect(String(failure?.cause)).not.toContain(providerResponseSecret);
+    expect(String(failure?.cause)).toBe(
+      "Error: sentry responded with status 502.",
+    );
+  });
+
+  it("accepts a response at the inclusive 64 MiB provider limit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("{}", {
+            headers: { "content-length": String(64 * 1024 * 1024) },
+          }),
+      ),
+    );
+
+    await expect(
+      requestProviderJson(
+        "sentry",
+        new URL("https://sentry.example/issues"),
+        { method: "GET" },
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual({});
+  });
+
+  it("rejects a response above the 64 MiB provider limit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("{}", {
+            headers: { "content-length": String(64 * 1024 * 1024 + 1) },
+          }),
+      ),
+    );
+
+    await expect(
+      requestProviderJson(
+        "sentry",
+        new URL("https://sentry.example/issues"),
+        { method: "GET" },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({
+      code: "EXECUTION_FAILED",
+      message: "sentry returned an unreadable payload.",
+      publicDetails: { provider: "sentry" },
+    });
+  });
+
   it.each([
     ["sentry", { sentryStatus: 401 }],
     ["datadog", { datadogStatus: 429 }],

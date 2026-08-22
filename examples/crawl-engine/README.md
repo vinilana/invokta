@@ -10,10 +10,10 @@ and stateless MCP HTTP:
 | `crawl.map-site` | Discover reachable URLs without fetching page content |
 | `crawl.crawl-site` | Crawl a bounded number of pages and return their Markdown |
 
-The capabilities are defined once; every adapter reaches them through
-`engine.invoke`. Firecrawl is an outbound detail: it lives behind the
+The capabilities are defined once; every inbound adapter reaches them through
+`engine.invoke`. Firecrawl is an outbound connector: it lives behind the
 `WebCrawler` port and can be replaced without changing a capability contract, an
-adapter, or a consumer.
+inbound adapter, or a consumer.
 
 ## Architecture
 
@@ -30,7 +30,7 @@ direct / CLI / MCP stdio / MCP HTTP
   WebCrawler port      CrawlPermissionChecker
        |
        v
- Firecrawl HTTP adapter (v2 API)
+ Firecrawl outbound connector (v2 API)
 ```
 
 - `src/domain/crawl-target.ts` owns the target rule: only public, credential-free
@@ -41,9 +41,9 @@ direct / CLI / MCP stdio / MCP HTTP
 - `src/capabilities/` owns the stable Zod 4 contracts, access rules, timeouts,
   and handlers.
 - `src/infrastructure/firecrawl-web-crawler.ts` is the only module that knows the
-  Firecrawl HTTP contract.
+  Firecrawl HTTP contract and implements the outbound connector.
 - `src/engine.ts` is the composition root; it reads the credential from the
-  environment and injects the adapters.
+  environment and injects the connector and permission checker.
 
 ## Two boundaries this example demonstrates
 
@@ -71,7 +71,7 @@ It is never part of a capability contract, never logged, and never included in
 
 ```sh
 export FIRECRAWL_API_KEY='fc-...'
-# Optional: point the adapter at a compatible gateway or a local stub.
+# Optional: point the connector at a compatible gateway or a local stub.
 export FIRECRAWL_BASE_URL='https://api.firecrawl.dev'
 ```
 
@@ -136,13 +136,15 @@ organization's identity implementation.
 Polling stops immediately when the invocation is cancelled or when the
 capability timeout aborts the signal, and it gives up after a bounded number of
 status requests. Pagination targets returned by the provider must share the
-configured Firecrawl origin.
+configured Firecrawl origin, and the connector permits at most 50 follow-up
+pagination requests by default. A provider batch is truncated at the requested
+page limit, and each provider response is limited to 64 MiB.
 
 ## Replace Firecrawl
 
 Implement `WebCrawler` with any provider or an internal crawler and pass it to
 `createCrawlEngine`. The implementation must honor the supplied `AbortSignal`.
-No capability, schema, adapter, or consumer changes.
+No capability, schema, inbound adapter, or consumer changes.
 
 ```ts
 const engine = createCrawlEngine({
@@ -154,7 +156,7 @@ const engine = createCrawlEngine({
 ## Verify the example
 
 The tests never reach the public Firecrawl API. A local Firecrawl-compatible
-stub server (`test/firecrawl-stub.ts`) serves the adapter and entrypoint tests.
+stub server (`test/firecrawl-stub.ts`) serves the connector and entrypoint tests.
 
 ```sh
 yarn workspace @invokta/example-crawl test

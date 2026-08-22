@@ -1,7 +1,6 @@
 import { EngineError } from "@invokta/core";
 
 const maximumProviderResponseBytes = 64 * 1024 * 1024;
-const maximumCauseCharacters = 512;
 
 export interface ProviderHttpRequest {
   readonly provider: string;
@@ -93,22 +92,24 @@ export async function requestProviderJson(
       ...request.init,
       signal: request.signal,
     });
-  } catch (cause) {
-    if (request.signal.aborted) throw cause;
+  } catch {
+    if (request.signal.aborted) throw request.signal.reason;
     throw providerFailure(
       request.requestFailureMessage,
       { provider: request.provider },
-      cause,
+      new Error(`${request.providerLabel} transport request failed.`),
     );
   }
 
+  if (request.signal.aborted) throw request.signal.reason;
+
   if (!response.ok) {
-    const detail = await readBoundedText(response).catch(() => "");
+    await response.body?.cancel().catch(() => undefined);
     throw providerFailure(
       request.rejectionMessage,
       { provider: request.provider, status: response.status },
       new Error(
-        `${request.providerLabel} responded with status ${String(response.status)}: ${detail.slice(0, maximumCauseCharacters)}`,
+        `${request.providerLabel} responded with status ${String(response.status)}.`,
       ),
     );
   }
@@ -116,21 +117,22 @@ export async function requestProviderJson(
   let text: string;
   try {
     text = await readBoundedText(response);
-  } catch (cause) {
+  } catch {
+    if (request.signal.aborted) throw request.signal.reason;
     throw providerFailure(
       `${request.providerLabel} returned an unreadable response.`,
       { provider: request.provider },
-      cause,
+      new Error(`${request.providerLabel} response could not be read safely.`),
     );
   }
 
   try {
     return JSON.parse(text) as unknown;
-  } catch (cause) {
+  } catch {
     throw providerFailure(
       `${request.providerLabel} returned an unreadable response.`,
       { provider: request.provider },
-      cause,
+      new Error(`${request.providerLabel} response was not valid JSON.`),
     );
   }
 }

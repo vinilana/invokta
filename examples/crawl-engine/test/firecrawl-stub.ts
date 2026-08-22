@@ -74,7 +74,7 @@ function requestedUrl(body: unknown): string {
 }
 
 /**
- * Minimal Firecrawl-compatible server used to exercise the outbound adapter
+ * Minimal Firecrawl-compatible server used to exercise the outbound connector
  * and the built entrypoints without reaching the public API.
  */
 export async function startFirecrawlStub(

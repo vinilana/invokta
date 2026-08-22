@@ -30,15 +30,20 @@ unit of versioning and ownership.
   execution.
 - **Loop:** decides the next step, repeats work, and stops when it reaches a goal.
 - **Graph:** owns nodes, dependencies, branches, and execution order.
-- **Invokta:** provides contracts, a runtime, and adapters; it is not a domain
-  engine.
+- **Port:** gives capability code an engine-owned, provider-neutral interface to
+  a dependency.
+- **Outbound connector:** implements one or more ports for an external provider,
+  technology, or data source; it is not independently invocable.
+- **Invokta:** provides contracts, a runtime, and inbound adapters; it is not a
+  domain engine.
 
 A product may combine these responsibilities, but Invokta's core MUST NOT couple
-them. Prompts and skills may guide an invocation, rules may constrain it, and
-loops or graphs may coordinate it. The Action Engine remains the independently
-owned boundary for the requested domain outcome. CLI, MCP, HTTP, and direct APIs
-are delivery paths to that boundary and MUST NOT become separate implementations
-of the domain action.
+them. Prompts and skills may guide an invocation, rules may constrain it, ports
+may define its dependencies, outbound connectors may implement external ones,
+and loops or graphs may coordinate it.
+The Action Engine remains the independently owned boundary for the requested
+domain outcome. CLI, MCP, HTTP, and direct APIs are inbound delivery paths to
+that boundary and MUST NOT become separate implementations of the domain action.
 
 A model wrapper, prompt collection, multi-model gateway, server that merely
 mirrors APIs, harness, or workflow engine is not an Action Engine by itself.

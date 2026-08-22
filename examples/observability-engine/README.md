@@ -8,7 +8,7 @@ HTTP:
 | --- | --- |
 | `observability.collect-incident-context` | Collect issues, logs, and service telemetry for one bounded time window |
 
-The capability is defined once; every adapter reaches it through
+The capability is defined once; every inbound adapter reaches it through
 `engine.invoke`. The public contract describes incident context rather than a
 provider API. Sentry, Datadog, and New Relic live behind custom-engine ports and
 can be replaced without changing the capability ID, schemas, or entrypoints.
@@ -38,11 +38,11 @@ direct / CLI / MCP stdio / MCP HTTP
 - `src/infrastructure/` is the only layer that knows the external HTTP
   contracts.
 - `src/engine.ts` is the composition root; it reads credentials and account
-  configuration from the environment and injects the adapters.
+  configuration from the environment and injects the outbound connectors.
 
-The Sentry adapter uses the organization issues endpoint and maps `service` to a
-Sentry project slug. The Datadog adapter searches v2 log events with a
-`service:<service>` filter. The New Relic adapter runs a fixed, read-only NRQL
+The Sentry connector uses the organization issues endpoint and maps `service` to
+a Sentry project slug. The Datadog connector searches v2 log events with a
+`service:<service>` filter. The New Relic connector runs a fixed, read-only NRQL
 aggregate over `Transaction` data where `appName` matches the service. Consumers
 cannot submit arbitrary NRQL or provider credentials.
 

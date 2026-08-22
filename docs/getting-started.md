@@ -10,9 +10,10 @@ For complete, runnable compositions, see
 [`support-engine`](../examples/support-engine/). The hello example is the shortest
 onboarding path. The support example demonstrates injected ports and a domain
 authorization rule. Further examples apply the same contracts to harder cases:
-[`crawl-engine`](../examples/crawl-engine/) integrates an external provider
-(Firecrawl) behind a port, and [`spec-engine`](../examples/spec-engine/) runs a
-multi-step, spec-driven workflow using domain stage rules. The
+[`crawl-engine`](../examples/crawl-engine/) implements a Firecrawl outbound
+connector behind a `WebCrawler` port, and
+[`spec-engine`](../examples/spec-engine/) runs a multi-step, spec-driven workflow
+using domain stage rules. The
 [`agent-session-engine`](../examples/agent-session-engine/) shows how command
 hooks from Cursor, Antigravity, Claude Code, and Codex can record durable agent
 session metadata through the CLI adapter while another harness resumes from a

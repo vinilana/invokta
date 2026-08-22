@@ -40,3 +40,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0031](0031-oauth-discovery-inspection-and-advertised-servers.md) | OAuth discovery inspection and advertised authorization servers | Accepted | 2026-08-13 |
 | [0032](0032-cli-installation-inspection-and-homologation.md) | CLI installation inspection and homologation | Accepted | 2026-08-15 |
 | [0033](0033-workbench-launcher-and-selection.md) | Workbench launcher and workbench selection | Accepted | 2026-08-15 |
+| [0034](0034-engine-owned-outbound-connectors.md) | Engine-owned outbound connectors through explicit ports | Accepted | 2026-08-22 |
