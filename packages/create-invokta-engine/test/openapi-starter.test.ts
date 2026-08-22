@@ -93,6 +93,24 @@ function createFiles(
 }
 
 describe("createOpenApiStarterFiles", () => {
+  it("rejects duplicate final module basenames before files can be overwritten", () => {
+    const first = selectedOperations[0];
+    const duplicate = Object.freeze({
+      ...selectedOperations[1],
+      moduleName: first.moduleName,
+    });
+
+    expect(() =>
+      createOpenApiStarterFiles({
+        projectName: "collision-engine",
+        invoktaVersion: "1.2.3",
+        packageManager: "npm",
+        profile: "cli",
+        selectedOperations: Object.freeze([first, duplicate]),
+      }),
+    ).toThrowError(/duplicate portable module name/u);
+  });
+
   it("generates capability modules and engine registrations only for selected operations", () => {
     const entries = createFiles();
     const contents = fileContents(entries);

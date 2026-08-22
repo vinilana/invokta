@@ -263,6 +263,29 @@ function assertResolvedNodesAvailable(
   }
 }
 
+function ownEnumerablePropertyCount(
+  value: Readonly<Record<string, unknown>>,
+  excludedName?: string,
+): number {
+  let count = 0;
+  for (const name in value) {
+    if (name !== excludedName && Object.hasOwn(value, name)) count += 1;
+  }
+  return count;
+}
+
+function copyOwnEnumerableProperties(
+  source: Readonly<Record<string, unknown>>,
+  target: Record<string, unknown>,
+  excludedName?: string,
+): void {
+  for (const name in source) {
+    if (name !== excludedName && Object.hasOwn(source, name)) {
+      target[name] = source[name];
+    }
+  }
+}
+
 function unsupportedReferenceSyntax(reference: string): boolean {
   const path = reference.split("#", 1)[0] ?? "";
   return (
@@ -398,29 +421,38 @@ async function resolveReferences(
     );
     if (resolvedTarget === unsupportedReference) return unsupportedReference;
 
-    const siblingEntries = Object.entries(value).filter(
-      ([name]) => name !== "$ref",
-    );
-    if (siblingEntries.length === 0) {
+    const siblingCount = ownEnumerablePropertyCount(value, "$ref");
+    if (siblingCount === 0) {
       context.resolvedContainers.set(value, resolvedTarget);
       return resolvedTarget;
     }
     if (!isObject(resolvedTarget)) return unsupportedReference;
-    assertResolvedNodesAvailable(context, siblingEntries.length + 1);
-    const siblings = Object.fromEntries(siblingEntries);
-    const resolvedSiblings = await resolveReferences(
-      siblings,
-      declaringDocumentPath,
-      context,
-      depth,
-      activeReferences,
-    );
-    if (!isObject(resolvedSiblings)) return unsupportedReference;
-    consumeResolvedNodes(
-      context,
-      Object.keys(resolvedTarget).length + Object.keys(resolvedSiblings).length,
-    );
-    const overlaid = { ...resolvedTarget, ...resolvedSiblings };
+    assertResolvedNodesAvailable(context, siblingCount + 1);
+    consumeResolvedNodes(context);
+    const resolvedSiblings: Record<string, unknown> = Object.create(
+      null,
+    ) as Record<string, unknown>;
+    for (const name in value) {
+      if (name !== "$ref" && Object.hasOwn(value, name)) {
+        resolvedSiblings[name] = await resolveReferences(
+          value[name],
+          declaringDocumentPath,
+          context,
+          depth,
+          activeReferences,
+        );
+      }
+    }
+    const overlayPropertyCount =
+      ownEnumerablePropertyCount(resolvedTarget) +
+      ownEnumerablePropertyCount(resolvedSiblings);
+    consumeResolvedNodes(context, overlayPropertyCount);
+    const overlaid: Record<string, unknown> = Object.create(null) as Record<
+      string,
+      unknown
+    >;
+    copyOwnEnumerableProperties(resolvedTarget, overlaid);
+    copyOwnEnumerableProperties(resolvedSiblings, overlaid);
     context.resolvedContainers.set(value, overlaid);
     return overlaid;
   }
@@ -429,14 +461,16 @@ async function resolveReferences(
     string,
     unknown
   >;
-  for (const [name, member] of Object.entries(value)) {
-    result[name] = await resolveReferences(
-      member,
-      declaringDocumentPath,
-      context,
-      depth,
-      activeReferences,
-    );
+  for (const name in value) {
+    if (Object.hasOwn(value, name)) {
+      result[name] = await resolveReferences(
+        value[name],
+        declaringDocumentPath,
+        context,
+        depth,
+        activeReferences,
+      );
+    }
   }
   context.resolvedContainers.set(value, result);
   return result;

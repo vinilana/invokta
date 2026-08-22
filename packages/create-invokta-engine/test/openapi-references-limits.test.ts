@@ -353,6 +353,41 @@ describe("OpenAPI parser safety", () => {
       exitCode: 1,
     });
   });
+
+  it("accounts reference objects without allocating Object.entries or Object.keys arrays", async () => {
+    const fixture = writeJsonFixture(wideReferenceOverlays(10, 2));
+    const originalEntries = Object.entries;
+    const originalKeys = Object.keys;
+    const entries = vi.spyOn(Object, "entries").mockImplementation((value) => {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        Object.hasOwn(value, "$ref")
+      ) {
+        throw new Error("resolver allocated Object.entries");
+      }
+      return originalEntries(value);
+    });
+    const keys = vi.spyOn(Object, "keys").mockImplementation((value) => {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        (Object.hasOwn(value, "$ref") || Object.hasOwn(value, "member0"))
+      ) {
+        throw new Error("resolver allocated Object.keys");
+      }
+      return originalKeys(value);
+    });
+
+    try {
+      await expect(loadOpenApiDocument(fixture)).resolves.toMatchObject({
+        openapi: "3.1.1",
+      });
+    } finally {
+      entries.mockRestore();
+      keys.mockRestore();
+    }
+  });
 });
 
 describe("OpenAPI operation limits", () => {

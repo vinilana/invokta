@@ -22,12 +22,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   configured server origin before credentials are applied, combined security
   schemes cannot overwrite one destination, multi-success output schemas keep
   their required object root, repeated path placeholders are all substituted,
-  and generated fake-port tests execute with operation-derived inputs and
-  declared response variants.
+  and generated fake-port tests always execute contract and isolation coverage,
+  adding successful response variants when bounded valid witnesses are proven.
 - Bounded and memoized local OpenAPI reference resolution, aligned parameter
   eligibility with non-null runtime serialization and constrained `deepObject`
   values, and made generated module basenames deterministic, length-bounded,
-  and portable across Windows device-name rules.
+  collision-checked after bounding, and portable across Windows device-name
+  rules.
 
 ## [0.6.1] - 2026-08-20
 

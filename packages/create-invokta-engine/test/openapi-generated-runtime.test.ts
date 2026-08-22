@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -250,6 +251,86 @@ const createWidgetOperation = Object.freeze({
   }),
 } as const satisfies OpenApiStarterOperation);
 
+function stringQueryOperation(options: {
+  readonly capabilityId: string;
+  readonly exportName: string;
+  readonly moduleName: string;
+  readonly path: string;
+  readonly schema: Readonly<Record<string, unknown>>;
+}): OpenApiStarterOperation {
+  const inputSchema = Object.freeze({
+    type: "object",
+    properties: Object.freeze({
+      query: Object.freeze({
+        type: "object",
+        properties: Object.freeze({ value: options.schema }),
+        required: Object.freeze(["value"]),
+        additionalProperties: false,
+      }),
+    }),
+    required: Object.freeze(["query"]),
+    additionalProperties: false,
+  });
+  return Object.freeze({
+    selector: `GET:${options.path}`,
+    capabilityId: options.capabilityId,
+    exportName: options.exportName,
+    moduleName: options.moduleName,
+    method: "GET",
+    path: options.path,
+    title: options.capabilityId,
+    description: `Exercises ${options.capabilityId}.`,
+    connection: Object.freeze({
+      serverSource: "root",
+      serverUrls: Object.freeze(["https://api.example.test/v1"]),
+      baseUrl: Object.freeze({
+        environmentVariable: `OPENAPI_${options.exportName.toUpperCase()}_BASE_URL`,
+        default: "https://api.example.test/v1",
+      }),
+    }),
+    inputSchema,
+    outputSchema: Object.freeze({
+      type: "object",
+      properties: Object.freeze({ status: Object.freeze({ const: 204 }) }),
+      required: Object.freeze(["status"]),
+      additionalProperties: false,
+    }),
+    parameters: Object.freeze([
+      Object.freeze({
+        name: "value",
+        in: "query",
+        required: true,
+        style: "form",
+        explode: true,
+        schema: options.schema,
+      }),
+    ]),
+    requestBody: undefined,
+    successResponses: Object.freeze([
+      Object.freeze({ status: "204", mediaType: undefined, schema: undefined }),
+    ]),
+    security: Object.freeze({
+      alternatives: Object.freeze([Object.freeze([])]),
+    }),
+  });
+}
+
+const emptyStringOperation = stringQueryOperation({
+  capabilityId: "widgets.empty-string",
+  exportName: "emptyString",
+  moduleName: "empty-string",
+  path: "/empty-string",
+  schema: Object.freeze({ type: "string", maxLength: 0 }),
+});
+
+const patternFallbackOperation = stringQueryOperation({
+  capabilityId: "widgets.pattern-fallback",
+  exportName: "patternFallback",
+  moduleName: "pattern-fallback",
+  path: "/pattern-fallback",
+  schema: Object.freeze({ type: "string", pattern: "^z{17}$" }),
+});
+
 interface GeneratedUpstream {
   readonly invoke: (request: unknown) => Promise<Record<string, unknown>>;
 }
@@ -387,7 +468,11 @@ beforeAll(async () => {
       invoktaVersion: "1.2.3",
       packageManager: "npm",
       profile: "cli",
-      selectedOperations: Object.freeze([createWidgetOperation]),
+      selectedOperations: Object.freeze([
+        createWidgetOperation,
+        emptyStringOperation,
+        patternFallbackOperation,
+      ]),
     }),
     projectDirectory,
   );
@@ -424,6 +509,22 @@ describe("generated OpenAPI runtime", () => {
   });
 
   it("ships an executable fake-port test derived from the generated operation", () => {
+    const generatedTest = readFileSync(
+      join(projectDirectory, "test/engine.test.ts"),
+      "utf8",
+    );
+    expect(generatedTest).toContain(
+      "validates $selector contract without calling upstream",
+    );
+    expect(generatedTest).toContain(
+      "invokes $selector for declared status $status when a witness is proven",
+    );
+    expect(
+      generatedTest.match(/"capabilityId": "widgets\.empty-string"/gu),
+    ).toHaveLength(2);
+    expect(
+      generatedTest.match(/"capabilityId": "widgets\.pattern-fallback"/gu),
+    ).toHaveLength(1);
     expect(runGeneratedProjectTests).not.toThrow();
   });
 

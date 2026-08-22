@@ -325,6 +325,54 @@ describe("buildOpenApiStarterOperations", () => {
     );
   });
 
+  it("marks every operation whose final portable module basename collides", () => {
+    const longName = `fetch${"Widget".repeat(60)}`;
+    const seedDocument: OpenApiDocument = {
+      openapi: "3.1.1",
+      info: { title: "Collision seed", version: "1.0.0" },
+      paths: {
+        "/long": {
+          get: {
+            operationId: longName,
+            responses: { "204": { description: "No content" } },
+          },
+        },
+      },
+    };
+    const finalModuleName = buildOpenApiStarterOperations(
+      seedDocument,
+      selectOpenApiOperations(discoverOpenApiOperations(seedDocument), []),
+    )[0]?.moduleName;
+    if (finalModuleName === undefined)
+      throw new Error("Missing seed module name");
+    expect(finalModuleName).toHaveLength(64);
+    const collisionDocument: OpenApiDocument = {
+      ...seedDocument,
+      info: { title: "Portable collision", version: "1.0.0" },
+      paths: {
+        ...seedDocument.paths,
+        "/exact": {
+          get: {
+            operationId: finalModuleName,
+            responses: { "204": { description: "No content" } },
+          },
+        },
+      },
+    };
+
+    const candidates = discoverOpenApiOperations(collisionDocument);
+
+    expect(candidates.map(({ eligibility }) => eligibility)).toEqual([
+      { eligible: false, reason: "CAPABILITY_ID_COLLISION" },
+      { eligible: false, reason: "CAPABILITY_ID_COLLISION" },
+    ]);
+    expect(() =>
+      buildOpenApiStarterOperations(collisionDocument, candidates),
+    ).toThrowError(
+      expect.objectContaining({ code: "OPENAPI_SELECTION_INVALID" }),
+    );
+  });
+
   it("normalizes anonymous, API-key, Basic, and Bearer security with deterministic credential names", () => {
     expect(bySelector("GET:/health").security).toEqual({
       alternatives: [[]],

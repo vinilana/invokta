@@ -288,9 +288,15 @@ dependency error before any credential is applied or request is made.
 
 The imported source is not copied into the project and generated code does not
 interpret OpenAPI at runtime. Generated tests use a fake upstream port and make
-no network request. During creator execution, package installation remains the
-only possible network activity after local generation, subject to the existing
-`--no-install` contract.
+no network request. Every selected operation gets an executable contract and
+fake-port-isolation test. A successful invocation is additionally generated for
+each declared response variant only when the creator can prove a valid input
+and output witness within its bounded deterministic sampler. A supported schema
+whose regular expression or intersecting constraints do not yield such a
+witness remains eligible; its universal contract and isolation test still
+runs. During creator execution, package installation remains the only possible
+network activity after local generation, subject to the existing `--no-install`
+contract.
 
 ### Limits and diagnostics
 

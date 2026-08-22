@@ -1028,7 +1028,7 @@ function capabilityIdForCandidate(
     candidate.operationId !== undefined &&
       operationIds.get(candidate.operationId) === 1,
   );
-  return `openapi.${nameWords.join("-")}`;
+  return `openapi.${moduleNameForWords(nameWords)}`;
 }
 
 function mcpToolName(capabilityId: string): string {

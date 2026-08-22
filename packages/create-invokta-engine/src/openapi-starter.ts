@@ -147,13 +147,11 @@ export interface OpenApiOperationPlan {
     }>;
   }>;
   readonly parameters: readonly OpenApiParameterPlan[];
-  readonly requestBody:
-    | Readonly<{
-        required: boolean;
-        mediaType: "application/json";
-        schema: unknown;
-      }>
-    | undefined;
+  readonly requestBody?: Readonly<{
+    required: boolean;
+    mediaType: "application/json";
+    schema: unknown;
+  }>;
   readonly successResponses: readonly Readonly<{
     status: string;
     mediaType?: string;
@@ -672,22 +670,198 @@ function sampleNumber(schema: Readonly<Record<string, unknown>>): number {
 function sampleString(schema: Readonly<Record<string, unknown>>): string {
   const minimum =
     typeof schema.minLength === "number" ? Math.max(0, schema.minLength) : 0;
+  const maximum =
+    typeof schema.maxLength === "number"
+      ? Math.max(0, schema.maxLength)
+      : Number.POSITIVE_INFINITY;
+  if (minimum > maximum) {
+    throw new TypeError("A generated OpenAPI test value could not be derived.");
+  }
   const candidates = [
+    "",
     "x".repeat(Math.max(1, minimum)),
     "0".repeat(Math.max(1, minimum)),
     "test".padEnd(minimum, "x"),
-    "",
   ];
-  if (typeof schema.pattern !== "string") return candidates[0] ?? "x";
-  const expression = new RegExp(schema.pattern, "u");
-  const match = candidates.find(
-    (candidate) => candidate.length >= minimum && expression.test(candidate),
-  );
+  const expression =
+    typeof schema.pattern === "string"
+      ? new RegExp(schema.pattern, "u")
+      : undefined;
+  const match = candidates.find((candidate) => {
+    if (candidate.length < minimum || candidate.length > maximum) return false;
+    return expression === undefined || expression.test(candidate);
+  });
   if (match !== undefined) return match;
   throw new TypeError("A generated OpenAPI test value could not be derived.");
 }
 
-function sampleJsonSchema(schemaValue: unknown): unknown {
+interface WitnessBudget {
+  remaining: number;
+}
+
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return (
+      left.length === right.length &&
+      left.every((member, index) => jsonValuesEqual(member, right[index]))
+    );
+  }
+  const leftObject = asSchemaObject(left);
+  const rightObject = asSchemaObject(right);
+  if (leftObject === undefined || rightObject === undefined) return false;
+  const leftNames = Object.keys(leftObject);
+  const rightNames = Object.keys(rightObject);
+  return (
+    leftNames.length === rightNames.length &&
+    leftNames.every(
+      (name) =>
+        Object.hasOwn(rightObject, name) &&
+        jsonValuesEqual(leftObject[name], rightObject[name]),
+    )
+  );
+}
+
+function valueHasType(value: unknown, type: unknown): boolean {
+  if (type === "null") return value === null;
+  if (type === "array") return Array.isArray(value);
+  if (type === "object")
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (type === "integer")
+    return typeof value === "number" && Number.isInteger(value);
+  return typeof type === "string" && typeof value === type;
+}
+
+function witnessMatches(
+  schemaValue: unknown,
+  value: unknown,
+  budget: WitnessBudget,
+): boolean {
+  budget.remaining -= 1;
+  if (budget.remaining < 0) return false;
+  if (schemaValue === true) return true;
+  if (schemaValue === false) return false;
+  const schema = asSchemaObject(schemaValue);
+  if (schema === undefined) return false;
+  if (schema.format !== undefined) return false;
+
+  if (Object.hasOwn(schema, "const") && !jsonValuesEqual(value, schema.const))
+    return false;
+  if (
+    Array.isArray(schema.enum) &&
+    !schema.enum.some((member) => jsonValuesEqual(value, member))
+  ) {
+    return false;
+  }
+  const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+  if (
+    schema.type !== undefined &&
+    !types.some((type) => valueHasType(value, type))
+  ) {
+    return false;
+  }
+  if (
+    Array.isArray(schema.allOf) &&
+    !schema.allOf.every((member) => witnessMatches(member, value, budget))
+  ) {
+    return false;
+  }
+  if (
+    Array.isArray(schema.anyOf) &&
+    !schema.anyOf.some((member) => witnessMatches(member, value, budget))
+  ) {
+    return false;
+  }
+  if (
+    Array.isArray(schema.oneOf) &&
+    schema.oneOf.filter((member) => witnessMatches(member, value, budget))
+      .length !== 1
+  ) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    const length = Array.from(value).length;
+    if (typeof schema.minLength === "number" && length < schema.minLength)
+      return false;
+    if (typeof schema.maxLength === "number" && length > schema.maxLength)
+      return false;
+    if (
+      typeof schema.pattern === "string" &&
+      !new RegExp(schema.pattern, "u").test(value)
+    ) {
+      return false;
+    }
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return false;
+    if (typeof schema.minimum === "number" && value < schema.minimum)
+      return false;
+    if (typeof schema.maximum === "number" && value > schema.maximum)
+      return false;
+    if (
+      typeof schema.exclusiveMinimum === "number" &&
+      value <= schema.exclusiveMinimum
+    ) {
+      return false;
+    }
+    if (
+      typeof schema.exclusiveMaximum === "number" &&
+      value >= schema.exclusiveMaximum
+    ) {
+      return false;
+    }
+    if (
+      typeof schema.multipleOf === "number" &&
+      value % schema.multipleOf !== 0
+    ) {
+      return false;
+    }
+  }
+  if (Array.isArray(value)) {
+    if (typeof schema.minItems === "number" && value.length < schema.minItems)
+      return false;
+    if (typeof schema.maxItems === "number" && value.length > schema.maxItems)
+      return false;
+    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
+    for (const [index, member] of value.entries()) {
+      const itemSchema = prefix[index] ?? schema.items;
+      if (
+        itemSchema !== undefined &&
+        !witnessMatches(itemSchema, member, budget)
+      ) {
+        return false;
+      }
+    }
+  }
+  const object = asSchemaObject(value);
+  if (object !== undefined) {
+    const properties = asSchemaObject(schema.properties) ?? {};
+    if (
+      Array.isArray(schema.required) &&
+      schema.required.some(
+        (name) => typeof name === "string" && !Object.hasOwn(object, name),
+      )
+    ) {
+      return false;
+    }
+    for (const [name, member] of Object.entries(object)) {
+      if (Object.hasOwn(properties, name)) {
+        if (!witnessMatches(properties[name], member, budget)) return false;
+      } else if (schema.additionalProperties === false) {
+        return false;
+      } else if (
+        schema.additionalProperties !== undefined &&
+        !witnessMatches(schema.additionalProperties, member, budget)
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function sampleJsonSchemaCandidate(schemaValue: unknown): unknown {
   if (schemaValue === true) return null;
   if (schemaValue === false) {
     throw new TypeError("A generated OpenAPI test value could not be derived.");
@@ -703,7 +877,7 @@ function sampleJsonSchema(schemaValue: unknown): unknown {
     if (Array.isArray(union) && union.length > 0) {
       for (const member of union) {
         try {
-          return sampleJsonSchema(member);
+          return sampleJsonSchemaCandidate(member);
         } catch {
           // Try the next declared alternative.
         }
@@ -712,7 +886,8 @@ function sampleJsonSchema(schemaValue: unknown): unknown {
   }
   if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
     return schema.allOf.reduce(
-      (sample, member) => mergeSamples(sample, sampleJsonSchema(member)),
+      (sample, member) =>
+        mergeSamples(sample, sampleJsonSchemaCandidate(member)),
       {},
     );
   }
@@ -729,7 +904,10 @@ function sampleJsonSchema(schemaValue: unknown): unknown {
         )
       : [];
     return Object.fromEntries(
-      required.map((name) => [name, sampleJsonSchema(properties[name])]),
+      required.map((name) => [
+        name,
+        sampleJsonSchemaCandidate(properties[name]),
+      ]),
     );
   }
   if (type === "array" || schema.items !== undefined) {
@@ -738,7 +916,7 @@ function sampleJsonSchema(schemaValue: unknown): unknown {
     const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
     const length = Math.max(minimum, prefix.length);
     return Array.from({ length }, (_, index) =>
-      sampleJsonSchema(prefix[index] ?? schema.items ?? true),
+      sampleJsonSchemaCandidate(prefix[index] ?? schema.items ?? true),
     );
   }
   if (type === "string") return sampleString(schema);
@@ -748,57 +926,70 @@ function sampleJsonSchema(schemaValue: unknown): unknown {
   return null;
 }
 
+function sampleJsonSchema(schemaValue: unknown): unknown {
+  const candidates: unknown[] = [];
+  const schema = asSchemaObject(schemaValue);
+  if (schema !== undefined) {
+    if (Object.hasOwn(schema, "const")) candidates.push(schema.const);
+    if (Array.isArray(schema.enum)) candidates.push(...schema.enum);
+    if (Object.hasOwn(schema, "default")) candidates.push(schema.default);
+  }
+  try {
+    candidates.push(sampleJsonSchemaCandidate(schemaValue));
+  } catch {
+    // A declared const, enum member, or default can still be a proven witness.
+  }
+  for (const candidate of candidates) {
+    if (witnessMatches(schemaValue, candidate, { remaining: 4_096 })) {
+      return candidate;
+    }
+  }
+  throw new TypeError("A generated OpenAPI test value could not be derived.");
+}
+
 function renderGeneratedTest(
   operations: readonly OpenApiStarterOperation[],
 ): string {
-  const cases: Array<Record<string, unknown>> = [];
+  const contractCases = operations.map((operation) => ({
+    capabilityId: operation.capabilityId,
+    selector: operation.selector,
+  }));
+  const successCases: Array<Record<string, unknown>> = [];
   for (const operation of operations) {
     let input: unknown;
     try {
       input = sampleJsonSchema(operation.inputSchema);
     } catch {
-      cases.push({
-        capabilityId: operation.capabilityId,
-        selector: operation.selector,
-        input: { __generated_invalid: true },
-        output: {},
-        status: operation.successResponses[0]?.status ?? "unknown",
-        expectedError: "INPUT_INVALID",
-        expectedCalls: 0,
-      });
       continue;
     }
     for (const response of operation.successResponses) {
       const status = response.status === "2XX" ? 200 : Number(response.status);
       try {
-        cases.push({
+        const output = {
+          status,
+          ...(response.mediaType === undefined
+            ? {}
+            : {
+                body:
+                  response.schema === undefined
+                    ? null
+                    : sampleJsonSchema(response.schema),
+              }),
+        };
+        if (
+          !witnessMatches(operation.outputSchema, output, { remaining: 4_096 })
+        ) {
+          continue;
+        }
+        successCases.push({
           capabilityId: operation.capabilityId,
           selector: operation.selector,
           input,
           status: response.status,
-          output: {
-            status,
-            ...(response.mediaType === undefined
-              ? {}
-              : {
-                  body:
-                    response.schema === undefined
-                      ? null
-                      : sampleJsonSchema(response.schema),
-                }),
-          },
-          expectedCalls: 1,
+          output,
         });
       } catch {
-        cases.push({
-          capabilityId: operation.capabilityId,
-          selector: operation.selector,
-          input,
-          status: response.status,
-          output: { status, body: null },
-          expectedError: "OUTPUT_INVALID",
-          expectedCalls: 1,
-        });
+        // No successful invocation is emitted without a proven output witness.
       }
     }
   }
@@ -808,24 +999,43 @@ import { createOpenApiEngine } from "../src/engine.js";
 import type { OpenApiUpstream } from "../src/openapi/upstream.js";
 
 describe("generated OpenAPI engine", () => {
-  it.each(${json(cases)})(
-    "covers $selector through the injected upstream port for status $status",
-    async ({ capabilityId, selector, input, output, expectedError, expectedCalls }) => {
-    const upstream: OpenApiUpstream = {
-      invoke: vi.fn(async (request) => {
-        expect(request.operation.selector).toBe(selector);
-        return output;
-      }),
-    };
-    const engine = createOpenApiEngine({ upstream });
+  it.each(${json(contractCases)})(
+    "validates $selector contract without calling upstream",
+    async ({ capabilityId }) => {
+      const invoke = vi.fn(async () => ({}));
+      const upstream: OpenApiUpstream = { invoke };
+      const engine = createOpenApiEngine({ upstream });
 
-    const invocation = engine.invoke(capabilityId, input, { principal: null });
-    if (expectedError === undefined) {
-      await expect(invocation).resolves.toEqual(output);
-    } else {
-      await expect(invocation).rejects.toMatchObject({ code: expectedError });
-    }
-    expect(upstream.invoke).toHaveBeenCalledTimes(expectedCalls);
+      expect(engine.describe(capabilityId)).toMatchObject({
+        inputSchema: { type: "object" },
+        outputSchema: { type: "object" },
+      });
+      await expect(
+        engine.invoke(
+          capabilityId,
+          { __generated_invalid: true },
+          { principal: null },
+        ),
+      ).rejects.toMatchObject({ code: "INPUT_INVALID" });
+      expect(invoke).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(${json(successCases)})(
+    "invokes $selector for declared status $status when a witness is proven",
+    async ({ capabilityId, selector, input, output }) => {
+      const upstream: OpenApiUpstream = {
+        invoke: vi.fn(async (request) => {
+          expect(request.operation.selector).toBe(selector);
+          return output;
+        }),
+      };
+      const engine = createOpenApiEngine({ upstream });
+
+      await expect(
+        engine.invoke(capabilityId, input, { principal: null }),
+      ).resolves.toEqual(output);
+      expect(upstream.invoke).toHaveBeenCalledTimes(1);
     },
   );
 });
@@ -903,6 +1113,20 @@ function compareEntries(left: StarterEntry, right: StarterEntry): number {
   return 0;
 }
 
+function assertUniquePortableModuleNames(
+  operations: readonly OpenApiStarterOperation[],
+): void {
+  const names = new Set<string>();
+  for (const operation of operations) {
+    if (names.has(operation.moduleName)) {
+      throw new TypeError(
+        "Selected OpenAPI operations contain a duplicate portable module name.",
+      );
+    }
+    names.add(operation.moduleName);
+  }
+}
+
 /** Returns a deterministic source-only starter for selected OpenAPI operations. */
 export function createOpenApiStarterFiles(
   options: CreateOpenApiStarterFilesOptions,
@@ -915,6 +1139,7 @@ export function createOpenApiStarterFiles(
   if (first === undefined) {
     throw new TypeError("At least one selected OpenAPI operation is required.");
   }
+  assertUniquePortableModuleNames(operations);
   const envNames = environmentNames(operations);
   const replacements = new Map<string, StarterEntry>();
   for (const entry of createStarterFiles(options)) {
