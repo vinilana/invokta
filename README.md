@@ -14,6 +14,16 @@ implementation through direct calls, the CLI, or MCP.
 Invokta is the TypeScript framework for building these reusable actions. We call
 them [Action Engines](./docs/action-engines.md).
 
+## Choose your path
+
+| Goal | Start here |
+| --- | --- |
+| Create an Action Engine | [Generate and run a complete engine](#create-an-action-engine) |
+| Learn the model | [Read the framework-neutral Action Engines definition](./docs/action-engines.md) |
+| Find a concrete use case | [Browse use cases by company area](./apps/docs/src/content/docs/use-cases/index.mdx) |
+| Contribute to Invokta | [Set up the repository and follow the delivery workflow](./CONTRIBUTING.md) |
+| Change a framework contract | [Use the normative documentation index](./docs/README.md) |
+
 ## How an Action Engine works
 
 ![How an Action Engine works](./apps/docs/public/images/how-an-action-engine-works.svg)
@@ -193,18 +203,52 @@ Invokta does not provide identity, model routing, an agent harness, a
 workflow engine, or a production observability platform. Custom engines inject
 their own model, data, tool, authentication, and authorization integrations.
 
-## Start here
+## Create an Action Engine
 
-Requirements: Node.js 22.20.0 or later and Yarn 1.22.22.
+Standalone engines require Node.js 22.20.0 or later. The creator supports npm,
+pnpm, and Yarn; this example uses npm.
 
-Create a standalone engine:
+Generate the complete profile, validate it, and invoke its starter capability:
 
 ```sh
-npm create invokta-engine@latest my-engine
+npm create invokta-engine@latest my-engine -- --profile complete --yes
 cd my-engine
 npm run check
+npm run direct -- Ada
+```
+
+The final command prints:
+
+```json
+{"message":"Welcome, Ada!"}
+```
+
+Start interactive development separately because the process remains active:
+
+```sh
 npm run devtools
-# Starts the devtools inspector on http://localhost:4100/ with watch mode.
+# Open the URL printed by the command. Press Ctrl+C to stop.
+```
+
+The creator can also prompt for the project and profile when run in a terminal.
+Choose the smallest profile that matches the engine's intended consumers:
+
+| Profile | Generated execution channels | Use it when |
+| --- | --- | --- |
+| `complete` | Direct, CLI, MCP stdio, MCP HTTP | You want the reference project or expect to publish every channel |
+| `cli` | Direct and CLI | People or local automation will run commands |
+| `mcp-stdio` | Direct and MCP stdio | Local agent clients will start the engine as a child process |
+| `mcp-http` | Direct and MCP HTTP | Remote consumers need a shared, authenticated endpoint |
+
+Every generated project includes a project map, a test-first checklist for
+replacing the welcome capability, `AGENTS.md`, and a development skill for
+compatible coding agents. The complete creator contract and automation flags
+are documented in the
+[`create-invokta-engine` reference](./packages/create-invokta-engine/README.md).
+
+Installing the generated MCP stdio server in detected clients is optional:
+
+```sh
 npm run mcp:install
 # Later, remove the engine from every managed MCP client:
 npm run mcp:uninstall
@@ -225,14 +269,25 @@ npm create invokta-capability@latest my-capability
 npm create invokta-capability-library@latest my-library
 ```
 
-To work on Invokta itself:
+## Contribute to Invokta
+
+This repository requires Node.js 22.20.0 and Yarn 1.22.22. A clean first setup
+that matches the main local validation gate is:
 
 ```sh
-yarn install --frozen-lockfile
+corepack enable
+yarn install --frozen-lockfile --non-interactive
 yarn run check
 ```
 
-Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before editing. It explains repository
+layout, branch preparation, RED/GREEN/REFACTOR, contract and ADR review, focused
+tests, the separate documentation-site gate, agent-team coordination, commits,
+and pull-request evidence.
+
+## Learn from examples
+
+Follow the [getting-started guide](./docs/getting-started.md) or inspect:
 
 - [`hello-engine`](./examples/hello-engine/) for the shortest complete path;
 - [`support-engine`](./examples/support-engine/) for dependency injection,

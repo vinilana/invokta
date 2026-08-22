@@ -381,6 +381,8 @@ describe("createOpenApiStarterFiles", () => {
 
     expect(readme).toContain("npm run direct -- '{}'");
     expect(readme).not.toContain("npm run direct -- Ada");
+    expect(readme).toContain("## Review the generated capabilities");
+    expect(readme).not.toContain("## Replace the example capability");
   });
 
   it.each([

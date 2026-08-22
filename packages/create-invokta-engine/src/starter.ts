@@ -69,7 +69,19 @@ function renderReadme(
     packageManager === "yarn"
       ? `yarn ${name}`
       : `${packageManager} run ${name}`;
+  const runScriptWithArguments = (name: string, argumentsValue: string) =>
+    packageManager === "yarn"
+      ? `yarn ${name} ${argumentsValue}`
+      : `${packageManager} run ${name} -- ${argumentsValue}`;
   const features = profileFeatures(profile);
+  const finalReviewAction =
+    features.mcpStdio && features.mcpHttp
+      ? "installing or deploying it"
+      : features.mcpStdio
+        ? "installing it"
+        : features.mcpHttp
+          ? "deploying it"
+          : "publishing it";
   const generatedChannels = [
     "direct invocation",
     ...(features.cli ? ["CLI"] : []),
@@ -145,36 +157,55 @@ Package the server and probe an existing endpoint with:
 
 \`\`\`sh
 ${runScript("deploy:package")}
-${runScript("deploy:probe")}
+${runScriptWithArguments("deploy:probe", "--url https://engine.example/mcp")}
 \`\`\`
 `
     : "";
   const mcpCheckNote =
     features.mcpStdio || features.mcpHttp
-      ? `
-The generated check builds the engine and validates its final MCP tool catalog
+      ? `The generated check builds the engine and validates its final MCP tool catalog
 without starting an adapter. It fails when capability IDs resolve to ambiguous
 public tool names, so naming collisions are caught before installation or
-deployment.
-`
+deployment.\n\n`
       : "";
   return `# ${projectName}
 
 A standalone [Invokta](https://docs.invokta.dev/) Action Engine with one
 deterministic capability shared by ${channelSummary} entry points.
 
-## Validate
+## First run
 
 \`\`\`sh
 ${commands.check}
-\`\`\`
-${mcpCheckNote}
-
-## Invoke directly
-
-\`\`\`sh
 ${commands.direct}
 \`\`\`
+
+${mcpCheckNote}The first command validates the whole generated project. The second invokes
+the starter capability directly through \`engine.invoke\`.
+
+## Project map
+
+- \`src/capabilities/\` owns domain actions and their input, output, access,
+  and execution contracts.
+- \`src/engine.ts\` registers stable capability IDs and supplies engine-owned
+  dependencies.
+- \`src/direct.ts\` is the smallest executable smoke path.
+- \`test/engine.test.ts\` proves behavior through the public engine boundary.
+- \`AGENTS.md\` records the project's non-negotiable architecture and delivery
+  rules.
+- \`.agents/skills/develop-invokta-project/SKILL.md\` gives compatible agents a
+  complete change workflow.
+
+## Replace the example capability
+
+1. Read \`AGENTS.md\` and the generated development skill.
+2. Add a failing engine-level test for the domain outcome you need.
+3. Update or replace the module under \`src/capabilities/\`, then register its
+   literal capability ID in \`src/engine.ts\`.
+4. Keep direct and generated adapter entry points on the same exported engine;
+   do not duplicate the capability handler in an adapter.
+5. Run \`${commands.check}\`, then inspect the capability in the devtools before
+   ${finalReviewAction}.
 
 ## Develop interactively
 
@@ -182,8 +213,9 @@ ${commands.direct}
 ${runScript("devtools")}
 \`\`\`
 
-Builds the engine and starts the Invokta devtools on http://localhost:4100/:
-browse capabilities, invoke them from schema-seeded JSON through the execution
+Builds the engine and starts the Invokta devtools, normally on
+http://localhost:4100/. Open the URL printed by the command to browse
+capabilities, invoke them from schema-seeded JSON through the execution
 path you select, follow the live invocation trace, switch test identities, and
 read the doctor report. Source changes rebuild and restart the hosted engine
 automatically.
@@ -301,7 +333,7 @@ description: Develop this generated Invokta Action Engine when changing capabili
 3. Cover invalid input, denied access, output validation, cancellation, or dependency failure when relevant to the contract.
 4. Keep ${channels} behavior consistent by testing the shared engine boundary rather than duplicating handlers.
 5. Update project documentation when commands, configuration, capability IDs, or public behavior change.
-6. Run \`${commands.check}\` and resolve every type, test, formatting, and build failure before completion.
+6. Run \`${commands.check}\` and resolve every type, test, and build failure before completion.
 `;
 }
 
