@@ -261,17 +261,20 @@ instructions require an explicit domain and access review before deployment.
 **AE-CREATE-OPENAPI-12 — Generated project.** OpenAPI import replaces the
 welcome capability with exactly the selected candidate modules, registers them
 in one shared engine, and emits narrow operation ports, one engine-owned typed
-fetch connector, runtime configuration, names-only `upstream.env.example`, and
-fake-port tests. The connector owns HTTP and generated OpenAPI operation plans;
-each capability receives only the operation port it invokes. Neither the
-connector definition nor its instance is published by the engine. The output
-remains readable user-owned TypeScript rather than a framework runtime registry
-or a generic OpenAPI proxy. A pure generated engine assembly module accepts the
+fetch connector, operation-specific input and output types, shared generated
+schema contracts, runtime configuration, names-only `upstream.env.example`,
+fake-port tests, and a connector configuration/no-I/O test. The connector owns
+HTTP and the minimal generated OpenAPI operation plans needed at runtime; each
+capability receives only the operation port it invokes. Neither the connector
+definition nor its instance is published by the engine. The output remains
+readable user-owned TypeScript rather than a framework runtime registry or a
+generic OpenAPI proxy. A pure generated engine assembly module accepts the
 ports, while the executable composition root constructs the connector from the
-allowlisted environment. Fake-port tests import only the pure assembly and
-therefore require no credentials. All selected profiles retain their normal
-direct and adapter entry points, and every entry point converges on the
-generated engine's `invoke` method.
+allowlisted environment. Fake-port tests import the pure assembly and require
+no credentials; connector coverage supplies dependencies explicitly and does
+not perform external I/O. All selected profiles retain their normal direct and
+adapter entry points, and every entry point converges on the generated engine's
+`invoke` method.
 
 **AE-CREATE-OPENAPI-13 — Runtime boundary.** Each generated capability
 delegates external work through its injected operation port, has a 30,000 ms

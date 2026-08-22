@@ -675,7 +675,7 @@ describe("generated OpenAPI runtime", () => {
       "utf8",
     );
     expect(generatedTest).toContain(
-      "validates $selector contract without calling upstream",
+      "validates $selector contract without invoking the connector",
     );
     expect(generatedTest).toContain(
       "invokes $selector for declared status $status when a witness is proven",

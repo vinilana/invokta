@@ -38,17 +38,33 @@ function operationBaseUrl(
 
 function normalizedOperation(operation: OpenApiStarterOperation): unknown {
   return {
-    selector: operation.selector,
     method: operation.method,
     path: operation.path,
     connection: {
-      serverSource: operation.connection.serverSource,
-      serverUrls: operation.connection.serverUrls,
       baseUrl: operationBaseUrl(operation),
     },
-    parameters: operation.parameters,
-    requestBody: operation.requestBody,
-    successResponses: operation.successResponses,
+    parameters: operation.parameters.map(
+      ({ name, in: location, required, style, explode }) => ({
+        name,
+        in: location,
+        required,
+        style,
+        explode,
+      }),
+    ),
+    requestBody:
+      operation.requestBody === undefined
+        ? undefined
+        : {
+            required: operation.requestBody.required,
+            mediaType: operation.requestBody.mediaType,
+          },
+    successResponses: operation.successResponses.map(
+      ({ status, mediaType }) => ({
+        status,
+        ...(mediaType === undefined ? {} : { mediaType }),
+      }),
+    ),
     security: operation.security,
   };
 }
@@ -57,22 +73,114 @@ function portTypeName(operation: OpenApiStarterOperation): string {
   return `${operation.exportName[0]?.toUpperCase() ?? ""}${operation.exportName.slice(1)}Port`;
 }
 
-function renderCapability(operation: OpenApiStarterOperation): string {
-  const readOnly = operation.method === "GET" || operation.method === "HEAD";
-  const idempotent =
-    readOnly ||
-    operation.method === "PUT" ||
-    operation.method === "DELETE" ||
-    operation.method === "OPTIONS";
-  return `import { defineCapability, type EngineSchema } from "@invokta/core";
-import { z } from "zod";
+function operationTypeStem(operation: OpenApiStarterOperation): string {
+  return `${operation.exportName[0]?.toUpperCase() ?? ""}${operation.exportName.slice(1)}`;
+}
 
-import type { ${portTypeName(operation)} } from "../openapi/ports.js";
+function renderJsonLiteralType(value: unknown): string {
+  if (value === null) return "null";
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `readonly [${value.map(renderJsonLiteralType).join(", ")}]`;
+  }
+  const object = asSchemaObject(value);
+  if (object === undefined) return "unknown";
+  return `{ ${Object.entries(object)
+    .map(
+      ([name, member]) =>
+        `readonly ${JSON.stringify(name)}: ${renderJsonLiteralType(member)};`,
+    )
+    .join(" ")} }`;
+}
+
+function renderJsonSchemaType(schemaValue: unknown, depth = 0): string {
+  if (depth > 256 || schemaValue === true) return "unknown";
+  if (schemaValue === false) return "never";
+  const schema = asSchemaObject(schemaValue);
+  if (schema === undefined) return "unknown";
+  if (Object.hasOwn(schema, "const")) {
+    return renderJsonLiteralType(schema.const);
+  }
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+    return schema.enum.map(renderJsonLiteralType).join(" | ");
+  }
+  for (const keyword of ["oneOf", "anyOf"] as const) {
+    const alternatives = schema[keyword];
+    if (Array.isArray(alternatives) && alternatives.length > 0) {
+      const memberIndent = " ".repeat(depth + 2);
+      return `(\n${memberIndent}${alternatives
+        .map((member) => renderJsonSchemaType(member, depth + 2))
+        .join(` |\n${memberIndent}`)}\n${" ".repeat(depth)})`;
+    }
+  }
+  if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
+    const memberIndent = " ".repeat(depth + 2);
+    return `(\n${memberIndent}${schema.allOf
+      .map((member) => renderJsonSchemaType(member, depth + 2))
+      .join(` &\n${memberIndent}`)}\n${" ".repeat(depth)})`;
+  }
+  if (Array.isArray(schema.type)) {
+    const memberIndent = " ".repeat(depth + 2);
+    return `(\n${memberIndent}${schema.type
+      .map((type) => renderJsonSchemaType({ ...schema, type }, depth + 2))
+      .join(` |\n${memberIndent}`)}\n${" ".repeat(depth)})`;
+  }
+  if (schema.type === "null") return "null";
+  if (schema.type === "string") return "string";
+  if (schema.type === "number" || schema.type === "integer") return "number";
+  if (schema.type === "boolean") return "boolean";
+  if (schema.type === "array" || schema.items !== undefined) {
+    const prefix = Array.isArray(schema.prefixItems)
+      ? schema.prefixItems.map((member) =>
+          renderJsonSchemaType(member, depth + 2),
+        )
+      : [];
+    if (prefix.length > 0) {
+      const rest =
+        schema.items === false
+          ? ""
+          : `, ...${renderJsonSchemaType(schema.items ?? true, depth + 2)}[]`;
+      return `readonly [${prefix.join(", ")}${rest}]`;
+    }
+    return `readonly ${renderJsonSchemaType(schema.items ?? true, depth + 2)}[]`;
+  }
+  if (schema.type === "object" || schema.properties !== undefined) {
+    const properties = asSchemaObject(schema.properties) ?? {};
+    const required = new Set(
+      Array.isArray(schema.required)
+        ? schema.required.filter(
+            (name): name is string => typeof name === "string",
+          )
+        : [],
+    );
+    const members = Object.entries(properties).map(([name, member]) => {
+      return `readonly ${JSON.stringify(name)}${required.has(name) ? "" : "?"}: ${renderJsonSchemaType(member, depth + 2)};`;
+    });
+    if (schema.additionalProperties !== false) {
+      members.push("readonly [name: string]: unknown;");
+    }
+    return members.length === 0
+      ? "Readonly<Record<string, never>>"
+      : `{\n${" ".repeat(depth + 2)}${members.join(`\n${" ".repeat(depth + 2)}`)}\n${" ".repeat(depth)}}`;
+  }
+  return "unknown";
+}
+
+function renderContract(operation: OpenApiStarterOperation): string {
+  const stem = operationTypeStem(operation);
+  return `import type { EngineSchema } from "@invokta/core";
+import { z } from "zod";
 
 function schemaContract(
   schema: Readonly<Record<string, unknown>>,
+  validator: z.ZodType<Record<string, unknown>>,
 ): EngineSchema<Record<string, unknown>, Record<string, unknown>> {
-  const validator = z.fromJSONSchema(schema) as z.ZodType<Record<string, unknown>>;
   return {
     "~standard": {
       version: 1,
@@ -88,8 +196,43 @@ function schemaContract(
   };
 }
 
-const inputSchema = schemaContract(${json(operation.inputSchema)});
-const outputSchema = schemaContract(${json(operation.outputSchema)});
+const inputJsonSchema: Readonly<Record<string, unknown>> = ${json(operation.inputSchema)};
+const outputJsonSchema: Readonly<Record<string, unknown>> = ${json(operation.outputSchema)};
+
+export type ${stem}Input = ${renderJsonSchemaType(operation.inputSchema)};
+export type ${stem}Output = ${renderJsonSchemaType(operation.outputSchema)};
+export const inputValidator = z.fromJSONSchema(
+  inputJsonSchema,
+) as z.ZodType<Record<string, unknown>>;
+export const outputValidator = z.fromJSONSchema(
+  outputJsonSchema,
+) as z.ZodType<Record<string, unknown>>;
+export const inputSchema = schemaContract(
+  inputJsonSchema,
+  inputValidator,
+) as EngineSchema<${stem}Input, ${stem}Input>;
+export const outputSchema = schemaContract(
+  outputJsonSchema,
+  outputValidator,
+) as EngineSchema<${stem}Output, ${stem}Output>;
+`;
+}
+
+function renderCapability(operation: OpenApiStarterOperation): string {
+  const readOnly = operation.method === "GET" || operation.method === "HEAD";
+  const idempotent =
+    readOnly ||
+    operation.method === "PUT" ||
+    operation.method === "DELETE" ||
+    operation.method === "OPTIONS";
+  return `import { defineCapability } from "@invokta/core";
+
+import {
+  inputSchema,
+  outputSchema,
+} from "../openapi/contracts/${operation.moduleName}.js";
+import type { ${portTypeName(operation)} } from "../openapi/ports.js";
+
 export function ${operation.exportName}(port: ${portTypeName(operation)}) {
   return defineCapability({
     title: ${JSON.stringify(operation.title)},
@@ -115,11 +258,24 @@ export function ${operation.exportName}(port: ${portTypeName(operation)}) {
 }
 
 function renderPorts(operations: readonly OpenApiStarterOperation[]): string {
+  const imports = operations
+    .map((operation) => {
+      const stem = operationTypeStem(operation);
+      return `import type {
+  ${stem}Input,
+  ${stem}Output,
+} from "./contracts/${operation.moduleName}.js";`;
+    })
+    .join("\n");
   const aliases = operations
-    .map(
-      (operation) =>
-        `export type ${portTypeName(operation)} = OpenApiOperationPort;`,
-    )
+    .map((operation) => {
+      const stem = operationTypeStem(operation);
+      return `export type ${portTypeName(operation)} = OpenApiOperationPort<
+  ${JSON.stringify(operation.exportName)},
+  ${stem}Input,
+  ${stem}Output
+>;`;
+    })
     .join("\n");
   const members = operations
     .map(
@@ -127,11 +283,20 @@ function renderPorts(operations: readonly OpenApiStarterOperation[]): string {
         `  readonly ${operation.exportName}: ${portTypeName(operation)};`,
     )
     .join("\n");
-  return `export interface OpenApiOperationPort {
+  return `${imports}
+
+declare const operationIdentity: unique symbol;
+
+export interface OpenApiOperationPort<
+  OperationName extends string = string,
+  Input extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>,
+  Output extends Record<string, unknown> = Record<string, unknown>,
+> {
+  readonly [operationIdentity]?: OperationName;
   readonly invoke: (
-    input: Readonly<Record<string, unknown>>,
+    input: Input,
     options: Readonly<{ readonly signal: AbortSignal }>,
-  ) => Promise<Record<string, unknown>>;
+  ) => Promise<Output>;
 }
 
 ${aliases}
@@ -148,12 +313,20 @@ function renderFetchConnector(
 ): string {
   const operationConstants = operations
     .map(
-      (
-        operation,
-      ) => `const ${operation.exportName}Operation = ${json(normalizedOperation(operation))} as const;
-const ${operation.exportName}OutputValidator = z.fromJSONSchema(${json(operation.outputSchema)}) as z.ZodType<Record<string, unknown>>;`,
+      (operation) =>
+        `const ${operation.exportName}Operation = ${json(normalizedOperation(operation))} as const;`,
     )
     .join("\n\n");
+  const validatorImports = operations
+    .map((operation) => {
+      const stem = operationTypeStem(operation);
+      return `import {
+  outputValidator as ${operation.exportName}OutputValidator,
+  type ${stem}Input,
+  type ${stem}Output,
+} from "./contracts/${operation.moduleName}.js";`;
+    })
+    .join("\n");
   const configurationChecks = operations
     .map(
       (operation) =>
@@ -165,7 +338,11 @@ const ${operation.exportName}OutputValidator = z.fromJSONSchema(${json(operation
     .join("\n");
   const portMembers = operations
     .map(
-      (operation) => `      ${operation.exportName}: createPort(
+      (operation) => `      ${operation.exportName}: createPort<
+        ${JSON.stringify(operation.exportName)},
+        ${operationTypeStem(operation)}Input,
+        ${operationTypeStem(operation)}Output
+      >(
         ${operation.exportName}Operation,
         ${operation.exportName}OutputValidator,
         config,
@@ -178,6 +355,7 @@ const ${operation.exportName}OutputValidator = z.fromJSONSchema(${json(operation
 import { EngineError, defineConnector } from "@invokta/core";
 import { z } from "zod";
 
+${validatorImports}
 import type { OpenApiOperationPort } from "./ports.js";
 
 interface OpenApiParameterPlan {
@@ -186,7 +364,6 @@ interface OpenApiParameterPlan {
   readonly required: boolean;
   readonly style: string;
   readonly explode: boolean;
-  readonly schema: unknown;
 }
 
 interface OpenApiSecuritySchemePlan {
@@ -200,12 +377,9 @@ interface OpenApiSecuritySchemePlan {
 }
 
 interface OpenApiOperationPlan {
-  readonly selector: string;
   readonly method: string;
   readonly path: string;
   readonly connection: Readonly<{
-    serverSource: "operation" | "path" | "root" | "default";
-    serverUrls: readonly string[];
     baseUrl: Readonly<{
       environmentVariable: string;
       default?: string;
@@ -215,12 +389,10 @@ interface OpenApiOperationPlan {
   readonly requestBody?: Readonly<{
     required: boolean;
     mediaType: "application/json";
-    schema: unknown;
   }>;
   readonly successResponses: readonly Readonly<{
     status: string;
     mediaType?: string;
-    schema?: unknown;
   }>[];
   readonly security: Readonly<{
     alternatives: readonly (readonly OpenApiSecuritySchemePlan[])[];
@@ -590,13 +762,17 @@ async function decodeResponse(
   }
 }
 
-function createPort(
+function createPort<
+  OperationName extends string,
+  Input extends Readonly<Record<string, unknown>>,
+  Output extends Record<string, unknown>,
+>(
   operation: OpenApiOperationPlan,
   outputValidator: z.ZodType<Record<string, unknown>>,
   config: Readonly<Record<string, string | undefined>>,
   fetchImplementation: typeof globalThis.fetch,
-): OpenApiOperationPort {
-  const port: OpenApiOperationPort = {
+): OpenApiOperationPort<OperationName, Input, Output> {
+  const port: OpenApiOperationPort<OperationName, Input, Output> = {
     async invoke(inputValue, options) {
       const input = record(inputValue);
       const target = requestUrl(operation, input, config);
@@ -617,7 +793,7 @@ function createPort(
       const output = await decodeResponse(operation, response);
       const validated = outputValidator.safeParse(output);
       if (!validated.success) throw failure();
-      return record(validated.data);
+      return record(validated.data) as Output;
     },
   };
   return Object.freeze(port);
@@ -747,14 +923,15 @@ function renderDirect(operation: OpenApiStarterOperation): string {
     defaultInput === undefined
       ? `(() => { throw new TypeError("A JSON input argument is required."); })()`
       : JSON.stringify(JSON.stringify(defaultInput));
-  return `import { reportConnectorConfigurationFailure } from "./openapi/startup.js";
+  return `import type { ${operationTypeStem(operation)}Input } from "./openapi/contracts/${operation.moduleName}.js";
+import { reportConnectorConfigurationFailure } from "./openapi/startup.js";
 
-function parseInput(text: string): Record<string, unknown> {
+function parseInput(text: string): ${operationTypeStem(operation)}Input {
   const value: unknown = JSON.parse(text);
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("Input must be a JSON object.");
   }
-  return value as Record<string, unknown>;
+  return value as ${operationTypeStem(operation)}Input;
 }
 
 try {
@@ -1262,16 +1439,22 @@ function renderGeneratedTest(
   const fakePortMembers = operations
     .map(
       (operation) =>
-        `    ${operation.exportName}: { invoke: target === ${JSON.stringify(operation.exportName)} ? invoke : async () => ({}) },`,
+        `    ${operation.exportName}: {
+      invoke: (target === ${JSON.stringify(operation.exportName)} ? invoke : async () => ({})) as unknown as OpenApiPorts[${JSON.stringify(operation.exportName)}]["invoke"],
+    },`,
     )
     .join("\n");
   return `import { describe, expect, it, vi } from "vitest";
 
 import { createOpenApiEngine } from "../src/openapi-engine.js";
+import { fetchOpenApiConnector } from "../src/openapi/connector.js";
 import type {
   OpenApiOperationPort,
   OpenApiPorts,
 } from "../src/openapi/ports.js";
+
+const contractCases = ${json(contractCases)} as const;
+const successCases = ${json(successCases)} as const;
 
 function fakePorts(
   target: keyof OpenApiPorts,
@@ -1283,8 +1466,22 @@ ${fakePortMembers}
 }
 
 describe("generated OpenAPI engine", () => {
-  it.each(${json(contractCases)} as const)(
-    "validates $selector contract without calling upstream",
+  it("rejects unknown connector configuration without external I/O", () => {
+    const fetchImplementation = vi.fn<typeof globalThis.fetch>();
+    const invalidConfig: Record<string, string> = {
+      OPENAPI_UNKNOWN_CONFIGURATION: "not-a-credential",
+    };
+
+    expect(() =>
+      fetchOpenApiConnector.create(invalidConfig, {
+        fetch: fetchImplementation,
+      }),
+    ).toThrow("Connector configuration is invalid.");
+    expect(fetchImplementation).not.toHaveBeenCalled();
+  });
+
+  it.each(contractCases)(
+    "validates $selector contract without invoking the connector",
     async ({ capabilityId, portName }) => {
       const invoke = vi.fn(async () => ({}));
       const engine = createOpenApiEngine({
@@ -1298,7 +1495,7 @@ describe("generated OpenAPI engine", () => {
       await expect(
         engine.invoke(
           capabilityId,
-          { __generated_invalid: true },
+          { __generated_invalid: true } as never,
           { principal: null },
         ),
       ).rejects.toMatchObject({ code: "INPUT_INVALID" });
@@ -1306,7 +1503,7 @@ describe("generated OpenAPI engine", () => {
     },
   );
 
-  it.each(${json(successCases)} as const)(
+  it.each(successCases)(
     "invokes $selector for declared status $status when a witness is proven",
     async ({ capabilityId, portName, input, output }) => {
       const invoke = vi.fn(async () => output);
@@ -1345,7 +1542,8 @@ function adaptReadme(
     )
     .replaceAll("onboarding.create-welcome-message", first.capabilityId)
     .replace("npm run direct -- Ada", `npm run direct -- ${quotedDirectInput}`)
-    .replace('--input \'{"name":"Ada"}\'', `--input ${quotedDirectInput}`);
+    .replace('--input \'{"name":"Ada"}\'', `--input ${quotedDirectInput}`)
+    .replace("```\n\n\n## Invoke directly", "```\n\n## Invoke directly");
 }
 
 const reviewInstruction =
@@ -1393,17 +1591,19 @@ function environmentInstructions(
     );
     for (const alternative of alternatives) {
       for (const scheme of alternative) {
-        const kind =
-          scheme.type === "basic"
-            ? "Basic credential"
-            : scheme.type === "bearer"
-              ? "Bearer token"
-              : "API key";
-        for (const name of Object.values(scheme.environmentVariables)) {
+        for (const [role, name] of Object.entries(
+          scheme.environmentVariables,
+        )) {
           if (name === undefined) continue;
+          const kind =
+            scheme.type === "basic"
+              ? `Basic ${role}`
+              : scheme.type === "bearer"
+                ? "bearer token"
+                : "API key";
           add(
             name,
-            `${alternatives.length === 1 && !hasAnonymous ? "Required" : "Credential alternative"} ${kind.toLowerCase()} for \`${operation.capabilityId}\`.`,
+            `${alternatives.length === 1 && !hasAnonymous ? "Required" : "Alternative"} ${kind} for \`${operation.capabilityId}\`.`,
           );
         }
       }
@@ -1591,8 +1791,16 @@ export function createOpenApiStarterFiles(
     replacements.set(entry.path, entry);
   }
   for (const operation of operations) {
-    const path = `src/capabilities/${operation.moduleName}.ts`;
-    replacements.set(path, generatedFile(path, renderCapability(operation)));
+    const capabilityPath = `src/capabilities/${operation.moduleName}.ts`;
+    replacements.set(
+      capabilityPath,
+      generatedFile(capabilityPath, renderCapability(operation)),
+    );
+    const contractPath = `src/openapi/contracts/${operation.moduleName}.ts`;
+    replacements.set(
+      contractPath,
+      generatedFile(contractPath, renderContract(operation)),
+    );
   }
   for (const entry of [
     generatedFile(

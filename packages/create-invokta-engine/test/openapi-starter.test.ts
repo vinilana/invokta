@@ -373,6 +373,7 @@ describe("createOpenApiStarterFiles", () => {
     expect(readme).toContain("`OPENAPI_ROOT_SERVER_BASE_URL`");
     expect(readme).toContain("Optional base URL override");
     expect(readme).not.toContain("root.example.test");
+    expect(readme).not.toContain("```\n\n\n## Invoke directly");
   });
 
   it("generates a runnable direct command from a proven input witness", () => {
@@ -414,16 +415,14 @@ describe("createOpenApiStarterFiles", () => {
       .join("\n");
     const portSource = contents.get("src/openapi/ports.ts") ?? "";
     const connectorSource = contents.get("src/openapi/connector.ts") ?? "";
+    const contractSource =
+      contents.get("src/openapi/contracts/root-server.ts") ?? "";
     const engineSource = contents.get("src/engine.ts") ?? "";
     const openApiEngineSource = contents.get("src/openapi-engine.ts") ?? "";
 
-    expect(capabilitySource).toContain("const inputSchema = schemaContract(");
-    expect(capabilitySource).toContain("const outputSchema = schemaContract(");
     expect(capabilitySource).toContain(
-      'validator["~standard"].validate(value)',
+      'from "../openapi/contracts/root-server.js"',
     );
-    expect(capabilitySource).toContain("input: () => schema");
-    expect(capabilitySource).toContain("output: () => schema");
     expect(capabilitySource).toContain("input: inputSchema");
     expect(capabilitySource).toContain("output: outputSchema");
     expect(capabilitySource).toContain("timeoutMs: 30_000");
@@ -434,9 +433,23 @@ describe("createOpenApiStarterFiles", () => {
     expect(capabilitySource).not.toContain("serverUrls");
     expect(capabilitySource).not.toContain("security:");
     expect(portSource).toContain("export interface OpenApiPorts");
-    expect(portSource).toContain("export type RootServerPort");
-    expect(portSource).toContain("export type GetWithoutOperationIdPort");
+    expect(portSource).toContain(
+      "export type RootServerPort = OpenApiOperationPort<",
+    );
+    expect(portSource).toContain('  "rootServer",');
+    expect(portSource).toContain('  "getWithoutOperationId",');
+    expect(portSource).toContain(
+      "declare const operationIdentity: unique symbol",
+    );
     expect(portSource).toContain("readonly signal: AbortSignal");
+    expect(portSource).toContain("RootServerInput");
+    expect(portSource).toContain("RootServerOutput");
+    expect(contractSource).toContain("export type RootServerInput");
+    expect(contractSource).toContain("export type RootServerOutput");
+    expect(contractSource).toContain("Readonly<Record<string, never>>");
+    expect(contractSource).toContain('validator["~standard"].validate(value)');
+    expect(contractSource).toContain("input: () => schema");
+    expect(contractSource).toContain("output: () => schema");
     expect(connectorSource).toContain("defineConnector({");
     expect(connectorSource).toContain('name: "generated-openapi-fetch"');
     expect(connectorSource).toContain("config: openApiConnectorConfig");
@@ -451,10 +464,18 @@ describe("createOpenApiStarterFiles", () => {
       "contentType.toLowerCase() !== expected.mediaType.toLowerCase()",
     );
     expect(connectorSource).toContain("outputValidator.safeParse(output)");
+    expect(connectorSource).toContain('from "./contracts/root-server.js"');
+    expect(connectorSource).not.toContain(
+      "rootServerOutputValidator = z.fromJSONSchema",
+    );
     expect(connectorSource).toContain(
       "if (partiallyConfigured) throw configurationFailure()",
     );
     expect(connectorSource).toContain("The upstream API request failed.");
+    expect(connectorSource).not.toContain('"selector":');
+    expect(connectorSource).not.toContain('"serverSource":');
+    expect(connectorSource).not.toContain('"serverUrls":');
+    expect(connectorSource).not.toContain("readonly schema: unknown");
     expect(connectorSource).not.toContain("responseBody");
     expect(connectorSource).not.toContain("authorizationValue");
     expect(engineSource).toContain("fetchOpenApiConnector.create(");
@@ -466,6 +487,12 @@ describe("createOpenApiStarterFiles", () => {
     expect(openApiEngineSource).not.toContain("fetchOpenApiConnector");
     expect(contents.has("src/openapi/upstream.ts")).toBe(false);
     expect(contents.has("src/openapi/fetch-adapter.ts")).toBe(false);
+    const generatedTest = contents.get("test/engine.test.ts") ?? "";
+    expect(generatedTest).toContain(
+      'import { fetchOpenApiConnector } from "../src/openapi/connector.js";',
+    );
+    expect(generatedTest).toContain("rejects unknown connector configuration");
+    expect(generatedTest).toContain("fetchImplementation");
   });
 
   it("requires domain and access review in every author-facing instruction", () => {
