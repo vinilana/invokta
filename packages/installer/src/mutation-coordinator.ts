@@ -97,6 +97,7 @@ export interface RemoveEngineDescriptorFromTargetInput {
 }
 
 const temporaryTokenBytes = 12;
+const unavailableTargetContracts = Object.freeze({}) as StateTargetContracts;
 
 function inside(root: string, candidate: string): boolean {
   const difference = relative(resolve(root), resolve(candidate));
@@ -320,6 +321,93 @@ function findTarget(
   };
 }
 
+async function relocatedManagedConfigPath(
+  input: InstallDescriptorAcrossTargetsInput,
+  targetId: ConfigurationTargetId,
+  currentConfigPath: string,
+): Promise<string | undefined> {
+  const loaded = await loadInstallerState({
+    ownership: input.dependencies.ownership,
+    environment: input.dependencies.environment,
+    fileSystem: input.dependencies.fileSystem,
+    homeDirectory: input.snapshot.homeDirectory,
+    targetContracts: unavailableTargetContracts,
+    allowUnavailableTargetContracts: true,
+  });
+  const installation = Object.values(loaded.state.installations).find(
+    (candidate) =>
+      candidate.entryId === input.descriptor.id &&
+      candidate.targetId === targetId,
+  );
+  if (
+    installation === undefined ||
+    installation.configPath === currentConfigPath
+  ) {
+    return undefined;
+  }
+  if (!inside(input.snapshot.homeDirectory, installation.configPath)) {
+    throw new InstallerError("HARNESS_CONFIG_UNSAFE");
+  }
+  return installation.configPath;
+}
+
+function snapshotWithConfigPath(
+  snapshot: HarnessDetectionSnapshot,
+  targetId: ConfigurationTargetId,
+  configPath: string,
+): HarnessDetectionSnapshot {
+  return Object.freeze({
+    ...snapshot,
+    targets: Object.freeze(
+      snapshot.targets.map((target) =>
+        target.id === targetId
+          ? Object.freeze({
+              ...target,
+              configuration: Object.freeze({
+                kind: "present" as const,
+                path: configPath,
+              }),
+              eligible: true,
+            })
+          : target,
+      ),
+    ),
+  });
+}
+
+async function migrateRelocatedManagedInstallation(
+  input: InstallDescriptorAcrossTargetsInput,
+  targetId: ConfigurationTargetId,
+): Promise<void> {
+  const target = findTarget(input.snapshot, targetId);
+  const previousConfigPath = await relocatedManagedConfigPath(
+    input,
+    targetId,
+    target.configuration.path,
+  );
+  if (previousConfigPath === undefined) return;
+  const previousSnapshot = snapshotWithConfigPath(
+    input.snapshot,
+    targetId,
+    previousConfigPath,
+  );
+  const previousContracts = buildStateTargetContracts(
+    previousSnapshot,
+    input.dependencies.adapters,
+  );
+  await mutateTarget(
+    {
+      ...input,
+      action: "remove",
+      snapshot: previousSnapshot,
+      targetIds: [targetId],
+    },
+    targetId,
+    previousContracts,
+    { allowUnavailableStateContracts: true },
+  );
+}
+
 function nextTimestamp(
   candidate: string,
   previous: string | undefined,
@@ -508,16 +596,19 @@ async function mutateTarget(
       if (plan.outcome === "unchanged") return "unchanged";
       const transition = applyInstallerStatePlan({
         adapter,
+        ...(options.allowUnavailableStateContracts === true
+          ? { allowUnavailableTargetContracts: true }
+          : {}),
         occurredAt: nextTimestamp(
           dependencies.now(),
           managedInstallation?.updatedAt,
         ),
         plan,
         planning,
-        targetContracts: contracts,
+        targetContracts: stateContracts,
       });
       if (transition === undefined) throw new InstallerError("STATE_INVALID");
-      stateBytes = serializeInstallerState(transition.state, contracts);
+      stateBytes = transition.bytes;
       patch =
         plan.configEffect === "none"
           ? ({ kind: "unchanged" } as const)
@@ -591,7 +682,35 @@ async function mutateTarget(
 export async function installDescriptorAcrossTargets(
   input: InstallDescriptorAcrossTargetsInput,
 ): Promise<readonly TargetMutationResult[]> {
-  return mutateDescriptorAcrossTargets({ ...input, action: "install" });
+  const contracts = buildStateTargetContracts(
+    input.snapshot,
+    input.dependencies.adapters,
+  );
+  const results: TargetMutationResult[] = [];
+  const seen = new Set<ConfigurationTargetId>();
+  for (const targetId of input.targetIds) {
+    if (seen.has(targetId)) continue;
+    seen.add(targetId);
+    try {
+      await migrateRelocatedManagedInstallation(input, targetId);
+      const outcome = await mutateTarget(
+        { ...input, action: "install" },
+        targetId,
+        contracts,
+        { allowUnavailableStateContracts: true },
+      );
+      results.push(Object.freeze({ targetId, outcome }));
+    } catch (cause) {
+      const error =
+        cause instanceof InstallerError
+          ? cause
+          : new InstallerError("INSTALLER_INITIALIZATION_FAILED", cause);
+      results.push(
+        Object.freeze({ targetId, outcome: "failed", code: error.code }),
+      );
+    }
+  }
+  return Object.freeze(results);
 }
 
 export async function removeEngineDescriptorFromTarget(
@@ -645,7 +764,9 @@ export async function mutateDescriptorAcrossTargets(
     if (seen.has(targetId)) continue;
     seen.add(targetId);
     try {
-      const outcome = await mutateTarget(input, targetId, contracts);
+      const outcome = await mutateTarget(input, targetId, contracts, {
+        allowUnavailableStateContracts: true,
+      });
       results.push(Object.freeze({ targetId, outcome }));
     } catch (cause) {
       const error =

@@ -6,6 +6,7 @@ import {
 } from "../src/harness-catalog.js";
 import type {
   ExecutableEvidence,
+  TargetConfigEvidenceContext,
   TargetConfigEvidenceProbes,
 } from "../src/harness-detection.js";
 import { detectHarnesses } from "../src/harness-detection.js";
@@ -87,13 +88,20 @@ const expectedSurfaces = [
 ] as const;
 
 function absentConfigProbes(
-  onProbe: (targetId: string, homeDirectory: string) => void = () => undefined,
+  onProbe: (
+    targetId: string,
+    homeDirectory: string,
+    executables: readonly unknown[],
+  ) => void = () => undefined,
 ): TargetConfigEvidenceProbes {
   return Object.fromEntries(
     configurationTargetIds.map((targetId) => [
       targetId,
-      async ({ homeDirectory }: { readonly homeDirectory: string }) => {
-        onProbe(targetId, homeDirectory);
+      async ({
+        executables = [],
+        homeDirectory,
+      }: TargetConfigEvidenceContext) => {
+        onProbe(targetId, homeDirectory, executables);
         return {
           kind: "absent",
           path: `${homeDirectory}/fixture-config/${targetId}`,
@@ -238,6 +246,26 @@ describe("harness detection snapshot", () => {
       surfaceIds: ["antigravity-cli"],
       evidence: "installed",
     });
+  });
+
+  it("passes deduplicated target executable evidence to configuration probes", async () => {
+    let vscodeExecutables: readonly unknown[] = [];
+    await detectHarnesses({
+      resolveHomeDirectory: () => "/users/tester",
+      resolveExecutable: async (candidate) => executable(candidate),
+      configEvidenceProbes: absentConfigProbes(
+        (targetId, _homeDirectory, executables) => {
+          if (targetId === "vscode") vscodeExecutables = executables;
+        },
+      ),
+    });
+
+    expect(vscodeExecutables).toEqual([
+      expect.objectContaining({
+        candidate: "code",
+        identity: expect.objectContaining({ realPath: "/fixture/real/code" }),
+      }),
+    ]);
   });
 
   it("classifies an explicitly identified Antigravity legacy launcher as AGY CLI evidence", async () => {

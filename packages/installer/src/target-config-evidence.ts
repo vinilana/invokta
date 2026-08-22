@@ -2,6 +2,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { InstallerFileSystem } from "./file-system.js";
 import type {
+  DetectedExecutable,
   TargetConfigEvidence,
   TargetConfigEvidenceProbe,
   TargetConfigEvidenceProbes,
@@ -154,6 +155,11 @@ async function inspectSingleConfig(
 
 type OwnedPathInspection = "present" | "missing" | "unsafe" | "read-failed";
 
+interface OwnedRegularFileInspection {
+  readonly kind: OwnedPathInspection;
+  readonly empty?: boolean;
+}
+
 async function inspectOwnedPath(
   options: ResolvedTargetConfigEvidenceProbeOptions,
   homeDirectory: string,
@@ -221,6 +227,134 @@ async function inspectOwnedPath(
   } catch {
     return "read-failed";
   }
+}
+
+async function inspectOwnedRegularFile(
+  options: ResolvedTargetConfigEvidenceProbeOptions,
+  homeDirectory: string,
+  targetPath: string,
+): Promise<OwnedRegularFileInspection> {
+  const kind = await inspectOwnedPath(
+    options,
+    homeDirectory,
+    targetPath,
+    "regular-file",
+  );
+  if (kind !== "present") return { kind };
+  try {
+    const inspection = await options.fileSystem.inspectPath(targetPath);
+    if (inspection.kind !== "regular-file") return { kind: "unsafe" };
+    if (
+      inspection.byteLength !== undefined &&
+      (!Number.isSafeInteger(inspection.byteLength) ||
+        inspection.byteLength < 0)
+    ) {
+      return { kind: "unsafe" };
+    }
+    return {
+      kind: "present",
+      ...(inspection.byteLength === 0 ? { empty: true } : {}),
+    };
+  } catch {
+    return { kind: "read-failed" };
+  }
+}
+
+function antigravityProbe(
+  options: ResolvedTargetConfigEvidenceProbeOptions,
+): TargetConfigEvidenceProbe {
+  return async ({ homeDirectory }) => {
+    if (!isAbsolute(homeDirectory) || homeDirectory.includes("\0")) {
+      return blocked("HARNESS_CONFIG_UNSAFE");
+    }
+    const preferredPath = join(homeDirectory, ".gemini/config/mcp_config.json");
+    const establishedPath = join(
+      homeDirectory,
+      ".gemini/antigravity/mcp_config.json",
+    );
+    const candidates = [preferredPath, establishedPath];
+    const inspections = await Promise.all(
+      candidates.map((path) =>
+        inspectOwnedRegularFile(options, homeDirectory, path),
+      ),
+    );
+    if (inspections.some(({ kind }) => kind === "read-failed")) {
+      return blocked("HARNESS_CONFIG_READ_FAILED");
+    }
+    if (inspections.some(({ kind }) => kind === "unsafe")) {
+      return blocked("HARNESS_CONFIG_UNSAFE");
+    }
+    const populated = candidates.filter(
+      (_, index) =>
+        inspections[index]?.kind === "present" &&
+        inspections[index]?.empty !== true,
+    );
+    if (populated.length > 1) return blocked("HARNESS_CONFIG_AMBIGUOUS");
+    const selected = populated[0];
+    if (selected !== undefined) return safeEvidence("present", selected);
+    const empty = candidates.find(
+      (_, index) =>
+        inspections[index]?.kind === "present" &&
+        inspections[index]?.empty === true,
+    );
+    return empty === undefined
+      ? safeEvidence("absent", preferredPath)
+      : safeEvidence("present", empty);
+  };
+}
+
+function vscodeRemoteConfigPath(
+  homeDirectory: string,
+  executables: readonly DetectedExecutable[],
+): string | undefined {
+  const roots = new Set<string>();
+  for (const executable of executables) {
+    if (executable.candidate !== "code") continue;
+    const executablePath = resolve(executable.identity.realPath);
+    if (!isInsideHome(homeDirectory, executablePath)) continue;
+    const segments = relative(resolve(homeDirectory), executablePath).split(
+      sep,
+    );
+    if (
+      segments.length !== 6 ||
+      (segments[0] !== ".vscode-server" &&
+        segments[0] !== ".vscode-server-insiders") ||
+      segments[1] !== "bin" ||
+      segments[2]?.trim() === "" ||
+      segments[3] !== "bin" ||
+      segments[4] !== "remote-cli" ||
+      segments[5] !== "code"
+    ) {
+      continue;
+    }
+    roots.add(segments[0]);
+  }
+  if (roots.size !== 1) return undefined;
+  return join(
+    homeDirectory,
+    roots.values().next().value as string,
+    "data/User/mcp.json",
+  );
+}
+
+function vscodeProbe(
+  options: ResolvedTargetConfigEvidenceProbeOptions,
+): TargetConfigEvidenceProbe {
+  if (options.platform === "win32") {
+    return async () => blocked("TARGET_UNSUPPORTED");
+  }
+  return async ({ executables = [], homeDirectory }) => {
+    const remotePath = vscodeRemoteConfigPath(homeDirectory, executables);
+    const path =
+      remotePath ??
+      join(
+        homeDirectory,
+        options.platform === "darwin"
+          ? "Library/Application Support/Code/User/mcp.json"
+          : ".config/Code/User/mcp.json",
+      );
+    return inspectSingleConfig(options, homeDirectory, path);
+  };
 }
 
 function singleConfigProbe(
@@ -447,20 +581,9 @@ export function createNodeTargetConfigEvidenceProbes(
           "Library/Application Support/Claude/claude_desktop_config.json",
         )
       : unsupportedProbe;
-  const vscode =
-    resolvedOptions.platform === "win32"
-      ? unsupportedProbe
-      : singleConfigProbe(
-          resolvedOptions,
-          resolvedOptions.platform === "darwin"
-            ? "Library/Application Support/Code/User/mcp.json"
-            : ".config/Code/User/mcp.json",
-        );
+  const vscode = vscodeProbe(resolvedOptions);
   return Object.freeze({
-    antigravity: singleConfigProbe(
-      resolvedOptions,
-      ".gemini/config/mcp_config.json",
-    ),
+    antigravity: antigravityProbe(resolvedOptions),
     "claude-code": singleConfigProbe(resolvedOptions, ".claude.json", {
       name: "CLAUDE_CONFIG_DIR",
       fileName: ".claude.json",

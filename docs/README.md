@@ -56,6 +56,8 @@ Each delivered change is normative through its accepted architecture decision:
   [ADR 0033](./adr/0033-workbench-launcher-and-selection.md)
 - Workbench launcher and workbench selection —
   [ADR 0033](./adr/0033-workbench-launcher-and-selection.md)
+- Harness configuration variants and VS Code remote user scope —
+  [ADR 0034](./adr/0034-harness-config-variants-and-vscode-remote-user-scope.md)
 
 ## Guides and examples
 

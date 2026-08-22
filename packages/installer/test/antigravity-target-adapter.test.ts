@@ -115,6 +115,32 @@ function forgeCurrentServer(
 }
 
 describe("shared Antigravity JSON target adapter", () => {
+  it("treats an empty discovered config as an absent server collection", () => {
+    const adapter = configurationTargetAdapters.antigravity;
+    const inspection = adapter.inspect({
+      source: new Uint8Array(),
+      serverName: "invokta-support",
+    });
+
+    expect(inspection.currentServer).toEqual({ kind: "absent" });
+    const patch = adapter.constructPatch({
+      action: "install",
+      definition: adapter.descriptorToDefinition(stdioDescriptor()),
+      inspection,
+    });
+    expect(patch.kind).toBe("changed");
+    if (patch.kind !== "changed") return;
+    expect(JSON.parse(new TextDecoder().decode(patch.postImage))).toEqual({
+      mcpServers: {
+        "invokta-support": {
+          command: "support-engine-mcp",
+          args: ["serve", "--stdio"],
+          disabled: false,
+        },
+      },
+    });
+  });
+
   it("publishes one exact native-disabled target contract for AGY and the IDE", async () => {
     const adapter = configurationTargetAdapters.antigravity;
     expect(adapter.metadata).toEqual({
