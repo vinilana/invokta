@@ -37,6 +37,14 @@ afterEach(async () => {
 });
 
 describe("the filesystem Obsidian knowledge graph", () => {
+  it("performs no filesystem I/O during connector construction", () => {
+    expect(() =>
+      createFilesystemObsidianVault({
+        vaultPath: "/path/that/does/not/exist",
+      }),
+    ).not.toThrow();
+  });
+
   it("lists explicit root indexes with bounded, allowlisted frontmatter", async () => {
     const vaultPath = await createVault();
     const outsidePath = join(await createVault(), "outside.md");

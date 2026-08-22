@@ -50,7 +50,7 @@ The example makes these operational limits explicit:
   notice when the complete state is larger.
 
 A process crash cannot partially replace a valid session document. This local
-file adapter is not a distributed database: place the data directory on one
+filesystem connector is not a distributed database: place the data directory on one
 host-local filesystem and replace the store port when multiple hosts must write
 the same session. The JSON layout is an example-version persistence format, not
 a cross-version migration contract; migrate or replace the store before changing

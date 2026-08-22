@@ -59,6 +59,10 @@ The following composition rules apply:
 - connector factories receive configuration, credentials, clients, clocks, and
   transport implementations explicitly. They do not read ambient environment
   variables or mutable global registration state;
+- connector factories synchronously validate required configuration before any
+  I/O. Provider endpoints must use an allowed scheme and must not embed
+  credentials unless the provider protocol requires it; configured numeric
+  limits must be finite safe integers within the connector's documented range;
 - importing a connector and constructing it perform no outbound I/O. If a
   dependency requires asynchronous initialization, the host completes it before
   exposing the engine and injects the ready dependency;
@@ -73,6 +77,9 @@ Connector operations obey these invocation boundaries:
   capability passes the applicable context signal to the port, and the
   connector propagates it to provider calls and stops connector-owned polling
   or waits when aborted;
+- a connector operation called from `access` has its own finite client or
+  operation deadline. Capability `timeoutMs` starts only after authorization,
+  so it does not bound connector work performed during `access`;
 - a connector does not translate observed cancellation into a provider failure.
   Cancellation remains subject to the runtime's existing `CANCELLED` handling;
 - provider status failures, transport failures, and malformed responses do not
@@ -95,11 +102,11 @@ Connector operations obey these invocation boundaries:
   provider semantics make it safe. Each retrying connector documents and
   configures finite maximum attempts and a finite maximum delay or elapsed
   retry time; provider SDK retries count toward those same bounds;
-- every capability that invokes a connector configures a finite `timeoutMs`.
-  Connector or provider request timeouts may provide shorter per-operation
-  deadlines but do not replace that capability bound. The capability timeout
-  keeps ADR 0003's pipeline scope: it starts after authorization and ends after
-  output validation;
+- every capability that invokes a connector from `run` configures a finite
+  `timeoutMs`. Connector or provider request timeouts may provide shorter
+  per-operation deadlines but do not replace that capability bound. The
+  capability timeout keeps ADR 0003's pipeline scope: it starts after
+  authorization and ends after output validation;
 - provider-specific response, polling, pagination, batch, and concurrency
   limits have concrete finite values in connector or capability configuration
   and contract tests. Invokta introduces no universal values for them.

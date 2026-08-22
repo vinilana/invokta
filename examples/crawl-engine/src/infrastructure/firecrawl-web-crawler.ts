@@ -159,7 +159,19 @@ export function createFirecrawlWebCrawler(
 ): WebCrawler {
   const apiKey = options.apiKey;
   if (apiKey === "") throw new TypeError("A Firecrawl API key is required.");
-  const base = new URL(options.baseUrl ?? defaultBaseUrl);
+  let base: URL;
+  try {
+    base = new URL(options.baseUrl ?? defaultBaseUrl);
+  } catch {
+    throw new TypeError("baseUrl must be a credential-free HTTP(S) URL.");
+  }
+  if (
+    (base.protocol !== "http:" && base.protocol !== "https:") ||
+    base.username !== "" ||
+    base.password !== ""
+  ) {
+    throw new TypeError("baseUrl must be a credential-free HTTP(S) URL.");
+  }
   const basePrefix = `${base.origin}${base.pathname.replace(/\/+$/u, "")}`;
   const fetchImplementation = options.fetch ?? globalThis.fetch;
   const pollIntervalMs = options.pollIntervalMs ?? defaultPollIntervalMs;

@@ -46,6 +46,16 @@ afterEach(async () => {
 });
 
 describe("the Firecrawl outbound connector", () => {
+  it.each([
+    "not-a-url",
+    "file:///tmp/firecrawl",
+    "https://user:password@api.firecrawl.dev",
+  ])("rejects the invalid provider base URL %s", (baseUrl) => {
+    expect(() => createFirecrawlWebCrawler({ apiKey, baseUrl })).toThrow(
+      "baseUrl must be a credential-free HTTP(S) URL.",
+    );
+  });
+
   it("performs no provider I/O during construction", () => {
     const fetchImplementation = vi.fn<typeof globalThis.fetch>();
 

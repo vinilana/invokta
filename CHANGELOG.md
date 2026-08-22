@@ -11,8 +11,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - ADR 0034 and the outbound connector authoring guide define provider- and
   technology-specific port implementations as explicit custom-engine
-  dependencies, with no core registry or alternate execution path. The crawl,
-  image, and observability examples provide the canonical tested patterns.
+  dependencies, with construction-time configuration validation, finite access
+  deadlines, no core registry, and no alternate execution path. The crawl,
+  image, observability, Obsidian, and agent-session examples provide canonical
+  network and filesystem patterns.
 - The `auth-jwt-bearer`, `auth-auth0`, `auth-cognito`, and `auth-workos`
   examples now accept ordered OAuth challenge scopes and serialize them into
   the 401 Bearer challenge, so an OAuth-capable MCP client learns what to ask

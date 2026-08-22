@@ -35,8 +35,9 @@ execution channels:
 | `examples/crawl-engine` | Firecrawl outbound connector behind `WebCrawler` | Direct, CLI, MCP stdio, MCP HTTP |
 | `examples/image-engine` | Replaceable multi-provider image connectors | Direct, CLI, MCP stdio, MCP HTTP |
 | `examples/observability-engine` | Bounded Sentry, Datadog, and New Relic connectors | Direct, CLI, MCP stdio, MCP HTTP |
+| `examples/obsidian-context-engine` | Bounded read-only filesystem connector | Direct, CLI, MCP stdio, MCP HTTP |
 | `examples/composed-engine` | Local, atomic, and library capability composition | Direct, CLI, MCP stdio, MCP HTTP, tooling build gate |
-| `examples/agent-session-engine` | Durable task and handoff state | Direct, CLI, MCP stdio, MCP HTTP, harness hooks |
+| `examples/agent-session-engine` | Durable task and handoff state through a filesystem connector | Direct, CLI, MCP stdio, MCP HTTP, harness hooks |
 
 The support harness uses the official MCP client and imports no Invokta runtime
 package. Tool discovery and invocation therefore demonstrate that an independent
@@ -44,9 +45,9 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 2,969 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 2,982 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  78.47% statements, 73.94% branches, 82.76% functions, and 80.00% lines.
+  78.50% statements, 73.98% branches, 82.77% functions, and 80.03% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
@@ -66,10 +67,11 @@ consumer can use the protocol surface without coupling to engine code.
   creates no cross-request session state.
 - Capability composition preserves explicit imports and fails deterministically
   on effective-ID collisions.
-- Provider-backed examples construct outbound connectors explicitly, inject only
-  engine-owned ports into capabilities, propagate cancellation, translate
-  provider values, bound response and pagination work, and keep credentials and
-  raw provider bodies out of public errors and internal causes.
+- Network- and filesystem-backed examples construct outbound connectors
+  explicitly, reject invalid configuration before I/O, inject only engine-owned
+  ports into capabilities, propagate cancellation, translate external values,
+  bound provider and filesystem work, and keep credentials and raw external
+  payloads out of public errors and internal causes.
 - The creators, installer, and deploy packages remain outside the capability
   call graph and exercise only their documented project creation, local
   configuration, and generation authority. Injected fetch harnesses cover

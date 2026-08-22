@@ -18,7 +18,8 @@ while its own package owns ports, policies, limits, and outbound connectors.
 | Learn the smallest complete path | `hello-engine` |
 | Inject dependencies and enforce domain authorization | `support-engine` |
 | Consume an engine from a private MCP harness | `support-harness` |
-| Build outbound connectors behind domain ports | `crawl-engine`, `image-engine`, or `observability-engine` |
+| Build network-backed connectors behind domain ports | `crawl-engine`, `image-engine`, or `observability-engine` |
+| Build filesystem-backed connectors behind domain ports | `obsidian-context-engine` or `agent-session-engine` |
 | Build development workflow actions | `spec-engine`, `review-engine`, or `agent-session-engine` |
 | Publish deterministic agent-routing policy | `cursor-agent-routing-engine` |
 | Navigate local project knowledge progressively | `obsidian-context-engine` |
@@ -48,6 +49,8 @@ so review provider data handling and billing before running them.
   import the engine runtime.
 - **Replaceable providers:** the crawl, image, and observability engines keep
   vendor-specific connectors behind domain-owned ports.
+- **Bounded filesystem connectors:** the Obsidian and agent-session engines keep
+  local filesystem access behind domain-owned ports with explicit limits.
 - **Domain-owned workflows:** the spec and review engines keep ordering,
   revisions, and gates outside the framework runtime.
 - **Durable local state:** the agent-session engine owns persistence,

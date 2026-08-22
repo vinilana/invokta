@@ -28,16 +28,37 @@ at the composition root. An outbound connector is a provider- or
 technology-specific implementation of one or more of those engine-owned ports.
 Capabilities receive only the ports they use; provider clients, credentials,
 and connector registries MUST NOT enter capability contracts or
-`ExecutionContext`. Connector import and construction perform no outbound I/O,
-and connector operations propagate the invocation signal, translate provider
-data into domain values, sanitize failures, and bound provider work. Retry and
-dependency lifecycle remain explicit engine-host decisions. The framework MUST
-NOT register ports or provide a connector catalog, service container, lifecycle,
-or formal modules. ADR 0034 defines this authoring boundary.
+`ExecutionContext`. The framework MUST NOT register ports or provide a connector
+catalog, service container, lifecycle, or formal modules. ADR 0034 defines this
+authoring boundary.
 
 **AE-ARCH-03 — Single path.** No inbound adapter MAY call `run` or an outbound
 connector directly. All inbound adapters use `engine.invoke`. Authentication
 produces a `Principal`; authorization remains inside `invoke`.
+
+## Outbound connectors
+
+**AE-CONNECTOR-01 — Construction.** A custom engine owns each outbound port and
+explicitly injects its connector implementation at the composition root.
+Connector factories MUST synchronously validate required configuration,
+provider-appropriate endpoints and credential placement, and finite safe-integer
+limits within their documented ranges. Importing or constructing a connector
+MUST NOT perform external I/O.
+
+**AE-CONNECTOR-02 — Invocation.** Every connector operation that may wait MUST
+accept and propagate the invocation signal and stop connector-owned waits when
+it is aborted. Connector work performed during `access` MUST have its own finite
+client or operation deadline because capability timeout begins after
+authorization. Every capability that invokes a connector during `run` MUST set
+a finite `timeoutMs`. Polling, pagination, batches, response sizes, concurrency,
+fan-out, and opt-in retries MUST have explicit finite bounds where applicable.
+
+**AE-CONNECTOR-03 — Translation and failure.** A connector MUST validate
+external responses and return port-owned domain values rather than raw provider
+payloads. It MUST preserve observed cancellation and sanitize provider failures,
+including internal causes, so credentials and unfiltered payloads do not enter
+public errors, diagnostics, events, logs, or snapshots. Connectors add no error
+code or execution path; ADR 0034 defines the complete authoring boundary.
 
 ## Normative pipeline
 

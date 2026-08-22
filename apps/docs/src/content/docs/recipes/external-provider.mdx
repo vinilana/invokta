@@ -132,6 +132,11 @@ keep its public contract if Firecrawl is replaced by another `WebCrawler`.
    its provider client to capabilities. Injecting `fetch` or an SDK client is
    optional, but it makes the provider boundary easy to test.
 
+   Validate required configuration synchronously in the factory. Reject invalid
+   endpoint schemes, embedded endpoint credentials, and numeric limits outside
+   their documented finite safe-integer ranges before any filesystem, network,
+   SDK, or other external I/O begins.
+
    Here `readBoundedJson` incrementally enforces the byte limit and decodes
    JSON without retaining the raw body in an error. The
    `parseFirecrawlScrapedPage` helper validates provider fields and translates
@@ -297,6 +302,9 @@ limits. Define those decisions in the custom engine:
 - Give every connector-backed capability a finite `timeoutMs`. A provider
   request timeout may shorten that deadline but does not replace it. Propagate
   the invocation signal through every nested provider operation.
+- Give connector work performed during `access` its own finite client or
+  operation deadline. Capability `timeoutMs` starts after authorization and
+  therefore cannot bound an authorization-stage connector call.
 - Do not retry by default. If a real use case needs retries, make the policy
   explicit, cancellation-aware, and safe for the operation's idempotency
   semantics. Bound both the attempt count and the delay or elapsed retry time,
@@ -340,7 +348,9 @@ Cover at least:
 - inclusive and exclusive polling, page, batch, and response-size limits;
 - redirect and pagination target validation where applicable;
 - credential redaction from errors, logs, events, snapshots, and test output;
-- construction without network access and tests without production credentials.
+- synchronous rejection of missing or invalid construction configuration,
+  including exact numeric boundaries and unsafe endpoint URLs;
+- construction without external I/O and tests without production credentials.
 
 Finally, use entrypoint tests to prove direct, CLI, MCP stdio, and MCP HTTP all
 reach the same engine invocation. The connector does not need one implementation

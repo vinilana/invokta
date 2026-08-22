@@ -3,6 +3,7 @@ import type { LogSummary } from "../domain/incident-context.js";
 import {
   asRecord,
   providerFailure,
+  providerUrl,
   readOptionalString,
   readRequiredString,
   requestProviderJson,
@@ -42,7 +43,10 @@ export function createDatadogLogStore(
   if (options.applicationKey === "") {
     throw new TypeError("A Datadog application key is required.");
   }
-  const baseUrl = new URL(options.baseUrl ?? defaultBaseUrl);
+  const baseUrl = providerUrl(
+    options.baseUrl ?? defaultBaseUrl,
+    "Datadog baseUrl",
+  );
 
   return {
     async searchServiceLogs(request, { signal }) {

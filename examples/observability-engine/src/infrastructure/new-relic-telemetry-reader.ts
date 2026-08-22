@@ -3,6 +3,7 @@ import type { ServiceTelemetry } from "../domain/incident-context.js";
 import {
   asRecord,
   providerFailure,
+  providerUrl,
   requestProviderJson,
 } from "./provider-http.js";
 
@@ -68,7 +69,10 @@ export function createNewRelicTelemetryReader(
   if (!Number.isSafeInteger(options.accountId) || options.accountId <= 0) {
     throw new TypeError("A positive New Relic account ID is required.");
   }
-  const graphqlUrl = new URL(options.graphqlUrl ?? defaultGraphqlUrl);
+  const graphqlUrl = providerUrl(
+    options.graphqlUrl ?? defaultGraphqlUrl,
+    "New Relic graphqlUrl",
+  );
 
   return {
     async summarizeService(request, { signal }) {

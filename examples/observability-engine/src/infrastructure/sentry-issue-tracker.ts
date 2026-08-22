@@ -3,6 +3,7 @@ import type { IssueSummary } from "../domain/incident-context.js";
 import {
   asRecord,
   providerFailure,
+  providerUrl,
   readOptionalString,
   readRequiredString,
   requestProviderJson,
@@ -60,7 +61,10 @@ export function createSentryIssueTracker(
   if (options.organization === "") {
     throw new TypeError("A Sentry organization is required.");
   }
-  const baseUrl = new URL(options.baseUrl ?? defaultBaseUrl);
+  const baseUrl = providerUrl(
+    options.baseUrl ?? defaultBaseUrl,
+    "Sentry baseUrl",
+  );
 
   return {
     async searchServiceIssues(request, { signal }) {

@@ -4,6 +4,23 @@ export type ProviderName = "sentry" | "datadog" | "new-relic";
 
 const maximumProviderResponseBytes = 64 * 1024 * 1024;
 
+export function providerUrl(value: string, optionName: string): URL {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new TypeError(`${optionName} must be a credential-free HTTP(S) URL.`);
+  }
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username !== "" ||
+    url.password !== ""
+  ) {
+    throw new TypeError(`${optionName} must be a credential-free HTTP(S) URL.`);
+  }
+  return url;
+}
+
 export function providerFailure(
   provider: ProviderName,
   message: string,

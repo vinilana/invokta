@@ -148,6 +148,58 @@ describe("the New Relic telemetry reader outbound connector", () => {
 });
 
 describe("provider failure boundaries", () => {
+  it("performs no provider I/O during connector construction", () => {
+    const fetchImplementation = vi.fn<typeof globalThis.fetch>();
+    vi.stubGlobal("fetch", fetchImplementation);
+
+    createSentryIssueTracker({
+      authToken: sentryToken,
+      organization: "acme",
+    });
+    createDatadogLogStore({
+      apiKey: datadogApiKey,
+      applicationKey: datadogApplicationKey,
+    });
+    createNewRelicTelemetryReader({
+      userKey: newRelicUserKey,
+      accountId: 123_456,
+    });
+
+    expect(fetchImplementation).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "Sentry baseUrl",
+      create: () =>
+        createSentryIssueTracker({
+          authToken: sentryToken,
+          organization: "acme",
+          baseUrl: "file:///tmp/sentry",
+        }),
+    },
+    {
+      name: "Datadog baseUrl",
+      create: () =>
+        createDatadogLogStore({
+          apiKey: datadogApiKey,
+          applicationKey: datadogApplicationKey,
+          baseUrl: "https://user:password@datadog.example",
+        }),
+    },
+    {
+      name: "New Relic graphqlUrl",
+      create: () =>
+        createNewRelicTelemetryReader({
+          userKey: newRelicUserKey,
+          accountId: 123_456,
+          graphqlUrl: "not-a-url",
+        }),
+    },
+  ])("rejects an invalid $name during construction", ({ create, name }) => {
+    expect(create).toThrow(`${name} must be a credential-free HTTP(S) URL.`);
+  });
+
   it.each([
     {
       boundary: "transport error",
