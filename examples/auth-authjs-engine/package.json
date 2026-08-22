@@ -7,7 +7,10 @@
     "build": "tsc -b --pretty false",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
     "test": "vitest run test",
+    "check:mcp": "invokta check-mcp ./dist/engine.js",
     "direct": "node dist/direct.js",
+    "devtools": "tsc -b --pretty false && invokta-devtools serve dist/engine.js --watch --build \"tsc -b --pretty false\"",
+    "devtools:doctor": "tsc -b --pretty false && invokta-devtools doctor dist/engine.js",
     "mcp:http": "node dist/mcp-http.js"
   },
   "dependencies": {
@@ -15,5 +18,9 @@
     "@invokta/mcp": "0.6.1",
     "jose": "^6.1.3",
     "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@invokta/devtools": "0.6.1",
+    "@invokta/tooling": "0.6.1"
   }
 }

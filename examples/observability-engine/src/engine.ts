@@ -2,9 +2,9 @@ import { createEngine } from "@invokta/core";
 
 import type { ObservabilityDependencies } from "./application/ports.js";
 import { createCollectIncidentContext } from "./capabilities/collect-incident-context.js";
-import { createDatadogLogStore } from "./infrastructure/datadog-log-store.js";
-import { createNewRelicTelemetryReader } from "./infrastructure/new-relic-telemetry-reader.js";
-import { createSentryIssueTracker } from "./infrastructure/sentry-issue-tracker.js";
+import { datadogConnector } from "./infrastructure/datadog-log-store.js";
+import { newRelicConnector } from "./infrastructure/new-relic-telemetry-reader.js";
+import { sentryConnector } from "./infrastructure/sentry-issue-tracker.js";
 
 export function createObservabilityEngine(
   dependencies: ObservabilityDependencies,
@@ -56,30 +56,44 @@ export function createProviderBackedObservabilityEngine(
     throw new Error("NEW_RELIC_ACCOUNT_ID must be a positive integer.");
   }
 
-  return createObservabilityEngine({
-    issues: createSentryIssueTracker({
+  const transport = { fetch: globalThis.fetch };
+  const sentry = sentryConnector.create(
+    {
       authToken: sentryAuthToken,
       organization: sentryOrganization,
       ...(environment.SENTRY_BASE_URL === undefined ||
       environment.SENTRY_BASE_URL === ""
         ? {}
         : { baseUrl: environment.SENTRY_BASE_URL }),
-    }),
-    logs: createDatadogLogStore({
+    },
+    transport,
+  );
+  const datadog = datadogConnector.create(
+    {
       apiKey: datadogApiKey,
       applicationKey: datadogApplicationKey,
       ...(environment.DD_BASE_URL === undefined ||
       environment.DD_BASE_URL === ""
         ? {}
         : { baseUrl: environment.DD_BASE_URL }),
-    }),
-    telemetry: createNewRelicTelemetryReader({
+    },
+    transport,
+  );
+  const newRelic = newRelicConnector.create(
+    {
       userKey: newRelicUserKey,
       accountId: newRelicAccountId,
       ...(environment.NEW_RELIC_GRAPHQL_URL === undefined ||
       environment.NEW_RELIC_GRAPHQL_URL === ""
         ? {}
         : { graphqlUrl: environment.NEW_RELIC_GRAPHQL_URL }),
-    }),
+    },
+    transport,
+  );
+
+  return createObservabilityEngine({
+    issues: sentry.ports.issues,
+    logs: datadog.ports.logs,
+    telemetry: newRelic.ports.telemetry,
   });
 }

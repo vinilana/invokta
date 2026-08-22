@@ -338,6 +338,7 @@ export function createNodeFileSystem(
         if (status.isFile() || status.isDirectory()) {
           return {
             kind: status.isFile() ? "regular-file" : "directory",
+            ...(status.isFile() ? { byteLength: status.size } : {}),
             ownerId: status.uid,
             realPath: await realpath(path),
           };

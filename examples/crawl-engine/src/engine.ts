@@ -5,7 +5,7 @@ import { createCrawlSite } from "./capabilities/crawl-site.js";
 import { createMapSite } from "./capabilities/map-site.js";
 import { createScrapePage } from "./capabilities/scrape-page.js";
 import { createAttributeCrawlPermissionChecker } from "./infrastructure/attribute-crawl-permission-checker.js";
-import { createFirecrawlWebCrawler } from "./infrastructure/firecrawl-web-crawler.js";
+import { firecrawlConnector } from "./infrastructure/firecrawl-web-crawler.js";
 
 export function createCrawlEngine(dependencies: CrawlDependencies) {
   return createEngine({
@@ -36,11 +36,15 @@ export function createFirecrawlCrawlEngine(
     throw new Error("FIRECRAWL_API_KEY is required.");
   }
   const baseUrl = environment.FIRECRAWL_BASE_URL;
-  return createCrawlEngine({
-    crawler: createFirecrawlWebCrawler({
+  const connector = firecrawlConnector.create(
+    {
       apiKey,
       ...(baseUrl === undefined || baseUrl === "" ? {} : { baseUrl }),
-    }),
+    },
+    { fetch: globalThis.fetch },
+  );
+  return createCrawlEngine({
+    crawler: connector.ports.crawler,
     permissions: createAttributeCrawlPermissionChecker(),
   });
 }

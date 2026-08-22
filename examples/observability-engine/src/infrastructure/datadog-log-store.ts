@@ -1,8 +1,13 @@
+import { defineConnector } from "@invokta/core";
+import { z } from "zod";
+
 import type { LogStore } from "../application/ports.js";
 import type { LogSummary } from "../domain/incident-context.js";
 import {
   asRecord,
+  isCredentialFreeHttpUrl,
   providerFailure,
+  providerUrl,
   readOptionalString,
   readRequiredString,
   requestProviderJson,
@@ -12,7 +17,18 @@ export interface DatadogLogStoreOptions {
   readonly apiKey: string;
   readonly applicationKey: string;
   readonly baseUrl?: string;
+  readonly fetch?: typeof globalThis.fetch;
 }
+
+export interface DatadogConnectorDependencies {
+  readonly fetch: typeof globalThis.fetch;
+}
+
+const datadogConnectorConfig = z.object({
+  apiKey: z.string().min(1),
+  applicationKey: z.string().min(1),
+  baseUrl: z.string().refine(isCredentialFreeHttpUrl).optional(),
+});
 
 const defaultBaseUrl = "https://api.datadoghq.com";
 
@@ -42,7 +58,10 @@ export function createDatadogLogStore(
   if (options.applicationKey === "") {
     throw new TypeError("A Datadog application key is required.");
   }
-  const baseUrl = new URL(options.baseUrl ?? defaultBaseUrl);
+  const baseUrl = providerUrl(
+    options.baseUrl ?? defaultBaseUrl,
+    "Datadog baseUrl",
+  );
 
   return {
     async searchServiceLogs(request, { signal }) {
@@ -68,6 +87,7 @@ export function createDatadogLogStore(
           }),
         },
         signal,
+        options.fetch,
       );
       const response = asRecord(payload);
       const data = response?.data;
@@ -85,3 +105,20 @@ export function createDatadogLogStore(
     },
   };
 }
+
+export const datadogConnector = defineConnector({
+  name: "datadog",
+  config: datadogConnectorConfig,
+  create(config, dependencies: DatadogConnectorDependencies) {
+    return {
+      ports: {
+        logs: createDatadogLogStore({
+          apiKey: config.apiKey,
+          applicationKey: config.applicationKey,
+          ...(config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl }),
+          fetch: dependencies.fetch,
+        }),
+      },
+    };
+  },
+});

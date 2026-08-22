@@ -266,6 +266,7 @@ the environment's AuthKit domain:
 WORKOS_CLIENT_ID=client_... \
 WORKOS_AUTHKIT_DOMAIN=https://your-environment.authkit.app \
 WORKOS_MCP_RESOURCE=https://engine.example.com/mcp \
+WORKOS_MCP_CHALLENGE_SCOPES="engine:invoke" \
 PORT=3000 \
 yarn workspace @invokta/example-auth-workos mcp:http
 ```
@@ -274,6 +275,12 @@ The verifier then expects the AuthKit domain as `iss`, resolves keys from its
 `/oauth2/jwks` document, validates `aud` against the registered resource, and
 the engine refuses to start if `WORKOS_MCP_RESOURCE` is set without an issuer
 source.
+
+`WORKOS_MCP_CHALLENGE_SCOPES` is optional and belongs to the OAuth flavor only:
+it serializes the ordered base scopes into the 401 Bearer challenge so a client
+asks AuthKit for them on its first authorization request. Naming it without
+`WORKOS_MCP_RESOURCE` fails at startup, because the session-token flavor
+publishes no Protected Resource Metadata to attach the scopes to.
 
 ## Verify it
 

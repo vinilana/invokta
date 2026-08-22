@@ -723,6 +723,14 @@ function readEntrySize(entry: unknown): number {
   return typeof size === "number" && Number.isFinite(size) ? size : 0;
 }
 
+function readRawEntryPath(entry: unknown): string | undefined {
+  if (typeof entry !== "object" || entry === null) return undefined;
+  const header = (entry as { readonly header?: unknown }).header;
+  if (typeof header !== "object" || header === null) return undefined;
+  const path = (header as { readonly path?: unknown }).path;
+  return typeof path === "string" ? path : undefined;
+}
+
 const regularFileEntryTypes = new Set([
   "File",
   "OldFile",
@@ -756,6 +764,9 @@ function entryIsDirectory(entry: unknown): boolean {
 
 function isUnsafeArchivePath(posixPath: string): boolean {
   if (posixPath.includes("\u0000")) return true;
+  // Tar paths are POSIX paths. A backslash is a separator on Windows but a
+  // filename character on POSIX, so rejecting it keeps validation portable.
+  if (posixPath.includes("\\")) return true;
   if (posixPath.startsWith("/") || posixPath.startsWith("\\")) return true;
   if (posixPath.startsWith("//") || posixPath.startsWith("\\\\")) return true;
   if (/^[A-Za-z]:(?:[/\\]|$)/u.test(posixPath)) return true;
@@ -765,13 +776,37 @@ function isUnsafeArchivePath(posixPath: string): boolean {
   return segments.some((segment) => segment === "..");
 }
 
+function archiveRootPath(posixPath: string): string | undefined {
+  return posixPath.split(posix.sep).find((segment) => segment !== "");
+}
+
+function isInSelectedSubtree(
+  posixPath: string,
+  rootPath: string,
+  prefix: readonly string[],
+): boolean {
+  const selectedRoot =
+    prefix.length === 0 ? rootPath : `${rootPath}/${prefix.join("/")}`;
+  return posixPath === selectedRoot || posixPath.startsWith(`${selectedRoot}/`);
+}
+
 /**
  * node-tar silently skips unsupported typeflags (e.g. SparseFile) before
  * filter/onentry. Parse with the same Parser so PAX/directory size semantics
- * stay aligned, and fail closed on ignoredEntry plus any non-file/dir type.
+ * stay aligned, inspect the Header path before ReadEntry applies Windows
+ * separator normalization, and fail closed when an ignored or unsupported
+ * entry would be retained in the selected subtree.
  */
-async function assertArchiveHeadersSafe(archivePath: string): Promise<void> {
+async function assertArchiveHeadersSafe(
+  archivePath: string,
+  info: ExampleRepoInfo,
+): Promise<void> {
   let rejected = false;
+  let rootPath: string | undefined;
+  const prefix =
+    info.filePath === ""
+      ? []
+      : info.filePath.split("/").filter((segment) => segment !== "");
   await new Promise<void>((resolve, reject) => {
     const source = createReadStream(archivePath);
     const gunzip = createGunzip();
@@ -793,12 +828,22 @@ async function assertArchiveHeadersSafe(archivePath: string): Promise<void> {
 
     parser.on("entry", (entry) => {
       const type = readEntryType(entry) ?? "";
-      if (!allowedPreScanEntryTypes.has(type)) rejected = true;
-      else {
-        const entryPath = String((entry as { path?: unknown }).path ?? "")
-          .split(sep)
-          .join(posix.sep);
-        if (entryPath !== "" && isUnsafeArchivePath(entryPath)) {
+      const entryPath = String((entry as { path?: unknown }).path ?? "");
+      const rawEntryPath = readRawEntryPath(entry);
+      if (
+        entryPath === "" ||
+        rawEntryPath === undefined ||
+        isUnsafeArchivePath(rawEntryPath) ||
+        isUnsafeArchivePath(entryPath)
+      ) {
+        rejected = true;
+      } else {
+        rootPath ??= archiveRootPath(entryPath);
+        if (
+          rootPath === undefined ||
+          (!allowedPreScanEntryTypes.has(type) &&
+            isInSelectedSubtree(entryPath, rootPath, prefix))
+        ) {
           rejected = true;
         }
       }
@@ -806,7 +851,24 @@ async function assertArchiveHeadersSafe(archivePath: string): Promise<void> {
     });
 
     parser.on("ignoredEntry", (entry) => {
-      rejected = true;
+      const entryPath = String((entry as { path?: unknown }).path ?? "");
+      const rawEntryPath = readRawEntryPath(entry);
+      if (
+        entryPath === "" ||
+        rawEntryPath === undefined ||
+        isUnsafeArchivePath(rawEntryPath) ||
+        isUnsafeArchivePath(entryPath)
+      ) {
+        rejected = true;
+      } else {
+        rootPath ??= archiveRootPath(entryPath);
+        if (
+          rootPath === undefined ||
+          isInSelectedSubtree(entryPath, rootPath, prefix)
+        ) {
+          rejected = true;
+        }
+      }
       entry.resume();
     });
 
@@ -848,7 +910,7 @@ async function extractRepository(
   info: ExampleRepoInfo,
   limits: ExampleRuntimeLimits,
 ): Promise<void> {
-  await assertArchiveHeadersSafe(archivePath);
+  await assertArchiveHeadersSafe(archivePath, info);
 
   let rootPath: string | null = null;
   let rejected = false;
@@ -876,42 +938,38 @@ async function extractRepository(
           entry.resume();
           return;
         }
-        const posixPath = entry.path.split(sep).join(posix.sep);
+        const posixPath = entry.path;
         if (isUnsafeArchivePath(posixPath)) {
           markRejected();
           entry.resume();
           return;
         }
-        if (!(entryIsDirectory(entry) || entryIsRegularFile(entry))) {
+        if (rootPath === null) {
+          rootPath = archiveRootPath(posixPath) ?? null;
+        }
+        if (
+          rootPath !== null &&
+          isInSelectedSubtree(posixPath, rootPath, prefix) &&
+          !(entryIsDirectory(entry) || entryIsRegularFile(entry))
+        ) {
           markRejected();
           entry.resume();
           return;
         }
-        if (rootPath === null) {
-          rootPath = posixPath.split(posix.sep)[0] ?? null;
-        }
       },
       filter(path, entry) {
         if (rejected) return false;
-        const posixPath = path.split(sep).join(posix.sep);
+        const posixPath = path;
         if (isUnsafeArchivePath(posixPath)) {
           markRejected();
           return false;
         }
         if (rootPath === null) {
-          rootPath = posixPath.split(posix.sep)[0] ?? null;
+          rootPath = archiveRootPath(posixPath) ?? null;
         }
         if (rootPath === null) return false;
 
-        const inSubtree =
-          prefix.length === 0
-            ? posixPath === rootPath || posixPath.startsWith(`${rootPath}/`)
-            : (() => {
-                const wanted = `${rootPath}/${prefix.join("/")}`;
-                return (
-                  posixPath === wanted || posixPath.startsWith(`${wanted}/`)
-                );
-              })();
+        const inSubtree = isInSelectedSubtree(posixPath, rootPath, prefix);
         if (!inSubtree) return false;
 
         if (entryIsDirectory(entry)) {

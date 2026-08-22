@@ -1,3 +1,4 @@
+import { toMcpToolName, validateMcpToolCatalog } from "@invokta/mcp";
 import { describe, expect, it, vi } from "vitest";
 
 import type { VaultKnowledgeGraph } from "../src/application/ports.js";
@@ -220,5 +221,19 @@ describe("the Obsidian context engine example", () => {
         },
       },
     });
+  });
+
+  it("publishes one unique portable MCP tool name for every capability", () => {
+    const engine = createObsidianContextEngine({ graph: createGraph() });
+
+    // The same catalog construction `invokta check-mcp` runs as a build-time
+    // gate: a capability ID whose derived alias collides with another one's
+    // fails here instead of when an MCP adapter starts.
+    expect(() => {
+      validateMcpToolCatalog(engine);
+    }).not.toThrow();
+    expect(
+      engine.list().map((capability) => toMcpToolName(capability.id)),
+    ).toEqual(["knowledge_list-context-roots", "knowledge_open-context-node"]);
   });
 });

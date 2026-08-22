@@ -36,11 +36,16 @@ afterEach(() => {
 
 function snapshot(homeDirectory: string): HarnessDetectionSnapshot {
   const target = (
-    id: "codex" | "cursor",
+    id: "codex" | "cursor" | "vscode",
     path: string,
   ): HarnessDetectionSnapshot["targets"][number] => ({
     id,
-    displayName: id === "codex" ? "Codex" : "Cursor",
+    displayName:
+      id === "codex"
+        ? "Codex"
+        : id === "cursor"
+          ? "Cursor"
+          : "Visual Studio Code",
     surfaceIds: [],
     evidence: "installed",
     executables: [],
@@ -199,6 +204,211 @@ describe("installer mutation coordinator", () => {
 
     expect(results[0]).toMatchObject({ targetId: "codex", outcome: "failed" });
     expect(results[1]).toEqual({ targetId: "cursor", outcome: "installed" });
+  });
+
+  it("relocates a managed target when its detected user config path changes", async () => {
+    const homeDirectory = mkdtempSync(join(tmpdir(), "invokta-mutation-"));
+    temporaryDirectories.push(homeDirectory);
+    const oldPath = join(homeDirectory, ".config/Code/User/mcp.json");
+    const newPath = join(homeDirectory, ".vscode-server/data/User/mcp.json");
+    const vscodeTarget: HarnessDetectionSnapshot["targets"][number] = {
+      id: "vscode",
+      displayName: "Visual Studio Code",
+      surfaceIds: ["vscode"],
+      evidence: "installed",
+      executables: [],
+      configuration: { kind: "absent", path: oldPath },
+      eligible: true,
+      mayCreateConfiguration: true,
+      reloadHint: "Reload Visual Studio Code.",
+    };
+    const oldSnapshot: HarnessDetectionSnapshot = {
+      homeDirectory,
+      surfaces: [],
+      targets: [vscodeTarget],
+    };
+    const newSnapshot: HarnessDetectionSnapshot = {
+      ...oldSnapshot,
+      targets: [
+        {
+          ...vscodeTarget,
+          configuration: { kind: "absent", path: newPath },
+        },
+      ],
+    };
+    const deps = dependencies();
+
+    await installDescriptorAcrossTargets({
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: oldSnapshot,
+      targetIds: ["vscode"],
+    });
+    const result = await installDescriptorAcrossTargets({
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: newSnapshot,
+      targetIds: ["vscode"],
+    });
+
+    expect(result).toEqual([{ targetId: "vscode", outcome: "installed" }]);
+    expect(JSON.parse(readFileSync(oldPath, "utf8"))).toEqual({ servers: {} });
+    expect(JSON.parse(readFileSync(newPath, "utf8"))).toMatchObject({
+      servers: { "support-engine": { type: "stdio" } },
+    });
+    const state = JSON.parse(
+      readFileSync(
+        join(homeDirectory, ".local/state/invokta/installer.json"),
+        "utf8",
+      ),
+    ) as {
+      readonly installations: Readonly<
+        Record<string, { readonly configPath: string }>
+      >;
+    };
+    expect(Object.values(state.installations)).toEqual([
+      expect.objectContaining({ configPath: newPath }),
+    ]);
+  });
+
+  it("relocates shared managed configuration one engine at a time", async () => {
+    const homeDirectory = mkdtempSync(join(tmpdir(), "invokta-mutation-"));
+    temporaryDirectories.push(homeDirectory);
+    const oldPath = join(homeDirectory, ".config/Code/User/mcp.json");
+    const newPath = join(homeDirectory, ".vscode-server/data/User/mcp.json");
+    const target = (
+      path: string,
+    ): HarnessDetectionSnapshot["targets"][number] => ({
+      id: "vscode",
+      displayName: "Visual Studio Code",
+      surfaceIds: ["vscode"],
+      evidence: "installed",
+      executables: [],
+      configuration: { kind: "absent", path },
+      eligible: true,
+      mayCreateConfiguration: true,
+      reloadHint: "Reload Visual Studio Code.",
+    });
+    const oldSnapshot: HarnessDetectionSnapshot = {
+      homeDirectory,
+      surfaces: [],
+      targets: [target(oldPath)],
+    };
+    const newSnapshot: HarnessDetectionSnapshot = {
+      homeDirectory,
+      surfaces: [],
+      targets: [target(newPath)],
+    };
+    const first = descriptor();
+    const second: CapabilityInstallDescriptor = {
+      ...descriptor(),
+      id: "review-engine",
+      title: "Review Engine",
+      server: { ...descriptor().server, name: "review-engine" },
+    };
+    const deps = dependencies();
+
+    for (const engine of [first, second]) {
+      await installDescriptorAcrossTargets({
+        dependencies: deps,
+        descriptor: engine,
+        snapshot: oldSnapshot,
+        targetIds: ["vscode"],
+      });
+    }
+
+    for (const engine of [first, second]) {
+      const result = await installDescriptorAcrossTargets({
+        dependencies: deps,
+        descriptor: engine,
+        snapshot: newSnapshot,
+        targetIds: ["vscode"],
+      });
+      expect(result).toEqual([{ targetId: "vscode", outcome: "installed" }]);
+    }
+
+    expect(JSON.parse(readFileSync(oldPath, "utf8"))).toEqual({ servers: {} });
+    expect(JSON.parse(readFileSync(newPath, "utf8"))).toMatchObject({
+      servers: {
+        "review-engine": { type: "stdio" },
+        "support-engine": { type: "stdio" },
+      },
+    });
+    const state = JSON.parse(
+      readFileSync(
+        join(homeDirectory, ".local/state/invokta/installer.json"),
+        "utf8",
+      ),
+    ) as {
+      readonly installations: Readonly<
+        Record<string, { readonly configPath: string }>
+      >;
+    };
+    expect(Object.values(state.installations)).toHaveLength(2);
+    expect(Object.values(state.installations)).toEqual([
+      expect.objectContaining({ configPath: newPath }),
+      expect.objectContaining({ configPath: newPath }),
+    ]);
+  });
+
+  it("fails a managed path relocation closed when the old definition drifted", async () => {
+    const homeDirectory = mkdtempSync(join(tmpdir(), "invokta-mutation-"));
+    temporaryDirectories.push(homeDirectory);
+    const oldPath = join(homeDirectory, ".config/Code/User/mcp.json");
+    const newPath = join(homeDirectory, ".vscode-server/data/User/mcp.json");
+    const target = (
+      path: string,
+    ): HarnessDetectionSnapshot["targets"][number] => ({
+      id: "vscode",
+      displayName: "Visual Studio Code",
+      surfaceIds: ["vscode"],
+      evidence: "installed",
+      executables: [],
+      configuration: { kind: "absent", path },
+      eligible: true,
+      mayCreateConfiguration: true,
+      reloadHint: "Reload Visual Studio Code.",
+    });
+    const oldSnapshot: HarnessDetectionSnapshot = {
+      homeDirectory,
+      surfaces: [],
+      targets: [target(oldPath)],
+    };
+    const newSnapshot: HarnessDetectionSnapshot = {
+      homeDirectory,
+      surfaces: [],
+      targets: [target(newPath)],
+    };
+    const deps = dependencies();
+    await installDescriptorAcrossTargets({
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: oldSnapshot,
+      targetIds: ["vscode"],
+    });
+    const drifted = {
+      servers: {
+        "support-engine": {
+          type: "stdio",
+          command: "external-command",
+          args: [],
+        },
+      },
+    };
+    writeFileSync(oldPath, `${JSON.stringify(drifted)}\n`);
+
+    const result = await installDescriptorAcrossTargets({
+      dependencies: deps,
+      descriptor: descriptor(),
+      snapshot: newSnapshot,
+      targetIds: ["vscode"],
+    });
+
+    expect(result).toEqual([
+      { targetId: "vscode", outcome: "failed", code: "CONFIG_DRIFT" },
+    ]);
+    expect(JSON.parse(readFileSync(oldPath, "utf8"))).toEqual(drifted);
+    expect(() => statSync(newPath)).toThrow();
   });
 
   it("disables and re-enables native and detached installations", async () => {

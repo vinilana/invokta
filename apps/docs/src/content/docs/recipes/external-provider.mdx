@@ -1,32 +1,71 @@
 ---
-title: Wrap an external provider
-description: Put provider credentials and HTTP details behind an engine-owned port.
+title: Build an outbound connector
+description: Implement an outbound connector behind engine-owned ports and wire it through explicit dependencies.
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 
-Use an outbound adapter when a capability depends on an external API. The
-capability should describe the domain operation, while one infrastructure module
-owns authentication, transport, provider payloads, and error translation.
+Use an **outbound connector** when a capability needs an external API, SDK,
+database, queue, or internal platform service. The capability describes the
+domain outcome. The composition root resolves and supplies credentials. The
+connector owns provider authentication mechanics, transport, provider payloads,
+and failure translation.
+
+An outbound connector is an authoring convention for a provider- or
+technology-specific outbound adapter that crosses from engine logic into an
+external system or data source. Pure in-memory implementations, test doubles,
+and policy rules are dependencies but not connectors. Invokta's optional
+`defineConnector` helper validates private construction configuration and
+returns named ports, but it does not register, discover, initialize, or expose
+connectors through `ExecutionContext`.
 
 This recipe follows the `crawl-engine` example, which publishes a stable web
-crawling contract backed by Firecrawl.
+crawling contract backed by Firecrawl. The
+[file naming guide](/guides/file-naming/) defines the matching
+`<provider>-<port-role>.ts` convention and the placement of ports,
+capabilities, domain rules, and composition roots.
 
-The [file naming guide](/guides/file-naming/) defines the matching
-`<provider>-<port-role>.ts` convention and the placement of ports, capabilities,
-domain rules, and composition roots.
+## Know each responsibility
+
+```text
+direct / CLI / MCP
+        |
+        v
+   engine.invoke
+        |
+        v
+    capability  --->  engine-owned port  --->  outbound connector  --->  provider
+```
+
+| Concept | Responsibility |
+| --- | --- |
+| Capability | A public domain action with input and output schemas, access control, a timeout, and execution through `engine.invoke`. |
+| Port | An engine-owned, provider-neutral TypeScript interface describing what a capability needs. |
+| Dependency | Any value explicitly passed into a capability or engine factory. Port implementations, domain policies, and permission checkers are all dependencies; only some dependencies are connectors. |
+| Outbound connector | A provider- or technology-specific implementation of one or more outbound ports that crosses into an external system or data source. In hexagonal terms, it is an outbound adapter. |
+| Connector definition | An optional `defineConnector` authoring value with private Standard Schema configuration, opaque dependencies, and named ports. It is not an engine registry. |
+| Inbound adapter | A delivery boundary such as CLI or MCP. It translates a request and calls `engine.invoke`; it does not call a connector or capability handler directly. |
+| Composition root | Application code that reads deployment configuration, creates connectors and other dependencies, and passes them to the engine factory. |
+
+The naming distinction protects replaceability. Consumers request
+`crawl.scrape-page`; they do not request `firecrawl.scrape`. The capability can
+keep its public contract if Firecrawl is replaced by another `WebCrawler`.
 
 ## Build the boundary
 
 <Steps>
 
-1. Declare an engine-owned provider port
+1. Declare an engine-owned port
 
    ```ts
+   export interface CrawlerCallOptions {
+     readonly signal: AbortSignal;
+   }
+
    export interface WebCrawler {
      scrapePage(
        request: { readonly target: CrawlTarget },
-       options: { readonly signal: AbortSignal },
+       options: CrawlerCallOptions,
      ): Promise<ScrapedPage>;
    }
 
@@ -36,10 +75,99 @@ domain rules, and composition roots.
    }
    ```
 
-   Keep provider request and response types out of this interface. A different
-   crawler can implement the same domain operation later.
+   Name the port for the domain role, not for the provider or its SDK. Keep
+   provider request, response, client, and authentication types out of this
+   interface. Include `AbortSignal` on every operation that can wait for
+   external work.
 
-2. Depend on the port from the capability
+2. Implement the provider connector
+
+   ```ts
+   export interface FirecrawlWebCrawlerOptions {
+     readonly apiKey: string;
+     readonly baseUrl?: string;
+     readonly pollIntervalMs?: number;
+     readonly maxStatusRequests?: number;
+     readonly maxPaginationRequests?: number;
+     readonly maxResponseBytes?: number;
+   }
+
+   export function createFirecrawlWebCrawler(
+     options: FirecrawlWebCrawlerOptions,
+     fetchImplementation: typeof globalThis.fetch,
+   ): WebCrawler {
+     if (options.apiKey === "") {
+       throw new TypeError("A Firecrawl API key is required.");
+     }
+
+     return {
+       async scrapePage({ target }, { signal }) {
+         const response = await fetchImplementation(
+           new URL("/v2/scrape", options.baseUrl ?? "https://api.firecrawl.dev"),
+           {
+             method: "POST",
+             headers: { authorization: `Bearer ${options.apiKey}` },
+             body: JSON.stringify({ url: target.url }),
+             signal,
+           },
+         );
+
+         if (!response.ok) {
+           await response.body?.cancel();
+           throw sanitizedFirecrawlRejection(response.status);
+         }
+
+         const payload = await readBoundedJson(response, {
+           maxBytes: options.maxResponseBytes ?? 64 * 1024 * 1024,
+           signal,
+         });
+         return parseFirecrawlScrapedPage(payload);
+       },
+     };
+   }
+
+   export const firecrawlConnector = defineConnector({
+     name: "firecrawl",
+     config: z.object({
+       apiKey: z.string().min(1),
+       baseUrl: z.string().url().optional(),
+       maxResponseBytes: z.number().int().min(1),
+     }),
+     create(
+       config,
+       dependencies: { readonly fetch: typeof globalThis.fetch },
+     ) {
+       return {
+         ports: {
+           crawler: createFirecrawlWebCrawler(
+             config,
+             dependencies.fetch,
+           ),
+         },
+       };
+     },
+   });
+   ```
+
+   `defineConnector` separates private, schema-validated deployment
+   configuration from opaque dependencies such as `fetch`, an SDK client, a
+   clock, or a pool. The connector must not read `process.env`, perform network
+   I/O during import or construction, or expose its provider client to
+   capabilities.
+
+   Configuration validation is synchronous. Its transformed value must be a
+   lossless JSON object and is frozen before the connector callback runs. Reject
+   invalid endpoint schemes, embedded endpoint credentials, and numeric limits
+   outside their documented finite safe-integer ranges before any filesystem,
+   network, SDK, or other external I/O begins.
+
+   Here `readBoundedJson` incrementally enforces the byte limit and decodes
+   JSON without retaining the raw body in an error. The
+   `parseFirecrawlScrapedPage` helper validates provider fields and translates
+   them into the port-owned `ScrapedPage` value. Both helpers stay private to
+   the connector.
+
+3. Depend on the port from the capability
 
    ```ts
    export function createScrapePage({
@@ -69,31 +197,56 @@ domain rules, and composition roots.
    }
    ```
 
-   The capability owns validation, authorization, the timeout, and the public
-   output. The adapter receives the invocation's cancellation signal.
+   The capability owns its public schemas, authorization, timeout, and domain
+   result. It receives the narrow port it needs, not a provider SDK or a
+   connector registry. Pass `context.signal` through without creating a second
+   invocation path.
 
-3. Translate provider failures at the adapter boundary
+4. Translate failures without hiding cancellation
 
    ```ts
-   if (!response.ok) {
+   try {
+     return await fetchFromFirecrawl(request, signal);
+   } catch {
+     if (signal.aborted) throw signal.reason;
+
      throw new EngineError({
        code: "EXECUTION_FAILED",
-       message: "Firecrawl rejected the request.",
-       publicDetails: {
-         provider: "firecrawl",
-         status: response.status,
-       },
+       message: "The Firecrawl request could not be completed.",
+       publicDetails: { provider: "firecrawl" },
+       cause: new Error("The Firecrawl transport request failed."),
      });
    }
    ```
 
-   Keep the raw response body and credentials out of `publicDetails`. The full
-   adapter also validates provider payloads, bounds polling, and rejects
-   cross-origin pagination targets.
+   Provider rejection, malformed data, and network failure should become a
+   sanitized `EXECUTION_FAILED` error when callers need a stable public failure.
+   Allowlist fields such as a provider name or HTTP status in `publicDetails`;
+   never retain credentials, URLs containing secrets, or unfiltered request and
+   response bodies. A retained internal `cause` must also be sanitized; its
+   private status is not permission to keep secrets or an unbounded provider
+   payload.
 
-4. Read credentials at the composition root
+   When the signal is aborted, stop polling, delays, SDK work, and HTTP requests
+   immediately and rethrow the cancellation cause. Do not wrap it as a provider
+   failure. The Invokta pipeline maps observed cancellation and capability
+   timeout to `CANCELLED` consistently for direct, CLI, and MCP callers.
+
+5. Compose the connector explicitly
 
    ```ts
+   export function createCrawlEngine(dependencies: CrawlDependencies) {
+     return createEngine({
+       name: "crawl-engine",
+       version: "0.1.0",
+       capabilities: {
+         "crawl.scrape-page": createScrapePage(dependencies),
+         "crawl.map-site": createMapSite(dependencies),
+         "crawl.crawl-site": createCrawlSite(dependencies),
+       },
+     });
+   }
+
    export function createFirecrawlCrawlEngine(
      environment: FirecrawlEnvironment = process.env,
    ) {
@@ -102,23 +255,157 @@ domain rules, and composition roots.
        throw new Error("FIRECRAWL_API_KEY is required.");
      }
 
+     const connector = firecrawlConnector.create(
+       {
+         apiKey,
+         maxResponseBytes: 64 * 1024 * 1024,
+       },
+       { fetch: globalThis.fetch },
+     );
+
      return createCrawlEngine({
-       crawler: createFirecrawlWebCrawler({ apiKey }),
+       crawler: connector.ports.crawler,
        permissions: createAttributeCrawlPermissionChecker(),
      });
    }
    ```
 
-   The credential is deployment configuration. It never becomes capability
-   input, output, or trusted invocation context.
+   The composition root translates deployment configuration into explicit
+   connector options. Credentials never become capability input, output,
+   `ExecutionContext`, principal attributes, events, or public errors. Each
+   direct, CLI, and MCP entrypoint uses the same engine factory and reaches the
+   same capability implementation through `engine.invoke`.
 
 </Steps>
 
 <Aside type="danger" title="Validate network targets before making a request">
-  A crawler reachable from an agent or the network can become an SSRF path. The
-  complete example rejects loopback, private, link-local, credential-bearing,
-  and non-HTTP targets in the input schema before authorization or provider I/O.
+  A connector reachable from an agent or the network can become an SSRF path.
+  The complete crawl example rejects loopback, private, link-local,
+  credential-bearing, and non-HTTP targets in the input schema before
+  authorization or provider I/O.
 </Aside>
+
+## Implement several ports with one connector
+
+One connector definition may provide several related ports when they share a
+cohesive provider configuration and transport boundary:
+
+```ts
+const hubspotConnector = defineConnector({
+  name: "hubspot",
+  config: hubspotConfigSchema,
+  create(config, dependencies: HubSpotDependencies) {
+    const client = createHubSpotClient(config, dependencies.fetch);
+    return {
+      ports: {
+        customers: createHubSpotCustomerDirectory(client),
+        deals: createHubSpotDealRepository(client),
+        activities: createHubSpotActivityWriter(client),
+      },
+    };
+  },
+});
+
+const hubspot = hubspotConnector.create(
+  { accessToken },
+  { fetch: globalThis.fetch },
+).ports;
+const engine = createSupportEngine({
+  customers: hubspot.customers,
+  deals: hubspot.deals,
+});
+```
+
+The bundle is a composition convenience, not a service locator. Pass each
+capability only the ports it needs. Keep separate connectors separate when they
+have different ownership, configuration, lifecycle, or failure boundaries.
+
+## Make operational limits explicit
+
+Invokta supplies the capability timeout and cancellation signal, but it does not
+supply connector lifecycle, retries, concurrency control, queues, or provider
+limits. Define those decisions in the custom engine:
+
+- Bound public input and output sizes in capability schemas.
+- Bound response bytes, page counts, pagination, polling attempts, batch sizes,
+  concurrency, and fan-out where the connector could otherwise consume
+  unbounded resources.
+- Reject pagination and redirect targets that leave the configured provider
+  origin unless the integration explicitly requires and validates them.
+- Give every connector-backed capability a finite `timeoutMs`. A provider
+  request timeout may shorten that deadline but does not replace it. Propagate
+  the invocation signal through every nested provider operation.
+- Give connector work performed during `access` its own finite client or
+  operation deadline. Capability `timeoutMs` starts after authorization and
+  therefore cannot bound an authorization-stage connector call.
+- Do not retry by default. If a real use case needs retries, make the policy
+  explicit, cancellation-aware, and safe for the operation's idempotency
+  semantics. Bound both the attempt count and the delay or elapsed retry time,
+  including retries performed by a provider SDK.
+- Let the engine host own SDK clients, connection pools, credential rotation,
+  startup, and shutdown. Do not add lifecycle hooks to Invokta context or core.
+
+Provider documentation may describe higher limits, but the engine should expose
+only the smaller, deliberate bounds it can validate and operate safely.
+
+## Test both sides of the port
+
+Test the capability with a small port double. This proves domain behavior
+without starting the provider or transport:
+
+```ts
+const crawler: WebCrawler = {
+  async scrapePage({ target }, { signal }) {
+    observedSignal = signal;
+    return {
+      url: target.url,
+      title: "Example",
+      statusCode: 200,
+      markdown: "# Example",
+    };
+  },
+};
+
+const engine = createCrawlEngine({ crawler, permissions });
+await engine.invoke("crawl.scrape-page", { url: "https://example.com/" });
+```
+
+Test the connector separately against a local protocol stub or injected client.
+Cover at least:
+
+- provider request construction and domain response translation;
+- provider rejection and sanitized `EXECUTION_FAILED` details;
+- malformed or oversized provider responses;
+- cancellation during every wait the connector implements, such as the initial
+  request, response-body read, retry delay, polling, and pagination;
+- inclusive and exclusive polling, page, batch, and response-size limits;
+- redirect and pagination target validation where applicable;
+- credential redaction from errors, logs, events, snapshots, and test output;
+- synchronous rejection of missing or invalid construction configuration,
+  including exact numeric boundaries and unsafe endpoint URLs;
+- construction without external I/O and tests without production credentials.
+
+Finally, use entrypoint tests to prove direct, CLI, MCP stdio, and MCP HTTP all
+reach the same engine invocation. The connector does not need one implementation
+per inbound adapter.
+
+## What not to build
+
+Do not add any of these to provide a connector:
+
+- `createEngine({ connectors: [...] })` or a connector field in the core API;
+- `context.connectors`, `engine.getConnector()`, or another service locator;
+- global registration, decorators, reflection, or package-name discovery;
+- connector-specific capability IDs that merely mirror a provider API;
+- framework-managed initialization, health checks, retries, or shutdown;
+- provider request or SDK types in capability input, output, or port contracts.
+
+Caller-authentication verifiers and MCP HTTP `authenticate` hooks remain inbound
+host-boundary integrations, not capability connectors. Client products that call
+installed MCP servers “connectors” use a separate product concept.
+
+Those designs either bypass the stable domain capability or introduce runtime
+facilities that Invokta intentionally leaves to the custom engine.
 
 ## Run it
 
@@ -142,8 +429,8 @@ trusted principal configuration before using another host.
 
 ## Verify it
 
-The tests use a local Firecrawl-compatible stub and never call the public API, so
-they do not require a real credential:
+The tests use a local Firecrawl-compatible stub and never call the public API,
+so they do not require a real credential:
 
 ```sh
 yarn workspace @invokta/example-crawl test
@@ -155,3 +442,13 @@ Read the complete
 [`crawl-engine`](https://github.com/vinilana/invokta/tree/main/examples/crawl-engine)
 example for target validation, provider payload checks, bounded polling,
 cancellation, authorization, and all four inbound entry points.
+
+The repository also demonstrates the same typed construction boundary in
+[`image-engine`](https://github.com/vinilana/invokta/tree/main/examples/image-engine)
+for a cohesive multi-port provider, in
+[`observability-engine`](https://github.com/vinilana/invokta/tree/main/examples/observability-engine)
+for three independent providers, and in the
+[`obsidian-context-engine`](https://github.com/vinilana/invokta/tree/main/examples/obsidian-context-engine)
+and
+[`agent-session-engine`](https://github.com/vinilana/invokta/tree/main/examples/agent-session-engine)
+for read-only and durable filesystem connectors.

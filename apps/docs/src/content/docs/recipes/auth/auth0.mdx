@@ -205,6 +205,7 @@ specific to Auth0.
          authorizationServers: [auth0Issuer(domain)],
          scopesSupported: ["orders:read", "orders:write"],
        },
+       challengeScopes: ["orders:read"],
      },
    });
    ```
@@ -212,7 +213,10 @@ specific to Auth0.
    `resourceMetadata` publishes `/.well-known/oauth-protected-resource/mcp`
    and names the tenant as the Authorization Server, so an OAuth-capable MCP
    client discovers where to obtain a token. A 401 then carries
-   `WWW-Authenticate: Bearer resource_metadata="..."`.
+   `WWW-Authenticate: Bearer resource_metadata="..."`. `challengeScopes` adds
+   `scope="orders:read"` to that same challenge, naming the base scope this
+   API requires for the request the client just made; it requires
+   `resourceMetadata`.
 
 7. Keep authorization in the capability
 
@@ -280,6 +284,7 @@ AUTH0_DOMAIN=your-tenant.eu.auth0.com \
 AUTH0_AUDIENCE=https://orders.example.com/api \
 AUTH0_MCP_RESOURCE=http://127.0.0.1:3000/mcp \
 AUTH0_MCP_SCOPES="orders:read orders:write" \
+AUTH0_MCP_CHALLENGE_SCOPES="orders:read" \
   node examples/auth-auth0-engine/dist/mcp-http.js
 ```
 

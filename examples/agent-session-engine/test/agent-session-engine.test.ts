@@ -1,14 +1,25 @@
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import { once } from "node:events";
+import {
+  mkdtemp,
+  readdir,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { EngineError, EngineEvent, Principal } from "@invokta/core";
 import { afterEach, describe, expect, it } from "vitest";
-
-import { createAgentSessionEngine } from "../src/engine.js";
 import { createAgentSession } from "../src/domain/agent-session.js";
-import { createFileAgentSessionStore } from "../src/infrastructure/file-agent-session-store.js";
+import { createAgentSessionEngine } from "../src/engine.js";
+import {
+  createFileAgentSessionStore,
+  fileAgentSessionConnector,
+} from "../src/infrastructure/file-agent-session-store.js";
 
 const principal: Principal = {
   id: "agent:coordinator",
@@ -55,6 +66,96 @@ async function createTestEngine(events?: EngineEvent[]) {
 }
 
 describe("the agent session engine example", () => {
+  it("exposes sessions through a typed filesystem connector", () => {
+    const connector = fileAgentSessionConnector.create(
+      { dataDirectory: "/tmp/agent-sessions" },
+      {},
+    );
+
+    expect(fileAgentSessionConnector.name).toBe("file-agent-sessions");
+    expect(Object.keys(connector.ports)).toEqual(["sessions"]);
+    expect(() =>
+      fileAgentSessionConnector.create({ dataDirectory: "" }, {}),
+    ).toThrow("Connector configuration is invalid.");
+  });
+
+  it("validates the filesystem connector configuration synchronously", () => {
+    expect(() => createFileAgentSessionStore({ dataDirectory: "" })).toThrow(
+      "dataDirectory must not be empty.",
+    );
+
+    for (const invalid of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() =>
+        createFileAgentSessionStore({
+          dataDirectory: "/tmp/agent-sessions",
+          lockTimeoutMs: invalid,
+        }),
+      ).toThrow("lockTimeoutMs must be a positive safe integer.");
+      expect(() =>
+        createFileAgentSessionStore({
+          dataDirectory: "/tmp/agent-sessions",
+          staleLockMs: invalid,
+        }),
+      ).toThrow("staleLockMs must be a positive safe integer.");
+    }
+  });
+
+  it("performs no filesystem I/O during connector construction", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "agent-session-construction-"));
+    temporaryDirectories.push(parent);
+    const dataDirectory = join(parent, "not-created");
+
+    createFileAgentSessionStore({ dataDirectory });
+
+    await expect(stat(dataDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not mutate the filesystem when creation is already cancelled", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "agent-session-cancelled-"));
+    temporaryDirectories.push(parent);
+    const dataDirectory = join(parent, "not-created");
+    const store = createFileAgentSessionStore({ dataDirectory });
+    const session = createAgentSession({
+      sessionId: "cancelled-session",
+      objective: "Stop before filesystem work.",
+      workspaceRoot: "/workspace/project",
+      createdAt: "2026-07-28T12:00:00.000Z",
+    });
+    const controller = new AbortController();
+    const cancellation = new Error("The invocation was cancelled.");
+    controller.abort(cancellation);
+
+    await expect(
+      store.create(session, { signal: controller.signal }),
+    ).rejects.toBe(cancellation);
+    await expect(stat(dataDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("sanitizes malformed persisted JSON causes", async () => {
+    const dataDirectory = await mkdtemp(
+      join(tmpdir(), "agent-session-malformed-"),
+    );
+    temporaryDirectories.push(dataDirectory);
+    const sessionId = "malformed-session";
+    const statePath = join(
+      dataDirectory,
+      `${createHash("sha256").update(sessionId).digest("hex")}.json`,
+    );
+    const persistedSecret = "secret-canary";
+    await writeFile(statePath, persistedSecret, "utf8");
+    const store = createFileAgentSessionStore({ dataDirectory });
+
+    const failure = await store.findById(sessionId).then(
+      () => undefined,
+      (error: unknown) => error as Error & { readonly cause?: unknown },
+    );
+
+    expect(failure?.message).toBe(
+      "The persisted agent session is not valid JSON.",
+    );
+    expect(String(failure?.cause)).not.toContain(persistedSecret);
+  });
+
   it("persists a phase, tasks, checkpoints, and an owner handoff across engine processes", async () => {
     const { create, engine } = await createTestEngine();
 
@@ -243,9 +344,16 @@ describe("the agent session engine example", () => {
       "Timed out while waiting for the agent session lock.",
     );
 
+    const exitedOwner = spawn(process.execPath, ["--eval", ""]);
+    const exitedOwnerPid = exitedOwner.pid;
+    if (exitedOwnerPid === undefined) {
+      throw new Error("The exited lock owner did not receive a process ID.");
+    }
+    await once(exitedOwner, "exit");
+
     await writeFile(
       lockPath,
-      `${JSON.stringify({ ownerId: "exited-owner", pid: 2_147_483_647, acquiredAt: oldTime.toISOString() })}\n`,
+      `${JSON.stringify({ ownerId: "exited-owner", pid: exitedOwnerPid, acquiredAt: oldTime.toISOString() })}\n`,
       { mode: 0o600 },
     );
     await utimes(lockPath, oldTime, oldTime);

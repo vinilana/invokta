@@ -1,4 +1,4 @@
-# ADR 0034: Guided OpenAPI capability import
+# ADR 0038: Guided OpenAPI capability import
 
 - Status: Accepted
 - Date: 2026-08-21

@@ -311,7 +311,10 @@ yarn workspace @invokta/example-auth-cognito mcp:http
 
 `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, and `COGNITO_APP_CLIENT_IDS` are
 required; `PORT` defaults to `3000`, and the optional `COGNITO_RESOURCE_URL`
-publishes Protected Resource Metadata pointing at the user pool issuer.
+publishes Protected Resource Metadata pointing at the user pool issuer. With
+that resource configured, `COGNITO_CHALLENGE_SCOPES` adds the ordered base
+scopes to the 401 challenge — Cognito writes them as
+`<resource-server-identifier>/<scope>`, for example `engine/invoke`.
 
 Call it with an access token issued to that app client:
 

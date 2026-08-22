@@ -36,6 +36,10 @@ revisions, a synced temporary file, and atomic rename. A lock left by a
 terminated process becomes recoverable after 30 seconds; elapsed time alone
 never permits one live process to steal another process's lock.
 
+`fileAgentSessionConnector` uses `defineConnector` to validate private directory
+and lock configuration synchronously, performs no filesystem I/O while it is
+constructed, and exposes only the `sessions` port to the engine composition.
+
 The example makes these operational limits explicit:
 
 - 256 tasks per session;
@@ -50,7 +54,7 @@ The example makes these operational limits explicit:
   notice when the complete state is larger.
 
 A process crash cannot partially replace a valid session document. This local
-file adapter is not a distributed database: place the data directory on one
+filesystem connector is not a distributed database: place the data directory on one
 host-local filesystem and replace the store port when multiple hosts must write
 the same session. The JSON layout is an example-version persistence format, not
 a cross-version migration contract; migrate or replace the store before changing
@@ -202,3 +206,21 @@ yarn workspace @invokta/example-agent-session test
 yarn workspace @invokta/example-agent-session typecheck
 yarn workspace @invokta/example-agent-session build
 ```
+
+## Inspect and gate this engine
+
+```sh
+yarn workspace @invokta/example-agent-session devtools
+yarn workspace @invokta/example-agent-session devtools:doctor
+yarn workspace @invokta/example-agent-session check:mcp
+```
+
+`devtools` rebuilds on change and serves the engine on the printed
+`http://localhost:<port>/` URL. Its Playground emulates one call through the
+direct, CLI, MCP stdio, or MCP HTTP path under the development `Principal` you
+select, and records what that adapter exchanged. `devtools:doctor` runs the
+read-only engine checks and reports whether an `invokta.mcp.json` manifest sits
+next to the project. `check:mcp` is the build-time conformance gate from
+[ADR 0026](../../docs/adr/0026-generated-engine-mcp-conformance-gate.md): it
+fails when two capability IDs derive the same portable MCP tool name, before an
+adapter starts or the engine is installed.

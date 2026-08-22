@@ -1,4 +1,5 @@
 import { EngineError, type Principal } from "@invokta/core";
+import { toMcpToolName, validateMcpToolCatalog } from "@invokta/mcp";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import type {
@@ -329,5 +330,19 @@ describe("the observability engine example", () => {
       },
       outputSchema: { type: "object" },
     });
+  });
+
+  it("publishes one unique portable MCP tool name for every capability", () => {
+    const engine = createObservabilityEngine(createDependencies());
+
+    // The same catalog construction `invokta check-mcp` runs as a build-time
+    // gate: a capability ID whose derived alias collides with another one's
+    // fails here instead of when an MCP adapter starts.
+    expect(() => {
+      validateMcpToolCatalog(engine);
+    }).not.toThrow();
+    expect(
+      engine.list().map((capability) => toMcpToolName(capability.id)),
+    ).toEqual(["observability_collect-incident-context"]);
   });
 });

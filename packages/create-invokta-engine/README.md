@@ -109,7 +109,11 @@ deploy CLI. The generated authentication hook fails closed until implemented,
 and HTTP profiles ignore `.env` and `.env.*` while retaining `.env.example`.
 
 Generated `README.md`, `AGENTS.md`, and `develop-invokta-project` skill guidance
-describe only the selected channels. `CLAUDE.md` is a real relative symbolic
+describe only the selected channels. The project instructions and skill also
+distinguish capabilities, engine-owned ports, and typed outbound connectors,
+including synchronous configuration validation, explicit dependencies,
+cancellation, bounded work, failure sanitization, and port-only injection.
+`CLAUDE.md` is a real relative symbolic
 link to `AGENTS.md`; unsupported link creation fails and rolls back rather than
 copying the instructions. Generated Invokta dependencies exactly match the
 creator version. All generated entries become project-owned and are never
@@ -137,7 +141,11 @@ same way `create-next-app` does. The creator verifies `package.json` is a
 regular file, downloads from `codeload.github.com` after confirmation, copies
 only the selected subtree, and rewrites `package.json` `name` to the project
 directory name. Private repositories, SSH, tokens, and non-GitHub hosts are
-unsupported. Template dependency completeness belongs to the example author.
+unsupported. Links and unsupported archive types are rejected in the exact
+selected subtree but ignored outside it because they are not extracted. Unsafe
+paths, including raw backslash paths, reject the whole archive consistently on
+POSIX and Windows. Template dependency completeness belongs to the example
+author.
 
 ## OpenAPI capability import
 

@@ -16,6 +16,49 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   body, response, and upstream authentication mechanics without importing
   credentials or contacting the described API.
 
+- ADR 0036 and the outbound connector authoring guide define provider- and
+  technology-specific port implementations as explicit custom-engine
+  dependencies, with construction-time configuration validation, finite access
+  deadlines, no core registry, and no alternate execution path. The crawl,
+  image, observability, Obsidian, and agent-session examples provide canonical
+  network and filesystem patterns.
+- ADR 0037 adds the optional `defineConnector` core authoring API for
+  synchronous Standard Schema configuration, opaque dependencies, and frozen
+  named-port containers. Connector definitions remain explicitly composed and
+  do not add runtime registration, discovery, lifecycle, or another invocation
+  path; the Firecrawl example provides the canonical capability integration.
+- The `auth-jwt-bearer`, `auth-auth0`, `auth-cognito`, and `auth-workos`
+  examples now accept ordered OAuth challenge scopes and serialize them into
+  the 401 Bearer challenge, so an OAuth-capable MCP client learns what to ask
+  for from the challenge instead of guessing. Each composition root reads them
+  from its own environment variable — `AUTH_JWT_CHALLENGE_SCOPES`,
+  `AUTH0_MCP_CHALLENGE_SCOPES`, `COGNITO_CHALLENGE_SCOPES`, and
+  `WORKOS_MCP_CHALLENGE_SCOPES` — and refuses to start when they are named
+  without the example's Protected Resource Metadata resource. The same four
+  examples gain `deploy:inspect-oauth` for the credential-free discovery
+  inspection.
+- Every example that exports a constructed engine now runs the same
+  development toolchain a generated project gets: `check:mcp` for the
+  build-time MCP conformance gate (ADR 0026), plus `devtools` and
+  `devtools:doctor` for Invokta DevTools. The provider-backed crawl, image,
+  observability, and Obsidian engines compose only with credentials, so they
+  gate their portable MCP tool names with `validateMcpToolCatalog` in their own
+  tests and ship `devtools:verify` for the built stdio adapter;
+  `support-harness` verifies the engine it consumes the same way.
+- `yarn run check` now runs `invokta check-mcp` and `invokta check-capabilities`
+  over every built example, so an example cannot drift out of MCP conformance
+  without failing the repository check.
+
+### Changed
+
+- The image, observability, Obsidian, and agent-session examples now compose
+  their provider and filesystem implementations through `defineConnector` and
+  inject only named engine-owned ports. Generated engine instructions and the
+  `develop-invokta-project` skill now teach the same connector boundary while
+  keeping the starter itself deterministic and provider-free.
+- `composed-engine` runs `check-capabilities` through the published `invokta`
+  binary instead of a relative path into `packages/tooling/dist`.
+
 ### Fixed
 
 - Hardened generated OpenAPI engines so operation paths cannot replace the
@@ -34,6 +77,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   before allocating from schema length or item bounds, and prevented the
   sampler from constructing or executing document-controlled regular
   expressions.
+- The Firecrawl outbound connector now truncates provider batches at the
+  requested page limit and bounds follow-up pagination requests to 50 by
+  default, preventing oversized or empty provider batches from creating
+  unbounded work.
+- `create-invokta-engine --example` now ignores links and unsupported archive
+  entry types outside the selected template subtree while still rejecting them
+  inside it and rejecting path escapes across the whole archive. This restores
+  official example imports after a sibling example added a `CLAUDE.md` symlink.
+  That example now uses a portable regular instruction file, so importing it
+  also works on Windows without symbolic-link privileges. Raw USTAR, PAX, and
+  GNU paths are checked before Windows separator normalization so backslash
+  paths and slash/backslash aliases fail safely instead of colliding.
 
 ## [0.6.1] - 2026-08-20
 

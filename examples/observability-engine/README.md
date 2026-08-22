@@ -8,7 +8,7 @@ HTTP:
 | --- | --- |
 | `observability.collect-incident-context` | Collect issues, logs, and service telemetry for one bounded time window |
 
-The capability is defined once; every adapter reaches it through
+The capability is defined once; every inbound adapter reaches it through
 `engine.invoke`. The public contract describes incident context rather than a
 provider API. Sentry, Datadog, and New Relic live behind custom-engine ports and
 can be replaced without changing the capability ID, schemas, or entrypoints.
@@ -36,13 +36,16 @@ direct / CLI / MCP stdio / MCP HTTP
 - `src/capabilities/collect-incident-context.ts` owns the stable Zod 4
   contracts, limits, timeout, and handler.
 - `src/infrastructure/` is the only layer that knows the external HTTP
-  contracts.
+  contracts. Sentry, Datadog, and New Relic each export a `defineConnector`
+  definition with a private configuration schema and explicit `fetch`
+  dependency.
 - `src/engine.ts` is the composition root; it reads credentials and account
-  configuration from the environment and injects the adapters.
+  configuration from the environment, constructs the connectors, and injects
+  only their `issues`, `logs`, and `telemetry` ports.
 
-The Sentry adapter uses the organization issues endpoint and maps `service` to a
-Sentry project slug. The Datadog adapter searches v2 log events with a
-`service:<service>` filter. The New Relic adapter runs a fixed, read-only NRQL
+The Sentry connector uses the organization issues endpoint and maps `service` to
+a Sentry project slug. The Datadog connector searches v2 log events with a
+`service:<service>` filter. The New Relic connector runs a fixed, read-only NRQL
 aggregate over `Transaction` data where `appName` matches the service. Consumers
 cannot submit arbitrary NRQL or provider credentials.
 
@@ -162,3 +165,27 @@ Provider contract references:
 - [Sentry organization issues API](https://docs.sentry.io/api/events/list-an-organizations-issues/)
 - [Datadog v2 log search API](https://docs.datadoghq.com/api/latest/logs/search-logs-post/)
 - [New Relic NerdGraph NRQL tutorial](https://docs.newrelic.com/docs/apis/nerdgraph/examples/nerdgraph-nrql-tutorial/)
+
+## Inspect and gate this engine
+
+This composition root needs provider credentials, so it publishes no
+credential-free constructed engine for `invokta-devtools serve` or
+`invokta check-mcp` to import. The portable MCP tool names are gated in
+[`test/observability-engine.test.ts`](./test/observability-engine.test.ts) instead, where
+`validateMcpToolCatalog` runs against the engine built from the test doubles and
+fails when two capability IDs derive the same alias.
+
+With the credentials exported, verify the built stdio adapter:
+
+```sh
+yarn workspace @invokta/example-observability devtools:verify
+```
+
+`invokta-devtools verify` initializes the server and reads the complete
+paginated `tools/list` without calling a tool, exiting `1` when the target or
+protocol fails. To drive one deliberate call by hand, attach the same command in
+the idle MCP workbench:
+
+```sh
+npx invokta-devtools open --mcp
+```

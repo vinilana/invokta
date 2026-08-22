@@ -6,9 +6,13 @@
   "scripts": {
     "build": "tsc -b --pretty false",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
-    "test": "vitest run test"
+    "test": "vitest run test",
+    "devtools:verify": "tsc -b --pretty false && invokta-devtools verify --stdio node --arg ../support-engine/dist/mcp-stdio.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0"
+  },
+  "devDependencies": {
+    "@invokta/devtools": "0.6.1"
   }
 }

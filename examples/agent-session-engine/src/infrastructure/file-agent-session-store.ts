@@ -11,6 +11,9 @@ import {
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { defineConnector } from "@invokta/core";
+import { z } from "zod";
+
 import type {
   AgentSessionStore,
   CreateSessionResult,
@@ -29,6 +32,16 @@ export interface FileAgentSessionStoreOptions {
   readonly lockTimeoutMs?: number;
   readonly staleLockMs?: number;
 }
+
+export type FileAgentSessionConnectorDependencies = Readonly<
+  Record<string, never>
+>;
+
+const fileAgentSessionConnectorConfig = z.object({
+  dataDirectory: z.string().refine((value) => value.trim() !== ""),
+  lockTimeoutMs: z.number().int().positive().safe().optional(),
+  staleLockMs: z.number().int().positive().safe().optional(),
+});
 
 interface LockRecord {
   readonly ownerId: string | null;
@@ -75,21 +88,25 @@ function processIsAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return errorCode(error) !== "ESRCH";
+    const code = errorCode(error);
+    return code !== "ESRCH" && code !== "EINVAL";
   }
 }
 
 export function createFileAgentSessionStore(
   options: FileAgentSessionStoreOptions,
 ): AgentSessionStore {
+  if (options.dataDirectory.trim() === "") {
+    throw new TypeError("dataDirectory must not be empty.");
+  }
   const dataDirectory = resolve(options.dataDirectory);
   const lockTimeoutMs = options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
   const staleLockMs = options.staleLockMs ?? DEFAULT_STALE_LOCK_MS;
-  if (!Number.isInteger(lockTimeoutMs) || lockTimeoutMs < 1) {
-    throw new TypeError("lockTimeoutMs must be a positive integer.");
+  if (!Number.isSafeInteger(lockTimeoutMs) || lockTimeoutMs < 1) {
+    throw new TypeError("lockTimeoutMs must be a positive safe integer.");
   }
-  if (!Number.isInteger(staleLockMs) || staleLockMs < 1) {
-    throw new TypeError("staleLockMs must be a positive integer.");
+  if (!Number.isSafeInteger(staleLockMs) || staleLockMs < 1) {
+    throw new TypeError("staleLockMs must be a positive safe integer.");
   }
 
   const fileStem = (sessionId: string) =>
@@ -99,21 +116,30 @@ export function createFileAgentSessionStore(
     lock: join(dataDirectory, `${fileStem(sessionId)}.lock`),
   });
 
-  const read = async (sessionId: string): Promise<AgentSession | null> => {
+  const read = async (
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<AgentSession | null> => {
+    ensureNotAborted(signal);
     const { state } = pathsFor(sessionId);
     let encoded: string;
     try {
-      encoded = await readFile(state, "utf8");
+      encoded = await readFile(state, {
+        encoding: "utf8",
+        ...(signal === undefined ? {} : { signal }),
+      });
     } catch (error) {
+      if (signal?.aborted === true) throw signal.reason;
       if (errorCode(error) === "ENOENT") return null;
       throw error;
     }
+    ensureNotAborted(signal);
     let parsed: unknown;
     try {
       parsed = JSON.parse(encoded) as unknown;
-    } catch (cause) {
+    } catch {
       throw new Error("The persisted agent session is not valid JSON.", {
-        cause,
+        cause: new Error("The persisted session payload could not be parsed."),
       });
     }
     const result = agentSessionSchema.safeParse(parsed);
@@ -123,17 +149,31 @@ export function createFileAgentSessionStore(
     return result.data;
   };
 
-  const removeStaleLock = async (lockPath: string): Promise<void> => {
+  const removeStaleLock = async (
+    lockPath: string,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    ensureNotAborted(signal);
     try {
       const lockStat = await stat(lockPath);
+      ensureNotAborted(signal);
       if (Date.now() - lockStat.mtimeMs <= staleLockMs) return;
-      const encoded = await readFile(lockPath, "utf8");
+      const encoded = await readFile(lockPath, {
+        encoding: "utf8",
+        ...(signal === undefined ? {} : { signal }),
+      });
+      ensureNotAborted(signal);
       const record = parseLockRecord(encoded);
       if (record !== null && processIsAlive(record.pid)) return;
-      const confirmation = await readFile(lockPath, "utf8");
+      const confirmation = await readFile(lockPath, {
+        encoding: "utf8",
+        ...(signal === undefined ? {} : { signal }),
+      });
+      ensureNotAborted(signal);
       if (confirmation !== encoded) return;
       await unlink(lockPath);
     } catch (error) {
+      if (signal?.aborted === true) throw signal.reason;
       if (errorCode(error) !== "ENOENT") throw error;
     }
   };
@@ -143,7 +183,9 @@ export function createFileAgentSessionStore(
     storeOptions: StoreOptions | undefined,
     operation: () => Promise<Result>,
   ): Promise<Result> => {
+    ensureNotAborted(storeOptions?.signal);
     await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
+    ensureNotAborted(storeOptions?.signal);
     const { lock } = pathsFor(sessionId);
     const ownerId = randomUUID();
     const lockCandidate = join(
@@ -178,7 +220,7 @@ export function createFileAgentSessionStore(
           }
         } catch (error) {
           if (errorCode(error) !== "EEXIST") throw error;
-          await removeStaleLock(lock);
+          await removeStaleLock(lock, storeOptions?.signal);
           if (Date.now() >= deadline) {
             throw new Error(
               "Timed out while waiting for the agent session lock.",
@@ -217,7 +259,11 @@ export function createFileAgentSessionStore(
     }
   };
 
-  const write = async (session: AgentSession): Promise<void> => {
+  const write = async (
+    session: AgentSession,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    ensureNotAborted(signal);
     const validated = agentSessionSchema.parse(session);
     const { state } = pathsFor(session.sessionId);
     const temporary = join(
@@ -228,9 +274,12 @@ export function createFileAgentSessionStore(
     let closed = false;
     try {
       await handle.writeFile(`${JSON.stringify(validated, null, 2)}\n`);
+      ensureNotAborted(signal);
       await handle.sync();
+      ensureNotAborted(signal);
       await handle.close();
       closed = true;
+      ensureNotAborted(signal);
       await rename(temporary, state);
     } catch (error) {
       if (!closed) await handle.close().catch(() => undefined);
@@ -242,14 +291,16 @@ export function createFileAgentSessionStore(
   return {
     async create(session, storeOptions): Promise<CreateSessionResult> {
       return withLock(session.sessionId, storeOptions, async () => {
-        if ((await read(session.sessionId)) !== null) return "exists";
-        await write(session);
+        if ((await read(session.sessionId, storeOptions?.signal)) !== null) {
+          return "exists";
+        }
+        await write(session, storeOptions?.signal);
         return "created";
       });
     },
     async findById(sessionId, storeOptions) {
       ensureNotAborted(storeOptions?.signal);
-      return read(sessionId);
+      return read(sessionId, storeOptions?.signal);
     },
     async save(
       session,
@@ -257,12 +308,32 @@ export function createFileAgentSessionStore(
       storeOptions,
     ): Promise<SaveSessionResult> {
       return withLock(session.sessionId, storeOptions, async () => {
-        const current = await read(session.sessionId);
+        const current = await read(session.sessionId, storeOptions?.signal);
         if (current === null) return "missing";
         if (current.revision !== expectedRevision) return "conflict";
-        await write(session);
+        await write(session, storeOptions?.signal);
         return "saved";
       });
     },
   };
 }
+
+export const fileAgentSessionConnector = defineConnector({
+  name: "file-agent-sessions",
+  config: fileAgentSessionConnectorConfig,
+  create(config, _dependencies: FileAgentSessionConnectorDependencies) {
+    return {
+      ports: {
+        sessions: createFileAgentSessionStore({
+          dataDirectory: config.dataDirectory,
+          ...(config.lockTimeoutMs === undefined
+            ? {}
+            : { lockTimeoutMs: config.lockTimeoutMs }),
+          ...(config.staleLockMs === undefined
+            ? {}
+            : { staleLockMs: config.staleLockMs }),
+        }),
+      },
+    };
+  },
+});

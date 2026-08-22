@@ -1,4 +1,5 @@
 import type { Principal } from "@invokta/core";
+import { toMcpToolName, validateMcpToolCatalog } from "@invokta/mcp";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import type {
@@ -299,5 +300,19 @@ describe("the crawl engine example", () => {
       timeoutMs: 180_000,
       annotations: { idempotent: false, openWorld: true },
     });
+  });
+
+  it("publishes one unique portable MCP tool name for every capability", () => {
+    const engine = createCrawlEngine(createDependencies());
+
+    // The same catalog construction `invokta check-mcp` runs as a build-time
+    // gate: a capability ID whose derived alias collides with another one's
+    // fails here instead of when an MCP adapter starts.
+    expect(() => {
+      validateMcpToolCatalog(engine);
+    }).not.toThrow();
+    expect(
+      engine.list().map((capability) => toMcpToolName(capability.id)),
+    ).toEqual(["crawl_scrape-page", "crawl_map-site", "crawl_crawl-site"]);
   });
 });

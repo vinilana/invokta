@@ -839,7 +839,10 @@ function validateInstallation(
         "CONFIG_PATH_RELOCATED",
       );
     } else {
-      if (value.configPath !== contract.configPath) {
+      if (
+        value.configPath !== contract.configPath &&
+        !allowUnavailableTargetContracts
+      ) {
         addIssue(
           issues,
           childPointer(pointer, "configPath"),

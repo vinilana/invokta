@@ -52,6 +52,7 @@ describe("Node installer filesystem adapter", () => {
 
     await expect(fileSystem.inspectPath(regularFile)).resolves.toEqual({
       kind: "regular-file",
+      byteLength: 3,
       ownerId,
       realPath: realpathSync(regularFile),
     });

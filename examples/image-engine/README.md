@@ -50,11 +50,14 @@ direct / CLI / MCP stdio / MCP HTTP
 - `src/capabilities/` owns the stable Zod 4 contracts, defaults, access rules,
   timeouts, and handlers.
 - `src/infrastructure/` is the only layer that knows the three outbound HTTP
-  contracts.
+  contracts. Each provider exports a `defineConnector` definition with a
+  private Zod configuration schema and an explicit `fetch` dependency.
 - `src/engine.ts` is the composition root. It reads credentials and optional
-  model/base-URL overrides, constructs the adapters, and injects them.
-- CLI and MCP adapters receive the engine and can execute a capability only
-  through `engine.invoke`.
+  model/base-URL overrides, constructs the outbound connectors, and injects
+  only their named ports. The OpenAI connector provides both `editor` and
+  `textRenderer`; Seedream and Nano Banana each provide one focused port.
+- CLI and MCP inbound adapters receive the engine and can execute a capability
+  only through `engine.invoke`.
 
 The example uses built-in `fetch`, `FormData`, and `Blob`, so it adds no provider
 SDK dependencies. A production engine may use official SDKs behind the same
@@ -170,7 +173,8 @@ boundary.
 | Nano Banana timeout | 150 seconds |
 
 Aspect ratio defaults to `1:1` and accepts `1:1`, `3:2`, `2:3`, `16:9`, or
-`9:16`. Every adapter propagates the invocation's `AbortSignal` to `fetch`.
+`9:16`. Every outbound connector propagates the invocation's `AbortSignal` to
+`fetch`.
 
 The engine performs one provider request per invocation and implements no retry,
 fallback, cache, queue, or concurrency policy. Provider rejection, malformed
@@ -196,4 +200,28 @@ The tests use local provider stubs and never call OpenAI, BytePlus, or Google:
 yarn workspace @invokta/example-image test
 yarn workspace @invokta/example-image typecheck
 yarn workspace @invokta/example-image build
+```
+
+## Inspect and gate this engine
+
+This composition root needs provider credentials, so it publishes no
+credential-free constructed engine for `invokta-devtools serve` or
+`invokta check-mcp` to import. The portable MCP tool names are gated in
+[`test/image-engine.test.ts`](./test/image-engine.test.ts) instead, where
+`validateMcpToolCatalog` runs against the engine built from the test doubles and
+fails when two capability IDs derive the same alias.
+
+With the credentials exported, verify the built stdio adapter:
+
+```sh
+yarn workspace @invokta/example-image devtools:verify
+```
+
+`invokta-devtools verify` initializes the server and reads the complete
+paginated `tools/list` without calling a tool, exiting `1` when the target or
+protocol fails. To drive one deliberate call by hand, attach the same command in
+the idle MCP workbench:
+
+```sh
+npx invokta-devtools open --mcp
 ```
