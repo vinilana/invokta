@@ -11,6 +11,7 @@
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
     "test": "vitest run test",
     "direct": "node dist/direct.js",
+    "devtools:verify": "tsc -b --pretty false && invokta-devtools verify --stdio node --arg dist/mcp-stdio.js --env OPENAI_API_KEY=OPENAI_API_KEY --env ARK_API_KEY=ARK_API_KEY --env GEMINI_API_KEY=GEMINI_API_KEY",
     "cli": "node dist/cli.js",
     "mcp:stdio": "node dist/mcp-stdio.js",
     "mcp:http": "node dist/mcp-http.js"
@@ -22,6 +23,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@invokta/devtools": "0.6.1",
     "@modelcontextprotocol/sdk": "1.30.0"
   }
 }

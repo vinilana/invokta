@@ -161,3 +161,27 @@ yarn workspace @invokta/example-crawl test
 yarn workspace @invokta/example-crawl typecheck
 yarn workspace @invokta/example-crawl build
 ```
+
+## Inspect and gate this engine
+
+This composition root needs provider credentials, so it publishes no
+credential-free constructed engine for `invokta-devtools serve` or
+`invokta check-mcp` to import. The portable MCP tool names are gated in
+[`test/crawl-engine.test.ts`](./test/crawl-engine.test.ts) instead, where
+`validateMcpToolCatalog` runs against the engine built from the test doubles and
+fails when two capability IDs derive the same alias.
+
+With the credentials exported, verify the built stdio adapter:
+
+```sh
+yarn workspace @invokta/example-crawl devtools:verify
+```
+
+`invokta-devtools verify` initializes the server and reads the complete
+paginated `tools/list` without calling a tool, exiting `1` when the target or
+protocol fails. To drive one deliberate call by hand, attach the same command in
+the idle MCP workbench:
+
+```sh
+npx invokta-devtools open --mcp
+```

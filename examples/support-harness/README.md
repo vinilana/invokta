@@ -20,3 +20,15 @@ node examples/support-harness/dist/main.js T-123
 
 The support engine child process reserves stdout for MCP protocol messages. The
 harness prints only its final JSON snapshot to its own stdout.
+
+## Verify the engine before consuming it
+
+```sh
+yarn workspace @invokta/example-support-harness devtools:verify
+```
+
+`invokta-devtools verify` runs initialization and the complete paginated
+`tools/list` against the same `node dist/mcp-stdio.js` command this harness
+spawns, and never calls a tool. It exits `0` when the engine is installable as
+an MCP server and `1` when the target or protocol fails, so it is the
+deterministic check to run before the harness itself.
