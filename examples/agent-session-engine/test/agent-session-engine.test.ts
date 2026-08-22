@@ -1,4 +1,6 @@
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import {
   mkdtemp,
   readdir,
@@ -342,9 +344,16 @@ describe("the agent session engine example", () => {
       "Timed out while waiting for the agent session lock.",
     );
 
+    const exitedOwner = spawn(process.execPath, ["--eval", ""]);
+    const exitedOwnerPid = exitedOwner.pid;
+    if (exitedOwnerPid === undefined) {
+      throw new Error("The exited lock owner did not receive a process ID.");
+    }
+    await once(exitedOwner, "exit");
+
     await writeFile(
       lockPath,
-      `${JSON.stringify({ ownerId: "exited-owner", pid: 2_147_483_647, acquiredAt: oldTime.toISOString() })}\n`,
+      `${JSON.stringify({ ownerId: "exited-owner", pid: exitedOwnerPid, acquiredAt: oldTime.toISOString() })}\n`,
       { mode: 0o600 },
     );
     await utimes(lockPath, oldTime, oldTime);

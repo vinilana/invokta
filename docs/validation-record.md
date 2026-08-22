@@ -47,7 +47,7 @@ consumer can use the protocol surface without coupling to engine code.
 
 - `yarn run check` passes typecheck, lint, formatting, 3,014 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  78.59% statements, 74.05% branches, 82.87% functions, and 80.13% lines.
+  78.59% statements, 74.04% branches, 82.87% functions, and 80.13% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
