@@ -230,7 +230,7 @@ configuration targets:
 
 | Target | Executable evidence | Default user configuration |
 | --- | --- | --- |
-| Antigravity | `agy` or `antigravity` | `~/.gemini/config/mcp_config.json` |
+| Antigravity | `agy` or `antigravity` | `~/.gemini/config/mcp_config.json` or an established `~/.gemini/antigravity/mcp_config.json` |
 | Claude Code | `claude` | `~/.claude.json` |
 | Claude Desktop | `Claude` | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json` |
 | Codex | `codex` | `~/.codex/config.toml` |
@@ -240,12 +240,25 @@ configuration targets:
 | Kimi Code | `kimi` | `~/.kimi-code/mcp.json` |
 | OpenClaw | `openclaw` | Its supported home or state directory |
 | OpenCode v2 | `opencode2` | `~/.config/opencode/opencode.json` or `.jsonc` |
-| Visual Studio Code | `code` | Linux: `~/.config/Code/User/mcp.json`; macOS: `~/Library/Application Support/Code/User/mcp.json` |
+| Visual Studio Code | `code` | Linux: `~/.config/Code/User/mcp.json`; macOS: `~/Library/Application Support/Code/User/mcp.json`; remote server: its `data/User/mcp.json` |
 
 Antigravity CLI and IDE share one target. Cursor's executable aliases also
 share one target. Claude Desktop mutation is macOS-only; it is unsupported on
 Linux and Windows, and VS Code mutation is unsupported on Windows because both
 clients use platform-specific configuration locations there.
+
+Antigravity path selection is finite and fail-closed. One populated safe global
+configuration wins over an empty sibling, two populated variants report
+`HARNESS_CONFIG_AMBIGUOUS`, and a selected empty placeholder is initialized as
+a new server collection. The installer does not read configuration contents
+during detection.
+
+When `code` resolves inside the exact VS Code Server or VS Code Server Insiders
+`remote-cli` layout, the installer writes the matching server-side remote user
+configuration. It does not infer a Windows host profile or add project,
+workspace, or named-profile configuration. If a previous Invokta release
+managed the same engine and target at the native Linux path, the next confirmed
+install removes that exact owned definition and installs it at the remote path.
 
 On Windows, where no POSIX user id exists, the installer validates paths with
 a Windows ownership identity (ADR 0027): symbolic links and junctions are

@@ -1,7 +1,13 @@
 export type InstallerPathInspection =
   | { readonly kind: "missing" }
   | {
-      readonly kind: "regular-file" | "directory";
+      readonly kind: "regular-file";
+      readonly byteLength?: number;
+      readonly ownerId: number;
+      readonly realPath: string;
+    }
+  | {
+      readonly kind: "directory";
       readonly ownerId: number;
       readonly realPath: string;
     }

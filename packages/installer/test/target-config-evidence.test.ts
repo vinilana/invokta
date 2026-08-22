@@ -322,6 +322,123 @@ describe("Node target configuration evidence probes", () => {
     ).resolves.toEqual({ kind: "present", path: vscodePath });
   });
 
+  it("uses the VS Code remote user config when code resolves to the remote CLI", async () => {
+    const homeDirectory = temporaryHome();
+    const remoteRoot = join(homeDirectory, ".vscode-server");
+    const remoteConfigPath = join(remoteRoot, "data/User/mcp.json");
+    const remoteExecutable = join(
+      remoteRoot,
+      "bin/fixture-commit/bin/remote-cli/code",
+    );
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment(),
+      fileSystem: createNodeFileSystem(),
+      platform: "linux",
+    });
+
+    await expect(
+      probes.vscode({
+        homeDirectory,
+        targetId: "vscode",
+        executables: [
+          {
+            candidate: "code",
+            path: remoteExecutable,
+            identity: {
+              device: 7,
+              inode: 11,
+              realPath: remoteExecutable,
+            },
+          },
+        ],
+      }),
+    ).resolves.toEqual({ kind: "absent", path: remoteConfigPath });
+
+    createConfig(remoteConfigPath);
+
+    await expect(
+      probes.vscode({
+        homeDirectory,
+        targetId: "vscode",
+        executables: [
+          {
+            candidate: "code",
+            path: remoteExecutable,
+            identity: {
+              device: 7,
+              inode: 11,
+              realPath: remoteExecutable,
+            },
+          },
+        ],
+      }),
+    ).resolves.toEqual({ kind: "present", path: remoteConfigPath });
+  });
+
+  it.each([
+    "/outside/.vscode-server/bin/commit/bin/remote-cli/code",
+    ".vscode-server/bin/commit/bin/remote-cli/not-code",
+    ".vscode-server/bin/commit/remote-cli/code",
+  ])("does not infer a VS Code remote config from %s", async (relativePath) => {
+    const homeDirectory = temporaryHome();
+    const nativePath = join(homeDirectory, ".config/Code/User/mcp.json");
+    const executablePath = relativePath.startsWith("/")
+      ? relativePath
+      : join(homeDirectory, relativePath);
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment(),
+      fileSystem: createNodeFileSystem(),
+      platform: "linux",
+    });
+
+    await expect(
+      probes.vscode({
+        homeDirectory,
+        targetId: "vscode",
+        executables: [
+          {
+            candidate: "code",
+            path: executablePath,
+            identity: {
+              device: 7,
+              inode: 11,
+              realPath: executablePath,
+            },
+          },
+        ],
+      }),
+    ).resolves.toEqual({ kind: "absent", path: nativePath });
+  });
+
+  it("selects one populated Antigravity config variant and rejects two populated variants", async () => {
+    const homeDirectory = temporaryHome();
+    const currentPath = join(homeDirectory, ".gemini/config/mcp_config.json");
+    const establishedPath = join(
+      homeDirectory,
+      ".gemini/antigravity/mcp_config.json",
+    );
+    mkdirSync(dirname(currentPath), { recursive: true });
+    writeFileSync(currentPath, "");
+    createConfig(establishedPath);
+    const probes = createNodeTargetConfigEvidenceProbes({
+      environment: environment(),
+      fileSystem: createNodeFileSystem(),
+    });
+
+    await expect(
+      probes.antigravity({ homeDirectory, targetId: "antigravity" }),
+    ).resolves.toEqual({ kind: "present", path: establishedPath });
+
+    writeFileSync(currentPath, "{}\n");
+
+    await expect(
+      probes.antigravity({ homeDirectory, targetId: "antigravity" }),
+    ).resolves.toEqual({
+      kind: "blocked",
+      code: "HARNESS_CONFIG_AMBIGUOUS",
+    });
+  });
+
   it("blocks unsupported Windows mutations for VS Code and Claude Desktop", async () => {
     const homeDirectory = temporaryHome();
     const probes = createNodeTargetConfigEvidenceProbes({

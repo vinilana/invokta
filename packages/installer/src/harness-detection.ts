@@ -43,6 +43,7 @@ export type TargetConfigEvidence =
 export interface TargetConfigEvidenceContext {
   readonly homeDirectory: string;
   readonly targetId: ConfigurationTargetId;
+  readonly executables?: readonly DetectedExecutable[];
 }
 
 export type TargetConfigEvidenceProbe = (
@@ -228,9 +229,11 @@ export async function detectHarnesses(
       ({ evidence, targetId }) =>
         targetId === definition.id && evidence === "installed",
     );
+    const targetExecutables = uniqueTargetExecutables(installedSurfaces);
     const configuration = await options.configEvidenceProbes[definition.id]({
       homeDirectory,
       targetId: definition.id,
+      executables: targetExecutables,
     });
     const evidence =
       configuration.kind === "blocked"
@@ -249,7 +252,7 @@ export async function detectHarnesses(
         ),
         surfaceIds: Object.freeze(installedSurfaces.map(({ id }) => id)),
         evidence,
-        executables: uniqueTargetExecutables(installedSurfaces),
+        executables: targetExecutables,
         configuration: Object.freeze({ ...configuration }),
         eligible: evidence === "installed" || evidence === "configuration-only",
         mayCreateConfiguration: evidence === "installed",

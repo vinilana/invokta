@@ -369,7 +369,13 @@ function parseAndInspect(
   inspectionOwner: object,
 ): TargetConfigInspection {
   assertServerName(serverName);
-  const source = decodeTargetSource(sourceBytes, counters, phase);
+  const decodedSource = decodeTargetSource(sourceBytes, counters, phase);
+  const source =
+    options.dialect === "antigravity" &&
+    sourceBytes !== undefined &&
+    sourceBytes.byteLength === 0
+      ? Object.freeze({ ...decodedSource, missing: true })
+      : decodedSource;
   if (source.missing) {
     if (phase === "source") inspectionPass(counters);
     return frozenTargetInspection(
