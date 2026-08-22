@@ -36,6 +36,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `composed-engine` runs `check-capabilities` through the published `invokta`
   binary instead of a relative path into `packages/tooling/dist`.
 
+### Fixed
+
+- `create-invokta-engine --example` now ignores links and unsupported archive
+  entry types outside the selected template subtree while still rejecting them
+  inside it and rejecting path escapes across the whole archive. This restores
+  official example imports after a sibling example added a `CLAUDE.md` symlink.
+  That example now uses a portable regular instruction file, so importing it
+  also works on Windows without symbolic-link privileges. Raw USTAR, PAX, and
+  GNU paths are checked before Windows separator normalization so backslash
+  paths and slash/backslash aliases fail safely instead of colliding.
+
 ## [0.6.1] - 2026-08-20
 
 ### Fixed

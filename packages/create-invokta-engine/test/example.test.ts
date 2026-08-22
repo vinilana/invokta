@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import {
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { link, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -88,17 +94,21 @@ function createUstarLinkEntry(
   return header;
 }
 
-/** Build a PAX `size=` record with a correct length prefix. */
-function createPaxSizeRecord(size: number): Buffer {
-  const payload = `size=${size}\n`;
+/** Build a PAX record with a correct byte-length prefix. */
+function createPaxRecord(key: string, value: string | number): Buffer {
+  const payload = `${key}=${String(value)}\n`;
   let lengthDigits = 1;
   while (true) {
-    const length = lengthDigits + 1 + payload.length;
+    const length = lengthDigits + 1 + Buffer.byteLength(payload);
     if (String(length).length === lengthDigits) {
       return Buffer.from(`${length} ${payload}`);
     }
     lengthDigits += 1;
   }
+}
+
+function createPaxSizeRecord(size: number): Buffer {
+  return createPaxRecord("size", size);
 }
 
 function createPaxSizeRecords(sizes: readonly number[]): Buffer {
@@ -377,6 +387,18 @@ describe("diagnostic sanitization", () => {
   });
 });
 
+describe("official example portability", () => {
+  it("keeps the self-hosted OAuth instructions as a regular file", () => {
+    const instructions = new URL(
+      "../../../examples/auth-self-hosted-oauth-engine/CLAUDE.md",
+      import.meta.url,
+    );
+
+    expect(lstatSync(instructions).isFile()).toBe(true);
+    expect(readFileSync(instructions, "utf8")).toContain("AGENTS.md");
+  });
+});
+
 describe("createExampleProject", () => {
   it("downloads a subtree, rewrites package name, and copies files", async () => {
     const cwd = createWorkingDirectory();
@@ -506,6 +528,280 @@ describe("createExampleProject", () => {
         readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
       ).toThrow();
     }
+  });
+
+  it("ignores links outside the selected template subtree", async () => {
+    for (const [index, typeflag] of (["1", "2"] as const).entries()) {
+      const cwd = createWorkingDirectory();
+      const archive = buildRawTarGz([
+        { name: "repo-main/", typeflag: "5" },
+        {
+          name: "repo-main/templates/engine/package.json",
+          content: '{"name":"template","private":true}\n',
+          typeflag: "0",
+        },
+        {
+          name: "repo-main/templates/engine/src/engine.ts",
+          content: "export const ready = true;\n",
+          typeflag: "0",
+        },
+        {
+          name: "repo-main/examples/other/AGENTS.md",
+          content: "instructions\n",
+          typeflag: "0",
+        },
+        {
+          name: "repo-main/examples/other/CLAUDE.md",
+          typeflag,
+          linkpath: "AGENTS.md",
+        },
+      ]);
+      const target = `my-engine-${String(index + 1)}`;
+
+      const project = await createExampleProject({
+        cwd,
+        target,
+        example: {
+          owner: "acme",
+          repository: "repo",
+          branch: "main",
+          filePath: "templates/engine",
+          label: "acme/repo/templates/engine",
+        },
+        fetch: createFetch({ archive }),
+      });
+
+      expect(project.files).toEqual(["package.json", "src/engine.ts"]);
+      expect(
+        JSON.parse(
+          readFileSync(join(project.directory, "package.json"), "utf8"),
+        ),
+      ).toMatchObject({ name: target, private: true });
+      expect(
+        readFileSync(join(project.directory, "src/engine.ts"), "utf8"),
+      ).toBe("export const ready = true;\n");
+    }
+  });
+
+  it("rejects links in an exact nested selected subtree", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = buildRawTarGz([
+      { name: "repo-main/", typeflag: "5" },
+      {
+        name: "repo-main/templates/engine/nested/package.json",
+        content: '{"name":"template"}\n',
+        typeflag: "0",
+      },
+      {
+        name: "repo-main/templates/engine/nested/CLAUDE.md",
+        typeflag: "2",
+        linkpath: "AGENTS.md",
+      },
+    ]);
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: {
+          owner: "acme",
+          repository: "repo",
+          branch: "main",
+          filePath: "templates/engine/nested",
+          label: "acme/repo/templates/engine/nested",
+        },
+        fetch: createFetch({ archive }),
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+    expect(() =>
+      readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
+    ).toThrow();
+  });
+
+  it("ignores links in a prefix-neighbor subtree", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = buildRawTarGz([
+      { name: "repo-main/", typeflag: "5" },
+      {
+        name: "repo-main/templates/engine/package.json",
+        content: '{"name":"template"}\n',
+        typeflag: "0",
+      },
+      {
+        name: "repo-main/templates/engine/src/engine.ts",
+        content: "export const ready = true;\n",
+        typeflag: "0",
+      },
+      {
+        name: "repo-main/templates/engine-other/CLAUDE.md",
+        typeflag: "2",
+        linkpath: "AGENTS.md",
+      },
+    ]);
+
+    const project = await createExampleProject({
+      cwd,
+      target: "my-engine",
+      example: {
+        owner: "acme",
+        repository: "repo",
+        branch: "main",
+        filePath: "templates/engine",
+        label: "acme/repo/templates/engine",
+      },
+      fetch: createFetch({ archive }),
+    });
+
+    expect(project.files).toEqual(["package.json", "src/engine.ts"]);
+  });
+
+  it("rejects raw header, PAX, and GNU backslash paths on Windows", async () => {
+    const archives = [
+      buildRawTarGz([
+        {
+          name: "repo-main/templates/engine/package.json",
+          content: '{"name":"template"}\n',
+          typeflag: "0",
+        },
+        {
+          name: "repo-main\\templates\\engine\\header.txt",
+          content: "unsafe\n",
+          typeflag: "0",
+        },
+      ]),
+      buildRawTarGz([
+        {
+          name: "repo-main/templates/engine/package.json",
+          content: '{"name":"template"}\n',
+          typeflag: "0",
+        },
+        {
+          name: "PaxHeader/path",
+          content: createPaxRecord(
+            "path",
+            "repo-main\\templates\\engine\\pax.txt",
+          ),
+          typeflag: "x",
+        },
+        {
+          name: "repo-main/templates/engine/placeholder.txt",
+          content: "unsafe\n",
+          typeflag: "0",
+        },
+      ]),
+      buildRawTarGz([
+        {
+          name: "repo-main/templates/engine/package.json",
+          content: '{"name":"template"}\n',
+          typeflag: "0",
+        },
+        {
+          name: "GNU/LongPath",
+          content: Buffer.from("repo-main\\templates\\engine\\gnu.txt\u0000"),
+          typeflag: "L",
+        },
+        {
+          name: "repo-main/templates/engine/placeholder.txt",
+          content: "unsafe\n",
+          typeflag: "0",
+        },
+      ]),
+    ];
+
+    for (const [index, archive] of archives.entries()) {
+      const cwd = createWorkingDirectory();
+      const target = `my-engine-${String(index + 1)}`;
+      await expect(
+        createExampleProject({
+          cwd,
+          target,
+          example: {
+            owner: "acme",
+            repository: "repo",
+            branch: "main",
+            filePath: "templates/engine",
+            label: "acme/repo/templates/engine",
+          },
+          fetch: createFetch({ archive }),
+        }),
+      ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+      expect(() =>
+        readFileSync(join(cwd, target, "package.json"), "utf8"),
+      ).toThrow();
+    }
+  });
+
+  it("rejects slash and backslash path aliases on Windows", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = buildRawTarGz([
+      {
+        name: "repo-main/templates/engine/package.json",
+        content: '{"name":"template"}\n',
+        typeflag: "0",
+      },
+      {
+        name: "repo-main/templates/engine/src/engine.ts",
+        content: "export const first = true;\n",
+        typeflag: "0",
+      },
+      {
+        name: "repo-main\\templates\\engine\\src\\engine.ts",
+        content: "export const second = true;\n",
+        typeflag: "0",
+      },
+    ]);
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: {
+          owner: "acme",
+          repository: "repo",
+          branch: "main",
+          filePath: "templates/engine",
+          label: "acme/repo/templates/engine",
+        },
+        fetch: createFetch({ archive }),
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+    expect(() =>
+      readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
+    ).toThrow();
+  });
+
+  it("rejects a Windows path escape outside the selected subtree", async () => {
+    const cwd = createWorkingDirectory();
+    const archive = buildRawTarGz([
+      {
+        name: "repo-main/templates/engine/package.json",
+        content: '{"name":"template"}\n',
+        typeflag: "0",
+      },
+      {
+        name: "repo-main\\sibling\\..\\outside.txt",
+        content: "unsafe\n",
+        typeflag: "0",
+      },
+    ]);
+
+    await expect(
+      createExampleProject({
+        cwd,
+        target: "my-engine",
+        example: {
+          owner: "acme",
+          repository: "repo",
+          branch: "main",
+          filePath: "templates/engine",
+          label: "acme/repo/templates/engine",
+        },
+        fetch: createFetch({ archive }),
+      }),
+    ).rejects.toMatchObject({ code: "EXAMPLE_FAILED" });
+    expect(() =>
+      readFileSync(join(cwd, "my-engine", "package.json"), "utf8"),
+    ).toThrow();
   });
 
   it("rejects ContiguousFile entries that exceed extract limits", async () => {
@@ -718,6 +1014,7 @@ describe("createExampleProject", () => {
       "repo-main/../outside.txt",
       "C:/windows/package.json",
       "C:\\windows\\package.json",
+      "repo-main\\..\\outside.txt",
       "//server/share/package.json",
       "\\\\server\\share\\package.json",
     ];
