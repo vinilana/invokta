@@ -10,7 +10,8 @@
     "check:mcp": "invokta check-mcp ./dist/engine.js",
     "devtools": "tsc -b --pretty false && invokta-devtools serve dist/engine.js --watch --build \"tsc -b --pretty false\"",
     "devtools:doctor": "tsc -b --pretty false && invokta-devtools doctor dist/engine.js",
-    "mcp:http": "node dist/mcp-http.js"
+    "mcp:http": "node dist/mcp-http.js",
+    "deploy:inspect-oauth": "invokta-deploy inspect-oauth"
   },
   "dependencies": {
     "@invokta/core": "0.6.1",
@@ -19,6 +20,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@invokta/deploy": "0.6.1",
     "@invokta/devtools": "0.6.1",
     "@invokta/tooling": "0.6.1"
   }

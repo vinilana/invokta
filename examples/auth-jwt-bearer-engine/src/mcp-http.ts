@@ -72,6 +72,15 @@ export interface AuthJwtBearerMcpHttpOptions {
    * must discover the Authorization Server on their own.
    */
   readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
+  /**
+   * The ordered base scopes this Resource Server requires, serialized into the
+   * 401 Bearer challenge. They are deliberately separate from the metadata's
+   * `scopesSupported`: the challenge is authoritative for the current request,
+   * while the metadata describes the minimal generally supported set. The
+   * adapter requires `resourceMetadata` alongside them, and omitting them is
+   * correct when the policy cannot name a stable base set.
+   */
+  readonly challengeScopes?: ReadonlyArray<string>;
 }
 
 export async function startAuthJwtBearerMcpHttp(
@@ -92,6 +101,9 @@ export async function startAuthJwtBearerMcpHttp(
       ...(options.resourceMetadata === undefined
         ? {}
         : { resourceMetadata: options.resourceMetadata }),
+      ...(options.challengeScopes === undefined
+        ? {}
+        : { challengeScopes: options.challengeScopes }),
     },
   });
 }
@@ -148,6 +160,22 @@ function readResourceMetadata(
 }
 
 /**
+ * Challenge scopes require Protected Resource Metadata, so an operator who
+ * names them without a resource is told which value is missing instead of
+ * getting a `TypeError` from the adapter's own validation.
+ */
+function readChallengeScopes(
+  resourceMetadata: McpHttpProtectedResourceMetadata | undefined,
+): ReadonlyArray<string> | undefined {
+  const scopes = readList("AUTH_JWT_CHALLENGE_SCOPES");
+  if (scopes === undefined) return undefined;
+  if (resourceMetadata === undefined) {
+    throw new Error("AUTH_JWT_CHALLENGE_SCOPES requires AUTH_JWT_RESOURCE.");
+  }
+  return scopes;
+}
+
+/**
  * Composition root. Every secret-adjacent value comes from the environment, and
  * none of them is ever written to a log.
  *
@@ -162,6 +190,9 @@ function readResourceMetadata(
  *   AUTH_JWT_AUTHORIZATION_SERVERS  comma-separated AS issuers for the metadata
  *                                     document (defaults to AUTH_JWT_ISSUER)
  *   AUTH_JWT_SCOPES_SUPPORTED       comma-separated scopes advertised
+ *   AUTH_JWT_CHALLENGE_SCOPES       comma-separated ordered scopes serialized
+ *                                     into the 401 Bearer challenge; requires
+ *                                     AUTH_JWT_RESOURCE
  *   AUTH_JWT_HOST                   bind host (default 127.0.0.1)
  *   PORT                            bind port (default 3000)
  *   AUTH_JWT_ALLOWED_HOSTS          Host allowlist, required off loopback
@@ -185,6 +216,7 @@ export async function main(): Promise<McpHttpServerHandle> {
   const allowedHosts = readList("AUTH_JWT_ALLOWED_HOSTS");
   const allowedOrigins = readList("AUTH_JWT_ALLOWED_ORIGINS");
   const resourceMetadata = readResourceMetadata(issuer);
+  const challengeScopes = readChallengeScopes(resourceMetadata);
 
   return startAuthJwtBearerMcpHttp({
     verifier: createAccessTokenVerifier({
@@ -198,6 +230,7 @@ export async function main(): Promise<McpHttpServerHandle> {
     ...(allowedHosts === undefined ? {} : { allowedHosts }),
     ...(allowedOrigins === undefined ? {} : { allowedOrigins }),
     ...(resourceMetadata === undefined ? {} : { resourceMetadata }),
+    ...(challengeScopes === undefined ? {} : { challengeScopes }),
   });
 }
 

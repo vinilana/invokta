@@ -59,6 +59,14 @@ export interface Auth0McpHttpOptions {
   /** Public `/mcp` URL, published as Protected Resource Metadata. */
   readonly resource?: string;
   readonly scopesSupported?: ReadonlyArray<string>;
+  /**
+   * The ordered base scopes serialized into the 401 Bearer challenge. The
+   * challenge is authoritative for the current request, while
+   * `scopesSupported` describes the minimal generally supported set, so an
+   * Auth0 API that requires a scope for every call names it here. Requires
+   * `resource`.
+   */
+  readonly challengeScopes?: ReadonlyArray<string>;
 }
 
 export async function startAuth0McpHttp(
@@ -90,6 +98,11 @@ export async function startAuth0McpHttp(
                 ? {}
                 : { scopesSupported: options.scopesSupported }),
             },
+            // The adapter refuses challenge scopes without metadata, so they
+            // stay inside the branch that publishes it.
+            ...(options.challengeScopes === undefined
+              ? {}
+              : { challengeScopes: options.challengeScopes }),
           }),
     },
   });
@@ -112,21 +125,30 @@ function readPort(): number {
   return port;
 }
 
+function readScopes(name: string): ReadonlyArray<string> | undefined {
+  const value = process.env[name];
+  if (value === undefined || value === "") return undefined;
+  const scopes = value.split(/[\s,]+/u).filter((scope) => scope !== "");
+  return scopes.length === 0 ? undefined : scopes;
+}
+
 export async function main(): Promise<McpHttpServerHandle> {
   const resource = process.env.AUTH0_MCP_RESOURCE;
-  const scopes = process.env.AUTH0_MCP_SCOPES;
+  const scopesSupported = readScopes("AUTH0_MCP_SCOPES");
+  const challengeScopes = readScopes("AUTH0_MCP_CHALLENGE_SCOPES");
+  if (
+    challengeScopes !== undefined &&
+    (resource === undefined || resource === "")
+  ) {
+    throw new Error("AUTH0_MCP_CHALLENGE_SCOPES requires AUTH0_MCP_RESOURCE.");
+  }
   return startAuth0McpHttp({
     domain: requireEnvironment("AUTH0_DOMAIN"),
     audience: requireEnvironment("AUTH0_AUDIENCE"),
     port: readPort(),
     ...(resource === undefined || resource === "" ? {} : { resource }),
-    ...(scopes === undefined || scopes === ""
-      ? {}
-      : {
-          scopesSupported: scopes
-            .split(/[\s,]+/u)
-            .filter((scope) => scope !== ""),
-        }),
+    ...(scopesSupported === undefined ? {} : { scopesSupported }),
+    ...(challengeScopes === undefined ? {} : { challengeScopes }),
   });
 }
 

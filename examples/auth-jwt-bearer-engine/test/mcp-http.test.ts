@@ -85,6 +85,7 @@ async function bindWithKnownResource(
         authorizationServers: [issuer],
         scopesSupported: ["engine:invoke"],
       },
+      challengeScopes: ["engine:invoke"],
     });
     resource = candidate;
     return handle;
@@ -130,10 +131,13 @@ describe("protected resource metadata", () => {
     await response.arrayBuffer();
 
     expect(response.status).toBe(401);
+    // The challenge carries the ordered base scopes the Resource Server
+    // requires, so an OAuth client asks for them on its first authorization
+    // request instead of discovering them from a second rejection.
     expect(response.headers.get("www-authenticate")).toBe(
       `Bearer resource_metadata="${
         new URL("/.well-known/oauth-protected-resource/mcp", endpoint).href
-      }"`,
+      }", scope="engine:invoke"`,
     );
   });
 });

@@ -24,6 +24,9 @@ let tokens: CognitoTokenFactory;
 let server: McpHttpServerHandle;
 let endpoint: string;
 
+const resource = "https://engine.example.com/mcp";
+const issuer = `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`;
+
 const requestHeaders = {
   accept: "application/json, text/event-stream",
   "content-type": "application/json",
@@ -46,6 +49,12 @@ beforeAll(async () => {
       appClientIds: [appClientId],
       getKey: createLocalJWKSet(tokens.jwks),
     }),
+    resourceMetadata: {
+      resource,
+      authorizationServers: [issuer],
+      scopesSupported: ["engine/invoke"],
+    },
+    challengeScopes: ["engine/invoke"],
   });
   const address = server.address();
   endpoint = `http://${address.host}:${address.port}/mcp`;
@@ -150,6 +159,11 @@ describe("cognito MCP HTTP boundary", () => {
     await response.arrayBuffer();
 
     expect(response.status).toBe(401);
+    // The challenge points at the user pool's metadata document and names the
+    // ordered base scopes the resource requires.
+    expect(response.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://engine.example.com/.well-known/oauth-protected-resource/mcp", scope="engine/invoke"',
+    );
   });
 
   it("answers 401 for an id token", async () => {

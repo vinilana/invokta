@@ -22,6 +22,14 @@ export interface WorkOsMcpHttpOptions {
   readonly host?: string;
   readonly port?: number;
   readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
+  /**
+   * The ordered base scopes serialized into the 401 Bearer challenge, so an
+   * MCP client asks AuthKit for them on its first authorization request. The
+   * challenge is authoritative for the current request; the metadata's
+   * `scopesSupported` describes the minimal generally supported set. Requires
+   * `resourceMetadata`.
+   */
+  readonly challengeScopes?: ReadonlyArray<string>;
 }
 
 // RFC 9110 makes the authentication scheme case-insensitive.
@@ -64,7 +72,14 @@ export async function startWorkOsMcpHttp(
       authenticate: createWorkOsAuthenticate(options.verifier),
       ...(options.resourceMetadata === undefined
         ? {}
-        : { resourceMetadata: options.resourceMetadata }),
+        : {
+            resourceMetadata: options.resourceMetadata,
+            // The adapter refuses challenge scopes without metadata, so they
+            // stay inside the branch that publishes it.
+            ...(options.challengeScopes === undefined
+              ? {}
+              : { challengeScopes: options.challengeScopes }),
+          }),
     },
   });
 }
@@ -88,6 +103,20 @@ function readEnvironment(
 export interface WorkOsBoundaryConfiguration {
   readonly verifier: WorkOsVerifierOptions;
   readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
+  readonly challengeScopes?: ReadonlyArray<string>;
+}
+
+function readScopeList(
+  env: Readonly<Record<string, string | undefined>>,
+  name: string,
+): ReadonlyArray<string> | undefined {
+  const value = readEnvironment(env, name);
+  if (value === undefined) return undefined;
+  const scopes = value.split(/[\s,]+/u).filter((scope) => scope !== "");
+  if (scopes.length === 0) {
+    throw new Error(`${name} must list at least one scope.`);
+  }
+  return scopes;
 }
 
 /**
@@ -120,8 +149,16 @@ export function resolveWorkOsConfiguration(
   const authKitDomain = readEnvironment(env, "WORKOS_AUTHKIT_DOMAIN");
   const issuerOverride = readEnvironment(env, "WORKOS_ISSUER");
   const jwksOverride = readEnvironment(env, "WORKOS_JWKS_URL");
+  const challengeScopes = readScopeList(env, "WORKOS_MCP_CHALLENGE_SCOPES");
 
   if (resource === undefined) {
+    if (challengeScopes !== undefined) {
+      // Challenge scopes are part of Protected Resource Metadata, which the
+      // session-token flavor does not publish.
+      throw new Error(
+        "WORKOS_MCP_CHALLENGE_SCOPES requires WORKOS_MCP_RESOURCE.",
+      );
+    }
     return {
       verifier: {
         clientId,
@@ -146,6 +183,7 @@ export function resolveWorkOsConfiguration(
   return {
     verifier: { clientId, issuer, jwksUrl, audience: resource },
     resourceMetadata: { resource, authorizationServers: [issuer] },
+    ...(challengeScopes === undefined ? {} : { challengeScopes }),
   };
 }
 
@@ -166,6 +204,9 @@ export async function main(): Promise<McpHttpServerHandle> {
     ...(configuration.resourceMetadata === undefined
       ? {}
       : { resourceMetadata: configuration.resourceMetadata }),
+    ...(configuration.challengeScopes === undefined
+      ? {}
+      : { challengeScopes: configuration.challengeScopes }),
   });
 }
 

@@ -1,4 +1,7 @@
-import type { McpHttpServerHandle } from "@invokta/mcp";
+import type {
+  McpHttpProtectedResourceMetadata,
+  McpHttpServerHandle,
+} from "@invokta/mcp";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -72,11 +75,16 @@ const servers: McpHttpServerHandle[] = [];
 
 async function startServer(
   serverVerifier: WorkOsAccessTokenVerifier,
+  discovery?: Readonly<{
+    resourceMetadata: McpHttpProtectedResourceMetadata;
+    challengeScopes: ReadonlyArray<string>;
+  }>,
 ): Promise<URL> {
   const server = await startWorkOsMcpHttp({
     verifier: serverVerifier,
     host: "127.0.0.1",
     port: 0,
+    ...(discovery === undefined ? {} : discovery),
   });
   servers.push(server);
   const address = server.address();
@@ -211,6 +219,36 @@ describe("WorkOS MCP HTTP boundary", () => {
     await Promise.all([missing.arrayBuffer(), invalid.arrayBuffer()]);
   });
 
+  it("names the AuthKit metadata and the base scopes in the challenge", async () => {
+    const url = await startServer(verifier, {
+      resourceMetadata: {
+        resource: "https://engine.example.com/mcp",
+        authorizationServers: ["https://example-env.authkit.app"],
+      },
+      challengeScopes: ["engine:invoke"],
+    });
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "challenge",
+        method: "tools/call",
+        params: { name: "identity_whoami", arguments: {} },
+      }),
+    });
+    await response.arrayBuffer();
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://engine.example.com/.well-known/oauth-protected-resource/mcp", scope="engine:invoke"',
+    );
+  });
+
   it("answers a verification infrastructure failure with HTTP 500", async () => {
     const url = await startServer({
       verify() {
@@ -266,6 +304,29 @@ describe("WorkOS boundary configuration", () => {
         authorizationServers: ["https://example-env.authkit.app"],
       },
     });
+  });
+
+  it("carries the configured base scopes into the challenge configuration", () => {
+    const configuration = resolveWorkOsConfiguration({
+      WORKOS_CLIENT_ID: clientId,
+      WORKOS_MCP_RESOURCE: "https://engine.example.com/mcp",
+      WORKOS_AUTHKIT_DOMAIN: "https://example-env.authkit.app",
+      WORKOS_MCP_CHALLENGE_SCOPES: "engine:invoke, engine:read",
+    });
+
+    expect(configuration.challengeScopes).toEqual([
+      "engine:invoke",
+      "engine:read",
+    ]);
+  });
+
+  it("refuses challenge scopes without an MCP resource", () => {
+    expect(() =>
+      resolveWorkOsConfiguration({
+        WORKOS_CLIENT_ID: clientId,
+        WORKOS_MCP_CHALLENGE_SCOPES: "engine:invoke",
+      }),
+    ).toThrow(/WORKOS_MCP_RESOURCE/u);
   });
 
   it("accepts explicit issuer and JWKS overrides for the OAuth flavor", () => {

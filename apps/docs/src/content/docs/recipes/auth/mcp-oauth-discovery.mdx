@@ -35,13 +35,16 @@ discovery layer is new here.
      readonly allowedHosts?: ReadonlyArray<string>;
      readonly allowedOrigins?: ReadonlyArray<string>;
      readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
+     readonly challengeScopes?: ReadonlyArray<string>;
    }
    ```
 
    `McpHttpProtectedResourceMetadata` carries `resource`, a non-empty
    `authorizationServers` array, and optional `scopesSupported`. Making it
    optional keeps the same composition root usable for a deployment whose
-   clients already hold tokens.
+   clients already hold tokens. `challengeScopes` is the ordered set of base
+   scopes this Resource Server requires; it needs `resourceMetadata` and is
+   covered in [Name the scopes in the challenge](#name-the-scopes-in-the-challenge).
 
 2. Pass it to `serveMcpHttp`
 
@@ -55,6 +58,9 @@ discovery layer is new here.
        ...(options.resourceMetadata === undefined
          ? {}
          : { resourceMetadata: options.resourceMetadata }),
+       ...(options.challengeScopes === undefined
+         ? {}
+         : { challengeScopes: options.challengeScopes }),
      },
    });
    ```
@@ -139,6 +145,14 @@ HTTP/1.1 401 Unauthorized
 www-authenticate: Bearer resource_metadata="https://engine.example.com/.well-known/oauth-protected-resource/mcp"
 ```
 
+With `challengeScopes` configured, the same challenge also names the scopes the
+client should ask for:
+
+```http
+HTTP/1.1 401 Unauthorized
+www-authenticate: Bearer resource_metadata="https://engine.example.com/.well-known/oauth-protected-resource/mcp", scope="engine:invoke"
+```
+
 From there the MCP authorization specification takes over: the client parses the
 challenge, fetches the metadata document, picks an Authorization Server from
 `authorization_servers`, retrieves that server's own metadata (RFC 8414, at
@@ -161,6 +175,38 @@ receives is audience-bound to your engine — which is exactly what the verifier
   successful HTTP 200 MCP response with `isError: true`.
 </Aside>
 
+## Name the scopes in the challenge
+
+`scopes_supported` in the metadata document describes the minimal set this
+resource generally supports. It does not tell a client what the request it just
+made needed. `challengeScopes` does, by serializing an ordered scope list into
+the 401 challenge itself:
+
+```ts
+await serveMcpHttp(engine, {
+  auth: {
+    mode: "required",
+    authenticate,
+    resourceMetadata: {
+      resource: "https://engine.example.com/mcp",
+      authorizationServers: ["https://identity.example.com"],
+      scopesSupported: ["engine:invoke"],
+    },
+    challengeScopes: ["engine:invoke"],
+  },
+});
+```
+
+The adapter validates each RFC 6749 scope token, rejects duplicates, and
+snapshots the ordered set before it listens, so the serialized challenge cannot
+change afterwards. Challenge scopes require `resourceMetadata`: a configuration
+that names them without it fails at startup rather than serving a challenge no
+client can act on.
+
+Omit them when the authentication policy cannot name a stable base set — for an
+engine whose capabilities require different scopes, the challenge would either
+over-ask or under-ask.
+
 ## Run it
 
 Build the repository and start the engine with a resource identifier
@@ -174,6 +220,7 @@ AUTH_JWT_ISSUER="https://your-tenant.example.com/" \
 AUTH_JWT_AUDIENCE="http://127.0.0.1:3000/mcp" \
 AUTH_JWT_RESOURCE="http://127.0.0.1:3000/mcp" \
 AUTH_JWT_SCOPES_SUPPORTED="engine:invoke" \
+AUTH_JWT_CHALLENGE_SCOPES="engine:invoke" \
 PORT=3000 \
 node examples/auth-jwt-bearer-engine/dist/mcp-http.js
 ```
@@ -218,6 +265,18 @@ and **Authorize** stays disabled until the chain resolves.
 
 The check authorizes nothing and sends no credential: it is the discovery half
 only, which is the half your engine is responsible for.
+
+For the same chain without a browser — in a deployment pipeline, or against an
+engine you just released — run the bounded, credential-free inspection:
+
+```sh
+yarn workspace @invokta/example-auth-jwt-bearer deploy:inspect-oauth \
+  --url https://engine.example.com/mcp
+```
+
+`invokta-deploy inspect-oauth` reports each leg with its own outcome and
+remediation and exits `1` when the chain is not ready. It sends no token,
+cookie, or client credential, registers no client, and mutates nothing.
 
 ## Verify it
 
