@@ -162,3 +162,27 @@ Provider contract references:
 - [Sentry organization issues API](https://docs.sentry.io/api/events/list-an-organizations-issues/)
 - [Datadog v2 log search API](https://docs.datadoghq.com/api/latest/logs/search-logs-post/)
 - [New Relic NerdGraph NRQL tutorial](https://docs.newrelic.com/docs/apis/nerdgraph/examples/nerdgraph-nrql-tutorial/)
+
+## Inspect and gate this engine
+
+This composition root needs provider credentials, so it publishes no
+credential-free constructed engine for `invokta-devtools serve` or
+`invokta check-mcp` to import. The portable MCP tool names are gated in
+[`test/observability-engine.test.ts`](./test/observability-engine.test.ts) instead, where
+`validateMcpToolCatalog` runs against the engine built from the test doubles and
+fails when two capability IDs derive the same alias.
+
+With the credentials exported, verify the built stdio adapter:
+
+```sh
+yarn workspace @invokta/example-observability devtools:verify
+```
+
+`invokta-devtools verify` initializes the server and reads the complete
+paginated `tools/list` without calling a tool, exiting `1` when the target or
+protocol fails. To drive one deliberate call by hand, attach the same command in
+the idle MCP workbench:
+
+```sh
+npx invokta-devtools open --mcp
+```

@@ -11,6 +11,7 @@
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
     "test": "vitest run test",
     "direct": "node dist/direct.js",
+    "devtools:verify": "tsc -b --pretty false && invokta-devtools verify --stdio node --arg dist/mcp-stdio.js --env SENTRY_AUTH_TOKEN=SENTRY_AUTH_TOKEN --env SENTRY_ORG=SENTRY_ORG --env DD_API_KEY=DD_API_KEY --env DD_APP_KEY=DD_APP_KEY --env NEW_RELIC_USER_KEY=NEW_RELIC_USER_KEY --env NEW_RELIC_ACCOUNT_ID=NEW_RELIC_ACCOUNT_ID",
     "cli": "node dist/cli.js",
     "mcp:stdio": "node dist/mcp-stdio.js",
     "mcp:http": "node dist/mcp-http.js"
@@ -22,6 +23,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@invokta/devtools": "0.6.1",
     "@modelcontextprotocol/sdk": "1.30.0"
   }
 }

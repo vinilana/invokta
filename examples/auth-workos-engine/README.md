@@ -48,6 +48,7 @@ Metadata published for discovery — also set `WORKOS_AUTHKIT_DOMAIN` and
 | `WORKOS_AUTHKIT_DOMAIN` | with `WORKOS_MCP_RESOURCE` | The environment's AuthKit domain, `https://<environment>.authkit.app`; the MCP OAuth flavor derives `iss`, the `/oauth2/jwks` key set, and the advertised authorization server from it |
 | `WORKOS_ISSUER` | no | Expected `iss` override for a custom auth domain |
 | `WORKOS_JWKS_URL` | no | Full JWKS URL override for a custom auth domain |
+| `WORKOS_MCP_CHALLENGE_SCOPES` | no | Ordered scopes serialized into the 401 Bearer challenge, so an MCP client asks AuthKit for them on its first authorization request. Requires `WORKOS_MCP_RESOURCE` |
 | `PORT` | no | Listening port, defaults to `3000` |
 
 No WorkOS API key or client secret is needed: verifying an access token only
@@ -82,3 +83,41 @@ material in the produced principal.
 - [Recipe: Authenticate with WorkOS AuthKit](https://docs.invokta.dev/recipes/auth/workos/)
 - [Guide: HTTP authentication](https://docs.invokta.dev/guides/http-authentication/)
 - [Guide: Capability authorization](https://docs.invokta.dev/guides/capability-authorization/)
+
+## Verify the OAuth discovery chain
+
+The challenge scopes are separate from the metadata's `scopes_supported` on
+purpose: the 401 challenge is authoritative for the request the client just
+made, while the metadata describes the minimal generally supported set. Leave
+them unset when the authentication policy cannot name a stable base set.
+
+Once the endpoint is reachable, inspect the discovery chain without sending a
+credential:
+
+```sh
+yarn workspace @invokta/example-auth-workos deploy:inspect-oauth --url https://engine.example.com/mcp
+```
+
+`invokta-deploy inspect-oauth` walks the 401 challenge, Protected Resource
+Metadata, the Authorization Server's RFC 8414 metadata, and the advertised
+registration and JWKS endpoints, and reports each leg with its own outcome and
+remediation. It registers no client, opens no login, exchanges no code, and
+mutates nothing.
+
+## Inspect and gate this engine
+
+```sh
+yarn workspace @invokta/example-auth-workos devtools
+yarn workspace @invokta/example-auth-workos devtools:doctor
+yarn workspace @invokta/example-auth-workos check:mcp
+```
+
+`devtools` rebuilds on change and serves the engine on the printed
+`http://localhost:<port>/` URL. Its Playground emulates one call through the
+direct, CLI, MCP stdio, or MCP HTTP path under the development `Principal` you
+select, and records what that adapter exchanged. `devtools:doctor` runs the
+read-only engine checks and reports whether an `invokta.mcp.json` manifest sits
+next to the project. `check:mcp` is the build-time conformance gate from
+[ADR 0026](../../docs/adr/0026-generated-engine-mcp-conformance-gate.md): it
+fails when two capability IDs derive the same portable MCP tool name, before an
+adapter starts or the engine is installed.

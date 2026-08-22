@@ -103,3 +103,21 @@ the resulting principal.
 
 Read the [Supabase recipe](../../apps/docs/src/content/docs/recipes/auth/supabase.mdx)
 for the step-by-step walkthrough and the `@supabase/supabase-js` variant.
+
+## Inspect and gate this engine
+
+```sh
+yarn workspace @invokta/example-auth-supabase devtools
+yarn workspace @invokta/example-auth-supabase devtools:doctor
+yarn workspace @invokta/example-auth-supabase check:mcp
+```
+
+`devtools` rebuilds on change and serves the engine on the printed
+`http://localhost:<port>/` URL. Its Playground emulates one call through the
+direct, CLI, MCP stdio, or MCP HTTP path under the development `Principal` you
+select, and records what that adapter exchanged. `devtools:doctor` runs the
+read-only engine checks and reports whether an `invokta.mcp.json` manifest sits
+next to the project. `check:mcp` is the build-time conformance gate from
+[ADR 0026](../../docs/adr/0026-generated-engine-mcp-conformance-gate.md): it
+fails when two capability IDs derive the same portable MCP tool name, before an
+adapter starts or the engine is installed.
