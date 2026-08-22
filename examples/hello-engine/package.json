@@ -9,11 +9,13 @@
   "scripts": {
     "build": "tsc -b --pretty false",
     "test": "vitest run test",
+    "check:mcp": "invokta check-mcp ./dist/engine.js",
     "direct": "node dist/direct.js",
+    "devtools": "tsc -b --pretty false && invokta-devtools serve dist/engine.js --watch --build \"tsc -b --pretty false\"",
+    "devtools:doctor": "tsc -b --pretty false && invokta-devtools doctor dist/engine.js",
     "cli": "node dist/cli.js",
     "mcp:stdio": "node dist/mcp-stdio.js",
-    "mcp:http": "node dist/mcp-http.js",
-    "devtools": "invokta-devtools serve dist/engine.js"
+    "mcp:http": "node dist/mcp-http.js"
   },
   "dependencies": {
     "@invokta/cli": "0.6.1",
@@ -22,6 +24,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@invokta/devtools": "0.6.1"
+    "@invokta/devtools": "0.6.1",
+    "@invokta/tooling": "0.6.1"
   }
 }

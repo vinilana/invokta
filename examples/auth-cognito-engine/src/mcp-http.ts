@@ -30,6 +30,14 @@ export interface CognitoMcpHttpOptions {
   readonly port?: number;
   /** Published so an OAuth-capable MCP client can discover the user pool. */
   readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
+  /**
+   * The ordered base scopes serialized into the 401 Bearer challenge. Cognito
+   * resource servers name scopes as `<identifier>/<scope>`; the challenge is
+   * authoritative for the current request, while the metadata's
+   * `scopesSupported` describes the minimal generally supported set. Requires
+   * `resourceMetadata`.
+   */
+  readonly challengeScopes?: ReadonlyArray<string>;
 }
 
 // RFC 9110 makes the authentication scheme case-insensitive.
@@ -72,7 +80,14 @@ export async function startCognitoMcpHttp(
       authenticate: createCognitoAuthenticate(options.verifier),
       ...(options.resourceMetadata === undefined
         ? {}
-        : { resourceMetadata: options.resourceMetadata }),
+        : {
+            resourceMetadata: options.resourceMetadata,
+            // The adapter refuses challenge scopes without metadata, so they
+            // stay inside the branch that publishes it.
+            ...(options.challengeScopes === undefined
+              ? {}
+              : { challengeScopes: options.challengeScopes }),
+          }),
     },
   });
 }
@@ -94,6 +109,19 @@ function readAppClientIds(): ReadonlyArray<string> {
     throw new Error("COGNITO_APP_CLIENT_IDS must list at least one client id.");
   }
   return configured;
+}
+
+function readChallengeScopes(): ReadonlyArray<string> | undefined {
+  const value = process.env.COGNITO_CHALLENGE_SCOPES;
+  if (value === undefined || value === "") return undefined;
+  const scopes = value
+    .split(",")
+    .map((scope) => scope.trim())
+    .filter((scope) => scope !== "");
+  if (scopes.length === 0) {
+    throw new Error("COGNITO_CHALLENGE_SCOPES must list at least one scope.");
+  }
+  return scopes;
 }
 
 export async function main(): Promise<McpHttpServerHandle> {
@@ -119,11 +147,19 @@ export async function main(): Promise<McpHttpServerHandle> {
           authorizationServers: [cognitoIssuer(region, userPoolId)] as const,
         };
 
+  // Optional: the ordered scopes the 401 challenge asks for. Cognito writes
+  // them as `<resource-server-identifier>/<scope>`.
+  const challengeScopes = readChallengeScopes();
+  if (challengeScopes !== undefined && resourceMetadata === undefined) {
+    throw new Error("COGNITO_CHALLENGE_SCOPES requires COGNITO_RESOURCE_URL.");
+  }
+
   return startCognitoMcpHttp({
     port,
     // No secret is read here: the verifier fetches only the public JWKS.
     verifier: createCognitoVerifier({ region, userPoolId, appClientIds }),
     ...(resourceMetadata === undefined ? {} : { resourceMetadata }),
+    ...(challengeScopes === undefined ? {} : { challengeScopes }),
   });
 }
 

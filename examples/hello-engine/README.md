@@ -97,18 +97,20 @@ not production identity. It does not issue, validate, refresh, or persist real
 tokens. In production, keep `mode: "required"` and replace the hook with your
 organization's existing identity implementation. Never commit the demo token.
 
-## Inspect with devtools
+## Inspect and gate this engine
 
-Build the example, then serve the compiled engine module through
-`@invokta/devtools`:
-
-```bash
-yarn workspace @invokta/example-hello build
+```sh
 yarn workspace @invokta/example-hello devtools
+yarn workspace @invokta/example-hello devtools:doctor
+yarn workspace @invokta/example-hello check:mcp
 ```
 
-The inspector on `http://localhost:4100/` invokes
-`onboarding.create-welcome-message` from a schema-seeded editor through any of
-the four adapters above, shows what each one exchanged alongside a live
-invocation trace, and switches between test identities backed by development
-`Principal` values.
+`devtools` rebuilds on change and serves the engine on the printed
+`http://localhost:<port>/` URL. Its Playground emulates one call through the
+direct, CLI, MCP stdio, or MCP HTTP path under the development `Principal` you
+select, and records what that adapter exchanged. `devtools:doctor` runs the
+read-only engine checks and reports whether an `invokta.mcp.json` manifest sits
+next to the project. `check:mcp` is the build-time conformance gate from
+[ADR 0026](../../docs/adr/0026-generated-engine-mcp-conformance-gate.md): it
+fails when two capability IDs derive the same portable MCP tool name, before an
+adapter starts or the engine is installed.

@@ -104,3 +104,21 @@ The tests generate an Ed25519 key pair locally, mint tokens in Better Auth's
 claim shape, and cover the valid case, every invalid-credential class, the
 infrastructure failure, and the absence of token material in the principal. No
 test performs network I/O or needs a Better Auth account.
+
+## Inspect and gate this engine
+
+```sh
+yarn workspace @invokta/example-auth-better-auth devtools
+yarn workspace @invokta/example-auth-better-auth devtools:doctor
+yarn workspace @invokta/example-auth-better-auth check:mcp
+```
+
+`devtools` rebuilds on change and serves the engine on the printed
+`http://localhost:<port>/` URL. Its Playground emulates one call through the
+direct, CLI, MCP stdio, or MCP HTTP path under the development `Principal` you
+select, and records what that adapter exchanged. `devtools:doctor` runs the
+read-only engine checks and reports whether an `invokta.mcp.json` manifest sits
+next to the project. `check:mcp` is the build-time conformance gate from
+[ADR 0026](../../docs/adr/0026-generated-engine-mcp-conformance-gate.md): it
+fails when two capability IDs derive the same portable MCP tool name, before an
+adapter starts or the engine is installed.

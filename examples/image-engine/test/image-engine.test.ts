@@ -1,4 +1,5 @@
 import type { Principal } from "@invokta/core";
+import { toMcpToolName, validateMcpToolCatalog } from "@invokta/mcp";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import type {
@@ -319,5 +320,24 @@ describe("the multi-provider image engine", () => {
         ARK_API_KEY: "ark-key",
       }),
     ).toThrow("GEMINI_API_KEY is required.");
+  });
+
+  it("publishes one unique portable MCP tool name for every capability", () => {
+    const engine = createImageEngine(createDependencies());
+
+    // The same catalog construction `invokta check-mcp` runs as a build-time
+    // gate: a capability ID whose derived alias collides with another one's
+    // fails here instead of when an MCP adapter starts.
+    expect(() => {
+      validateMcpToolCatalog(engine);
+    }).not.toThrow();
+    expect(
+      engine.list().map((capability) => toMcpToolName(capability.id)),
+    ).toEqual([
+      "image_edit-asset",
+      "image_render-text-asset",
+      "image_generate-campaign-series",
+      "image_compose-reference-asset",
+    ]);
   });
 });

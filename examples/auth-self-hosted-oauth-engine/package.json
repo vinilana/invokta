@@ -18,7 +18,8 @@
     "build": "tsc -b --pretty false",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
     "test": "vitest run test",
-    "check": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit && vitest run test",
+    "check": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit && vitest run test && invokta check-mcp ./dist/engine.js",
+    "check:mcp": "invokta check-mcp ./dist/engine.js",
     "db:migrate": "tsc -b --pretty false && node dist/database/migrate.js",
     "direct": "node dist/direct.js",
     "devtools": "tsc -b --pretty false && invokta-devtools serve dist/engine.js --watch --build \"tsc -b --pretty false\"",
@@ -48,6 +49,7 @@
   "devDependencies": {
     "@invokta/deploy": "0.6.1",
     "@invokta/devtools": "0.6.1",
+    "@invokta/tooling": "0.6.1",
     "@types/node": "26.1.2",
     "@types/oidc-provider": "^9.11.1",
     "@types/pg": "^8.15.5",

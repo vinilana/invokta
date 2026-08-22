@@ -268,6 +268,15 @@ Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
 - [`composed-engine`](./examples/composed-engine/) for combining local, atomic,
   and library capabilities under deliberate effective IDs.
 
+Every example that exports a constructed engine runs the same development
+toolchain a generated project gets: `devtools` serves it through
+[Invokta DevTools](./packages/devtools/), `devtools:doctor` runs the read-only
+engine checks, and `check:mcp` is the build-time MCP conformance gate. The
+provider-backed engines, which need credentials to compose, gate their tool
+names in their own tests and verify the built stdio adapter with
+`devtools:verify` instead. `yarn run check` runs both gates over every built
+example.
+
 ## Documentation
 
 Start with [use cases by company area](./apps/docs/src/content/docs/use-cases/index.mdx)

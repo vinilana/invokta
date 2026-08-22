@@ -74,6 +74,7 @@ AUTH0_MCP_SCOPES="orders:read orders:write" \
 | `PORT` | no | Bind port, default `3000` |
 | `AUTH0_MCP_RESOURCE` | no | Public `/mcp` URL published as Protected Resource Metadata |
 | `AUTH0_MCP_SCOPES` | no | Scopes advertised in that metadata document |
+| `AUTH0_MCP_CHALLENGE_SCOPES` | no | Ordered scopes serialized into the 401 Bearer challenge. Requires `AUTH0_MCP_RESOURCE` |
 
 Get a machine-to-machine token for the same audience and call the tool:
 
@@ -113,3 +114,41 @@ a wrong audience, a missing audience, an unknown signing key, a forged
 signature, a malformed token, a missing header, a JWKS outage, and the absence
 of any token material in the produced `Principal`. No test performs network I/O
 and no Auth0 account is needed.
+
+## Verify the OAuth discovery chain
+
+The challenge scopes are separate from the metadata's `scopes_supported` on
+purpose: the 401 challenge is authoritative for the request the client just
+made, while the metadata describes the minimal generally supported set. Leave
+them unset when the authentication policy cannot name a stable base set.
+
+Once the endpoint is reachable, inspect the discovery chain without sending a
+credential:
+
+```sh
+yarn workspace @invokta/example-auth-auth0 deploy:inspect-oauth --url https://engine.example.com/mcp
+```
+
+`invokta-deploy inspect-oauth` walks the 401 challenge, Protected Resource
+Metadata, the Authorization Server's RFC 8414 metadata, and the advertised
+registration and JWKS endpoints, and reports each leg with its own outcome and
+remediation. It registers no client, opens no login, exchanges no code, and
+mutates nothing.
+
+## Inspect and gate this engine
+
+```sh
+yarn workspace @invokta/example-auth-auth0 devtools
+yarn workspace @invokta/example-auth-auth0 devtools:doctor
+yarn workspace @invokta/example-auth-auth0 check:mcp
+```
+
+`devtools` rebuilds on change and serves the engine on the printed
+`http://localhost:<port>/` URL. Its Playground emulates one call through the
+direct, CLI, MCP stdio, or MCP HTTP path under the development `Principal` you
+select, and records what that adapter exchanged. `devtools:doctor` runs the
+read-only engine checks and reports whether an `invokta.mcp.json` manifest sits
+next to the project. `check:mcp` is the build-time conformance gate from
+[ADR 0026](../../docs/adr/0026-generated-engine-mcp-conformance-gate.md): it
+fails when two capability IDs derive the same portable MCP tool name, before an
+adapter starts or the engine is installed.

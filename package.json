@@ -38,7 +38,8 @@
     "release:pack": "bash scripts/release/check-packages.sh",
     "release:publish": "bash scripts/release/publish-release.sh",
     "release:verify": "node scripts/verify-release-packages.mjs",
-    "check": "yarn typecheck && yarn lint && yarn format:check && yarn test:coverage && yarn build"
+    "check:examples": "node scripts/check-examples.mjs",
+    "check": "yarn typecheck && yarn lint && yarn format:check && yarn test:coverage && yarn build && yarn check:examples"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.8",

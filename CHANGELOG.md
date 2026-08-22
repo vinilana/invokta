@@ -7,6 +7,35 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- The `auth-jwt-bearer`, `auth-auth0`, `auth-cognito`, and `auth-workos`
+  examples now accept ordered OAuth challenge scopes and serialize them into
+  the 401 Bearer challenge, so an OAuth-capable MCP client learns what to ask
+  for from the challenge instead of guessing. Each composition root reads them
+  from its own environment variable — `AUTH_JWT_CHALLENGE_SCOPES`,
+  `AUTH0_MCP_CHALLENGE_SCOPES`, `COGNITO_CHALLENGE_SCOPES`, and
+  `WORKOS_MCP_CHALLENGE_SCOPES` — and refuses to start when they are named
+  without the example's Protected Resource Metadata resource. The same four
+  examples gain `deploy:inspect-oauth` for the credential-free discovery
+  inspection.
+- Every example that exports a constructed engine now runs the same
+  development toolchain a generated project gets: `check:mcp` for the
+  build-time MCP conformance gate (ADR 0026), plus `devtools` and
+  `devtools:doctor` for Invokta DevTools. The provider-backed crawl, image,
+  observability, and Obsidian engines compose only with credentials, so they
+  gate their portable MCP tool names with `validateMcpToolCatalog` in their own
+  tests and ship `devtools:verify` for the built stdio adapter;
+  `support-harness` verifies the engine it consumes the same way.
+- `yarn run check` now runs `invokta check-mcp` and `invokta check-capabilities`
+  over every built example, so an example cannot drift out of MCP conformance
+  without failing the repository check.
+
+### Changed
+
+- `composed-engine` runs `check-capabilities` through the published `invokta`
+  binary instead of a relative path into `packages/tooling/dist`.
+
 ## [0.6.1] - 2026-08-20
 
 ### Fixed

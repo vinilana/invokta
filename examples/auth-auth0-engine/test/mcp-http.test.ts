@@ -59,6 +59,7 @@ beforeAll(async () => {
     port: 0,
     resource,
     scopesSupported: ["orders:read"],
+    challengeScopes: ["orders:read"],
   });
   unavailable = await startAuth0McpHttp({
     domain: testDomain,
@@ -120,8 +121,10 @@ describe("auth0 MCP HTTP boundary", () => {
 
     expect(missing.status).toBe(401);
     expect(forged.status).toBe(401);
+    // The challenge names the ordered base scopes as well, so an OAuth client
+    // requests them on its first authorization attempt.
     expect(missing.headers.get("www-authenticate")).toBe(
-      `Bearer resource_metadata="https://engine.example.com/.well-known/oauth-protected-resource/mcp"`,
+      `Bearer resource_metadata="https://engine.example.com/.well-known/oauth-protected-resource/mcp", scope="orders:read"`,
     );
     await Promise.all([missing.arrayBuffer(), forged.arrayBuffer()]);
   });
