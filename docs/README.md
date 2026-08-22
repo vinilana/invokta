@@ -57,6 +57,16 @@ Each delivered change is normative through its accepted architecture decision:
 - Workbench launcher and workbench selection —
   [ADR 0033](./adr/0033-workbench-launcher-and-selection.md)
 
+## Design notes
+
+Proposals under review. They are not delivered behavior and do not override a
+contract or ADR; each one records the boundary it would need before it becomes
+an architecture decision.
+
+- [Connector brokers and request-time credentials](./connector-brokers.md) —
+  integrating Vercel Connect or another connector broker without extending the
+  core
+
 ## Guides and examples
 
 These guides apply the normative contracts above. When a guide or example
