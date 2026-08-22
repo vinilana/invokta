@@ -141,7 +141,7 @@ unsupported. Template dependency completeness belongs to the example author.
 
 ## OpenAPI capability import
 
-`--openapi` analyzes a local OpenAPI 3.1 JSON or YAML document and generates
+`--openapi` analyzes a local OpenAPI 3.1.x JSON or YAML document and generates
 ordinary TypeScript capabilities for supported HTTP operations. It does not
 contact the described API while importing.
 

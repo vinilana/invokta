@@ -1,13 +1,14 @@
 ---
 title: 'create-invokta-engine'
-description: Interactive profiles, GitHub example import, automation, filesystem, package-manager, and diagnostic contracts for the Invokta engine creator.
+description: Interactive profiles, local OpenAPI 3.1.x capability generation, GitHub example import, automation, filesystem, package-manager, and diagnostic contracts for the Invokta engine creator.
 ---
 
 `create-invokta-engine` creates one standalone TypeScript Action Engine with a
 public capability shared by direct invocation and the adapters selected by a
 closed scaffold profile, or imports a public GitHub example tree as the project
-template. It is a binary-only development package, not a runtime adapter or
-template framework.
+template. It can also generate selected capability candidates from one local
+OpenAPI 3.1.x contract. It is a binary-only development package, not a runtime
+adapter or template framework.
 
 ## Install
 
@@ -28,6 +29,8 @@ create-invokta-engine [project-directory]
   [--profile complete|mcp-stdio|mcp-http|cli]
   [--example <name|github-url>]
   [--example-path <subdir>]
+  [--openapi <local-json-or-yaml-file>]
+  [--exclude <operation-id|METHOD:/path>]...
   [--package-manager npm|pnpm|yarn]
   [--no-install]
   [--yes]
@@ -38,8 +41,10 @@ create-invokta-engine --version
 Options may appear before or after the one project directory; each option value
 must immediately follow its option. Duplicates, missing values, unknown options
 or profiles, `--option=value`, extra positionals, combining `--example` with
-`--profile`, using `--example-path` without `--example`, or combining help or
-version with another argument are invalid. `--yes` requires an explicit target.
+`--profile` or `--openapi`, using `--example-path` without `--example`, using
+`--exclude` without `--openapi`, or combining help or version with another
+argument are invalid. `--yes` requires an explicit target. OpenAPI import may
+use any profile.
 
 ## Interaction modes
 
@@ -53,6 +58,13 @@ child starts before an affirmative answer. Unicode control, format,
 line-separator, and paragraph-separator characters in an accepted parent path
 are escaped in the confirmation instead of being emitted as terminal-active
 text.
+
+With `--openapi`, the creator displays a deterministic operation catalog.
+Every eligible endpoint is selected by default; unsupported endpoints remain
+visible and unselected with one stable reason. The exclusion prompt accepts a
+comma-separated list of eligible row numbers, and an empty answer keeps every
+eligible endpoint. Automation can repeat `--exclude` with a unique
+`operationId` or canonical `METHOD:/path` selector.
 
 The profile choices are:
 
@@ -179,6 +191,40 @@ rollback boundary. Archive symbolic links, hard links, and path escapes are
 rejected. Private repositories, SSH, tokens, and non-GitHub hosts are out of
 scope. Dependency completeness belongs to the template author.
 
+## OpenAPI capability import
+
+`--openapi` reads one local OpenAPI 3.1.x JSON or YAML entry document and
+generates ordinary TypeScript capability candidates for selected supported HTTP
+operations:
+
+```sh
+create-invokta-engine my-engine \
+  --profile cli \
+  --openapi ./openapi.yaml \
+  --exclude deleteAccount \
+  --exclude 'POST:/internal/reindex' \
+  --no-install \
+  --yes
+```
+
+The bounded importer resolves only contained local references. It never fetches
+a remote document, contacts the described API, invokes an operation, or reads a
+credential. It infers declared server precedence and variable defaults,
+parameter locations and serialization, JSON request and success responses, and
+anonymous, API-key, Basic, or Bearer upstream authentication. Combined security
+schemes must target distinct request locations. Generated credentials are
+environment-variable names only.
+
+Generated request paths remain confined to the configured base URL origin, and
+the runtime validates that origin before applying credentials or calling
+`fetch`. Generated module basenames are portable ASCII, avoid Windows device
+names, and are at most 64 characters. Unsupported operations remain visible and
+are never weakened into generated code.
+
+The result is a source-generated starting point, not a trusted API mirror.
+Review each capability's domain meaning, name, `access` rule, upstream base URL,
+and credential handling before deployment.
+
 ## Target and transaction contract
 
 The project directory is relative to the current working directory. Absolute
@@ -218,7 +264,7 @@ Exactly one foreground install starts directly without a shell, retry, or
 creator-owned timeout, and only after every selected entry exists. An
 unavailable manager, non-zero exit, or signal is `INSTALL_FAILED`; the generated
 project remains for retry. `--no-install` starts no package manager. Profile
-creation without `--example` still performs no creator-owned network request.
+creation and OpenAPI analysis perform no creator-owned network request.
 Example import may contact `api.github.com` and `codeload.github.com` only, even
 when `--no-install` is set.
 
@@ -232,8 +278,8 @@ credentials, child errors, stacks, or causes.
 | Exit | Meaning |
 | ---: | --- |
 | `0` | Help, version, creation, or normal cancellation succeeded |
-| `1` | Prompt interruption, target safety, filesystem, or installation failed |
-| `2` | Usage, required interaction, prompt input, path, or name was invalid |
+| `1` | Prompt interruption, target safety, filesystem, import, or installation failed |
+| `2` | Usage, required interaction, prompt input, path, name, or import input was invalid |
 
 | Code | Meaning |
 | --- | --- |
@@ -249,3 +295,8 @@ credentials, child errors, stacks, or causes.
 | `EXAMPLE_INVALID` | The example name, URL, or path was invalid |
 | `EXAMPLE_UNAVAILABLE` | The example could not be resolved or downloaded |
 | `EXAMPLE_FAILED` | Example extraction or target copy failed |
+| `OPENAPI_INVALID` | The OpenAPI 3.1.x document or import arguments were invalid |
+| `OPENAPI_UNAVAILABLE` | The local OpenAPI document could not be read |
+| `OPENAPI_UNSUPPORTED` | The document had no supported operation to import |
+| `OPENAPI_SELECTION_INVALID` | An exclusion was unknown, ambiguous, unsupported, or removed every eligible operation |
+| `OPENAPI_LIMIT_EXCEEDED` | The import crossed a documented byte, document, node, operation, selection, or generated-name limit |

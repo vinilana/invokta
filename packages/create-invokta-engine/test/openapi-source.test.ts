@@ -9,7 +9,7 @@ const fixtureDirectory = fileURLToPath(
 );
 
 describe("loadOpenApiDocument", () => {
-  it("loads equivalent OpenAPI 3.1 JSON and YAML entry documents", async () => {
+  it("loads equivalent OpenAPI 3.1.x JSON and YAML entry documents", async () => {
     const json = await loadOpenApiDocument({
       cwd: fixtureDirectory,
       path: "minimal.json",

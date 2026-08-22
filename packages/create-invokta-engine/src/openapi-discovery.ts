@@ -125,8 +125,9 @@ function hasOwn(record: OpenApiObject, key: string): boolean {
   return Object.hasOwn(record, key);
 }
 
-function supportedPrimitiveSchema(value: unknown): boolean {
-  if (typeof value === "boolean") return true;
+function supportedParameterScalarSchema(value: unknown): boolean {
+  if (value === false) return true;
+  if (value === true) return false;
   const schema = asObject(value);
   if (schema === undefined) return false;
   if (
@@ -134,18 +135,16 @@ function supportedPrimitiveSchema(value: unknown): boolean {
     schema.enum.length > 0 &&
     schema.enum.every(
       (member) =>
-        member === null ||
         typeof member === "string" ||
-        typeof member === "number" ||
+        (typeof member === "number" && Number.isFinite(member)) ||
         typeof member === "boolean",
     )
   ) {
     return true;
   }
   if (
-    schema.const === null ||
     typeof schema.const === "string" ||
-    typeof schema.const === "number" ||
+    (typeof schema.const === "number" && Number.isFinite(schema.const)) ||
     typeof schema.const === "boolean"
   ) {
     return true;
@@ -163,10 +162,11 @@ function supportedParameterSchema(
   location: string,
   style: string,
 ): boolean {
-  if (supportedPrimitiveSchema(schemaValue)) return true;
+  if (supportedParameterScalarSchema(schemaValue)) return true;
   const schema = asObject(schemaValue);
   if (schema === undefined) return false;
-  if (schema.type === "array") return supportedPrimitiveSchema(schema.items);
+  if (schema.type === "array")
+    return supportedParameterScalarSchema(schema.items);
   if (
     location !== "query" ||
     style !== "deepObject" ||
@@ -175,9 +175,16 @@ function supportedParameterSchema(
     return false;
   }
   const properties = asObject(schema.properties);
-  return (
+  if (
     properties !== undefined &&
-    Object.values(properties).every(supportedPrimitiveSchema)
+    !Object.values(properties).every(supportedParameterScalarSchema)
+  ) {
+    return false;
+  }
+  if (!hasOwn(schema, "additionalProperties")) return false;
+  return (
+    schema.additionalProperties === false ||
+    supportedParameterScalarSchema(schema.additionalProperties)
   );
 }
 
@@ -362,7 +369,6 @@ const supportedSchemaKeywords = new Set([
 
 interface SchemaCheckState {
   count: number;
-  readonly visited: Set<OpenApiObject>;
 }
 
 function isLosslessJson(
@@ -492,8 +498,6 @@ function schemaSupported(value: unknown, state: SchemaCheckState): boolean {
   }
   const schema = asObject(value);
   if (schema === undefined) return false;
-  if (state.visited.has(schema)) return true;
-  state.visited.add(schema);
   state.count += 1;
   if (state.count > 1_000) return false;
   if (!validSchemaScalarFields(schema)) {
@@ -577,7 +581,7 @@ function operationSchemasSupported(
     if (media.schema !== undefined) roots.push(media.schema);
   }
 
-  const state: SchemaCheckState = { count: 0, visited: new Set() };
+  const state: SchemaCheckState = { count: 0 };
   return roots.every((schema) => schemaSupported(schema, state));
 }
 
@@ -614,13 +618,28 @@ function securitySupported(
   return requirements.every((requirementValue) => {
     const requirement = asObject(requirementValue);
     if (requirement === undefined) return false;
-    return Object.entries(requirement).every(
-      ([name, scopes]) =>
-        Array.isArray(scopes) &&
-        scopes.length === 0 &&
-        schemes !== undefined &&
-        supportedSecurityScheme(schemes[name]),
-    );
+    const destinations = new Set<string>();
+    return Object.entries(requirement).every(([name, scopes]) => {
+      const scheme = asObject(schemes?.[name]);
+      if (
+        !Array.isArray(scopes) ||
+        scopes.length !== 0 ||
+        !supportedSecurityScheme(scheme)
+      ) {
+        return false;
+      }
+      const destination =
+        scheme?.type === "http"
+          ? "header:authorization"
+          : `${String(scheme?.in)}:${
+              scheme?.in === "header"
+                ? String(scheme.name).toLowerCase()
+                : String(scheme?.name)
+            }`;
+      if (destinations.has(destination)) return false;
+      destinations.add(destination);
+      return true;
+    });
   });
 }
 
@@ -972,6 +991,20 @@ function operationNameWords(
   return Object.freeze([candidate.method.toLowerCase(), ...pathWords]);
 }
 
+const windowsReservedBasenames = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu;
+const maxModuleNameLength = 64;
+
+function moduleNameForWords(nameWords: readonly string[]): string {
+  const raw = nameWords.join("-") || "operation";
+  if (windowsReservedBasenames.test(raw)) return `_${raw}`;
+  if (raw.length <= maxModuleNameLength) return raw;
+  const hash = createHash("sha256")
+    .update(raw, "utf8")
+    .digest("hex")
+    .slice(0, 12);
+  return `${raw.slice(0, maxModuleNameLength - hash.length - 1)}-${hash}`;
+}
+
 function operationIdCounts(
   candidates: readonly OpenApiOperationCandidate[],
 ): ReadonlyMap<string, number> {
@@ -1286,7 +1319,7 @@ function outputSchemaFor(
   });
   return variants.length === 1
     ? (variants[0] as OpenApiObject)
-    : Object.freeze({ oneOf: Object.freeze(variants) });
+    : Object.freeze({ type: "object", oneOf: Object.freeze(variants) });
 }
 
 function securityEnvironmentStems(
@@ -1419,8 +1452,8 @@ export function buildOpenApiStarterOperations(
       candidate.operationId !== undefined &&
         operationIdCounts.get(candidate.operationId) === 1,
     );
-    const exportName = camelName(nameWords);
-    const moduleName = nameWords.join("-");
+    const moduleName = moduleNameForWords(nameWords);
+    const exportName = camelName(words(moduleName));
     const serverUrls = effectiveServerValues(document, pathItem, operation)
       .map(expandSupportedServerUrl)
       .filter((value): value is string => value !== undefined);

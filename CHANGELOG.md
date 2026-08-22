@@ -10,11 +10,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - `create-invokta-engine --openapi` imports supported operations from a bounded
-  local OpenAPI 3.1 JSON or YAML contract. Eligible endpoints are selected by
+  local OpenAPI 3.1.x JSON or YAML contract. Eligible endpoints are selected by
   default, interactive and repeatable `--exclude` selection removes unwanted
   capabilities, and generated source infers supported server, parameter, JSON
   body, response, and upstream authentication mechanics without importing
   credentials or contacting the described API.
+
+### Fixed
+
+- Hardened generated OpenAPI engines so operation paths cannot replace the
+  configured server origin before credentials are applied, combined security
+  schemes cannot overwrite one destination, multi-success output schemas keep
+  their required object root, repeated path placeholders are all substituted,
+  and generated fake-port tests execute with operation-derived inputs and
+  declared response variants.
+- Bounded and memoized local OpenAPI reference resolution, aligned parameter
+  eligibility with non-null runtime serialization and constrained `deepObject`
+  values, and made generated module basenames deterministic, length-bounded,
+  and portable across Windows device-name rules.
 
 ## [0.6.1] - 2026-08-20
 

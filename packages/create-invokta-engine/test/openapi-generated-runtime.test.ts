@@ -23,6 +23,10 @@ const compilerPath = join(
   repositoryRoot.pathname,
   "node_modules/typescript/bin/tsc",
 );
+const vitestPath = join(
+  repositoryRoot.pathname,
+  "node_modules/vitest/vitest.mjs",
+);
 const nodeModulesPath = join(repositoryRoot.pathname, "node_modules");
 const capabilityId = "widgets.create-widget";
 const credential = "generated-runtime-secret";
@@ -114,12 +118,25 @@ const createWidgetOperation = Object.freeze({
   }),
   outputSchema: Object.freeze({
     type: "object",
-    properties: Object.freeze({
-      status: Object.freeze({ const: 201 }),
-      body: widgetSchema,
-    }),
-    required: Object.freeze(["status", "body"]),
-    additionalProperties: false,
+    oneOf: Object.freeze([
+      Object.freeze({
+        type: "object",
+        properties: Object.freeze({
+          status: Object.freeze({ const: 201 }),
+          body: widgetSchema,
+        }),
+        required: Object.freeze(["status", "body"]),
+        additionalProperties: false,
+      }),
+      Object.freeze({
+        type: "object",
+        properties: Object.freeze({
+          status: Object.freeze({ const: 204 }),
+        }),
+        required: Object.freeze(["status"]),
+        additionalProperties: false,
+      }),
+    ]),
   }),
   parameters: Object.freeze([
     Object.freeze({
@@ -199,6 +216,11 @@ const createWidgetOperation = Object.freeze({
       mediaType: "application/json",
       schema: widgetSchema,
     }),
+    Object.freeze({
+      status: "204",
+      mediaType: undefined,
+      schema: undefined,
+    }),
   ]),
   security: Object.freeze({
     alternatives: Object.freeze([
@@ -241,6 +263,9 @@ interface GeneratedEngine {
       signal?: AbortSignal;
     }>,
   ) => Promise<unknown>;
+  readonly describe: (selectedCapabilityId: string) => Readonly<{
+    outputSchema: Readonly<Record<string, unknown>>;
+  }>;
 }
 
 interface GeneratedEngineModule {
@@ -336,6 +361,24 @@ function compileGeneratedProject(): void {
   }
 }
 
+function runGeneratedProjectTests(): void {
+  try {
+    execFileSync(process.execPath, [vitestPath, "run", "test/engine.test.ts"], {
+      cwd: projectDirectory,
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+  } catch (error) {
+    const output =
+      typeof error === "object" && error !== null
+        ? `${"stdout" in error && typeof error.stdout === "string" ? error.stdout : ""}${"stderr" in error && typeof error.stderr === "string" ? error.stderr : ""}`
+        : "";
+    throw new Error(`Generated OpenAPI tests did not pass.\n${output}`, {
+      cause: error,
+    });
+  }
+}
+
 beforeAll(async () => {
   projectDirectory = mkdtempSync(join(tmpdir(), "invokta-openapi-runtime-"));
   materialize(
@@ -365,6 +408,25 @@ afterAll(() => {
 });
 
 describe("generated OpenAPI runtime", () => {
+  it("publishes a literal object root for multiple successful responses", () => {
+    const engine = engineModule.createOpenApiEngine({
+      upstream: {
+        async invoke() {
+          return { status: 204 };
+        },
+      },
+    });
+
+    expect(engine.describe(capabilityId).outputSchema).toMatchObject({
+      type: "object",
+      oneOf: expect.any(Array),
+    });
+  });
+
+  it("ships an executable fake-port test derived from the generated operation", () => {
+    expect(runGeneratedProjectTests).not.toThrow();
+  });
+
   it("places the inferred method, parameters, body, and authentication in one request", async () => {
     const fetchImplementation = vi.fn<typeof globalThis.fetch>(
       async (_input, _init) =>
@@ -398,6 +460,72 @@ describe("generated OpenAPI runtime", () => {
     expect(headers.get("X-Service-Token")).toBe(credential);
     expect(headers.get("Content-Type")).toBe("application/json");
     expect(requestInit?.body).toBe(JSON.stringify(input.body));
+  });
+
+  it("never interprets an operation path as another URL authority before credentials", async () => {
+    for (const path of [
+      "///collector.example/steal",
+      "/\\\\collector.example/steal",
+      "https://collector.example/steal",
+    ]) {
+      const fetchImplementation = vi.fn<typeof globalThis.fetch>(
+        async () =>
+          new Response(JSON.stringify({ id: "safe", name: "Safe origin" }), {
+            status: 201,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+      const upstream = adapterModule.createFetchOpenApiUpstream({
+        fetch: fetchImplementation,
+        env: Object.freeze({ OPENAPI_SERVICE_TOKEN: credential }),
+      });
+      const operation = { ...createWidgetOperation, path };
+
+      await expect(
+        upstream.invoke({
+          operation,
+          input,
+          signal: new AbortController().signal,
+        }),
+      ).resolves.toMatchObject({ status: 201 });
+
+      expect(fetchImplementation).toHaveBeenCalledTimes(1);
+      const [target, init] = fetchImplementation.mock.calls[0] ?? [];
+      expect(new URL(String(target)).origin).toBe("https://api.example.test");
+      expect(new Headers(init?.headers).get("X-Service-Token")).toBe(
+        credential,
+      );
+    }
+  });
+
+  it("substitutes every occurrence of one declared path placeholder", async () => {
+    const fetchImplementation = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify({ id: "a/b", name: "Repeated" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const upstream = adapterModule.createFetchOpenApiUpstream({
+      fetch: fetchImplementation,
+      env: Object.freeze({ OPENAPI_SERVICE_TOKEN: credential }),
+    });
+
+    await expect(
+      upstream.invoke({
+        operation: {
+          ...createWidgetOperation,
+          path: "/widgets/{widgetId}/related/{widgetId}",
+        },
+        input,
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toMatchObject({ status: 201 });
+
+    const [requestTarget] = fetchImplementation.mock.calls[0] ?? [];
+    expect(new URL(String(requestTarget)).pathname).toBe(
+      "/v1/widgets/a%2Fb/related/a%2Fb",
+    );
   });
 
   it("propagates caller cancellation through the capability to fetch", async () => {

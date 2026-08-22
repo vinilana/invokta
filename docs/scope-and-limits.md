@@ -13,7 +13,7 @@
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
 | `@invokta/devtools` | Development-time engine dev server with per-adapter capability emulation, doctor diagnostics, installed MCP inspection and homologation, and installed CLI inspection and homologation |
-| `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile, import of one public GitHub example tree, or guided generation from one local OpenAPI 3.1 contract |
+| `create-invokta-engine` | Interactive or automated creation of one bounded standalone starter profile, import of one public GitHub example tree, or guided generation from one local OpenAPI 3.1.x contract |
 | `create-invokta-capability` | Creation of a standalone atomic capability package |
 | `create-invokta-capability-library` | Creation of a standalone capability-library package |
 
@@ -67,8 +67,10 @@ while the example owns one replaceable Authorization Server implementation.
 | OpenAPI import aggregate bytes and documents | 10 MiB and 64 local documents |
 | OpenAPI import operations | 500 discovered, 100 eligible, and 100 selected/generated |
 | OpenAPI import parsed nodes | 100,000; YAML aliases are rejected |
+| OpenAPI reference-resolution work units | 100,000 |
 | OpenAPI import document/reference/schema depth | 64 |
 | OpenAPI import schema nodes | 1,000 reachable by one operation |
+| Generated OpenAPI TypeScript module basename | 64 ASCII characters |
 | Generated OpenAPI runtime URL | 8,192 UTF-8 bytes |
 | Generated OpenAPI runtime request body | 10 MiB serialized JSON |
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |

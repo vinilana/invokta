@@ -7,6 +7,7 @@ const maxEntryDocumentBytes = 10_485_760;
 const maxLocalDocuments = 64;
 const maxDocumentDepth = 64;
 const maxParsedNodes = 100_000;
+const maxResolvedNodes = 100_000;
 const maxReferenceDepth = 64;
 const openApiVersionPattern = /^3\.1\.\d+$/u;
 const uriSchemePattern = /^[A-Za-z][A-Za-z\d+.-]*:/u;
@@ -241,6 +242,25 @@ interface ReferenceResolutionContext {
   readonly documents: Map<string, unknown>;
   readonly byteCount: { value: number };
   readonly parsedNodeCount: { value: number };
+  readonly resolvedNodeCount: { value: number };
+  readonly resolvedContainers: WeakMap<object, unknown>;
+}
+
+function consumeResolvedNodes(
+  context: ReferenceResolutionContext,
+  count = 1,
+): void {
+  assertResolvedNodesAvailable(context, count);
+  context.resolvedNodeCount.value += count;
+}
+
+function assertResolvedNodesAvailable(
+  context: ReferenceResolutionContext,
+  count: number,
+): void {
+  if (context.resolvedNodeCount.value + count > maxResolvedNodes) {
+    throw new OpenApiImportError("OPENAPI_LIMIT_EXCEEDED");
+  }
 }
 
 function unsupportedReferenceSyntax(reference: string): boolean {
@@ -316,6 +336,9 @@ async function resolveReferences(
     throw new OpenApiImportError("OPENAPI_LIMIT_EXCEEDED");
   }
   if (Array.isArray(value)) {
+    const memoized = context.resolvedContainers.get(value);
+    if (memoized !== undefined) return memoized;
+    consumeResolvedNodes(context);
     const result: unknown[] = [];
     for (const member of value) {
       result.push(
@@ -328,9 +351,17 @@ async function resolveReferences(
         ),
       );
     }
+    context.resolvedContainers.set(value, result);
     return result;
   }
-  if (!isObject(value)) return value;
+  if (!isObject(value)) {
+    consumeResolvedNodes(context);
+    return value;
+  }
+
+  const memoized = context.resolvedContainers.get(value);
+  if (memoized !== undefined) return memoized;
+  consumeResolvedNodes(context);
 
   if (typeof value.$ref === "string") {
     const reference = value.$ref;
@@ -367,11 +398,16 @@ async function resolveReferences(
     );
     if (resolvedTarget === unsupportedReference) return unsupportedReference;
 
-    const siblings = Object.fromEntries(
-      Object.entries(value).filter(([name]) => name !== "$ref"),
+    const siblingEntries = Object.entries(value).filter(
+      ([name]) => name !== "$ref",
     );
-    if (Object.keys(siblings).length === 0) return resolvedTarget;
+    if (siblingEntries.length === 0) {
+      context.resolvedContainers.set(value, resolvedTarget);
+      return resolvedTarget;
+    }
     if (!isObject(resolvedTarget)) return unsupportedReference;
+    assertResolvedNodesAvailable(context, siblingEntries.length + 1);
+    const siblings = Object.fromEntries(siblingEntries);
     const resolvedSiblings = await resolveReferences(
       siblings,
       declaringDocumentPath,
@@ -380,7 +416,13 @@ async function resolveReferences(
       activeReferences,
     );
     if (!isObject(resolvedSiblings)) return unsupportedReference;
-    return { ...resolvedTarget, ...resolvedSiblings };
+    consumeResolvedNodes(
+      context,
+      Object.keys(resolvedTarget).length + Object.keys(resolvedSiblings).length,
+    );
+    const overlaid = { ...resolvedTarget, ...resolvedSiblings };
+    context.resolvedContainers.set(value, overlaid);
+    return overlaid;
   }
 
   const result: Record<string, unknown> = Object.create(null) as Record<
@@ -396,25 +438,31 @@ async function resolveReferences(
       activeReferences,
     );
   }
+  context.resolvedContainers.set(value, result);
   return result;
 }
 
 /** Tests whether resolved OpenAPI data contains an unsupported reference marker. */
 export function containsUnsupportedOpenApiReference(value: unknown): boolean {
   const pending = [value];
+  const visited = new WeakSet<object>();
   while (pending.length > 0) {
     const current = pending.pop();
     if (current === unsupportedReference) return true;
     if (Array.isArray(current)) {
+      if (visited.has(current)) continue;
+      visited.add(current);
       pending.push(...current);
     } else if (isObject(current)) {
+      if (visited.has(current)) continue;
+      visited.add(current);
       pending.push(...Object.values(current));
     }
   }
   return false;
 }
 
-/** Loads one strict, byte-bounded local OpenAPI 3.1 entry document. */
+/** Loads one strict, byte-bounded local OpenAPI 3.1.x entry document. */
 export async function loadOpenApiDocument(
   options: LoadOpenApiDocumentOptions,
 ): Promise<OpenApiDocument> {
@@ -435,6 +483,8 @@ export async function loadOpenApiDocument(
     documents: new Map([[entryPath, rawDocument]]),
     byteCount: { value: bytes.byteLength },
     parsedNodeCount,
+    resolvedNodeCount: { value: 0 },
+    resolvedContainers: new WeakMap(),
   };
   return assertOpenApiDocument(
     await resolveReferences(rawDocument, entryPath, context, 0, new Set()),

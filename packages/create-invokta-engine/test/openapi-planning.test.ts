@@ -225,6 +225,7 @@ describe("buildOpenApiStarterOperations", () => {
       { status: "204" },
     ]);
     expect(operation.outputSchema).toEqual({
+      type: "object",
       oneOf: [
         {
           type: "object",
@@ -268,6 +269,60 @@ describe("buildOpenApiStarterOperations", () => {
         },
       ],
     });
+  });
+
+  it("bounds generated module names and avoids Windows reserved device names", () => {
+    const longName = `fetch${"Widget".repeat(60)}`;
+    const reservedNames = [
+      "CON",
+      "PRN",
+      "AUX",
+      "NUL",
+      ...Array.from({ length: 9 }, (_, index) => `COM${String(index + 1)}`),
+      ...Array.from({ length: 9 }, (_, index) => `LPT${String(index + 1)}`),
+    ];
+    const namingDocument: OpenApiDocument = {
+      openapi: "3.1.1",
+      info: { title: "Portable names", version: "1.0.0" },
+      paths: Object.fromEntries([
+        ...reservedNames.map((operationId) => [
+          `/${operationId.toLowerCase()}`,
+          {
+            get: {
+              operationId,
+              responses: { "204": { description: "No content" } },
+            },
+          },
+        ]),
+        [
+          "/long",
+          {
+            get: {
+              operationId: longName,
+              responses: { "204": { description: "No content" } },
+            },
+          },
+        ],
+      ]),
+    };
+    const planned = buildOpenApiStarterOperations(
+      namingDocument,
+      selectOpenApiOperations(discoverOpenApiOperations(namingDocument), []),
+    );
+
+    const modules = planned.map(({ moduleName }) => moduleName);
+    for (const reserved of reservedNames) {
+      expect(modules).toContain(`_${reserved.toLowerCase()}`);
+    }
+    const longModule = modules.find((name) => name.startsWith("fetch-widget"));
+    expect(longModule).toMatch(/^fetch-widget.*-[0-9a-f]{12}$/u);
+    expect(longModule?.length).toBeLessThanOrEqual(64);
+    expect(longModule).toBe(
+      buildOpenApiStarterOperations(
+        namingDocument,
+        selectOpenApiOperations(discoverOpenApiOperations(namingDocument), []),
+      ).find(({ selector }) => selector === "GET:/long")?.moduleName,
+    );
   });
 
   it("normalizes anonymous, API-key, Basic, and Bearer security with deterministic credential names", () => {

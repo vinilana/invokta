@@ -60,15 +60,32 @@ function renderCapability(operation: OpenApiStarterOperation): string {
     operation.method === "PUT" ||
     operation.method === "DELETE" ||
     operation.method === "OPTIONS";
-  return `import { defineCapability } from "@invokta/core";
+  return `import { defineCapability, type EngineSchema } from "@invokta/core";
 import { z } from "zod";
 
 import type { OpenApiUpstream } from "../openapi/upstream.js";
 
-const inputSchema = z.fromJSONSchema(${json(operation.inputSchema)}) as z.ZodType<
-  Record<string, unknown>
->;
-const outputSchema = z.fromJSONSchema(${json(operation.outputSchema)});
+function schemaContract(
+  schema: Readonly<Record<string, unknown>>,
+): EngineSchema<Record<string, unknown>, Record<string, unknown>> {
+  const validator = z.fromJSONSchema(schema) as z.ZodType<Record<string, unknown>>;
+  return {
+    "~standard": {
+      version: 1,
+      vendor: "invokta-generated-openapi",
+      validate(value) {
+        return validator["~standard"].validate(value);
+      },
+      jsonSchema: {
+        input: () => schema,
+        output: () => schema,
+      },
+    },
+  };
+}
+
+const inputSchema = schemaContract(${json(operation.inputSchema)});
+const outputSchema = schemaContract(${json(operation.outputSchema)});
 const operation = ${json(normalizedOperation(operation))} as const;
 
 export function ${operation.exportName}(upstream: OpenApiUpstream) {
@@ -139,8 +156,8 @@ export interface OpenApiOperationPlan {
     | undefined;
   readonly successResponses: readonly Readonly<{
     status: string;
-    mediaType: string | undefined;
-    schema: unknown | undefined;
+    mediaType?: string;
+    schema?: unknown;
   }>[];
   readonly security: Readonly<{
     alternatives: readonly (readonly OpenApiSecuritySchemePlan[])[];
@@ -404,14 +421,19 @@ function requestUrl(
       continue;
     }
     if (parameter.in === "path") {
-      path = path.replace(\`{\${parameter.name}}\`, simplePath(value));
+      path = path.replaceAll(\`{\${parameter.name}}\`, simplePath(value));
     } else if (parameter.in === "header") {
       headers.set(parameter.name, simple(value));
     }
   }
   if (/\\{[^{}]+\\}/u.test(path)) throw failure();
-  const rootWithSlash = root.href.endsWith("/") ? root : new URL(\`\${root.href}/\`);
-  const url = new URL(path.replace(/^\\//u, ""), rootWithSlash);
+  const rootPath = root.pathname.endsWith("/") ? root.pathname : \`\${root.pathname}/\`;
+  const operationPath = path.replace(/^\\/+/u, "");
+  const url = new URL(root.href);
+  url.pathname = \`\${rootPath}\${operationPath}\`;
+  url.search = "";
+  url.hash = "";
+  if (url.origin !== root.origin) throw failure();
   for (const parameter of operation.parameters) {
     if (parameter.in !== "query" && parameter.in !== "cookie") continue;
     const publicGroup = parameter.in === "cookie" ? "cookies" : "query";
@@ -423,7 +445,9 @@ function requestUrl(
       addCookie(cookies, parameter.name, value, parameter.explode);
     }
   }
+  if (url.origin !== root.origin) throw failure();
   applySecurity(operation, env, url, headers, cookies);
+  if (url.origin !== root.origin) throw failure();
   if (cookies.length > 0) headers.set("cookie", cookies.join("; "));
   if (encoder.encode(url.href).byteLength > maxUrlBytes) throw failure();
   return { url, headers, cookies };
@@ -607,31 +631,203 @@ process.stdout.write(\`\${JSON.stringify(result)}\\n\`);
 `;
 }
 
+function asSchemaObject(
+  value: unknown,
+): Readonly<Record<string, unknown>> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : undefined;
+}
+
+function mergeSamples(left: unknown, right: unknown): unknown {
+  const leftObject = asSchemaObject(left);
+  const rightObject = asSchemaObject(right);
+  return leftObject !== undefined && rightObject !== undefined
+    ? { ...leftObject, ...rightObject }
+    : right;
+}
+
+function sampleNumber(schema: Readonly<Record<string, unknown>>): number {
+  const multiple =
+    typeof schema.multipleOf === "number" && schema.multipleOf > 0
+      ? schema.multipleOf
+      : 1;
+  const minimum =
+    typeof schema.minimum === "number"
+      ? schema.minimum
+      : typeof schema.exclusiveMinimum === "number"
+        ? schema.exclusiveMinimum + multiple
+        : 0;
+  let value = Math.ceil(minimum / multiple) * multiple;
+  if (
+    typeof schema.exclusiveMinimum === "number" &&
+    value <= schema.exclusiveMinimum
+  ) {
+    value += multiple;
+  }
+  if (schema.type === "integer") value = Math.ceil(value);
+  return value;
+}
+
+function sampleString(schema: Readonly<Record<string, unknown>>): string {
+  const minimum =
+    typeof schema.minLength === "number" ? Math.max(0, schema.minLength) : 0;
+  const candidates = [
+    "x".repeat(Math.max(1, minimum)),
+    "0".repeat(Math.max(1, minimum)),
+    "test".padEnd(minimum, "x"),
+    "",
+  ];
+  if (typeof schema.pattern !== "string") return candidates[0] ?? "x";
+  const expression = new RegExp(schema.pattern, "u");
+  const match = candidates.find(
+    (candidate) => candidate.length >= minimum && expression.test(candidate),
+  );
+  if (match !== undefined) return match;
+  throw new TypeError("A generated OpenAPI test value could not be derived.");
+}
+
+function sampleJsonSchema(schemaValue: unknown): unknown {
+  if (schemaValue === true) return null;
+  if (schemaValue === false) {
+    throw new TypeError("A generated OpenAPI test value could not be derived.");
+  }
+  const schema = asSchemaObject(schemaValue);
+  if (schema === undefined) return null;
+  if (Object.hasOwn(schema, "const")) return schema.const;
+  if (Array.isArray(schema.enum) && schema.enum.length > 0)
+    return schema.enum[0];
+  if (Object.hasOwn(schema, "default")) return schema.default;
+
+  for (const union of [schema.oneOf, schema.anyOf]) {
+    if (Array.isArray(union) && union.length > 0) {
+      for (const member of union) {
+        try {
+          return sampleJsonSchema(member);
+        } catch {
+          // Try the next declared alternative.
+        }
+      }
+    }
+  }
+  if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
+    return schema.allOf.reduce(
+      (sample, member) => mergeSamples(sample, sampleJsonSchema(member)),
+      {},
+    );
+  }
+
+  const declaredTypes = Array.isArray(schema.type)
+    ? schema.type
+    : [schema.type];
+  const type = declaredTypes.find((value) => value !== "null");
+  if (type === "object" || schema.properties !== undefined) {
+    const properties = asSchemaObject(schema.properties) ?? {};
+    const required = Array.isArray(schema.required)
+      ? schema.required.filter(
+          (name): name is string => typeof name === "string",
+        )
+      : [];
+    return Object.fromEntries(
+      required.map((name) => [name, sampleJsonSchema(properties[name])]),
+    );
+  }
+  if (type === "array" || schema.items !== undefined) {
+    const minimum =
+      typeof schema.minItems === "number" ? Math.max(0, schema.minItems) : 0;
+    const prefix = Array.isArray(schema.prefixItems) ? schema.prefixItems : [];
+    const length = Math.max(minimum, prefix.length);
+    return Array.from({ length }, (_, index) =>
+      sampleJsonSchema(prefix[index] ?? schema.items ?? true),
+    );
+  }
+  if (type === "string") return sampleString(schema);
+  if (type === "integer" || type === "number") return sampleNumber(schema);
+  if (type === "boolean") return false;
+  if (type === "null") return null;
+  return null;
+}
+
 function renderGeneratedTest(
   operations: readonly OpenApiStarterOperation[],
 ): string {
-  const first = operations[0];
-  if (first === undefined)
-    throw new TypeError("At least one operation is required.");
-  return `import { describe, expect, it } from "vitest";
+  const cases: Array<Record<string, unknown>> = [];
+  for (const operation of operations) {
+    let input: unknown;
+    try {
+      input = sampleJsonSchema(operation.inputSchema);
+    } catch {
+      cases.push({
+        capabilityId: operation.capabilityId,
+        selector: operation.selector,
+        input: { __generated_invalid: true },
+        output: {},
+        status: operation.successResponses[0]?.status ?? "unknown",
+        expectedError: "INPUT_INVALID",
+        expectedCalls: 0,
+      });
+      continue;
+    }
+    for (const response of operation.successResponses) {
+      const status = response.status === "2XX" ? 200 : Number(response.status);
+      try {
+        cases.push({
+          capabilityId: operation.capabilityId,
+          selector: operation.selector,
+          input,
+          status: response.status,
+          output: {
+            status,
+            ...(response.mediaType === undefined
+              ? {}
+              : {
+                  body:
+                    response.schema === undefined
+                      ? null
+                      : sampleJsonSchema(response.schema),
+                }),
+          },
+          expectedCalls: 1,
+        });
+      } catch {
+        cases.push({
+          capabilityId: operation.capabilityId,
+          selector: operation.selector,
+          input,
+          status: response.status,
+          output: { status, body: null },
+          expectedError: "OUTPUT_INVALID",
+          expectedCalls: 1,
+        });
+      }
+    }
+  }
+  return `import { describe, expect, it, vi } from "vitest";
 
 import { createOpenApiEngine } from "../src/engine.js";
 import type { OpenApiUpstream } from "../src/openapi/upstream.js";
 
 describe("generated OpenAPI engine", () => {
-  it("delegates through the injected upstream port", async () => {
+  it.each(${json(cases)})(
+    "covers $selector through the injected upstream port for status $status",
+    async ({ capabilityId, selector, input, output, expectedError, expectedCalls }) => {
     const upstream: OpenApiUpstream = {
-      async invoke(request) {
-        expect(request.operation.selector).toBe(${JSON.stringify(first.selector)});
-        return { status: 204 };
-      },
+      invoke: vi.fn(async (request) => {
+        expect(request.operation.selector).toBe(selector);
+        return output;
+      }),
     };
     const engine = createOpenApiEngine({ upstream });
 
-    await expect(
-      engine.invoke(${JSON.stringify(first.capabilityId)}, {}, { principal: null }),
-    ).resolves.toEqual({ status: 204 });
-  });
+    const invocation = engine.invoke(capabilityId, input, { principal: null });
+    if (expectedError === undefined) {
+      await expect(invocation).resolves.toEqual(output);
+    } else {
+      await expect(invocation).rejects.toMatchObject({ code: expectedError });
+    }
+    expect(upstream.invoke).toHaveBeenCalledTimes(expectedCalls);
+    },
+  );
 });
 `;
 }

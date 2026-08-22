@@ -115,7 +115,10 @@ file order, and diagnostics are deterministic for the same creator release and
 input bytes. A capability ID is derived deterministically from the unique
 operation ID when available and from the canonical method/path selector
 otherwise. Derivation cannot silently replace another capability or collide in
-the final MCP tool catalog.
+the final MCP tool catalog. Generated TypeScript module basenames contain only
+portable ASCII characters, are at most 64 characters, and never equal a
+Windows device basename case-insensitively. A longer basename retains a
+readable prefix plus a deterministic 12-hexadecimal SHA-256 suffix.
 
 ### Eligibility and schema mapping
 
@@ -129,6 +132,12 @@ supported parameter boundary is:
 - `simple` path and header serialization;
 - `form` query and cookie serialization; and
 - `deepObject` query serialization for one flat object of scalar values.
+
+Parameter scalars are strings, finite numbers, integers, or booleans; JSON
+`null` and an unconstrained boolean schema are not serializable parameters. A
+`deepObject` schema must close additional properties or constrain every
+additional property to the same non-null scalar boundary. One declared path
+parameter supplies every occurrence of its placeholder in the path template.
 
 Parameter `content`, `allowReserved: true`, an unsupported style/explode pair,
 or an unsupported value shape makes the operation ineligible. Path parameter
@@ -166,14 +175,15 @@ that constant integer; `2XX` constrains it from 200 through 299. A declared
 JSON response schema makes `body` required and validated against that schema.
 A response with no content produces only `{ status }` and rejects a body. JSON
 content without a schema accepts any lossless JSON body. Multiple successful
-variants form a `oneOf`. Response headers are not exposed in this profile.
+variants form a `oneOf` beneath an explicit object-root schema. Response
+headers are not exposed in this profile.
 `application/json` wins when present; otherwise exactly one concrete
 `application/<subtype>+json` media type is required. Multiple suffix-JSON
 choices without exact JSON are ambiguous and unsupported.
 
 **AE-CREATE-OPENAPI-09 — Schema contract.** The generated Standard Schema and
 Standard JSON Schema contracts preserve a bounded lossless subset of the
-OpenAPI 3.1 JSON Schema vocabulary: local schema references, `type`, `enum`,
+OpenAPI 3.1.x JSON Schema vocabulary: local schema references, `type`, `enum`,
 `const`, `properties`, `required`, `additionalProperties`, `items`,
 `prefixItems`, `anyOf`, `oneOf`, `allOf`, scalar and array bounds, string length
 and `pattern`, numeric bounds and `multipleOf`, and `default`. Unsupported
@@ -218,7 +228,10 @@ host, or scheme is invented.
 **AE-CREATE-OPENAPI-11 — Upstream security.** The initial import boundary
 supports anonymous operations, API keys in a declared header/query/cookie
 location, and HTTP Basic or Bearer authentication. Security schemes combined
-in one requirement are all applied. For alternative security requirements, the
+in one requirement are all applied. A combined requirement whose schemes
+target the same header (case-insensitively), query key, or cookie key is
+`SECURITY_UNSUPPORTED` because applying it would overwrite a credential. For
+alternative security requirements, the
 generated resolver fails closed unless exactly one complete alternative is
 configured; an anonymous alternative applies only when no credentialed
 alternative is configured. OAuth 2.0, OpenID Connect, mutual TLS, and custom
@@ -267,6 +280,12 @@ logs, tests, and generated documentation never contain credentials, request or
 response bodies, or credential-bearing URLs. Runtime diagnostics do not echo
 raw OpenAPI values.
 
+The operation path is appended as path data and is never interpreted as an
+absolute or network-path URL. After path and non-credential parameter
+serialization, and again after authentication, the target must retain the
+configured base URL's exact origin. A mismatch fails with the sanitized
+dependency error before any credential is applied or request is made.
+
 The imported source is not copied into the project and generated code does not
 interpret OpenAPI at runtime. Generated tests use a fake upstream port and make
 no network request. During creator execution, package installation remains the
@@ -284,11 +303,13 @@ enforces these inclusive maxima before generation:
 | Aggregate entry and local-reference bytes | 10 MiB |
 | Local documents | 64 |
 | Parsed document nodes | 100,000 |
+| Reference-resolution work units | 100,000 |
 | Document, reference, or schema depth | 64 |
 | Discovered operations | 500 |
 | Eligible operations | 100 |
 | Selected/generated operations | 100 |
 | Schema nodes reachable by one operation | 1,000 |
+| Generated TypeScript module basename | 64 ASCII characters |
 | One `--exclude` selector | 1,024 Unicode scalars |
 | Repeated `--exclude` arguments | 500 |
 | Serialized runtime URL | 8,192 UTF-8 bytes |
@@ -298,6 +319,12 @@ enforces these inclusive maxima before generation:
 Every maximum is inclusive. Crossing it fails deterministically before further
 allocation, network I/O, or JSON decoding where the boundary permits that
 check.
+
+Reference resolution memoizes each successfully resolved local container. One
+work unit is charged before visiting a previously unresolved parsed node;
+copying a `$ref` sibling overlay additionally charges each copied property.
+This bound applies before the corresponding allocation or copy and prevents a
+branching local-reference graph from expanding exponentially.
 
 The new sanitized diagnostics are:
 

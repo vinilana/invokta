@@ -98,6 +98,54 @@ function sameDocumentReferenceChain(
   };
 }
 
+function sharedReferenceChain(referenceCount: number): Record<string, unknown> {
+  const schemas = Object.fromEntries(
+    Array.from({ length: referenceCount }, (_, index) => [
+      `Schema${index}`,
+      index + 1 === referenceCount
+        ? { type: "string" }
+        : {
+            type: "object",
+            properties: {
+              left: { $ref: `#/components/schemas/Schema${index + 1}` },
+              right: { $ref: `#/components/schemas/Schema${index + 1}` },
+            },
+          },
+    ]),
+  );
+  return {
+    openapi: "3.1.1",
+    info: { title: "Shared references", version: "1.0.0" },
+    paths: {},
+    components: { schemas },
+  };
+}
+
+function wideReferenceOverlays(
+  memberCount: number,
+  overlayCount: number,
+): Record<string, unknown> {
+  return {
+    openapi: "3.1.1",
+    info: { title: "Reference allocation budget", version: "1.0.0" },
+    paths: {},
+    components: {
+      schemas: {
+        Wide: Object.fromEntries(
+          Array.from({ length: memberCount }, (_, index) => [
+            `member${index}`,
+            null,
+          ]),
+        ),
+      },
+    },
+    "x-overlays": Array.from({ length: overlayCount }, (_, index) => ({
+      $ref: "#/components/schemas/Wide",
+      description: `Bounded shallow copy ${String(index)}.`,
+    })),
+  };
+}
+
 function nestedArray(levels: number): unknown {
   let value: unknown = null;
   for (let level = 0; level < levels; level += 1) value = [value];
@@ -281,6 +329,26 @@ describe("OpenAPI parser safety", () => {
       openapi: "3.1.1",
     });
     await expect(loadOpenApiDocument(overLimit)).rejects.toMatchObject({
+      code: "OPENAPI_LIMIT_EXCEEDED",
+      exitCode: 1,
+    });
+  });
+
+  it("memoizes repeated local references instead of expanding a binary tree", async () => {
+    const fixture = writeJsonFixture(sharedReferenceChain(16));
+    const document = await loadOpenApiDocument(fixture);
+    const schemas = (document.components as Record<string, unknown>)
+      .schemas as Record<string, Record<string, unknown>>;
+    const root = schemas.Schema0;
+    const properties = root?.properties as Record<string, unknown>;
+
+    expect(properties.left).toBe(properties.right);
+  });
+
+  it("rejects a reference sibling overlay before its copy crosses the resolution budget", async () => {
+    const fixture = writeJsonFixture(wideReferenceOverlays(1_000, 100));
+
+    await expect(loadOpenApiDocument(fixture)).rejects.toMatchObject({
       code: "OPENAPI_LIMIT_EXCEEDED",
       exitCode: 1,
     });

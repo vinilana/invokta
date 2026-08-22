@@ -194,10 +194,13 @@ describe("createOpenApiStarterFiles", () => {
     const portSource = contents.get("src/openapi/upstream.ts") ?? "";
     const adapterSource = contents.get("src/openapi/fetch-adapter.ts") ?? "";
 
-    expect(capabilitySource).toContain("const inputSchema = z.fromJSONSchema(");
+    expect(capabilitySource).toContain("const inputSchema = schemaContract(");
+    expect(capabilitySource).toContain("const outputSchema = schemaContract(");
     expect(capabilitySource).toContain(
-      "const outputSchema = z.fromJSONSchema(",
+      'validator["~standard"].validate(value)',
     );
+    expect(capabilitySource).toContain("input: () => schema");
+    expect(capabilitySource).toContain("output: () => schema");
     expect(capabilitySource).toContain("input: inputSchema");
     expect(capabilitySource).toContain("output: outputSchema");
     expect(capabilitySource).toContain("timeoutMs: 30_000");

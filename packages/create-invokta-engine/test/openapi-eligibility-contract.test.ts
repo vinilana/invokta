@@ -329,6 +329,54 @@ describe("OpenAPI schema eligibility", () => {
 });
 
 describe("OpenAPI security eligibility", () => {
+  it("rejects combined schemes that target the same request destination", () => {
+    const candidates = discoverOpenApiOperations(
+      documentWithPaths(
+        {
+          "/header-collision": {
+            get: successfulOperation({ security: [{ First: [], Second: [] }] }),
+          },
+          "/authorization-collision": {
+            get: successfulOperation({ security: [{ Basic: [], Bearer: [] }] }),
+          },
+          "/distinct-destinations": {
+            get: successfulOperation({
+              security: [{ Header: [], Query: [], Cookie: [] }],
+            }),
+          },
+        },
+        {
+          components: {
+            securitySchemes: {
+              First: { type: "apiKey", in: "header", name: "X-API-Key" },
+              Second: { type: "apiKey", in: "header", name: "x-api-key" },
+              Basic: { type: "http", scheme: "basic" },
+              Bearer: { type: "http", scheme: "bearer" },
+              Header: { type: "apiKey", in: "header", name: "token" },
+              Query: { type: "apiKey", in: "query", name: "token" },
+              Cookie: { type: "apiKey", in: "cookie", name: "token" },
+            },
+          },
+        },
+      ),
+    );
+
+    for (const selector of [
+      "GET:/header-collision",
+      "GET:/authorization-collision",
+    ]) {
+      expect(bySelector(candidates, selector).eligibility).toEqual({
+        eligible: false,
+        reason: "SECURITY_UNSUPPORTED",
+      });
+    }
+    expect(
+      bySelector(candidates, "GET:/distinct-destinations").eligibility,
+    ).toEqual({
+      eligible: true,
+    });
+  });
+
   it("rejects non-empty scopes for supported non-OAuth security schemes", () => {
     const candidates = discoverOpenApiOperations(
       documentWithPaths(
@@ -358,6 +406,101 @@ describe("OpenAPI security eligibility", () => {
         reason: "SECURITY_UNSUPPORTED",
       });
     }
+  });
+});
+
+describe("OpenAPI parameter runtime alignment", () => {
+  it("rejects null parameter enum/const values that cannot be serialized", () => {
+    const candidates = discoverOpenApiOperations(
+      documentWithPaths({
+        "/enum": {
+          get: successfulOperation({
+            parameters: [
+              { name: "value", in: "query", schema: { enum: [null, "ok"] } },
+            ],
+          }),
+        },
+        "/const": {
+          get: successfulOperation({
+            parameters: [
+              { name: "value", in: "query", schema: { const: null } },
+            ],
+          }),
+        },
+        "/array": {
+          get: successfulOperation({
+            parameters: [
+              {
+                name: "value",
+                in: "query",
+                schema: { type: "array", items: { const: null } },
+              },
+            ],
+          }),
+        },
+        "/unconstrained": {
+          get: successfulOperation({
+            parameters: [{ name: "value", in: "query", schema: true }],
+          }),
+        },
+      }),
+    );
+
+    for (const candidate of candidates) {
+      expect(candidate.eligibility).toEqual({
+        eligible: false,
+        reason: "PARAMETER_UNSUPPORTED",
+      });
+    }
+  });
+
+  it("requires deepObject additional properties to have a scalar contract", () => {
+    const deepObject = (additionalProperties?: unknown): OpenApiObject => ({
+      name: "filter",
+      in: "query",
+      style: "deepObject",
+      explode: true,
+      schema: {
+        type: "object",
+        properties: { known: { type: "string" } },
+        ...(additionalProperties === undefined ? {} : { additionalProperties }),
+      },
+    });
+    const candidates = discoverOpenApiOperations(
+      documentWithPaths({
+        "/open": {
+          get: successfulOperation({ parameters: [deepObject()] }),
+        },
+        "/object-values": {
+          get: successfulOperation({
+            parameters: [deepObject({ type: "object" })],
+          }),
+        },
+        "/closed": {
+          get: successfulOperation({ parameters: [deepObject(false)] }),
+        },
+        "/scalar-values": {
+          get: successfulOperation({
+            parameters: [deepObject({ type: "integer" })],
+          }),
+        },
+      }),
+    );
+
+    expect(bySelector(candidates, "GET:/open").eligibility).toEqual({
+      eligible: false,
+      reason: "PARAMETER_UNSUPPORTED",
+    });
+    expect(bySelector(candidates, "GET:/object-values").eligibility).toEqual({
+      eligible: false,
+      reason: "PARAMETER_UNSUPPORTED",
+    });
+    expect(bySelector(candidates, "GET:/closed").eligibility).toEqual({
+      eligible: true,
+    });
+    expect(bySelector(candidates, "GET:/scalar-values").eligibility).toEqual({
+      eligible: true,
+    });
   });
 });
 
