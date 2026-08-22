@@ -305,7 +305,7 @@ describe("createOpenApiStarterFiles", () => {
       (entry) =>
         entry.kind === "file" && entry.path.startsWith("src/capabilities/"),
     );
-    const engineSource = contents.get("src/engine.ts") ?? "";
+    const openApiEngineSource = contents.get("src/openapi-engine.ts") ?? "";
     const allGeneratedSource = [...contents.values()].join("\n");
     const expectedCapabilityIds = selectedOperations.map(
       (operation) => operation.capabilityId,
@@ -313,7 +313,7 @@ describe("createOpenApiStarterFiles", () => {
 
     expect(capabilityEntries).toHaveLength(selectedOperations.length);
     for (const capabilityId of expectedCapabilityIds) {
-      expect(engineSource).toContain(JSON.stringify(capabilityId));
+      expect(openApiEngineSource).toContain(JSON.stringify(capabilityId));
     }
     for (const omitted of ["sharedAlias", "operationServer", "pathServer"]) {
       expect(allGeneratedSource).not.toContain(omitted);
@@ -390,14 +390,16 @@ describe("createOpenApiStarterFiles", () => {
     },
   );
 
-  it("generates object schemas and the cancellation, timeout, and sanitized failure boundaries", () => {
+  it("generates narrow operation ports and one typed outbound connector", () => {
     const contents = fileContents(createFiles());
     const capabilitySource = [...contents]
       .filter(([path]) => path.startsWith("src/capabilities/"))
       .map(([, source]) => source)
       .join("\n");
-    const portSource = contents.get("src/openapi/upstream.ts") ?? "";
-    const adapterSource = contents.get("src/openapi/fetch-adapter.ts") ?? "";
+    const portSource = contents.get("src/openapi/ports.ts") ?? "";
+    const connectorSource = contents.get("src/openapi/connector.ts") ?? "";
+    const engineSource = contents.get("src/engine.ts") ?? "";
+    const openApiEngineSource = contents.get("src/openapi-engine.ts") ?? "";
 
     expect(capabilitySource).toContain("const inputSchema = schemaContract(");
     expect(capabilitySource).toContain("const outputSchema = schemaContract(");
@@ -410,18 +412,44 @@ describe("createOpenApiStarterFiles", () => {
     expect(capabilitySource).toContain("output: outputSchema");
     expect(capabilitySource).toContain("timeoutMs: 30_000");
     expect(capabilitySource).toContain("signal: context.signal");
+    expect(capabilitySource).toContain("port.invoke(input");
+    expect(capabilitySource).not.toContain("OpenApiOperationPlan");
+    expect(capabilitySource).not.toContain("const operation =");
+    expect(capabilitySource).not.toContain("serverUrls");
+    expect(capabilitySource).not.toContain("security:");
+    expect(portSource).toContain("export interface OpenApiPorts");
+    expect(portSource).toContain("export type RootServerPort");
+    expect(portSource).toContain("export type GetWithoutOperationIdPort");
     expect(portSource).toContain("readonly signal: AbortSignal");
-    expect(adapterSource).toContain("signal: request.signal");
-    expect(adapterSource).toContain('redirect: "manual"');
-    expect(adapterSource).toContain("10 * 1024 * 1024");
-    expect(adapterSource).toContain("encoder.encode(url.href).byteLength");
-    expect(adapterSource).toContain(
+    expect(connectorSource).toContain("defineConnector({");
+    expect(connectorSource).toContain('name: "generated-openapi-fetch"');
+    expect(connectorSource).toContain("config: openApiConnectorConfig");
+    expect(connectorSource).toContain("dependencies.fetch");
+    expect(connectorSource).toContain("rootServer:");
+    expect(connectorSource).toContain("getWithoutOperationId:");
+    expect(connectorSource).toContain("signal: options.signal");
+    expect(connectorSource).toContain('redirect: "manual"');
+    expect(connectorSource).toContain("10 * 1024 * 1024");
+    expect(connectorSource).toContain("encoder.encode(url.href).byteLength");
+    expect(connectorSource).toContain(
       "contentType.toLowerCase() !== expected.mediaType.toLowerCase()",
     );
-    expect(adapterSource).toContain("if (partiallyConfigured) throw failure()");
-    expect(adapterSource).toContain("The upstream API request failed.");
-    expect(adapterSource).not.toContain("responseBody");
-    expect(adapterSource).not.toContain("authorizationValue");
+    expect(connectorSource).toContain("outputValidator.safeParse(output)");
+    expect(connectorSource).toContain(
+      "if (partiallyConfigured) throw configurationFailure()",
+    );
+    expect(connectorSource).toContain("The upstream API request failed.");
+    expect(connectorSource).not.toContain("responseBody");
+    expect(connectorSource).not.toContain("authorizationValue");
+    expect(engineSource).toContain("fetchOpenApiConnector.create(");
+    expect(engineSource).toContain("ports: connector.ports");
+    expect(engineSource).not.toContain("OpenApiUpstream");
+    expect(openApiEngineSource).toContain(
+      "export function createOpenApiEngine({ ports }",
+    );
+    expect(openApiEngineSource).not.toContain("fetchOpenApiConnector");
+    expect(contents.has("src/openapi/upstream.ts")).toBe(false);
+    expect(contents.has("src/openapi/fetch-adapter.ts")).toBe(false);
   });
 
   it("requires domain and access review in every author-facing instruction", () => {

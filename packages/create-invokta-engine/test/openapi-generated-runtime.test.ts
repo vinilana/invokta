@@ -32,6 +32,10 @@ const nodeModulesPath = join(repositoryRoot.pathname, "node_modules");
 const capabilityId = "widgets.create-widget";
 const credential = "generated-runtime-secret";
 const leakedBody = "upstream-private-response";
+const validConnectorConfig = Object.freeze({
+  OPENAPI_REQUIRED_TOKEN: credential,
+  OPENAPI_SERVICE_TOKEN: credential,
+});
 
 const widgetSchema = Object.freeze({
   type: "object",
@@ -382,9 +386,83 @@ const defaultedResponseOperation = Object.freeze({
   security: Object.freeze({ alternatives: Object.freeze([Object.freeze([])]) }),
 } as const satisfies OpenApiStarterOperation);
 
-interface GeneratedUpstream {
-  readonly invoke: (request: unknown) => Promise<Record<string, unknown>>;
+function widgetOperationVariant(
+  capability: string,
+  exportName: string,
+  moduleName: string,
+  path: string,
+): OpenApiStarterOperation {
+  return Object.freeze({
+    ...createWidgetOperation,
+    selector: `POST:${path}`,
+    operationId: exportName,
+    capabilityId: capability,
+    exportName,
+    moduleName,
+    path,
+  });
 }
+
+const authorityPathOperations = Object.freeze([
+  widgetOperationVariant(
+    "widgets.authority-slashes",
+    "authoritySlashes",
+    "authority-slashes",
+    "///collector.example/steal",
+  ),
+  widgetOperationVariant(
+    "widgets.authority-backslash",
+    "authorityBackslash",
+    "authority-backslash",
+    "/\\collector.example/steal",
+  ),
+  widgetOperationVariant(
+    "widgets.authority-absolute",
+    "authorityAbsolute",
+    "authority-absolute",
+    "https://collector.example/steal",
+  ),
+]);
+
+const repeatedPathOperation = widgetOperationVariant(
+  "widgets.repeated-path",
+  "repeatedPath",
+  "repeated-path",
+  "/widgets/{widgetId}/related/{widgetId}",
+);
+
+const requiredAuthOperation = Object.freeze({
+  ...widgetOperationVariant(
+    "widgets.required-auth",
+    "requiredAuth",
+    "required-auth",
+    "/required-auth/{widgetId}",
+  ),
+  security: Object.freeze({
+    alternatives: Object.freeze([
+      Object.freeze([
+        Object.freeze({
+          name: "requiredToken",
+          type: "apiKey",
+          in: "header",
+          parameterName: "X-Required-Token",
+          environmentVariables: Object.freeze({
+            value: "OPENAPI_REQUIRED_TOKEN",
+          }),
+        }),
+      ]),
+    ]),
+  }),
+} as const satisfies OpenApiStarterOperation);
+
+interface GeneratedPort {
+  readonly invoke: (
+    input: Readonly<Record<string, unknown>>,
+    options: Readonly<{ readonly signal: AbortSignal }>,
+  ) => Promise<Record<string, unknown>>;
+}
+
+type GeneratedPorts = Readonly<Record<string, GeneratedPort>>;
 
 interface GeneratedEngine {
   readonly invoke: (
@@ -398,19 +476,23 @@ interface GeneratedEngine {
   readonly describe: (selectedCapabilityId: string) => Readonly<{
     outputSchema: Readonly<Record<string, unknown>>;
   }>;
+  readonly list: () => readonly Readonly<{ readonly id: string }>[];
 }
 
 interface GeneratedEngineModule {
   readonly createOpenApiEngine: (options: {
-    readonly upstream: GeneratedUpstream;
+    readonly ports: GeneratedPorts;
   }) => GeneratedEngine;
 }
 
-interface GeneratedAdapterModule {
-  readonly createFetchOpenApiUpstream: (options: {
-    readonly fetch: typeof globalThis.fetch;
-    readonly env: Readonly<Record<string, string | undefined>>;
-  }) => GeneratedUpstream;
+interface GeneratedConnectorModule {
+  readonly fetchOpenApiConnector: Readonly<{
+    readonly name: string;
+    readonly create: (
+      config: Readonly<Record<string, string>>,
+      dependencies: Readonly<{ readonly fetch: typeof globalThis.fetch }>,
+    ) => Readonly<{ readonly ports: GeneratedPorts }>;
+  }>;
 }
 
 const input = Object.freeze({
@@ -422,7 +504,7 @@ const input = Object.freeze({
 
 let projectDirectory: string;
 let engineModule: GeneratedEngineModule;
-let adapterModule: GeneratedAdapterModule;
+let connectorModule: GeneratedConnectorModule;
 
 function materialize(
   entries: readonly StarterEntry[],
@@ -442,11 +524,11 @@ function materialize(
 function createRuntime(
   fetchImplementation: typeof globalThis.fetch,
 ): GeneratedEngine {
-  const upstream = adapterModule.createFetchOpenApiUpstream({
-    fetch: fetchImplementation,
-    env: Object.freeze({ OPENAPI_SERVICE_TOKEN: credential }),
-  });
-  return engineModule.createOpenApiEngine({ upstream });
+  const connector = connectorModule.fetchOpenApiConnector.create(
+    validConnectorConfig,
+    { fetch: fetchImplementation },
+  );
+  return engineModule.createOpenApiEngine({ ports: connector.ports });
 }
 
 async function capturedFailure(promise: Promise<unknown>): Promise<unknown> {
@@ -524,6 +606,9 @@ beforeAll(async () => {
         emptyStringOperation,
         patternFallbackOperation,
         defaultedResponseOperation,
+        ...authorityPathOperations,
+        repeatedPathOperation,
+        requiredAuthOperation,
       ]),
     }),
     projectDirectory,
@@ -531,11 +616,11 @@ beforeAll(async () => {
   symlinkSync(nodeModulesPath, join(projectDirectory, "node_modules"), "dir");
   compileGeneratedProject();
   engineModule = (await import(
-    pathToFileURL(join(projectDirectory, "dist/engine.js")).href
+    pathToFileURL(join(projectDirectory, "dist/openapi-engine.js")).href
   )) as GeneratedEngineModule;
-  adapterModule = (await import(
-    pathToFileURL(join(projectDirectory, "dist/openapi/fetch-adapter.js")).href
-  )) as GeneratedAdapterModule;
+  connectorModule = (await import(
+    pathToFileURL(join(projectDirectory, "dist/openapi/connector.js")).href
+  )) as GeneratedConnectorModule;
 });
 
 afterAll(() => {
@@ -547,9 +632,11 @@ afterAll(() => {
 describe("generated OpenAPI runtime", () => {
   it("publishes a literal object root for multiple successful responses", () => {
     const engine = engineModule.createOpenApiEngine({
-      upstream: {
-        async invoke() {
-          return { status: 204 };
+      ports: {
+        createWidget: {
+          async invoke() {
+            return { status: 204 };
+          },
         },
       },
     });
@@ -623,11 +710,7 @@ describe("generated OpenAPI runtime", () => {
   });
 
   it("never interprets an operation path as another URL authority before credentials", async () => {
-    for (const path of [
-      "///collector.example/steal",
-      "/\\\\collector.example/steal",
-      "https://collector.example/steal",
-    ]) {
+    for (const operation of authorityPathOperations) {
       const fetchImplementation = vi.fn<typeof globalThis.fetch>(
         async () =>
           new Response(JSON.stringify({ id: "safe", name: "Safe origin" }), {
@@ -635,18 +718,10 @@ describe("generated OpenAPI runtime", () => {
             headers: { "content-type": "application/json" },
           }),
       );
-      const upstream = adapterModule.createFetchOpenApiUpstream({
-        fetch: fetchImplementation,
-        env: Object.freeze({ OPENAPI_SERVICE_TOKEN: credential }),
-      });
-      const operation = { ...createWidgetOperation, path };
+      const engine = createRuntime(fetchImplementation);
 
       await expect(
-        upstream.invoke({
-          operation,
-          input,
-          signal: new AbortController().signal,
-        }),
+        engine.invoke(operation.capabilityId, input, { principal: null }),
       ).resolves.toMatchObject({ status: 201 });
 
       expect(fetchImplementation).toHaveBeenCalledTimes(1);
@@ -666,19 +741,11 @@ describe("generated OpenAPI runtime", () => {
           headers: { "content-type": "application/json" },
         }),
     );
-    const upstream = adapterModule.createFetchOpenApiUpstream({
-      fetch: fetchImplementation,
-      env: Object.freeze({ OPENAPI_SERVICE_TOKEN: credential }),
-    });
+    const engine = createRuntime(fetchImplementation);
 
     await expect(
-      upstream.invoke({
-        operation: {
-          ...createWidgetOperation,
-          path: "/widgets/{widgetId}/related/{widgetId}",
-        },
-        input,
-        signal: new AbortController().signal,
+      engine.invoke(repeatedPathOperation.capabilityId, input, {
+        principal: null,
       }),
     ).resolves.toMatchObject({ status: 201 });
 
@@ -771,18 +838,188 @@ describe("generated OpenAPI runtime", () => {
     );
   });
 
-  it("fails closed instead of using anonymous auth when credentials are partial", async () => {
+  it("validates partial credentials synchronously during connector construction", () => {
     const fetchImplementation = vi.fn<typeof globalThis.fetch>();
-    const upstream = adapterModule.createFetchOpenApiUpstream({
+
+    expect(() =>
+      connectorModule.fetchOpenApiConnector.create(
+        {
+          OPENAPI_REQUIRED_TOKEN: credential,
+          OPENAPI_BASIC_USERNAME: "partial",
+        },
+        { fetch: fetchImplementation },
+      ),
+    ).toThrow("Connector configuration is invalid.");
+    expect(fetchImplementation).not.toHaveBeenCalled();
+  });
+
+  it("requires credentials for every operation during connector construction", () => {
+    const fetchImplementation = vi.fn<typeof globalThis.fetch>();
+
+    expect(() =>
+      connectorModule.fetchOpenApiConnector.create(
+        { OPENAPI_SERVICE_TOKEN: credential },
+        { fetch: fetchImplementation },
+      ),
+    ).toThrow("Connector configuration is invalid.");
+    expect(fetchImplementation).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-allowlisted configuration without exposing its value", () => {
+    const fetchImplementation = vi.fn<typeof globalThis.fetch>();
+    const secret = "non-allowlisted-secret";
+    let failure: unknown;
+
+    try {
+      connectorModule.fetchOpenApiConnector.create(
+        { ...validConnectorConfig, OPENAPI_UNKNOWN: secret },
+        { fetch: fetchImplementation },
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(TypeError);
+    expect((failure as Error).message).toBe(
+      "Connector configuration is invalid.",
+    );
+    expect(String(failure)).not.toContain(secret);
+    expect(fetchImplementation).not.toHaveBeenCalled();
+  });
+
+  it("defines an inert private connector with frozen named ports", () => {
+    const fetchImplementation = vi.fn<typeof globalThis.fetch>();
+
+    expect(connectorModule.fetchOpenApiConnector.name).toBe(
+      "generated-openapi-fetch",
+    );
+    expect(fetchImplementation).not.toHaveBeenCalled();
+
+    const connector = connectorModule.fetchOpenApiConnector.create(
+      validConnectorConfig,
+      { fetch: fetchImplementation },
+    );
+    const engine = engineModule.createOpenApiEngine({ ports: connector.ports });
+
+    expect(fetchImplementation).not.toHaveBeenCalled();
+    expect(Object.isFrozen(connector)).toBe(true);
+    expect(Object.isFrozen(connector.ports)).toBe(true);
+    expect(Object.keys(connector.ports)).toContain("createWidget");
+    expect(engine.list().map(({ id }) => id)).toContain(capabilityId);
+    expect(engine.list().map(({ id }) => id)).not.toContain(
+      connectorModule.fetchOpenApiConnector.name,
+    );
+  });
+
+  it("keeps credential validation in the executable composition root", async () => {
+    const names = [
+      "OPENAPI_BASIC_PASSWORD",
+      "OPENAPI_BASIC_USERNAME",
+      "OPENAPI_REQUIRED_TOKEN",
+      "OPENAPI_SERVICE_TOKEN",
+    ] as const;
+    const previous = new Map(names.map((name) => [name, process.env[name]]));
+    const engineUrl = pathToFileURL(
+      join(projectDirectory, "dist/engine.js"),
+    ).href;
+
+    try {
+      for (const name of names) delete process.env[name];
+
+      await expect(
+        import(`${engineUrl}?configuration=missing`),
+      ).rejects.toThrow("Connector configuration is invalid.");
+
+      process.env.OPENAPI_REQUIRED_TOKEN = credential;
+      const composition = (await import(
+        `${engineUrl}?configuration=valid`
+      )) as Readonly<{ readonly engine: GeneratedEngine }>;
+
+      expect(composition.engine.list().map(({ id }) => id)).toContain(
+        requiredAuthOperation.capabilityId,
+      );
+    } finally {
+      for (const name of names) {
+        const value = previous.get(name);
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
+  it.each([
+    ["a non-HTTP base URL", "ftp://api.example.test"],
+    ["a base URL containing user info", "https://secret@api.example.test"],
+  ])(
+    "rejects %s before connector construction completes",
+    (_label, baseUrl) => {
+      const fetchImplementation = vi.fn<typeof globalThis.fetch>();
+
+      expect(() =>
+        connectorModule.fetchOpenApiConnector.create(
+          {
+            OPENAPI_CREATE_WIDGET_BASE_URL: baseUrl,
+            ...validConnectorConfig,
+          },
+          { fetch: fetchImplementation },
+        ),
+      ).toThrow("Connector configuration is invalid.");
+      expect(fetchImplementation).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects ambiguous complete credential alternatives synchronously", () => {
+    const fetchImplementation = vi.fn<typeof globalThis.fetch>();
+
+    expect(() =>
+      connectorModule.fetchOpenApiConnector.create(
+        {
+          OPENAPI_SERVICE_TOKEN: credential,
+          OPENAPI_REQUIRED_TOKEN: credential,
+          OPENAPI_BASIC_USERNAME: "user",
+          OPENAPI_BASIC_PASSWORD: "password",
+        },
+        { fetch: fetchImplementation },
+      ),
+    ).toThrow("Connector configuration is invalid.");
+    expect(fetchImplementation).not.toHaveBeenCalled();
+  });
+
+  it("snapshots configuration before creating operation ports", async () => {
+    const config: Record<string, string> = { ...validConnectorConfig };
+    const fetchImplementation = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify({ id: "safe", name: "Snapshot" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const connector = connectorModule.fetchOpenApiConnector.create(config, {
       fetch: fetchImplementation,
-      env: Object.freeze({ OPENAPI_BASIC_USERNAME: "partial" }),
     });
-    const engine = engineModule.createOpenApiEngine({ upstream });
+    config.OPENAPI_SERVICE_TOKEN = "mutated-secret";
+    const engine = engineModule.createOpenApiEngine({ ports: connector.ports });
+
+    await engine.invoke(capabilityId, input, { principal: null });
+
+    const [, requestInit] = fetchImplementation.mock.calls[0] ?? [];
+    expect(new Headers(requestInit?.headers).get("X-Service-Token")).toBe(
+      credential,
+    );
+  });
+
+  it("translates a schema-invalid external response into a connector failure", async () => {
+    const engine = createRuntime(
+      async () =>
+        new Response(JSON.stringify({ id: "missing-name" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        }),
+    );
 
     await expect(
       engine.invoke(capabilityId, input, { principal: null }),
     ).rejects.toMatchObject({ code: "EXECUTION_FAILED" });
-    expect(fetchImplementation).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -129,7 +129,8 @@ connection, or activity across.
 **AE-LIMIT-08 — Guided OpenAPI import.** The engine creator may parse one
 explicit local OpenAPI 3.1.x JSON or YAML contract, resolve bounded local
 references contained by its directory, display a bounded operation catalog,
-and generate selected operation wrappers plus an engine-owned HTTP dependency.
+and generate selected operation wrappers, narrow ports, and one engine-owned
+typed outbound connector.
 It does not fetch remote contracts or references, invoke an operation, read or
 copy credentials, interpret OpenAPI at runtime, acquire OAuth tokens, generate
 multipart or binary clients, or claim that an API mirror is a qualified domain

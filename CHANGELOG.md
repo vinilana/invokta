@@ -51,6 +51,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- OpenAPI-generated engines now compose their inferred HTTP integration through
+  one typed outbound connector and inject only narrow operation ports into
+  capabilities. Generated connector construction synchronously validates and
+  snapshots allowlisted configuration, while connector response validation
+  translates schema-invalid external data to a sanitized execution failure.
 - The image, observability, Obsidian, and agent-session examples now compose
   their provider and filesystem implementations through `defineConnector` and
   inject only named engine-owned ports. Generated engine instructions and the

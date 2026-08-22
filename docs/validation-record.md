@@ -46,9 +46,9 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 3,103 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 3,112 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  78.88% statements, 74.29% branches, 83.36% functions, and 80.60% lines.
+  78.90% statements, 74.29% branches, 83.40% functions, and 80.61% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.
@@ -91,6 +91,12 @@ consumer can use the protocol surface without coupling to engine code.
   capabilities from outbound connectors and preserve explicit, port-only
   connector composition without adding a generated connector to the minimal
   deterministic starter.
+- OpenAPI-generated projects place operation plans and HTTP behavior inside one
+  typed outbound connector, validate allowlisted configuration synchronously at
+  the executable composition root, inject only narrow operation ports into the
+  pure engine assembly, validate external responses before returning port
+  values, and keep connector metadata out of the engine catalog. Fake-port tests
+  import only the pure assembly and require no credentials or network access.
 - Packed creator smoke tests generate the exact `complete`, `mcp-stdio`,
   `mcp-http`, and `cli` file sets from release tarballs. Every profile installs,
   type-checks, tests, builds, and invokes the shared capability directly and

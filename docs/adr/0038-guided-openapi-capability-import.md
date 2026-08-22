@@ -22,10 +22,10 @@ user-owned engine code for review.
 
 ## Decision
 
-This decision extends ADRs 0012, 0018, 0020, and 0026 with one local OpenAPI
-import mode owned by `create-invokta-engine`. The target, profile, prompt,
-exclusive-write, rollback, installation, generated MCP conformance, and
-single-`engine.invoke` boundaries remain in force.
+This decision extends ADRs 0012, 0018, 0020, 0026, 0036, and 0037 with one
+local OpenAPI import mode owned by `create-invokta-engine`. The target, profile,
+prompt, exclusive-write, rollback, installation, generated MCP conformance,
+and single-`engine.invoke` boundaries remain in force.
 
 ### Command and interaction
 
@@ -257,28 +257,40 @@ instructions require an explicit domain and access review before deployment.
 
 **AE-CREATE-OPENAPI-12 — Generated project.** OpenAPI import replaces the
 welcome capability with exactly the selected candidate modules, registers them
-in one shared engine, and emits an engine-owned upstream port, fetch adapter,
-runtime configuration, names-only `upstream.env.example`, and fake-port tests.
-The output remains readable user-owned TypeScript rather than a framework
-runtime registry or a generic OpenAPI proxy. All selected profiles retain their
-normal direct and adapter entry points, and every entry point converges on the
+in one shared engine, and emits narrow operation ports, one engine-owned typed
+fetch connector, runtime configuration, names-only `upstream.env.example`, and
+fake-port tests. The connector owns HTTP and generated OpenAPI operation plans;
+each capability receives only the operation port it invokes. Neither the
+connector definition nor its instance is published by the engine. The output
+remains readable user-owned TypeScript rather than a framework runtime registry
+or a generic OpenAPI proxy. A pure generated engine assembly module accepts the
+ports, while the executable composition root constructs the connector from the
+allowlisted environment. Fake-port tests import only the pure assembly and
+therefore require no credentials. All selected profiles retain their normal
+direct and adapter entry points, and every entry point converges on the
 generated engine's `invoke` method.
 
 **AE-CREATE-OPENAPI-13 — Runtime boundary.** Each generated capability
-delegates HTTP work through the injected upstream port, has a 30,000 ms
-capability timeout, and passes `ExecutionContext.signal` to the fetch adapter.
-The adapter performs one request, follows no redirect, and adds no retry, cache,
-cookie jar, discovery, concurrency control, or background work. It encodes JSON
-requests explicitly and rejects a serialized URL over 8,192 UTF-8 bytes or JSON
-request body over 10 MiB before `fetch`. It validates the declared successful
-response shape and reads at most 10 MiB from the response stream, first
+delegates external work through its injected operation port, has a 30,000 ms
+capability timeout, and passes `ExecutionContext.signal` to that port. The
+connector synchronously validates and snapshots the allowlisted base-URL and
+credential configuration during construction without performing external I/O.
+Invalid, partial, or ambiguous configuration fails with the sanitized connector
+configuration error before an engine is created. The connector performs one
+request, follows no redirect, and adds no retry, cache, cookie jar, discovery,
+concurrency control, or background work. It encodes JSON requests explicitly
+and rejects a serialized URL over 8,192 UTF-8 bytes or JSON request body over 10
+MiB before `fetch`. It reads at most 10 MiB from the response stream, first
 rejecting an oversized valid `Content-Length` and then counting chunks
-incrementally. Response text uses fatal UTF-8 decoding before JSON parsing.
-Network failures, status failures, media failures, timeout, cancellation, and
-response validation follow the existing engine error taxonomy. Public errors,
-logs, tests, and generated documentation never contain credentials, request or
-response bodies, or credential-bearing URLs. Runtime diagnostics do not echo
-raw OpenAPI values.
+incrementally. Response text uses fatal UTF-8 decoding before JSON parsing. The
+connector validates and transforms the declared successful response before
+returning the port value; a schema-invalid external response is an
+`EXECUTION_FAILED` connector failure rather than an engine `OUTPUT_INVALID`
+failure. Network failures, status failures, media failures, timeout,
+cancellation, and response validation follow the existing engine error
+taxonomy. Public errors, logs, tests, and generated documentation never contain
+credentials, request or response bodies, or credential-bearing URLs. Runtime
+diagnostics do not echo raw OpenAPI values.
 
 The operation path is appended as path data and is never interpreted as an
 absolute or network-path URL. After path and non-credential parameter
@@ -287,7 +299,7 @@ configured base URL's exact origin. A mismatch fails with the sanitized
 dependency error before any credential is applied or request is made.
 
 The imported source is not copied into the project and generated code does not
-interpret OpenAPI at runtime. Generated tests use a fake upstream port and make
+interpret OpenAPI at runtime. Generated tests use fake operation ports and make
 no network request. Every selected operation gets an executable contract and
 fake-port-isolation test. A successful invocation is additionally generated for
 each declared response variant only when the creator can prove a valid input

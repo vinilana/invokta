@@ -53,6 +53,10 @@ function normalizedOperation(operation: OpenApiStarterOperation): unknown {
   };
 }
 
+function portTypeName(operation: OpenApiStarterOperation): string {
+  return `${operation.exportName[0]?.toUpperCase() ?? ""}${operation.exportName.slice(1)}Port`;
+}
+
 function renderCapability(operation: OpenApiStarterOperation): string {
   const readOnly = operation.method === "GET" || operation.method === "HEAD";
   const idempotent =
@@ -63,7 +67,7 @@ function renderCapability(operation: OpenApiStarterOperation): string {
   return `import { defineCapability, type EngineSchema } from "@invokta/core";
 import { z } from "zod";
 
-import type { OpenApiUpstream } from "../openapi/upstream.js";
+import type { ${portTypeName(operation)} } from "../openapi/ports.js";
 
 function schemaContract(
   schema: Readonly<Record<string, unknown>>,
@@ -86,9 +90,7 @@ function schemaContract(
 
 const inputSchema = schemaContract(${json(operation.inputSchema)});
 const outputSchema = schemaContract(${json(operation.outputSchema)});
-const operation = ${json(normalizedOperation(operation))} as const;
-
-export function ${operation.exportName}(upstream: OpenApiUpstream) {
+export function ${operation.exportName}(port: ${portTypeName(operation)}) {
   return defineCapability({
     title: ${JSON.stringify(operation.title)},
     description: ${JSON.stringify(operation.description)},
@@ -103,9 +105,7 @@ export function ${operation.exportName}(upstream: OpenApiUpstream) {
       openWorld: true,
     },
     async run({ input, context }) {
-      return upstream.invoke({
-        operation,
-        input,
+      return port.invoke(input, {
         signal: context.signal,
       });
     },
@@ -114,8 +114,73 @@ export function ${operation.exportName}(upstream: OpenApiUpstream) {
 `;
 }
 
-function renderUpstreamPort(): string {
-  return `export interface OpenApiParameterPlan {
+function renderPorts(operations: readonly OpenApiStarterOperation[]): string {
+  const aliases = operations
+    .map(
+      (operation) =>
+        `export type ${portTypeName(operation)} = OpenApiOperationPort;`,
+    )
+    .join("\n");
+  const members = operations
+    .map(
+      (operation) =>
+        `  readonly ${operation.exportName}: ${portTypeName(operation)};`,
+    )
+    .join("\n");
+  return `export interface OpenApiOperationPort {
+  readonly invoke: (
+    input: Readonly<Record<string, unknown>>,
+    options: Readonly<{ readonly signal: AbortSignal }>,
+  ) => Promise<Record<string, unknown>>;
+}
+
+${aliases}
+
+export interface OpenApiPorts {
+${members}
+}
+`;
+}
+
+function renderFetchConnector(
+  operations: readonly OpenApiStarterOperation[],
+  envNames: readonly string[],
+): string {
+  const operationConstants = operations
+    .map(
+      (
+        operation,
+      ) => `const ${operation.exportName}Operation = ${json(normalizedOperation(operation))} as const;
+const ${operation.exportName}OutputValidator = z.fromJSONSchema(${json(operation.outputSchema)}) as z.ZodType<Record<string, unknown>>;`,
+    )
+    .join("\n\n");
+  const configurationChecks = operations
+    .map(
+      (operation) =>
+        `    validateConfiguration(${operation.exportName}Operation, config);`,
+    )
+    .join("\n");
+  const configShape = envNames
+    .map((name) => `    ${JSON.stringify(name)}: z.string().min(1).optional(),`)
+    .join("\n");
+  const portMembers = operations
+    .map(
+      (operation) => `      ${operation.exportName}: createPort(
+        ${operation.exportName}Operation,
+        ${operation.exportName}OutputValidator,
+        config,
+        dependencies.fetch,
+      ),`,
+    )
+    .join("\n");
+  return `import { Buffer } from "node:buffer";
+
+import { EngineError, defineConnector } from "@invokta/core";
+import { z } from "zod";
+
+import type { OpenApiOperationPort } from "./ports.js";
+
+interface OpenApiParameterPlan {
   readonly name: string;
   readonly in: "path" | "query" | "header" | "cookie";
   readonly required: boolean;
@@ -124,7 +189,7 @@ function renderUpstreamPort(): string {
   readonly schema: unknown;
 }
 
-export interface OpenApiSecuritySchemePlan {
+interface OpenApiSecuritySchemePlan {
   readonly name: string;
   readonly type: "apiKey" | "basic" | "bearer";
   readonly in?: "header" | "query" | "cookie";
@@ -134,7 +199,7 @@ export interface OpenApiSecuritySchemePlan {
   >;
 }
 
-export interface OpenApiOperationPlan {
+interface OpenApiOperationPlan {
   readonly selector: string;
   readonly method: string;
   readonly path: string;
@@ -162,31 +227,11 @@ export interface OpenApiOperationPlan {
   }>;
 }
 
-export interface OpenApiUpstreamRequest {
-  readonly operation: OpenApiOperationPlan;
-  readonly input: Readonly<Record<string, unknown>>;
-  readonly signal: AbortSignal;
+export interface FetchOpenApiConnectorDependencies {
+  readonly fetch: typeof globalThis.fetch;
 }
 
-export interface OpenApiUpstream {
-  readonly invoke: (
-    request: OpenApiUpstreamRequest,
-  ) => Promise<Record<string, unknown>>;
-}
-`;
-}
-
-function renderFetchAdapter(): string {
-  return `import { Buffer } from "node:buffer";
-
-import { EngineError } from "@invokta/core";
-
-import type {
-  OpenApiOperationPlan,
-  OpenApiSecuritySchemePlan,
-  OpenApiUpstream,
-  OpenApiUpstreamRequest,
-} from "./upstream.js";
+${operationConstants}
 
 const maxUrlBytes = 8_192;
 const maxRequestBytes = 10 * 1024 * 1024;
@@ -195,16 +240,15 @@ const publicFailureMessage = "The upstream API request failed.";
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const encoder = new TextEncoder();
 
-export interface FetchOpenApiUpstreamOptions {
-  readonly fetch: typeof globalThis.fetch;
-  readonly env: Readonly<Record<string, string | undefined>>;
-}
-
 function failure(): EngineError {
   return new EngineError({
     code: "EXECUTION_FAILED",
     message: publicFailureMessage,
   });
+}
+
+function configurationFailure(): TypeError {
+  return new TypeError("Invalid generated OpenAPI connector configuration.");
 }
 
 function record(value: unknown): Readonly<Record<string, unknown>> {
@@ -326,7 +370,7 @@ function applyScheme(
   if (scheme.type === "apiKey") {
     const value = environmentValue(env, scheme.environmentVariables.value);
     if (value === undefined || scheme.in === undefined || scheme.parameterName === undefined) {
-      throw failure();
+      throw configurationFailure();
     }
     if (scheme.in === "header") headers.set(scheme.parameterName, value);
     else if (scheme.in === "query") url.searchParams.append(scheme.parameterName, value);
@@ -336,7 +380,7 @@ function applyScheme(
   if (scheme.type === "basic") {
     const username = environmentValue(env, scheme.environmentVariables.username);
     const password = environmentValue(env, scheme.environmentVariables.password);
-    if (username === undefined || password === undefined) throw failure();
+    if (username === undefined || password === undefined) throw configurationFailure();
     headers.set(
       "authorization",
       \`Basic \${Buffer.from(\`\${username}:\${password}\`, "utf8").toString("base64")}\`,
@@ -344,7 +388,7 @@ function applyScheme(
     return;
   }
   const token = environmentValue(env, scheme.environmentVariables.token);
-  if (token === undefined) throw failure();
+  if (token === undefined) throw configurationFailure();
   headers.set("authorization", \`Bearer \${token}\`);
 }
 
@@ -359,7 +403,7 @@ function applySecurity(
     (alternative) =>
       alternative.length > 0 && alternative.every((scheme) => schemeComplete(scheme, env)),
   );
-  if (credentialed.length > 1) throw failure();
+  if (credentialed.length > 1) throw configurationFailure();
   const selected = credentialed[0];
   if (selected !== undefined) {
     for (const scheme of selected) applyScheme(scheme, env, url, headers, cookies);
@@ -370,11 +414,11 @@ function applySecurity(
       alternative.length > 0 &&
       alternative.some((scheme) => schemeConfigured(scheme, env)),
   );
-  if (partiallyConfigured) throw failure();
+  if (partiallyConfigured) throw configurationFailure();
   if (operation.security.alternatives.some((alternative) => alternative.length === 0)) {
     return;
   }
-  throw failure();
+  throw configurationFailure();
 }
 
 function baseUrl(
@@ -386,15 +430,27 @@ function baseUrl(
     operation.connection.baseUrl.environmentVariable,
   );
   const value = configured ?? operation.connection.baseUrl.default;
-  if (value === undefined) throw failure();
+  if (value === undefined) throw configurationFailure();
   try {
     const parsed = new URL(value);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw failure();
-    if (parsed.username !== "" || parsed.password !== "") throw failure();
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw configurationFailure();
+    }
+    if (parsed.username !== "" || parsed.password !== "") {
+      throw configurationFailure();
+    }
     return parsed;
   } catch {
-    throw failure();
+    throw configurationFailure();
   }
+}
+
+function validateConfiguration(
+  operation: OpenApiOperationPlan,
+  env: Readonly<Record<string, string | undefined>>,
+): void {
+  const url = baseUrl(operation, env);
+  applySecurity(operation, env, url, new Headers(), []);
 }
 
 function requestUrl(
@@ -534,35 +590,70 @@ async function decodeResponse(
   }
 }
 
-export function createFetchOpenApiUpstream(
-  options: FetchOpenApiUpstreamOptions,
-): OpenApiUpstream {
-  return Object.freeze({
-    async invoke(request: OpenApiUpstreamRequest) {
-      const input = record(request.input);
-      const target = requestUrl(request.operation, input, options.env);
-      const body = requestBody(request.operation, input, target.headers);
+function createPort(
+  operation: OpenApiOperationPlan,
+  outputValidator: z.ZodType<Record<string, unknown>>,
+  config: Readonly<Record<string, string | undefined>>,
+  fetchImplementation: typeof globalThis.fetch,
+): OpenApiOperationPort {
+  const port: OpenApiOperationPort = {
+    async invoke(inputValue, options) {
+      const input = record(inputValue);
+      const target = requestUrl(operation, input, config);
+      const body = requestBody(operation, input, target.headers);
       let response: Response;
       try {
-        response = await options.fetch(target.url, {
-          method: request.operation.method,
+        response = await fetchImplementation(target.url, {
+          method: operation.method,
           headers: target.headers,
           ...(body === undefined ? {} : { body }),
           redirect: "manual",
-          signal: request.signal,
+          signal: options.signal,
         });
       } catch (error) {
-        if (request.signal.aborted) throw error;
+        if (options.signal.aborted) throw error;
         throw failure();
       }
-      return decodeResponse(request.operation, response);
+      const output = await decodeResponse(operation, response);
+      const validated = outputValidator.safeParse(output);
+      if (!validated.success) throw failure();
+      return record(validated.data);
     },
-  });
+  };
+  return Object.freeze(port);
 }
+
+const openApiConnectorConfig = z
+  .object({
+${configShape}
+  })
+  .strict()
+  .superRefine((config, context) => {
+    try {
+${configurationChecks}
+    } catch {
+      context.addIssue({
+        code: "custom",
+        message: "Invalid generated OpenAPI connector configuration.",
+      });
+    }
+  });
+
+export const fetchOpenApiConnector = defineConnector({
+  name: "generated-openapi-fetch",
+  config: openApiConnectorConfig,
+  create(config, dependencies: FetchOpenApiConnectorDependencies) {
+    return {
+      ports: {
+${portMembers}
+      },
+    };
+  },
+});
 `;
 }
 
-function renderEngine(
+function renderOpenApiEngine(
   projectName: string,
   operations: readonly OpenApiStarterOperation[],
 ): string {
@@ -575,20 +666,19 @@ function renderEngine(
   const registrations = operations
     .map(
       (operation) =>
-        `      ${JSON.stringify(operation.capabilityId)}: ${operation.exportName}(upstream),`,
+        `      ${JSON.stringify(operation.capabilityId)}: ${operation.exportName}(ports.${operation.exportName}),`,
     )
     .join("\n");
   return `import { createEngine } from "@invokta/core";
 
 ${imports}
-import { createFetchOpenApiUpstream } from "./openapi/fetch-adapter.js";
-import type { OpenApiUpstream } from "./openapi/upstream.js";
+import type { OpenApiPorts } from "./openapi/ports.js";
 
 export interface CreateOpenApiEngineOptions {
-  readonly upstream: OpenApiUpstream;
+  readonly ports: OpenApiPorts;
 }
 
-export function createOpenApiEngine({ upstream }: CreateOpenApiEngineOptions) {
+export function createOpenApiEngine({ ports }: CreateOpenApiEngineOptions) {
   return createEngine({
     name: ${JSON.stringify(projectName)},
     version: "0.1.0",
@@ -597,12 +687,31 @@ ${registrations}
     },
   });
 }
+`;
+}
+
+function renderEngine(envNames: readonly string[]): string {
+  return `import { createOpenApiEngine } from "./openapi-engine.js";
+import { fetchOpenApiConnector } from "./openapi/connector.js";
+
+function connectorConfigFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string> {
+  const config: Record<string, string> = {};
+  for (const name of ${json(envNames)} as readonly string[]) {
+    const value = env[name];
+    if (value !== undefined && value !== "") config[name] = value;
+  }
+  return config;
+}
+
+const connector = fetchOpenApiConnector.create(
+  connectorConfigFromEnv(process.env),
+  { fetch: globalThis.fetch },
+);
 
 export const engine = createOpenApiEngine({
-  upstream: createFetchOpenApiUpstream({
-    fetch: globalThis.fetch,
-    env: process.env,
-  }),
+  ports: connector.ports,
 });
 `;
 }
@@ -1035,6 +1144,7 @@ function renderGeneratedTest(
 ): string {
   const contractCases = operations.map((operation) => ({
     capabilityId: operation.capabilityId,
+    portName: operation.exportName,
     selector: operation.selector,
   }));
   const successCases: Array<Record<string, unknown>> = [];
@@ -1075,6 +1185,7 @@ function renderGeneratedTest(
         }
         successCases.push({
           capabilityId: operation.capabilityId,
+          portName: operation.exportName,
           selector: operation.selector,
           input,
           status: response.status,
@@ -1085,18 +1196,37 @@ function renderGeneratedTest(
       }
     }
   }
+  const fakePortMembers = operations
+    .map(
+      (operation) =>
+        `    ${operation.exportName}: { invoke: target === ${JSON.stringify(operation.exportName)} ? invoke : async () => ({}) },`,
+    )
+    .join("\n");
   return `import { describe, expect, it, vi } from "vitest";
 
-import { createOpenApiEngine } from "../src/engine.js";
-import type { OpenApiUpstream } from "../src/openapi/upstream.js";
+import { createOpenApiEngine } from "../src/openapi-engine.js";
+import type {
+  OpenApiOperationPort,
+  OpenApiPorts,
+} from "../src/openapi/ports.js";
+
+function fakePorts(
+  target: keyof OpenApiPorts,
+  invoke: OpenApiOperationPort["invoke"],
+): OpenApiPorts {
+  return {
+${fakePortMembers}
+  };
+}
 
 describe("generated OpenAPI engine", () => {
   it.each(${json(contractCases)})(
     "validates $selector contract without calling upstream",
-    async ({ capabilityId }) => {
+    async ({ capabilityId, portName }) => {
       const invoke = vi.fn(async () => ({}));
-      const upstream: OpenApiUpstream = { invoke };
-      const engine = createOpenApiEngine({ upstream });
+      const engine = createOpenApiEngine({
+        ports: fakePorts(portName as keyof OpenApiPorts, invoke),
+      });
 
       expect(engine.describe(capabilityId)).toMatchObject({
         inputSchema: { type: "object" },
@@ -1115,19 +1245,16 @@ describe("generated OpenAPI engine", () => {
 
   it.each(${json(successCases)})(
     "invokes $selector for declared status $status when a witness is proven",
-    async ({ capabilityId, selector, input, output }) => {
-      const upstream: OpenApiUpstream = {
-        invoke: vi.fn(async (request) => {
-          expect(request.operation.selector).toBe(selector);
-          return output;
-        }),
-      };
-      const engine = createOpenApiEngine({ upstream });
+    async ({ capabilityId, portName, input, output }) => {
+      const invoke = vi.fn(async () => output);
+      const engine = createOpenApiEngine({
+        ports: fakePorts(portName as keyof OpenApiPorts, invoke),
+      });
 
       const result = await engine.invoke(capabilityId, input, { principal: null });
       expect(result.status).toBe(output.status);
       expect(Object.hasOwn(result, "body")).toBe(Object.hasOwn(output, "body"));
-      expect(upstream.invoke).toHaveBeenCalledTimes(1);
+      expect(invoke).toHaveBeenCalledTimes(1);
     },
   );
 });
@@ -1239,10 +1366,7 @@ export function createOpenApiStarterFiles(
     if (entry.path === "src/engine.ts") {
       replacements.set(
         entry.path,
-        generatedFile(
-          entry.path,
-          renderEngine(options.projectName, operations),
-        ),
+        generatedFile(entry.path, renderEngine(envNames)),
       );
       continue;
     }
@@ -1305,8 +1429,15 @@ export function createOpenApiStarterFiles(
     replacements.set(path, generatedFile(path, renderCapability(operation)));
   }
   for (const entry of [
-    generatedFile("src/openapi/fetch-adapter.ts", renderFetchAdapter()),
-    generatedFile("src/openapi/upstream.ts", renderUpstreamPort()),
+    generatedFile(
+      "src/openapi-engine.ts",
+      renderOpenApiEngine(options.projectName, operations),
+    ),
+    generatedFile(
+      "src/openapi/connector.ts",
+      renderFetchConnector(operations, envNames),
+    ),
+    generatedFile("src/openapi/ports.ts", renderPorts(operations)),
     generatedFile(
       "upstream.env.example",
       `${envNames.map((name) => `${name}=`).join("\n")}\n`,

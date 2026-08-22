@@ -170,10 +170,15 @@ create-invokta-engine my-engine \
 
 The importer infers server precedence, server-variable defaults, parameter
 locations and serialization, JSON request and success-response contracts, and
-anonymous, API-key, Basic, or Bearer upstream authentication. Generated
-credentials are environment-variable names only; values remain runtime
-configuration in `upstream.env.example`. Unsupported operations stay visible
-with a stable reason and are never generated with weakened behavior.
+anonymous, API-key, Basic, or Bearer upstream authentication. It generates one
+typed outbound connector that privately owns HTTP and operation plans, then
+injects only a narrow operation port into each capability. Connector
+configuration is allowlisted and validated synchronously before engine
+construction, and external responses are validated by the connector before
+they become capability outputs. Generated credentials are environment-variable
+names only; values remain runtime configuration in `upstream.env.example`.
+Unsupported operations stay visible with a stable reason and are never
+generated with weakened behavior.
 
 The result is a source-generated starting point, not a trusted API mirror.
 Review capability names, domain boundaries, `access` rules, upstream base URLs,
