@@ -88,7 +88,8 @@ function processIsAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return errorCode(error) !== "ESRCH";
+    const code = errorCode(error);
+    return code !== "ESRCH" && code !== "EINVAL";
   }
 }
 
