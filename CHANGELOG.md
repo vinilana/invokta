@@ -9,13 +9,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- ADR 0034 and the outbound connector authoring guide define provider- and
+- ADR 0036 and the outbound connector authoring guide define provider- and
   technology-specific port implementations as explicit custom-engine
   dependencies, with construction-time configuration validation, finite access
   deadlines, no core registry, and no alternate execution path. The crawl,
   image, observability, Obsidian, and agent-session examples provide canonical
   network and filesystem patterns.
-- ADR 0036 adds the optional `defineConnector` core authoring API for
+- ADR 0037 adds the optional `defineConnector` core authoring API for
   synchronous Standard Schema configuration, opaque dependencies, and frozen
   named-port containers. Connector definitions remain explicitly composed and
   do not add runtime registration, discovery, lifecycle, or another invocation

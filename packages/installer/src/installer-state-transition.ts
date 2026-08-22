@@ -20,6 +20,7 @@ import type { TargetAdapter } from "./target-adapter.js";
 
 export interface ApplyInstallerStatePlanInput {
   readonly adapter: TargetAdapter;
+  readonly allowUnavailableTargetContracts?: boolean;
   readonly occurredAt: string;
   readonly plan: InstallerActionPlan;
   readonly planning: OwnershipPlanningInput;
@@ -333,6 +334,9 @@ export function applyInstallerStatePlan(
       },
     },
     input.targetContracts,
+    input.allowUnavailableTargetContracts === true
+      ? { allowUnavailableTargetContracts: true }
+      : {},
   );
   const installation = normalized.state.installations[key];
   if (installation === undefined) return invalidState();

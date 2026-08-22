@@ -29,7 +29,7 @@ technology-specific implementation of one or more of those engine-owned ports.
 Capabilities receive only the ports they use; provider clients, credentials,
 and connector registries MUST NOT enter capability contracts or
 `ExecutionContext`. The framework MUST NOT register ports or provide a connector
-catalog, service container, lifecycle, or formal modules. ADR 0034 defines this
+catalog, service container, lifecycle, or formal modules. ADR 0036 defines this
 authoring boundary.
 
 **AE-ARCH-03 — Single path.** No inbound adapter MAY call `run` or an outbound
@@ -62,8 +62,8 @@ external responses and return port-owned domain values rather than raw provider
 payloads. It MUST preserve observed cancellation and sanitize provider failures,
 including internal causes, so credentials and unfiltered payloads do not enter
 public errors, diagnostics, events, logs, or snapshots. Connectors add no error
-code or execution path; ADR 0034 defines the complete authoring boundary.
-ADR 0036 defines the optional typed construction helper.
+code or execution path; ADR 0036 defines the complete authoring boundary.
+ADR 0037 defines the optional typed construction helper.
 
 ## Normative pipeline
 
@@ -344,9 +344,11 @@ targets are preselected, but no mutation occurs without explicit confirmation.
 Engine-scoped removal preflights every matching managed target and one
 confirmation authorizes its complete ordered removable set.
 Creating a missing configuration requires installed-client evidence. Project,
-profile, remote-workspace, and organization-managed configuration mutation are
-not provided by this profile. On Windows, mutation uses the ownership identity
-of ADR 0027 and covers only targets whose default user configuration resolves
+workspace, named-profile, arbitrary-remote, and organization-managed
+configuration mutation are not provided by this profile. ADR 0034 permits the
+one exact VS Code server-side remote user configuration proven by its resolved
+remote launcher identity. On Windows, mutation uses the ownership identity of
+ADR 0027 and covers only targets whose default user configuration resolves
 inside the home directory.
 
 **AE-INSTALL-03 — Managed lifecycle.** New ownership records persist the

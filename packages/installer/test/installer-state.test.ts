@@ -357,6 +357,31 @@ describe("installer state validation", () => {
     }
   });
 
+  it("accepts a relocated path only for unavailable-target inspection", () => {
+    const relocated = record({
+      configPath: "/home/tester/old/config.toml",
+    });
+    const bytes = encoder.encode(
+      JSON.stringify({
+        schemaVersion: 1,
+        installations: {
+          [installationKey(
+            relocated.entryId,
+            relocated.targetId,
+            relocated.configPath,
+          )]: relocated,
+        },
+      }),
+    );
+
+    expect(validateInstallerStateBytes(bytes, targetContracts).ok).toBe(false);
+    expect(
+      validateInstallerStateBytes(bytes, targetContracts, {
+        allowUnavailableTargetContracts: true,
+      }),
+    ).toMatchObject({ ok: true });
+  });
+
   it("does not apply a component string limit to the derived tuple key", () => {
     const longPath = `/home/tester/${Array.from({ length: 21 }, () => "p".repeat(190)).join("/")}/config.json`;
     const longContracts = {

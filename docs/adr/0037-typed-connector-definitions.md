@@ -1,11 +1,11 @@
-# ADR 0036: Typed connector definitions with explicit port injection
+# ADR 0037: Typed connector definitions with explicit port injection
 
 - Status: Accepted
 - Date: 2026-08-22
 
 ## Context
 
-ADR 0034 established outbound connectors as engine-owned implementations of
+ADR 0036 established outbound connectors as engine-owned implementations of
 domain ports and deliberately deferred a shared connector API. The crawl,
 image, observability, Obsidian, and agent-session engines now demonstrate the
 same construction boundary across network and filesystem integrations:
