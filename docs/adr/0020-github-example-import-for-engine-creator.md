@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-06
+- Amended by: [ADR 0035](./0035-example-archive-path-and-subtree-validation.md)
 
 ## Context
 

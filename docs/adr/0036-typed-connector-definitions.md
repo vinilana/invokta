@@ -1,4 +1,4 @@
-# ADR 0035: Typed connector definitions with explicit port injection
+# ADR 0036: Typed connector definitions with explicit port injection
 
 - Status: Accepted
 - Date: 2026-08-22

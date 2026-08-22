@@ -18,9 +18,9 @@
   0030; advertised authorization servers and OAuth discovery inspection
   accepted in ADR 0031; CLI installation inspection and homologation
   accepted in ADR 0032; and the workbench launcher with workbench selection
-  accepted in ADR 0033; and typed connector definitions accepted in ADR 0035.
+  accepted in ADR 0033; and typed connector definitions accepted in ADR 0036.
 - Architectural conventions: ADR 0034 defines engine-owned outbound connectors;
-  ADR 0035 adds their optional typed core authoring definition without changing
+  ADR 0036 adds their optional typed core authoring definition without changing
   capability contracts, the error-code taxonomy, or the execution path.
 
 ## Reuse evidence
@@ -45,9 +45,9 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 2,996 tests with one
+- `yarn run check` passes typecheck, lint, formatting, 3,003 tests with one
   intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  78.54% statements, 74.02% branches, 82.78% functions, and 80.07% lines.
+  78.55% statements, 74.03% branches, 82.80% functions, and 80.09% lines.
 - `yarn release:verify` passes clean tarball inspection, isolated ESM imports,
   dependency boundaries, all four packed engine profiles, the authenticated MCP
   HTTP exchange, and the remaining creator and installer smoke tests.

@@ -38,6 +38,11 @@ jobs:
       - name: Run full checks
         run: yarn run check
 
+      - name: Verify Windows example archive paths
+        env:
+          TESTING_TAR_FAKE_PLATFORM: win32
+        run: yarn vitest run packages/create-invokta-engine/test/example.test.ts
+
       - name: Audit dependencies
         run: yarn audit
 
