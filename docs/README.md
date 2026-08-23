@@ -1,14 +1,33 @@
 # Invokta documentation
 
-The Invokta framework allows a domain capability to be defined once and
-executed through a direct call, the CLI, MCP stdio, and stateless MCP Streamable
-HTTP.
+Invokta is a TypeScript framework for building agent-ready software without
+coupling domain capabilities to one agent harness. Define a capability once and
+execute the same implementation through a direct call, the CLI, MCP stdio, or
+stateless MCP Streamable HTTP.
+
+An Action Engine is the headless capability boundary behind those channels. A
+customer can use an MCP-compatible agent, an internal team can change harnesses,
+and an application can invoke the capability directly while the domain contract,
+access rule, execution, and validation remain owned in one place.
 
 The broader [Action Engines community definition](./action-engines.md) is
 framework-neutral and intended for independent adoption. Invokta's normative
 contracts below define one implementation of that concept.
 
-## Reading order
+## Choose your path
+
+| Goal | Recommended path |
+| --- | --- |
+| Make product capabilities available to existing agents | [Action Engines](./action-engines.md) and [software product use cases](../apps/docs/src/content/docs/use-cases/index.mdx#software-products) |
+| Create and run an Action Engine | [Getting started](./getting-started.md) |
+| Choose a domain outcome | [Use cases by company area](../apps/docs/src/content/docs/use-cases/index.mdx) |
+| Add a provider or data source | [Outbound connector recipe](../apps/docs/src/content/docs/recipes/external-provider.mdx) |
+| Secure an MCP HTTP engine | [HTTP authentication](./http-authentication.md) |
+| Install an engine in agent clients | [Installer reference](../apps/docs/src/content/docs/reference/installer.mdx) |
+| Contribute to Invokta | [Contributor guide](../CONTRIBUTING.md) |
+| Change a public contract | Follow the maintainer reading order below before editing |
+
+## Framework maintainer reading order
 
 1. [Action Engines community definition](./action-engines.md)
 2. [Vision and invariants](./vision-and-invariants.md)
@@ -18,54 +37,9 @@ contracts below define one implementation of that concept.
 6. [Architecture decision records](./adr/README.md)
 7. [Validation record](./validation-record.md)
 
-## Delivered changes
-
-Each delivered change is normative through its accepted architecture decision:
-
-- Engine-scoped MCP uninstall —
-  [ADR 0017](./adr/0017-engine-scoped-mcp-uninstall.md)
-- Interactive engine creator profiles —
-  [ADR 0018](./adr/0018-interactive-engine-creator-profiles.md)
-- GitHub example import for `create-invokta-engine` —
-  [ADR 0020](./adr/0020-github-example-import-for-engine-creator.md), amended
-  with portable path and selected-subtree validation by
-  [ADR 0035](./adr/0035-example-archive-path-and-subtree-validation.md)
-- Engine devtools dev server —
-  [ADR 0021](./adr/0021-engine-devtools-dev-server.md)
-- MCP installation inspection and homologation —
-  [ADR 0022](./adr/0022-mcp-installation-inspection-and-homologation.md),
-  extended with ephemeral OAuth by
-  [ADR 0023](./adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md) and
-  amended with advertised authorization servers and discovery inspection by
-  [ADR 0031](./adr/0031-oauth-discovery-inspection-and-advertised-servers.md)
-- Production MCP OAuth integration boundary —
-  [ADR 0024](./adr/0024-production-mcp-oauth-integration-boundary.md)
-- Portable MCP tool names —
-  [ADR 0025](./adr/0025-portable-mcp-tool-names.md)
-- Generated engine MCP conformance gate —
-  [ADR 0026](./adr/0026-generated-engine-mcp-conformance-gate.md)
-- Windows installer ownership identity —
-  [ADR 0027](./adr/0027-windows-installer-ownership-identity.md)
-- Adapter emulation in the engine devtools —
-  [ADR 0028](./adr/0028-adapter-emulation-in-engine-devtools.md), extended with
-  selectable HTTP authentication by
-  [ADR 0029](./adr/0029-selectable-http-authentication-in-devtools.md) and with
-  project entry points by
-  [ADR 0030](./adr/0030-project-entry-points-in-devtools-emulation.md)
-- CLI installation inspection and homologation —
-  [ADR 0032](./adr/0032-cli-installation-inspection-and-homologation.md),
-  superseded on workbench entry and selection by
-  [ADR 0033](./adr/0033-workbench-launcher-and-selection.md)
-- Workbench launcher and workbench selection —
-  [ADR 0033](./adr/0033-workbench-launcher-and-selection.md)
-- Harness configuration variants and VS Code remote user scope —
-  [ADR 0034](./adr/0034-harness-config-variants-and-vscode-remote-user-scope.md)
-- Engine-owned outbound connectors through explicit ports —
-  [ADR 0036](./adr/0036-engine-owned-outbound-connectors.md)
-- Typed connector definitions with explicit port injection —
-  [ADR 0037](./adr/0037-typed-connector-definitions.md)
-- Guided OpenAPI capability import —
-  [ADR 0038](./adr/0038-guided-openapi-capability-import.md)
+The [ADR index](./adr/README.md) is the canonical inventory of accepted
+decisions. The [changelog](../CHANGELOG.md) records release-level delivery and
+known limitations; this index does not duplicate either chronology.
 
 ## Design notes
 

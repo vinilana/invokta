@@ -1543,6 +1543,11 @@ function adaptReadme(
     .replaceAll("onboarding.create-welcome-message", first.capabilityId)
     .replace("npm run direct -- Ada", `npm run direct -- ${quotedDirectInput}`)
     .replace('--input \'{"name":"Ada"}\'', `--input ${quotedDirectInput}`)
+    .replace(
+      "## Replace the example capability",
+      "## Review the generated capabilities",
+    )
+    .replace("the starter capability", "the first generated capability")
     .replace("```\n\n\n## Invoke directly", "```\n\n## Invoke directly");
 }
 

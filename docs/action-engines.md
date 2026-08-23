@@ -31,6 +31,25 @@ A compact definition suitable for reuse is:
 > contracts, independently of the agents, applications, and interfaces that
 > invoke them.
 
+## Agent-ready software without a proprietary agent
+
+When a customer wants an existing agent to use a software product, the valuable
+part is the product capability behind the interaction. The customer may change
+agents or interfaces while the product still owns the contract, access rules,
+domain behavior, and result.
+
+An Action Engine makes that capability headless: callable without requiring the
+product's user interface or a proprietary agent. It also makes an internal
+software factory harness-agnostic because the domain action does not move when a
+team changes its agent runtime, tool configuration, or orchestration.
+
+MCP is one delivery path for this model, not a requirement of the category. An
+MCP server might expose an infrastructure tool such as `calendar.create-event`.
+An Action Engine can instead publish `appointments.schedule`, enforce the
+applicable scheduling and access rules, call the calendar internally, and return
+a contracted confirmation or conflict. The consumer chooses when to request the
+outcome; the engine continues to own how it is produced.
+
 ## Why the category matters
 
 Teams already build Action Engines even when they call them MCP servers, tools,

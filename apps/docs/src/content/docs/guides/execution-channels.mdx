@@ -5,9 +5,14 @@ description: Publish the same capability through direct calls, CLI, MCP stdio, a
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-An execution channel is a composition root around the same engine. The channel
-owns transport parsing, trusted identity, and process lifecycle. Invokta keeps
-domain validation, authorization, execution, and error normalization inside
+Execution channels keep an Action Engine harness-agnostic. A customer can use an
+MCP-compatible agent, a local team can change agent harnesses, and an application
+can call the engine directly without creating another implementation of the
+domain action.
+
+Each channel is a composition root around the same engine. It owns transport
+parsing, trusted identity, and process lifecycle. Invokta keeps domain
+validation, authorization, execution, and error normalization inside
 `engine.invoke`.
 
 ## Direct TypeScript

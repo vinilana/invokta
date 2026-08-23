@@ -327,6 +327,46 @@ describe("createStarterFiles", () => {
     }
   });
 
+  it.each(Object.keys(expectedPaths) as EngineStarterProfile[])(
+    "onboards authors into the generated %s project",
+    (profile) => {
+      const readme = createFiles(profile).find(
+        (file) => file.path === "README.md",
+      );
+      const contents = readme && "contents" in readme ? readme.contents : "";
+
+      expect(contents).toContain("## First run");
+      expect(contents).toContain("## Project map");
+      expect(contents).toContain("## Replace the example capability");
+      expect(contents).toContain("`src/capabilities/`");
+      expect(contents).toContain("`src/engine.ts`");
+      expect(contents).toContain("`test/engine.test.ts`");
+      expect(contents).toContain("`AGENTS.md`");
+      expect(contents).toContain(
+        "`.agents/skills/develop-invokta-project/SKILL.md`",
+      );
+      expect(contents.indexOf("## First run")).toBeLessThan(
+        contents.indexOf("## Replace the example capability"),
+      );
+    },
+  );
+
+  it.each([
+    ["npm", "npm run deploy:probe -- --url https://engine.example/mcp"],
+    ["pnpm", "pnpm run deploy:probe -- --url https://engine.example/mcp"],
+    ["yarn", "yarn deploy:probe --url https://engine.example/mcp"],
+  ] as const)(
+    "documents the required deploy probe URL for %s projects",
+    (manager, command) => {
+      const readme = createFiles("mcp-http", manager).find(
+        (file) => file.path === "README.md",
+      );
+      const contents = readme && "contents" in readme ? readme.contents : "";
+
+      expect(contents).toContain(command);
+    },
+  );
+
   it.each([
     ["cli", ["MCP", "mcp:", "serveMcp"]],
     ["mcp-stdio", ["CLI", "MCP HTTP", "serveMcpHttp", "deploy:"]],

@@ -14,6 +14,23 @@ The category is framework-neutral. An Action Engine does not need Invokta,
 TypeScript, MCP, or any particular deployment model. Invokta is one framework
 for implementing the boundary.
 
+## Agent-ready software without a proprietary agent
+
+When a customer wants an existing agent to use a software product, the product
+capability should remain independent of that agent. The customer may change
+agents or interfaces while the product still owns the contract, access rules,
+domain behavior, and result.
+
+An Action Engine makes the capability headless, which means it can be called
+without requiring the product's UI or a proprietary agent. The same separation
+makes an internal software factory harness-agnostic because the domain action
+does not move when the team changes its agent runtime or tool configuration.
+
+MCP is one delivery path for an Action Engine. For example, a protocol tool can
+expose `calendar.create-event`, while an Action Engine can publish
+`appointments.schedule`, enforce scheduling and access rules, call the calendar
+internally, and return a contracted confirmation or conflict.
+
 ## You may already be building one
 
 A tool that creates a reviewed specification, retrieves relevant project

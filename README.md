@@ -1,43 +1,75 @@
 # Invokta
 
-**Stop teaching every AI agent the same process.**
+**Build software for the agents your users already use.**
 
-Invokta turns repeatable AI-assisted work—preparing implementation, creating a specification, reviewing code, editing videos, producing on-brand carousels, generating commercial proposals, scheduling appointments, or screening candidates—into reusable actions that agents, applications, automations, and people can invoke.
+Your customers and teams should not have to adopt another AI agent to use a
+valuable product capability. They should be able to invoke it from an
+MCP-compatible agent, application, CLI, or automation already in their workflow.
 
-Instead of copying prompts, skills, tool instructions, validation, permissions,
-and output rules into every harness, define the action once. Cursor, Claude Code,
-Codex, application code, and automations all reach the same validated
-implementation through direct calls, the CLI, or MCP.
+Invokta is the TypeScript framework for building **Action Engines**: versioned,
+headless capabilities that remain independent of one agent harness. Headless
+means the capability can be called without forcing the user through your UI or
+into a proprietary agent.
 
-**Build the task once. Invoke it anywhere.**
+Define the domain contract, access rule, tools, and validation once. Publish the
+same implementation through application code, the CLI, MCP stdio, or stateless
+MCP Streamable HTTP. Your product continues to own the action while users keep
+the agent and interface they prefer.
 
-Invokta is the TypeScript framework for building these reusable actions. We call
-them [Action Engines](./docs/action-engines.md).
+For example, a calendar API can create an event. An Appointment Scheduling
+Engine can expose `appointments.schedule`, check authorization and clinic rules,
+revalidate the selected slot, write through the authorized calendar connector,
+and return either a confirmation or a stable conflict.
 
-## How an Action Engine works
+The same boundary makes an internal software factory harness-agnostic. A team can
+move between agent clients without copying prompts, integrations, permissions,
+validation, and error handling into every harness.
 
-![How an Action Engine works](./apps/docs/public/images/how-an-action-engine-works.svg)
+## Run your first Action Engine
 
-Claude Code, Codex, Hermes, and the CLI can invoke the same domain action. The
-engine owns the providers, scripts, data, templates, permissions, contracts, and
-rules required to return a validated result.
+Standalone engines require Node.js 22.20.0 or later. The creator supports npm,
+pnpm, and Yarn; this example uses npm.
 
-## The problem Invokta solves
+```sh
+npm create invokta-engine@latest my-engine -- --profile complete --yes
+cd my-engine
+npm run check
+npm run direct -- Ada
+```
 
-A useful AI process rarely lives in one place. For example, preparing a ticket
-for implementation may require intent from Linear or Jira, repository context,
-architecture decisions, Figma designs, and internal engineering rules.
+The final command invokes the generated capability through `engine.invoke` and
+prints:
 
-Without an owned action, every harness needs the same integrations and a copy of
-the instructions:
+```json
+{"message":"Welcome, Ada!"}
+```
 
-![Before Invokta, each AI harness duplicates the same MCP integrations and planning instructions](./apps/docs/public/images/readme-before-invokta-duplicated-agent-setup.png)
+Open the generated project and you will find the capability contract, its test,
+the shared engine, and the selected entry points. Start the interactive
+inspector in a separate terminal:
 
-The first setup ships quickly. The copies then drift: tools are called
-differently, permissions and validation change, and each agent may produce a
-different shape of result.
+```sh
+npm run devtools
+# Open the URL printed by the command. Press Ctrl+C to stop.
+```
 
-With Invokta, every consumer invokes one domain outcome:
+If the profile includes MCP stdio, installation in detected agent clients is
+optional:
+
+```sh
+npm run mcp:install
+# Later:
+npm run mcp:uninstall
+```
+
+Continue with the [getting-started guide](./docs/getting-started.md), inspect the
+[`hello-engine`](./examples/hello-engine/), or browse
+[use cases by company area](./apps/docs/src/content/docs/use-cases/index.mdx).
+
+## One capability, every published entry point
+
+Invokta starts with a domain action such as
+`engineering.prepare-implementation`, not with a transport or provider API.
 
 ```text
 Cursor ───────┐
@@ -47,257 +79,192 @@ CLI ──────────┼──> engineering.prepare-implementation
 Application ──┘                  |
                                   ├── ticket intent
                                   ├── repository context
-                                  ├── architecture
+                                  ├── architecture decisions
                                   ├── design
                                   ├── engineering rules
                                   └── implementation-ready brief
 ```
 
-![With Invokta, Cursor, Claude Code, Codex, CLI, and an Application invoke engineering.prepare-implementation and receive one implementation-ready brief](./apps/docs/public/images/readme-unified-action-flow.png)
+The consumers choose when to invoke the capability. The Action Engine owns how
+the brief is prepared and validates the request and result through the same
+execution pipeline every time.
 
-The Action Engine owns how that brief is produced. Its model, prompts, tools,
-data sources, and providers can change without teaching every consumer the
-process again.
+![Claude Code, Codex, Hermes, and the CLI invoke one Action Engine that owns its providers, scripts, data, templates, permissions, contracts, and rules](./apps/docs/public/images/how-an-action-engine-works.svg)
 
-> MCP connects tools and data. Prompts, rules, and skills guide agent behavior.
-> Invokta gives the reusable action one implementation, contract, and execution
-> boundary.
+This boundary gives the action:
+
+- runtime-validated input and output contracts;
+- one access rule and one structured failure model;
+- one implementation reused by every published adapter;
+- tests that do not require a complete agent session; and
+- independent ownership and versioning as its internals evolve.
+
+CLI and MCP adapters always reach capability execution through `engine.invoke`.
+Business rules do not move into transport handlers.
+
+## From MCP access to an owned product capability
+
+MCP gives compatible agents a standard way to discover and call tools. Invokta
+publishes each capability as an MCP tool while keeping the domain behavior in an
+Action Engine that can also serve application code and the CLI.
+
+| Building block | What it owns |
+| --- | --- |
+| Prompt or rule | Instructions and constraints for a model or agent |
+| Skill | Guidance that teaches an agent when and how to perform work or invoke an action |
+| MCP | A protocol for connecting AI applications to tools and data |
+| Loop or graph | The order of steps, branches, retries, and stopping decisions |
+| Action Engine | The versioned implementation and runtime contract of one domain outcome |
+
+A skill may teach an agent when to call `support.classify-ticket`. MCP carries
+the call, and a loop may decide what happens next. The Action Engine validates
+the ticket, enforces access, invokes the classifier, validates the result, and
+returns the same public shape to every consumer.
+
+The full [Action Engines community definition](./docs/action-engines.md) is
+framework-neutral and explains the category independently of Invokta.
 
 ## What an Action Engine can own
 
-An engine may publish several related capabilities around one domain. Provider
-APIs, local scripts, templates, design-system files, and SaaS schemas remain
-replaceable implementation details rather than instructions copied into every
-agent.
+An engine can combine prompts, models, provider APIs, local scripts, templates,
+data, permissions, and domain rules behind a small set of capabilities.
 
-| Example engine | Capabilities | Engine-owned integrations and rules | Durable outcome |
-| --- | --- | --- | --- |
-| Video Production Engine | `video.transcribe-source`, `video.plan-edit`, `video.generate-voiceover`, `video.generate-visual`, `video.generate-cutscene`, `video.apply-edit` | ElevenLabs STT, Cartesia TTS, GPT Image 2.0, Seedance 2.0, brand pacing, and trusted scripts for cuts, zooms, captions, mixing, and rendering | A transcript, edit plan, generated assets, and rendered video with evidence |
-| Social Carousel Engine | `carousel.prepare-series`, `carousel.render-series`, `carousel.assess-readiness` | Approved carousel formats, hook and CTA policy, Figma or design-system references, and a GPT Image 2.0 connector | An ordered, on-brand carousel that is ready to publish or has explicit blockers |
-| Commercial Proposal Engine | `sales.prepare-proposal`, `sales.render-proposal`, `sales.assess-proposal-readiness` | CRM context, approved pricing and claims, the existing proposal template, case studies, and visual identity | A customer-specific proposal and a readiness decision |
-| Appointment Scheduling Engine | `appointments.list-valid-slots`, `appointments.schedule`, `appointments.reschedule`, `appointments.cancel` | Clinic rules, authorization, buffers, and an authorized Google Calendar connector | Valid appointment options and a confirmed calendar write or stable conflict |
-| Recruiting and Selection Engine | `recruiting.screen-candidate`, `recruiting.record-screening`, `recruiting.notify-review` | The job rubric, candidate responses, the recruiting system, review thresholds, and Slack notifications | An evidence-backed screening record and a human-review notification |
-
-The consumer still decides which capability to call and in what order. Invokta
-does not become a workflow engine; it gives each domain action one validated,
-reusable execution boundary.
-
-Browse [use cases by company area](./apps/docs/src/content/docs/use-cases/index.mdx)
-for detailed examples across content and creative, engineering, product,
-marketing, sales, healthcare operations, recruiting, support, and operations.
-
-## Why Action Engines matter
-
-The result of an action is the durable asset. MCP, CLI, HTTP, and direct APIs are
-delivery paths that let consumers reach it.
-
-Many projects still begin with the delivery path. Each use case gets its own MCP
-server, CLI parsing, schema conversion, authentication, error mapping,
-cancellation, and logging. AI makes the first integration faster to build, while
-long-term ownership still includes security, tests, protocol upgrades, and
-keeping every interface consistent.
-
-We keep seeing the same pattern: the first integration ships quickly, then a
-second agent or interface exposes decisions shaped around the original
-transport. Teams revisit schemas, authorization, errors, and business rules, and
-sometimes rebuild the feature around a stable domain boundary.
-
-An Action Engine gives that behavior its own boundary. For example,
-`support.classify-ticket` can validate the same request, enforce the same access
-rule, and return the same result whether it is called by an agent, a workflow,
-application code, the CLI, or MCP. The model, prompt, retrieval strategy, and
-provider can change inside the engine without forcing every consumer to change.
-
-This boundary makes a domain action:
-
-- reusable across consumers and execution channels;
-- testable without running a complete agent or workflow;
-- governed by explicit input, output, access, and failure contracts; and
-- independently owned and versioned as its implementation evolves.
-
-## Where Action Engines fit
-
-Prompts, rules, and skills guide behavior, while loops and graphs coordinate it.
-Action Engines give the domain behavior they invoke a stable execution boundary.
-
-```text
-agent, application, or automation
-  guided by prompts, rules, and skills
-  coordinated by loops and graphs
-  invokes Action Engines
-    which use models, prompts, data, tools, and services internally
-```
-
-| Concept | What it owns | Relationship to an Action Engine |
+| Example engine | Example capabilities | What the caller receives |
 | --- | --- | --- |
-| Prompt | Instructions and context for a model call | May help a consumer choose an action or implement part of a capability inside the engine |
-| Rule | A constraint, permission, or deterministic decision | May govern when an action is selected or be enforced by the engine as access or domain policy |
-| Skill | Packaged instructions, knowledge, and resources for an agent | Teaches an agent when and how to invoke an action without owning the action's runtime contract |
-| Loop | The decision to continue, stop, or choose the next action | Invokes Action Engines while retaining control of iteration and stopping conditions |
-| Graph | Nodes, dependencies, branches, and execution order | Uses Action Engines as contracted nodes without absorbing their domain implementation |
-| Port | A provider-neutral interface owned by a custom engine | Describes what capability code needs from a dependency |
-| Outbound connector | A provider- or technology-specific port implementation | Crosses from engine logic into an external system without becoming a public action |
-| Action Engine | A reusable domain outcome with runtime-validated contracts, access, execution, and stable failures | Provides the callable boundary shared by agents, applications, loops, graphs, and interfaces |
+| Product Analytics Engine | `analytics.explain-funnel-change`, `analytics.prepare-account-summary` | A tenant-scoped explanation or account summary with supporting evidence |
+| Video Production Engine | `video.transcribe-source`, `video.plan-edit`, `video.apply-edit` | A transcript, edit plan, and rendered video with evidence |
+| Social Carousel Engine | `carousel.prepare-series`, `carousel.render-series`, `carousel.assess-readiness` | An ordered carousel that is ready to publish or has explicit blockers |
+| Commercial Proposal Engine | `sales.prepare-proposal`, `sales.render-proposal`, `sales.assess-proposal-readiness` | A customer-specific proposal and a readiness decision |
+| Appointment Scheduling Engine | `appointments.list-valid-slots`, `appointments.schedule`, `appointments.reschedule` | Valid options and a confirmed calendar write or stable conflict |
+| Recruiting and Selection Engine | `recruiting.screen-candidate`, `recruiting.record-screening`, `recruiting.notify-review` | An evidence-backed screening record and a human-review notification |
 
-The same system can use all of these concepts. The separation lets orchestration and
-agent behavior change without duplicating the domain action, while the engine
-can change its AI implementation without rewriting its consumers. See the
-[framework-neutral category definition](./docs/action-engines.md) for the full
-conceptual model.
+These are illustrative domain boundaries, not provider integrations bundled
+into the framework. Your engine owns its providers and outcome quality. See the
+[complete use-case catalog](./apps/docs/src/content/docs/use-cases/index.mdx) for
+examples across software products, engineering, content, product, marketing,
+sales, healthcare, recruiting, support, and operations.
 
-## What Invokta provides
+## What Invokta owns and what your engine owns
 
-Invokta makes the action contract the starting point and provides the reusable
-framework layer around it. Define the capability once with its input, output,
-access rule, and execution behavior; Invokta runs it through the same validated
-pipeline from application code, the CLI, or MCP.
+| Invokta provides | Your Action Engine provides |
+| --- | --- |
+| Capability and engine contracts | Domain-oriented capability IDs and schemas |
+| Runtime input and output validation | Prompts, models, tools, scripts, and templates |
+| Access enforcement and structured errors | Authentication and domain authorization integrations |
+| Cancellation and minimal invocation events | Provider clients, data stores, and outbound connectors |
+| Direct, CLI, MCP stdio, and stateless MCP HTTP entry points | Evaluations, metrics, and outcome-quality rules |
+| Composition checks, devtools, installation, and deployment helpers | Deployment configuration and dependency lifecycle |
 
-Use that boundary to build engines for media production, implementation
-planning, context retrieval, code review, campaign production, document
-generation, appointment scheduling, recruiting, support operations, or another
-domain outcome. Your team owns the domain contract, business rules, prompts,
-models, outbound connectors, scripts, templates, evaluations, and outcome
-quality. Invokta supplies the shared runtime mechanics and inbound delivery
-adapters:
+Invokta is deliberately not an identity provider, model router, agent harness,
+workflow engine, provider catalog, or production observability platform. Those
+boundaries remain explicit so an engine can change its implementation without
+turning the framework into a service container.
 
-- `@invokta/core` defines capabilities and typed connector factories, validates
-  their Standard Schema contracts, enforces capability access rules, propagates
-  cancellation, and emits minimal invocation events;
-- `@invokta/cli` provides `list`, `describe`, and `run` without bypassing
-  `engine.invoke`;
-- `@invokta/mcp` publishes capabilities as tools over stdio and secure
-  stateless HTTP while keeping the official MCP SDK behind the adapter boundary;
-- `@invokta/tooling` validates composed capabilities during development;
-- `@invokta/devtools` provides workspace-independent workbenches — an MCP one
-  for stdio and Streamable HTTP targets, including ephemeral interactive OAuth,
-  and a CLI one for an installed Invokta CLI — served together from one
-  loopback origin, plus a built-engine inspector with invocation playground,
-  live trace, doctor diagnostics, test-identity switching, and watch by process
-  replacement;
-- `@invokta/installer` detects supported local MCP clients, installs local or
-  remote Action Engines across selected clients, and manages those entries;
-- `@invokta/deploy` scaffolds and packages stateless HTTP engines, probes
-  deployed endpoints, and inspects OAuth discovery readiness;
-- `create-invokta-engine` creates a `complete`, `cli`, `mcp-stdio`, or
-  `mcp-http` standalone starter; the `complete` profile includes direct, CLI,
-  MCP stdio, and MCP HTTP entry points, `--openapi` generates selected
-  capabilities from a bounded local OpenAPI 3.1.x contract, and `--example`
-  bootstraps a project from an official example or any public GitHub template
-  instead;
-- `create-invokta-capability` creates a standalone atomic capability package;
-  and
-- `create-invokta-capability-library` creates a standalone capability-library
-  package.
+<details>
+<summary><strong>Packages and development tools</strong></summary>
 
-Invokta does not provide identity, model routing, an agent harness, a
-workflow engine, or a production observability platform. Custom engines inject
-their own model, data, tool, authentication, and authorization integrations.
+- `@invokta/core` defines capabilities, typed connector factories, engines,
+  validation, access, cancellation, errors, and events.
+- `@invokta/cli` provides `list`, `describe`, and `run` through
+  `engine.invoke`.
+- `@invokta/mcp` publishes capabilities as tools over stdio and secure,
+  stateless Streamable HTTP.
+- `@invokta/tooling` validates composed capabilities and final MCP tool names.
+- `@invokta/devtools` provides an engine inspector plus MCP and CLI
+  workbenches.
+- `@invokta/installer` installs and manages local or remote Action Engines in
+  supported MCP clients.
+- `@invokta/deploy` scaffolds and packages HTTP engines and probes deployed
+  endpoints.
+- `create-invokta-engine`, `create-invokta-capability`, and
+  `create-invokta-capability-library` generate standalone, project-owned
+  starters.
 
-## Start here
+</details>
 
-Requirements: Node.js 22.20.0 or later and Yarn 1.22.22.
+## Choose the smallest starter profile
 
-Create a standalone engine:
+| Profile | Generated execution channels | Choose it when |
+| --- | --- | --- |
+| `complete` | Direct, CLI, MCP stdio, MCP HTTP | You want the reference project or expect to publish every channel |
+| `cli` | Direct and CLI | People or local automation will run commands |
+| `mcp-stdio` | Direct and MCP stdio | Local agent clients will start the engine as a child process |
+| `mcp-http` | Direct and MCP HTTP | Remote consumers need a shared, authenticated endpoint |
+
+The generated README maps the project and provides a test-first checklist for
+replacing the welcome capability. Generated projects also include `AGENTS.md`
+and a development skill for compatible coding agents.
+
+Use an official or public GitHub example as the starter:
 
 ```sh
-npm create invokta-engine@latest my-engine
-cd my-engine
-npm run check
-npm run devtools
-# Starts the devtools inspector on http://localhost:4100/ with watch mode.
-npm run mcp:install
-# Later, remove the engine from every managed MCP client:
-npm run mcp:uninstall
+npm create invokta-engine@latest my-engine -- --example hello-engine --yes
 ```
 
-`mcp:install` builds the generated engine, detects eligible MCP clients,
-preselects them, and asks for one confirmation before updating their user
-configuration. `mcp:uninstall` is build-free and removes the same logical engine
-from every installer-managed client after one confirmation. See the
-[installer reference](./apps/docs/src/content/docs/reference/installer.mdx) for
-remote HTTP registration and lifecycle commands.
+Generate selected capabilities from a bounded local OpenAPI 3.1.x contract:
 
-Create reusable package boundaries directly when an engine is not the owning
-project:
+```sh
+npm create invokta-engine@latest my-engine -- --openapi ./openapi.yaml --yes
+```
+
+Read the complete
+[`create-invokta-engine` reference](./packages/create-invokta-engine/README.md)
+for profile contents, automation flags, GitHub imports, and OpenAPI limits.
+
+## Learn from working examples
+
+- [`hello-engine`](./examples/hello-engine/) is the shortest complete path.
+- [`support-engine`](./examples/support-engine/) demonstrates dependency
+  injection, authorization, safe errors, and all four execution channels.
+- [`crawl-engine`](./examples/crawl-engine/) puts Firecrawl behind an
+  engine-owned `WebCrawler` port.
+- [`composed-engine`](./examples/composed-engine/) combines local, atomic, and
+  library capabilities under deliberate effective IDs.
+- [`spec-engine`](./examples/spec-engine/) keeps a spec-driven process and its
+  stage rules inside the domain.
+- [`review-engine`](./examples/review-engine/) provides a fail-closed completion
+  review and adversarial gate.
+- [`agent-session-engine`](./examples/agent-session-engine/) stores portable
+  checkpoints across Cursor, Antigravity, Claude Code, and Codex.
+- [`auth-self-hosted-oauth-engine`](./examples/auth-self-hosted-oauth-engine/)
+  demonstrates a production-oriented OAuth boundary outside the framework
+  runtime.
+
+The [examples catalog](./apps/docs/src/content/docs/examples/index.mdx) covers
+authentication, observability, image generation, Obsidian context, agent
+routing, community capability packages, and MCP consumers.
+
+## Create reusable capability packages
+
+When an Action Engine is not the owning project, generate a standalone atomic
+capability or a related capability library:
 
 ```sh
 npm create invokta-capability@latest my-capability
 npm create invokta-capability-library@latest my-library
 ```
 
-To work on Invokta itself:
+## Contribute to Invokta
+
+This repository uses Node.js 22.20.0 and Yarn 1.22.22.
 
 ```sh
-yarn install --frozen-lockfile
+corepack enable
+yarn install --frozen-lockfile --non-interactive
 yarn run check
 ```
 
-Then follow the [getting-started guide](./docs/getting-started.md) or inspect:
-
-- [`hello-engine`](./examples/hello-engine/) for the shortest complete path;
-- [`support-engine`](./examples/support-engine/) for dependency injection,
-  domain authorization, safe errors, and all four execution channels;
-- [`support-harness`](./examples/support-harness/) for a private harness that
-  consumes the support capability only through MCP stdio;
-- the eleven [`auth-*` examples](./examples/), from
-  [`auth-jwt-bearer-engine`](./examples/auth-jwt-bearer-engine/) to
-  provider-specific engines for Supabase, Clerk, Auth0, Cognito, Firebase,
-  Better Auth, Auth.js, WorkOS, and hashed API keys, each verifying credentials
-  at the MCP HTTP boundary and mapping them into the minimal `Principal`, plus
-  [`auth-self-hosted-oauth-engine`](./examples/auth-self-hosted-oauth-engine/)
-  for a production-oriented Authorization Server, PostgreSQL, and Compose
-  integration that remains outside the framework runtime;
-- [`crawl-engine`](./examples/crawl-engine/) for an outbound connector,
-  crawling the web with Firecrawl behind a `WebCrawler` port, with target rules
-  that run before authorization;
-- [`cursor-agent-routing-engine`](./examples/cursor-agent-routing-engine/) for
-  deterministic Cursor subagent and model selection by development use case;
-- [`image-engine`](./examples/image-engine/) for outcome-based routing across
-  GPT Image 2, Seedream 5.0, and Nano Banana 2 behind replaceable domain ports;
-- [`obsidian-context-engine`](./examples/obsidian-context-engine/) for bounded,
-  progressive knowledge-graph navigation from Obsidian frontmatter and
-  wikilinks through direct, CLI, and MCP entrypoints;
-- [`spec-engine`](./examples/spec-engine/) for a spec-driven development
-  workflow whose ordering, state, and per-step authorization live in the domain
-  rather than in a workflow engine;
-- [`agent-session-engine`](./examples/agent-session-engine/) for durable task,
-  phase, checkpoint, and handoff state plus CLI-backed hooks for Cursor,
-  Antigravity, Claude Code, and Codex;
-- [`review-engine`](./examples/review-engine/) for a fail-closed code review,
-  acceptance-eval, and adversarial-review gate that tells an agent whether a
-  task is ready to be declared complete;
-- [`observability-engine`](./examples/observability-engine/) for bounded incident
-  context normalized from Sentry, Datadog, and New Relic;
-- [`community-capabilities`](./examples/community-capabilities/) for atomic and
-  library capability publication forms; and
-- [`composed-engine`](./examples/composed-engine/) for combining local, atomic,
-  and library capabilities under deliberate effective IDs.
-
-Every example that exports a constructed engine runs the same development
-toolchain a generated project gets: `devtools` serves it through
-[Invokta DevTools](./packages/devtools/), `devtools:doctor` runs the read-only
-engine checks, and `check:mcp` is the build-time MCP conformance gate. The
-externally backed engines, which need deployment configuration to compose, gate
-their tool
-names in their own tests and verify the built stdio adapter with
-`devtools:verify` instead. `yarn run check` runs both gates over every built
-example.
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before editing. It covers repository
+layout, branch preparation, RED/GREEN/REFACTOR, contract and ADR review,
+validation, agent-team coordination, commits, and pull-request evidence.
 
 ## Documentation
 
-Start with [use cases by company area](./apps/docs/src/content/docs/use-cases/index.mdx)
-to identify a domain outcome worth packaging. Then read the framework-neutral
-[Action Engines community definition](./docs/action-engines.md). The
-[documentation index](./docs/README.md) links Invokta's normative architecture,
-scope, acceptance criteria, ADRs, HTTP authentication guide, capability
-authorization guide, and explicit scope matrix.
-
-The [changelog](./CHANGELOG.md) records release-level additions, security
-hardening, and known limitations.
-
-All public behavior is developed with runtime and type-level tests. Repository
-changes follow RED, GREEN, REFACTOR and use one cohesive commit per deliverable.
-
-## License
+- [Getting started](./docs/getting-started.md)
+- [Documentation index](./docs/README.md)
+- [Architecture and contracts](./docs/architecture.md)
+- [Scope and limits](./docs/scope-and-limits.md)
+- [Architecture decisions](./docs/adr/README.md)
+- [Changelog](./CHANGELOG.md)
 
 Invokta is available under the [MIT License](./LICENSE).
