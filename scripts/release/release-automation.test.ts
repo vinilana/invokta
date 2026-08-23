@@ -88,7 +88,8 @@ describe("release automation", () => {
     expect(workflow).toContain("needs: verify");
     expect(workflow).toContain("environment: npm");
     expect(workflow).toContain("id-token: write");
-    expect(workflow).toContain("registry-url: https://registry.npmjs.org");
+    expect(workflow).not.toContain("registry-url:");
+    expect(workflow).not.toContain("NODE_AUTH_TOKEN");
     expect(workflow).toContain("npm install --global npm@11");
     expect(workflow).toContain('yarn release:publish "$GITHUB_REF_NAME"');
     expect(workflow).toContain("release:\n");
