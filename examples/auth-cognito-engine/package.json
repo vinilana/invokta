@@ -14,14 +14,14 @@
     "deploy:inspect-oauth": "invokta-deploy inspect-oauth"
   },
   "dependencies": {
-    "@invokta/core": "0.6.1",
-    "@invokta/mcp": "0.6.1",
+    "@invokta/core": "0.7.0",
+    "@invokta/mcp": "0.7.0",
     "jose": "^6.1.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@invokta/deploy": "0.6.1",
-    "@invokta/devtools": "0.6.1",
-    "@invokta/tooling": "0.6.1"
+    "@invokta/deploy": "0.7.0",
+    "@invokta/devtools": "0.7.0",
+    "@invokta/tooling": "0.7.0"
   }
 }
