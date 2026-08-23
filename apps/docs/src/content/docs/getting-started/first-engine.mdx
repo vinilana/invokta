@@ -5,8 +5,10 @@ description: Define one capability and reuse it through direct calls, CLI, and M
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 
-This guide creates a small onboarding capability. It stays deterministic so you
-can inspect the Invokta boundary before connecting a model or another provider.
+This guide creates a small onboarding capability and publishes the same
+implementation through application code, the CLI, and MCP. It stays
+deterministic so you can inspect the harness-independent Invokta boundary before
+connecting a model or another provider.
 
 Generate the complete standalone version with `npm create
 invokta-engine@latest my-engine` and choose the `complete` profile when prompted,

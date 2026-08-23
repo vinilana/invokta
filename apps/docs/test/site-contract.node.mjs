@@ -183,13 +183,23 @@ test("the site reflects the current Action Engine value proposition", async () =
     join(contentRoot, "concepts", "action-engines.mdx"),
     "utf8",
   );
+  const executionChannels = await readFile(
+    join(contentRoot, "guides", "execution-channels.mdx"),
+    "utf8",
+  );
 
+  assert.match(home, /agents your users already use/iu);
+  assert.match(home, /headless/iu);
+  assert.match(home, /MCP-compatible/iu);
   assert.match(home, /durable asset/iu);
   assert.match(home, /delivery\s+paths/iu);
   assert.match(home, /^## What Invokta provides$/mu);
   assert.match(home, /\]\(\/examples\/\)/u);
+  assert.match(actionEngines, /agent-ready software/iu);
+  assert.match(actionEngines, /proprietary agent/iu);
   assert.match(actionEngines, /reviewed specification/iu);
   assert.match(actionEngines, /protocol upgrades/iu);
+  assert.match(executionChannels, /harness-agnostic/iu);
 });
 
 test("the examples catalog covers every documented repository example", async () => {

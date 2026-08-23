@@ -1,16 +1,21 @@
 ---
 title: Use cases by company area
-description: See how teams package providers, scripts, templates, company context, and rules into reusable Action Engines.
+description: See how product and internal teams expose owned capabilities to existing agents, applications, CLIs, and automations.
 ---
 
 import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-Action Engines are most useful when several agents, applications, or automations
-need the same business outcome. Instead of giving every consumer the same tools
-and another document explaining how to use them, the engine owns the providers,
-scripts, templates, rules, validation, permissions, and result.
+Action Engines are most useful when customers or internal teams need the same
+business outcome through different agents, applications, or automations. The
+engine gives that outcome one owner instead of moving its tools, instructions,
+permissions, validation, and error handling into every consumer.
 
 <CardGrid>
+  <Card title="Software products" icon="transfer">
+    Publish product capabilities that customers can invoke from their preferred
+    MCP-compatible agent while the product retains its domain rules and access
+    boundary.
+  </Card>
   <Card title="Content and creative" icon="puzzle">
     Edit videos and produce social carousels through branded, provider-backed
     capabilities instead of rebuilding the creative process in every agent.
@@ -74,6 +79,31 @@ agent, application, or automation
 The public capability describes the result the consumer needs. Provider APIs,
 filesystem layouts, CRM schemas, calendar event formats, and command-line scripts
 remain replaceable implementation details inside the engine.
+
+## Software products
+
+### Let customers bring their existing agent
+
+A software product can keep its UI and application API while publishing a
+product-owned MCP surface for customers who prefer to work through an agent. The
+Action Engine keeps each capability independent of that agent and reusable by
+the product's other interfaces.
+
+An analytics product, for example, can expose:
+
+| Capability | Engine-owned behavior | Result |
+| --- | --- | --- |
+| `analytics.explain-funnel-change` | Validates the account and requested period, loads tenant-scoped events and metric definitions, applies the product's analysis rules, and preserves source evidence | A bounded explanation of the change, supporting metrics, uncertainties, and follow-up questions |
+
+The customer's MCP-compatible agent, the product UI, a scheduled report, and an
+internal support application can all request the same analysis. The product
+continues to own tenant access, metric semantics, provider queries, validation,
+and the returned contract.
+
+Other product-facing actions might include
+`commerce.prepare-catalog-update`, `support.prepare-account-answer`, or
+`fitness.summarize-training-block`. Each ID describes a domain result instead
+of exposing a provider endpoint or database query as the product capability.
 
 ## Content and creative
 

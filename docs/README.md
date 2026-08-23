@@ -1,8 +1,14 @@
 # Invokta documentation
 
-The Invokta framework allows a domain capability to be defined once and
-executed through a direct call, the CLI, MCP stdio, and stateless MCP Streamable
-HTTP.
+Invokta is a TypeScript framework for building agent-ready software without
+coupling domain capabilities to one agent harness. Define a capability once and
+execute the same implementation through a direct call, the CLI, MCP stdio, or
+stateless MCP Streamable HTTP.
+
+An Action Engine is the headless capability boundary behind those channels. A
+customer can use an MCP-compatible agent, an internal team can change harnesses,
+and an application can invoke the capability directly while the domain contract,
+access rule, execution, and validation remain owned in one place.
 
 The broader [Action Engines community definition](./action-engines.md) is
 framework-neutral and intended for independent adoption. Invokta's normative
@@ -12,6 +18,7 @@ contracts below define one implementation of that concept.
 
 | Goal | Recommended path |
 | --- | --- |
+| Make product capabilities available to existing agents | [Action Engines](./action-engines.md) and [software product use cases](../apps/docs/src/content/docs/use-cases/index.mdx#software-products) |
 | Create and run an Action Engine | [Getting started](./getting-started.md) |
 | Choose a domain outcome | [Use cases by company area](../apps/docs/src/content/docs/use-cases/index.mdx) |
 | Add a provider or data source | [Outbound connector recipe](../apps/docs/src/content/docs/recipes/external-provider.mdx) |

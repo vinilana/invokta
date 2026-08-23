@@ -25,6 +25,7 @@ test("the docs expose concrete use cases by company area", async () => {
   const actionEngineDiagram = await readFile(actionEngineDiagramPath, "utf8");
 
   for (const heading of [
+    "Software products",
     "Content and creative",
     "Engineering",
     "Product and design",
@@ -39,6 +40,7 @@ test("the docs expose concrete use cases by company area", async () => {
   }
 
   for (const capabilityId of [
+    "analytics.explain-funnel-change",
     "video.transcribe-source",
     "video.apply-edit",
     "carousel.prepare-series",
@@ -86,6 +88,7 @@ test("the docs expose concrete use cases by company area", async () => {
     rootReadme,
     /apps\/docs\/src\/content\/docs\/use-cases\/index\.mdx/u,
   );
+  assert.match(rootReadme, /agents your users already use/iu);
   assert.match(rootReadme, /Video Production Engine/u);
   assert.match(rootReadme, /Social Carousel Engine/u);
   assert.match(rootReadme, /Commercial Proposal Engine/u);

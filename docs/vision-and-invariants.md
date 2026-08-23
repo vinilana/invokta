@@ -18,6 +18,10 @@ domain-oriented operation, validates input and output, encapsulates the AI
 implementation, can be reused through more than one channel, and has a clear
 unit of versioning and ownership.
 
+This consumer independence is the basis for agent-ready software. A customer or
+internal team may change its agent, harness, or interface without moving the
+domain action into that consumer or creating another implementation of it.
+
 ## Distinct responsibilities
 
 - **Action Engine:** delivers reusable domain capabilities governed by contracts.

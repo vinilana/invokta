@@ -1,9 +1,9 @@
 ---
 title: Invokta
-description: Build repeatable AI-assisted tasks once and invoke them from any agent, CLI, or application.
+description: Build harness-agnostic Action Engines for the agents your users already use.
 template: splash
 hero:
-  tagline: Stop teaching every AI agent the same process. Turn repeatable AI-assisted work into one reusable action that Cursor, Claude Code, Codex, your CLI, and your applications can invoke.
+  tagline: Build software for the agents your users already use. Turn product features and business processes into headless Action Engines without coupling them to one agent harness.
   actions:
     - text: Start building
       link: /getting-started/installation/
@@ -17,27 +17,48 @@ hero:
 
 import { Aside, Card, CardGrid, LinkButton } from '@astrojs/starlight/components';
 
+## Your users already chose their agent
+
+A customer should not have to adopt your proprietary agent to use a valuable
+product capability. An internal team should not have to rebuild the same process
+when it moves between agent clients. Both need the domain action to remain
+independent of the interface that invokes it.
+
+Invokta is the TypeScript framework for building agent-ready software around
+**Action Engines**: versioned, headless capabilities that MCP-compatible agents,
+applications, CLIs, and automations can invoke. Headless means the capability is
+callable without forcing the user through your UI.
+
+For example, a calendar API can create an event. An Appointment Scheduling
+Engine can expose `appointments.schedule`, check authorization and clinic rules,
+revalidate a slot, write through the authorized calendar connector, and return
+either a confirmation or a stable conflict.
+
+Users keep their preferred agent while your product continues to own the action's
+contract, tools, data access, validation, and result.
+
 <figure>
   <img
     src="/images/how-an-action-engine-works.svg"
     alt="Claude Code, Codex, Hermes, and CLI invoke one Action Engine. The engine owns providers, scripts, data, templates, permissions, contracts, and rules and returns a validated result."
   />
   <figcaption>
-    Claude Code, Codex, Hermes, and the CLI can invoke the same domain action
-    without rebuilding its providers, scripts, data, templates, permissions,
-    contracts, or rules.
+    Several example consumers invoke the same domain action. Changing the agent
+    or interface does not rebuild its providers, scripts, data, templates,
+    permissions, contracts, or rules.
   </figcaption>
 </figure>
 
-## Build the task once. Invoke it anywhere.
+## One product capability, every published channel
 
-A useful AI process often lives across a harness configuration, several MCP
-tools, prompts, rules, and a skill that explains how to combine them. It works
-until the same process must run in another agent or application.
+A useful product capability or internal process often begins inside one UI,
+agent configuration, prompt, or skill. The next agent or application receives
+another copy of its tools, instructions, permissions, validation, and error
+handling.
 
-For example, preparing a ticket for implementation may require intent from
+Preparing a ticket for implementation, for example, may require intent from
 Linear or Jira, repository context, architecture decisions, Figma designs, and
-internal engineering rules. Without an owned action, every harness needs the
+internal engineering rules. Without an owned action, every harness receives the
 same tool setup and another copy of the instructions:
 
 ```text
@@ -70,19 +91,25 @@ The action owns its integrations, rules, permissions, validation, and output
 contract. Every consumer reaches the same implementation through application
 code, the CLI, MCP stdio, or stateless MCP Streamable HTTP.
 
-<Aside type="tip" title="Expose the outcome, not the setup">
-  MCP connects tools and data. Prompts, rules, and skills guide agent behavior.
-  Invokta gives the reusable action one implementation, contract, and execution
-  boundary.
+<Aside type="tip" title="MCP provides access to an owned capability">
+  MCP gives compatible agents a standard way to discover and call tools.
+  Invokta keeps the domain behavior behind that tool in one versioned Action
+  Engine that also serves application code and the CLI.
 </Aside>
 
-## Reusable engines across the company
+## Agent-ready products and harness-agnostic teams
 
 The same boundary applies whenever a team repeatedly reconstructs context,
 provider calls, scripts, templates, rules, and expected output for different
 agents or applications.
 
 <CardGrid>
+  <Card title="Software products" icon="transfer">
+    Let customers use product capabilities from their preferred MCP-compatible
+    agent while your product keeps the contract, permissions, and domain rules.
+
+    [Explore software product use cases](/use-cases/#software-products)
+  </Card>
   <Card title="Content and creative" icon="puzzle">
     Build a Video Production Engine around ElevenLabs STT, Cartesia TTS, GPT
     Image 2.0, Seedance 2.0, and trusted editing scripts—or a Social Carousel

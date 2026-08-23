@@ -1,9 +1,11 @@
 # Getting started: one capability, four entry points
 
-This guide builds a small domain capability and exposes the same implementation
-through a direct call, the CLI, MCP stdio, and stateless MCP Streamable HTTP. The
-examples use Zod 4, but the core accepts any schema that implements both Standard
-Schema v1 and Standard JSON Schema v1.
+This guide builds a small, harness-agnostic domain capability and exposes the
+same implementation through a direct call, the CLI, MCP stdio, and stateless MCP
+Streamable HTTP. An application or MCP-compatible agent can change without
+moving the domain action into that consumer. The examples use Zod 4, but the
+core accepts any schema that implements both Standard Schema v1 and Standard
+JSON Schema v1.
 
 For complete, runnable compositions, see
 [`hello-engine`](../examples/hello-engine/) and

@@ -1,23 +1,29 @@
 # Invokta
 
-**Stop teaching every AI agent the same process.**
+**Build software for the agents your users already use.**
 
-You teach one agent how to prepare a ticket for implementation. It reads the
-ticket, inspects the repository, checks the architecture, looks at the design,
-applies your engineering rules, and returns a brief your team can use.
+Your customers and teams should not have to adopt another AI agent to use a
+valuable product capability. They should be able to invoke it from an
+MCP-compatible agent, application, CLI, or automation already in their workflow.
 
-Then another agent needs the same task. Then a CLI. Then an application. Each
-new consumer gets another copy of the instructions, integrations, permissions,
-validation, and error handling. Those copies begin to disagree.
+Invokta is the TypeScript framework for building **Action Engines**: versioned,
+headless capabilities that remain independent of one agent harness. Headless
+means the capability can be called without forcing the user through your UI or
+into a proprietary agent.
 
-Invokta moves the process into one versioned **Action Engine**. Every consumer
-invokes the same capability through application code, the CLI, or MCP. The
-engine owns the contract, rules, tools, data access, and validation that make
-the action reliable.
+Define the domain contract, access rule, tools, and validation once. Publish the
+same implementation through application code, the CLI, MCP stdio, or stateless
+MCP Streamable HTTP. Your product continues to own the action while users keep
+the agent and interface they prefer.
 
-An Action Engine gives a valuable task one implementation and one owner. The
-prompt, model, provider, and retrieval strategy can change inside the engine
-without making every consumer learn the process again.
+For example, a calendar API can create an event. An Appointment Scheduling
+Engine can expose `appointments.schedule`, check authorization and clinic rules,
+revalidate the selected slot, write through the authorized calendar connector,
+and return either a confirmation or a stable conflict.
+
+The same boundary makes an internal software factory harness-agnostic. A team can
+move between agent clients without copying prompts, integrations, permissions,
+validation, and error handling into every harness.
 
 ## Run your first Action Engine
 
@@ -96,10 +102,11 @@ This boundary gives the action:
 CLI and MCP adapters always reach capability execution through `engine.invoke`.
 Business rules do not move into transport handlers.
 
-## Why prompts, skills, and MCP are not enough by themselves
+## From MCP access to an owned product capability
 
-Prompts, skills, MCP, and Action Engines solve different parts of the system.
-They work together.
+MCP gives compatible agents a standard way to discover and call tools. Invokta
+publishes each capability as an MCP tool while keeping the domain behavior in an
+Action Engine that can also serve application code and the CLI.
 
 | Building block | What it owns |
 | --- | --- |
@@ -109,9 +116,9 @@ They work together.
 | Loop or graph | The order of steps, branches, retries, and stopping decisions |
 | Action Engine | The versioned implementation and runtime contract of one domain outcome |
 
-A skill may teach an agent when to call `support.classify-ticket`. MCP may carry
-that call. A loop may decide what happens next. The Action Engine validates the
-ticket, enforces access, invokes the classifier, validates the result, and
+A skill may teach an agent when to call `support.classify-ticket`. MCP carries
+the call, and a loop may decide what happens next. The Action Engine validates
+the ticket, enforces access, invokes the classifier, validates the result, and
 returns the same public shape to every consumer.
 
 The full [Action Engines community definition](./docs/action-engines.md) is
@@ -124,6 +131,7 @@ data, permissions, and domain rules behind a small set of capabilities.
 
 | Example engine | Example capabilities | What the caller receives |
 | --- | --- | --- |
+| Product Analytics Engine | `analytics.explain-funnel-change`, `analytics.prepare-account-summary` | A tenant-scoped explanation or account summary with supporting evidence |
 | Video Production Engine | `video.transcribe-source`, `video.plan-edit`, `video.apply-edit` | A transcript, edit plan, and rendered video with evidence |
 | Social Carousel Engine | `carousel.prepare-series`, `carousel.render-series`, `carousel.assess-readiness` | An ordered carousel that is ready to publish or has explicit blockers |
 | Commercial Proposal Engine | `sales.prepare-proposal`, `sales.render-proposal`, `sales.assess-proposal-readiness` | A customer-specific proposal and a readiness decision |
@@ -133,8 +141,8 @@ data, permissions, and domain rules behind a small set of capabilities.
 These are illustrative domain boundaries, not provider integrations bundled
 into the framework. Your engine owns its providers and outcome quality. See the
 [complete use-case catalog](./apps/docs/src/content/docs/use-cases/index.mdx) for
-examples across engineering, content, product, marketing, sales, healthcare,
-recruiting, support, and operations.
+examples across software products, engineering, content, product, marketing,
+sales, healthcare, recruiting, support, and operations.
 
 ## What Invokta owns and what your engine owns
 
