@@ -47,6 +47,18 @@ jobs:
       - name: Audit dependencies
         run: yarn audit
 
+      - name: Install documentation dependencies
+        working-directory: apps/docs
+        run: yarn install --frozen-lockfile --non-interactive
+
+      - name: Validate documentation
+        working-directory: apps/docs
+        run: yarn validate
+
+      - name: Audit documentation dependencies
+        working-directory: apps/docs
+        run: yarn audit
+
       - name: Dry-run public packages
         run: yarn release:pack
 

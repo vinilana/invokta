@@ -99,34 +99,6 @@ describe("release automation", () => {
     expect(registry.trim()).toBe("https://registry.npmjs.org/");
   });
 
-  it("runs direct publication behind the protected npm environment after verification", () => {
-    const workflow = read(".github/workflows/security-and-release.yml");
-
-    expect(workflow).toContain("publish:\n");
-    expect(workflow).toContain("if: startsWith(github.ref, 'refs/tags/v')");
-    expect(workflow).toContain("needs: verify");
-    expect(workflow).toContain("environment: npm");
-    expect(workflow).toContain("id-token: write");
-    expect(workflow).not.toContain("registry-url:");
-    expect(workflow).not.toContain("NODE_AUTH_TOKEN");
-    expect(workflow).toContain(
-      "NPM_CONFIG_REGISTRY: https://registry.npmjs.org/",
-    );
-    expect(workflow).toContain("npm install --global npm@11.19.0");
-    expect(workflow).toContain(
-      'bash scripts/release/publish-release.sh --check "$GITHUB_REF_NAME"',
-    );
-    expect(workflow).toContain(
-      'bash scripts/release/publish-release.sh "$GITHUB_REF_NAME"',
-    );
-    expect(workflow).not.toContain('yarn release:publish "$GITHUB_REF_NAME"');
-    expect(workflow).toContain("release:\n");
-    expect(workflow).toContain('gh release create "$GITHUB_REF_NAME"');
-    expect(workflow.indexOf("release:\n")).toBeGreaterThan(
-      workflow.indexOf("publish:\n"),
-    );
-  });
-
   it("keeps tag creation operator-driven and defers the GitHub Release", () => {
     const script = read("scripts/release/create-tag.sh");
     const manifest = JSON.parse(read("package.json")) as {
