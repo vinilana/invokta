@@ -21,10 +21,16 @@ an npm trusted publisher with these exact values:
 - environment: `npm`; and
 - allowed action: `npm publish`.
 
-Trusted publishing requires npm 11.5.1 or newer. The workflow installs npm 11
-before publication and grants only `contents: read` and `id-token: write` to the
-publish job. npm uses the short-lived GitHub OIDC identity and generates package
-provenance without an npm token.
+Trusted publishing requires npm 11.5.1 or newer. The workflow installs npm
+11.19.0 before publication and grants only `contents: read` and `id-token:
+write` to the publish job. npm uses the short-lived GitHub OIDC identity and
+generates package provenance without an npm token.
+
+The workflow pins the trusted-publishing npm version, forces every registry
+operation to `https://registry.npmjs.org/`, and invokes the publication script
+directly so package-manager environment overrides cannot redirect publication.
+For tag runs, the Verify job executes the same script in read-only `--check`
+mode before the protected publish job can start.
 
 ## Release flow
 

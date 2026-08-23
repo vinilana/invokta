@@ -35,6 +35,12 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }
 
+npm_registry_url="https://registry.npmjs.org/"
+
+npm_registry_command() {
+  npm "$@" --registry="$npm_registry_url"
+}
+
 require_trusted_publishing_npm() {
   local npm_version major minor patch
   npm_version=$(npm --version)
@@ -73,7 +79,8 @@ wait_for_registry_field() {
   local actual=""
 
   for attempt in {1..12}; do
-    if actual=$(npm view "$package_spec" "$field" 2>/dev/null) && [[ "$actual" == "$expected" ]]; then
+    if actual=$(npm_registry_command view "$package_spec" "$field" 2>/dev/null) &&
+      [[ "$actual" == "$expected" ]]; then
       return 0
     fi
     if ((attempt < 12)); then
@@ -171,17 +178,17 @@ for entry in "${release_package_entries[@]}"; do
 done
 
 log "Checking npm registry"
-registry=$(npm config get registry)
-[[ "$registry" == "https://registry.npmjs.org/" ]] ||
-  die "npm registry is $registry, expected https://registry.npmjs.org/"
-npm ping >/dev/null
+registry=$(npm_registry_command config get registry)
+[[ "$registry" == "$npm_registry_url" ]] ||
+  die "npm registry is $registry, expected $npm_registry_url"
+npm_registry_command ping >/dev/null
 
 pending_entries=()
 published_entries=()
 
 for entry in "${release_package_entries[@]}"; do
   IFS='|' read -r package_directory package_name <<<"$entry"
-  latest_version=$(npm view "$package_name" dist-tags.latest 2>/dev/null) ||
+  latest_version=$(npm_registry_command view "$package_name" dist-tags.latest 2>/dev/null) ||
     die "$package_name has no readable latest dist-tag"
   [[ "$latest_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
     die "$package_name latest is not a stable semantic version: $latest_version"
@@ -189,8 +196,8 @@ for entry in "${release_package_entries[@]}"; do
     die "$package_name latest is $latest_version, which is newer than $version"
   fi
 
-  if registry_output=$(npm view "$package_name@$version" version 2>&1); then
-    registry_git_head=$(npm view "$package_name@$version" gitHead)
+  if registry_output=$(npm_registry_command view "$package_name@$version" version 2>&1); then
+    registry_git_head=$(npm_registry_command view "$package_name@$version" gitHead)
     [[ "$registry_git_head" == "$tag_commit" ]] ||
       die "$package_name@$version already exists with gitHead $registry_git_head"
     [[ "$latest_version" == "$version" ]] ||
@@ -229,7 +236,7 @@ require_trusted_publishing_npm
 for entry in "${pending_entries[@]}"; do
   IFS='|' read -r package_directory package_name <<<"$entry"
   log "Publishing $package_name@$version directly to latest"
-  npm publish "./$package_directory" --access public --tag latest
+  npm_registry_command publish "./$package_directory" --access public --tag latest
   wait_for_registry_field "$package_name@$version" version "$version"
   wait_for_registry_field "$package_name@$version" gitHead "$tag_commit"
 done
