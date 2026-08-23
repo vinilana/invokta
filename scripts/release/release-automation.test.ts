@@ -70,14 +70,33 @@ describe("release automation", () => {
     expect(script).toContain('source "$script_directory/package-set.sh"');
     expect(script).toContain("ACTIONS_ID_TOKEN_REQUEST_URL");
     expect(script).toContain("ACTIONS_ID_TOKEN_REQUEST_TOKEN");
+    expect(script).toContain('npm_registry_url="https://registry.npmjs.org/"');
+    expect(script).toContain('npm "$@" --registry="$npm_registry_url"');
     expect(script).toContain(
-      'npm publish "./$package_directory" --access public --tag latest',
+      'npm_registry_command publish "./$package_directory" --access public --tag latest',
     );
     expect(script).toContain("Present: %s@%s (matching gitHead)");
     expect(script).not.toContain("npm dist-tag");
     expect(script).not.toContain("--otp");
     expect(script).not.toContain("npm whoami");
     expect(script).not.toContain("read -r -p");
+  });
+
+  it("forces npmjs when a package manager injects another npm registry", () => {
+    const registry = execFileSync(
+      "npm",
+      ["config", "get", "registry", "--registry=https://registry.npmjs.org/"],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          npm_config_registry: "https://registry.yarnpkg.com",
+        },
+      },
+    );
+
+    expect(registry.trim()).toBe("https://registry.npmjs.org/");
   });
 
   it("runs direct publication behind the protected npm environment after verification", () => {
@@ -90,8 +109,17 @@ describe("release automation", () => {
     expect(workflow).toContain("id-token: write");
     expect(workflow).not.toContain("registry-url:");
     expect(workflow).not.toContain("NODE_AUTH_TOKEN");
-    expect(workflow).toContain("npm install --global npm@11");
-    expect(workflow).toContain('yarn release:publish "$GITHUB_REF_NAME"');
+    expect(workflow).toContain(
+      "NPM_CONFIG_REGISTRY: https://registry.npmjs.org/",
+    );
+    expect(workflow).toContain("npm install --global npm@11.19.0");
+    expect(workflow).toContain(
+      'bash scripts/release/publish-release.sh --check "$GITHUB_REF_NAME"',
+    );
+    expect(workflow).toContain(
+      'bash scripts/release/publish-release.sh "$GITHUB_REF_NAME"',
+    );
+    expect(workflow).not.toContain('yarn release:publish "$GITHUB_REF_NAME"');
     expect(workflow).toContain("release:\n");
     expect(workflow).toContain('gh release create "$GITHUB_REF_NAME"');
     expect(workflow.indexOf("release:\n")).toBeGreaterThan(

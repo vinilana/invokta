@@ -21,6 +21,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Node.js
@@ -52,6 +53,12 @@ jobs:
       - name: Verify clean release package contents
         run: yarn release:verify
 
+      - name: Verify publication preflight
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+        run: bash scripts/release/publish-release.sh --check "$GITHUB_REF_NAME"
+
   publish:
     name: Publish directly to npm latest
     if: startsWith(github.ref, 'refs/tags/v')
@@ -65,6 +72,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
     steps:
       - name: Check out tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -82,10 +91,10 @@ jobs:
         run: corepack enable
 
       - name: Install trusted-publishing npm
-        run: npm install --global npm@11
+        run: npm install --global npm@11.19.0
 
       - name: Publish packages directly to latest
-        run: yarn release:publish "$GITHUB_REF_NAME"
+        run: bash scripts/release/publish-release.sh "$GITHUB_REF_NAME"
 
   release:
     name: Create GitHub Release
