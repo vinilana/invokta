@@ -1,6 +1,6 @@
 {
   "name": "@invokta/installer",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Install and manage Invokta Action Engines in local MCP clients.",
   "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",
