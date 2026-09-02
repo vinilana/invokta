@@ -50,6 +50,10 @@ an architecture decision.
 - [Connector brokers and request-time credentials](./connector-brokers.md) —
   integrating Vercel Connect or another connector broker without extending the
   core
+- [Invokta Gateway: MVP plan](./invokta-gateway.md) — a web application that
+  builds and publishes Action Engines from configured REST and GraphQL
+  connectors, with Better Auth and Vercel Connect, outside the framework
+  packages
 
 ## Guides and examples
 
