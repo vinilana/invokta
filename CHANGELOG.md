@@ -17,9 +17,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   9728 path-suffix location. `invokta-deploy probe` and `inspect-oauth` accept
   the same mount paths and send their request to the path as written
   (ADR 0039).
-- The Invokta Gateway design note records the framework boundary for a web
-  application that builds and publishes Action Engines from configured REST
-  and GraphQL connectors. The application itself lives outside this repository.
 
 ## [0.7.0] - 2026-08-22
 

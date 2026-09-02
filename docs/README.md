@@ -50,9 +50,6 @@ an architecture decision.
 - [Connector brokers and request-time credentials](./connector-brokers.md) —
   integrating Vercel Connect or another connector broker without extending the
   core
-- [Invokta Gateway: framework boundary](./invokta-gateway.md) — what a web
-  application that builds and publishes Action Engines from configured REST
-  and GraphQL connectors consumes from the framework, and what stays outside it
 
 ## Guides and examples
 

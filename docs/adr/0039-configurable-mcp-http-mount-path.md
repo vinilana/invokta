@@ -12,12 +12,11 @@ so a host that publishes several engines from one process behind one public
 origin could not give each engine its own resource identifier: every instance
 claimed the same path.
 
-The Invokta Gateway design note describes that host. It builds Action Engines
-from configuration and publishes each one as its own MCP server with its own
-audience-bound access tokens, which requires one distinct resource identifier
-per engine. One subdomain per engine satisfies the fixed route without a
-framework change, but it requires wildcard DNS and TLS and does not resolve
-through Node's resolver during local development.
+A host that publishes several Action Engines as separate MCP servers, each
+with its own audience-bound access tokens, needs one distinct resource
+identifier per engine. One subdomain per engine satisfies the fixed route
+without a framework change, but it requires wildcard DNS and TLS and does not
+resolve through Node's resolver during local development.
 
 RFC 8707 allows a resource identifier to carry a path, and RFC 9728 defines the
 path-suffix well-known location for its metadata. The isolated SDK helper the
@@ -60,5 +59,5 @@ a separate decision. Devtools keep serving their workbenches at `/mcp` and
 - The canonical `mcp` suffix keeps the MCP route recognizable to operators,
   probes, and documentation regardless of the prefix.
 - The default profile, the creators, and every existing example are unchanged.
-- The Gateway remains an application outside the framework packages; this ADR
-  is the only framework change it needs for its MVP.
+- A host that composes several engines remains an application outside the
+  framework packages; it needs no other framework change to share one origin.
