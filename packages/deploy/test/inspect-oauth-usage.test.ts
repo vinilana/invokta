@@ -17,6 +17,26 @@ describe("runInspectOAuth usage", () => {
     ["a missing URL value", ["--url"]],
     ["a relative URL", ["--url", "/mcp"]],
     ["a non-MCP path", ["--url", "https://engine.example/"]],
+    [
+      "a mounted path without the suffix",
+      ["--url", "https://engine.example/e/orders"],
+    ],
+    [
+      "a mounted path with a trailing slash",
+      ["--url", "https://engine.example/e/orders/mcp/"],
+    ],
+    [
+      "a mounted path with a dot segment",
+      ["--url", "https://engine.example/e/../mcp"],
+    ],
+    [
+      "a mounted path with an empty segment",
+      ["--url", "https://engine.example/e//mcp"],
+    ],
+    [
+      "a mounted path with percent encoding",
+      ["--url", "https://engine.example/%65/mcp"],
+    ],
     ["URL userinfo", ["--url", "https://user@engine.example/mcp"]],
     ["a query", ["--url", "https://engine.example/mcp?token=secret"]],
     ["a public HTTP URL", ["--url", "http://engine.example/mcp"]],

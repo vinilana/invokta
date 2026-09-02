@@ -1,3 +1,5 @@
+import { isCanonicalMcpPath } from "../mcp-path.js";
+
 export interface OAuthInspectionOptions {
   readonly url: URL;
   readonly timeoutMs: number;
@@ -61,7 +63,9 @@ function parseTargetUrl(value: string): URL | undefined {
   if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
   if (url.username !== "" || url.password !== "") return undefined;
   if (url.search !== "" || url.hash !== "") return undefined;
-  if (url.pathname !== "/mcp" || rawPathOf(value) !== "/mcp") return undefined;
+  if (!isCanonicalMcpPath(url.pathname) || rawPathOf(value) !== url.pathname) {
+    return undefined;
+  }
   if (url.protocol === "http:" && !loopbackHostnames.has(url.hostname)) {
     return undefined;
   }

@@ -116,7 +116,9 @@ publishes its public well-known document, and adds its configured discovery URL
 to the Bearer challenge returned by a 401. The URL is derived from the configured
 `resource`, never from `Host`, `X-Forwarded-Host`, or another request header.
 For a resource ending in `/mcp`, the discovery path is
-`/.well-known/oauth-protected-resource/mcp`.
+`/.well-known/oauth-protected-resource/mcp`; a resource mounted under a prefix
+such as `/e/orders/mcp` publishes it at
+`/.well-known/oauth-protected-resource/e/orders/mcp` (ADR 0039).
 
 Set `challengeScopes` when the Resource Server knows the scopes required for
 its base MCP request. The adapter validates and snapshots each RFC 6749 scope
@@ -126,8 +128,8 @@ separate from `scopesSupported`: the challenge is authoritative for the current
 request, while metadata describes the minimal generally supported set. Omit
 `challengeScopes` when the authentication policy cannot name a stable base set.
 
-The resource must identify the exact `/mcp` path over HTTPS, with loopback HTTP
-allowed only for local development. It cannot contain credentials, a query, or
+The resource must identify the engine's exact mount path over HTTPS, `/mcp` by
+default, with loopback HTTP allowed only for local development. It cannot contain credentials, a query, or
 a fragment. Authorization Server identifiers must use HTTPS, except for the
 same loopback HTTP origin as a loopback development resource. They cannot
 contain credentials, a query, or a fragment; issuer paths are allowed. A
@@ -178,9 +180,9 @@ More than one raw `Authorization` header is an invalid request and is rejected
 before the authentication hook runs; authenticators never need to choose among
 ambiguous credentials.
 
-The request target must be the exact canonical `/mcp` path. Dot-segment or
-percent-encoded aliases, queries, fragments, and absolute-form targets are not
-routed to MCP or authentication. IPv6 `Host` values must use bracketed authority
+The request target must be the exact canonical mount path, `/mcp` by default.
+Dot-segment or percent-encoded aliases, queries, fragments, and absolute-form
+targets are not routed to MCP or authentication. IPv6 `Host` values must use bracketed authority
 syntax, such as `[::1]:3000`; bare `::1` is rejected.
 
 After Host, Origin, and route validation, unsupported methods and declared body

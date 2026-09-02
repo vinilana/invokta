@@ -135,7 +135,9 @@ Performs one bounded MCP liveness or readiness check, for CI smoke tests and
 container health checks. A healthy endpoint produces no output at all.
 
 - `--url` must be an absolute HTTP(S) URL without userinfo, query, or fragment,
-  whose path is exactly `/mcp`. HTTPS is required unless the host is exactly
+  whose path is `/mcp` or an engine mount path ending in `/mcp` (ADR 0039):
+  unreserved ASCII segments only, no dot segment, empty segment, percent
+  encoding, or trailing slash, at most 256 bytes. HTTPS is required unless the host is exactly
   `127.0.0.1` or `[::1]`.
 - `--expect` selects the classification below. It defaults to `alive`.
 - `--bearer-env NAME` reads a bearer token from that environment variable. It is
@@ -198,7 +200,7 @@ refreshes a token, or mutates the remote service. It checks, in order:
 6. an advertised JWKS is fetched and checked as a JWK Set. A missing `jwks_uri`
    is valid because OAuth access tokens need not be JWTs.
 
-`--url` follows the same exact `/mcp`, no-userinfo, no-query, no-fragment, and
+`--url` follows the same mount-path, no-userinfo, no-query, no-fragment, and
 HTTPS rules as `probe`; plain HTTP is limited to literal loopback addresses.
 `--timeout-ms` is one deadline shared by the entire sequence, defaults to
 `10000`, and accepts `1..60000`. Each response is capped at 256 KiB. Requests

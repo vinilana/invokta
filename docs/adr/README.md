@@ -45,3 +45,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0036](0036-engine-owned-outbound-connectors.md) | Engine-owned outbound connectors through explicit ports | Accepted | 2026-08-22 |
 | [0037](0037-typed-connector-definitions.md) | Typed connector definitions with explicit port injection | Accepted | 2026-08-22 |
 | [0038](0038-guided-openapi-capability-import.md) | Guided OpenAPI capability import | Accepted | 2026-08-21 |
+| [0039](0039-configurable-mcp-http-mount-path.md) | Configurable MCP HTTP mount path | Accepted | 2026-09-02 |

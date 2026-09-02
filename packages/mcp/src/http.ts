@@ -14,7 +14,9 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
 const DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 const MAX_CHALLENGE_SCOPE_BYTES = 4096;
-const MCP_PATH = "/mcp";
+const DEFAULT_MCP_PATH = "/mcp";
+const MAX_MCP_PATH_BYTES = 256;
+const MCP_PATH_SEGMENT = /^[A-Za-z0-9._~-]+$/u;
 
 export interface McpHttpHeaderView {
   readonly get: (name: string) => string | null;
@@ -54,6 +56,13 @@ export type McpHttpAuthOptions =
 export interface ServeMcpHttpOptions {
   readonly host?: string;
   readonly port?: number;
+  /**
+   * The canonical request path that reaches protocol dispatch. Defaults to
+   * `/mcp`. A configured value must be an absolute path of unreserved ASCII
+   * segments ending in `/mcp`, so several engines can share one origin while
+   * every mount keeps the canonical MCP route visible.
+   */
+  readonly path?: string;
   readonly allowedHosts?: ReadonlyArray<string>;
   readonly allowedOrigins?: ReadonlyArray<string>;
   readonly maxRequestBodyBytes?: number;
@@ -267,7 +276,46 @@ function normalizedAllowedOrigins(
   return origins;
 }
 
-function toMetadata(metadata: McpHttpProtectedResourceMetadata) {
+/**
+ * Validates a mount path once, before listening. The rule is deliberately
+ * narrower than URL syntax: unreserved ASCII segments only, no dot segments,
+ * no percent encoding, no empty segment, no trailing slash, a bounded size,
+ * and a final `mcp` segment. `parseRequestPath` rejects every alias of such
+ * a path at request time, so the two checks agree on the single accepted
+ * spelling.
+ */
+function normalizeMountPath(value: string | undefined): string {
+  if (value === undefined) return DEFAULT_MCP_PATH;
+  const invalid = (): TypeError =>
+    new TypeError(
+      `path must be an absolute path of unreserved ASCII segments ending in ${DEFAULT_MCP_PATH}, without dot segments, percent encoding, query, fragment, or trailing slash, and at most ${String(MAX_MCP_PATH_BYTES)} bytes.`,
+    );
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > MAX_MCP_PATH_BYTES ||
+    !value.startsWith("/")
+  ) {
+    throw invalid();
+  }
+  const segments = value.slice(1).split("/");
+  for (const segment of segments) {
+    if (
+      !MCP_PATH_SEGMENT.test(segment) ||
+      segment === "." ||
+      segment === ".."
+    ) {
+      throw invalid();
+    }
+  }
+  if (segments[segments.length - 1] !== "mcp") throw invalid();
+  return value;
+}
+
+function toMetadata(
+  metadata: McpHttpProtectedResourceMetadata,
+  mountPath: string,
+) {
   if (metadata.authorizationServers.length === 0) {
     throw new TypeError(
       "Protected resource metadata requires at least one authorization server.",
@@ -277,7 +325,7 @@ function toMetadata(metadata: McpHttpProtectedResourceMetadata) {
   if (urls.some(hasUnsafeUrlCharacter)) {
     throw new TypeError("Protected resource metadata contains an unsafe URL.");
   }
-  validateResourceUrl(metadata.resource);
+  validateResourceUrl(metadata.resource, mountPath);
   for (const authorizationServer of metadata.authorizationServers) {
     validateAuthorizationServerUrl(authorizationServer, metadata.resource);
   }
@@ -291,7 +339,7 @@ function toMetadata(metadata: McpHttpProtectedResourceMetadata) {
   return OAuthProtectedResourceMetadataSchema.parse(value);
 }
 
-function validateResourceUrl(value: string): void {
+function validateResourceUrl(value: string, mountPath: string): void {
   let url: URL;
   try {
     url = new URL(value);
@@ -307,12 +355,12 @@ function validateResourceUrl(value: string): void {
     (!secure && !loopbackDevelopment) ||
     url.username !== "" ||
     url.password !== "" ||
-    url.pathname !== MCP_PATH ||
+    url.pathname !== mountPath ||
     url.search !== "" ||
     url.hash !== ""
   ) {
     throw new TypeError(
-      "Protected resource metadata requires an HTTPS /mcp resource URL, except for literal-loopback (127.0.0.1 or [::1]) HTTP development.",
+      `Protected resource metadata requires an HTTPS resource URL whose path is exactly the configured MCP path (${mountPath}), except for literal-loopback (127.0.0.1 or [::1]) HTTP development.`,
     );
   }
 }
@@ -676,12 +724,13 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
   if (!Number.isSafeInteger(maxRequestBodyBytes) || maxRequestBodyBytes <= 0) {
     throw new TypeError("maxRequestBodyBytes must be a positive safe integer.");
   }
+  const mountPath = normalizeMountPath(options.path);
   const auth = snapshotAuthOptions(options.auth);
   const allowedHosts = normalizedAllowedHosts(host, options.allowedHosts);
   const allowedOrigins = normalizedAllowedOrigins(options.allowedOrigins);
   const metadata =
     auth.mode === "required" && auth.resourceMetadata !== undefined
-      ? toMetadata(auth.resourceMetadata)
+      ? toMetadata(auth.resourceMetadata, mountPath)
       : undefined;
   const metadataUrl =
     metadata === undefined
@@ -769,7 +818,7 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         });
         return;
       }
-      if (path !== MCP_PATH) {
+      if (path !== mountPath) {
         sendBeforeBodyConsumption(request, response, {
           status: 404,
           body: { error: "not_found" },

@@ -228,6 +228,44 @@ describe("runInspectOAuth", () => {
     ]);
   });
 
+  it("inspects an engine mounted under a path prefix", async () => {
+    const mountPath = "/e/orders/mcp";
+    const stub = await startOAuthStub({
+      onPath(path, _request, response) {
+        if (path === mountPath) {
+          response.writeHead(401, {
+            "www-authenticate": `Bearer resource_metadata="${stub.origin}/.well-known/oauth-protected-resource${mountPath}", scope="mcp:tools"`,
+          });
+          response.end();
+          return true;
+        }
+        if (path === `/.well-known/oauth-protected-resource${mountPath}`) {
+          json(response, {
+            resource: `${stub.origin}${mountPath}`,
+            authorization_servers: [stub.origin],
+            scopes_supported: ["mcp:tools"],
+          });
+          return true;
+        }
+        return false;
+      },
+    });
+
+    const result = await inspect(["--url", `${stub.origin}${mountPath}`]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toEqual([]);
+    expect(result.stderr.join("")).toContain(
+      `OAUTH_INSPECTION_OK: OAuth discovery is ready.\n  resource: ${stub.origin}${mountPath}\n`,
+    );
+    expect(stub.requests.map((request) => request.path)).toEqual([
+      mountPath,
+      `/.well-known/oauth-protected-resource${mountPath}`,
+      "/.well-known/oauth-authorization-server",
+      "/jwks",
+    ]);
+  });
+
   it("accepts a loopback authorization server on another loopback port", async () => {
     // A local identity provider normally runs as its own process on its own
     // port; `serveMcpHttp` publishes this topology and `inspectMcpOAuth`

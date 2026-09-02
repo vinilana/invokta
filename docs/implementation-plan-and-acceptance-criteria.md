@@ -38,7 +38,7 @@ persistence, configuration field, or operational limit:
 | `AE-PIPE-01`, `AE-ERR-01` | Tests instrument stage order, cancellation, timeout, seven codes, and sanitization |
 | `AE-OBS-01` | Three minimal events preserve order and contain no payloads or credentials |
 | `AE-CLI-01..02` | Integration covers commands, input channels, UTF-8 failure, writers, and exit codes |
-| `AE-MCP-01..04` | An official client lists and calls tools over stdio and HTTP; generated MCP engines preflight the published catalog; tests cover schemas, naming collisions, errors, cancellation boundaries, statelessness, and boundary security |
+| `AE-MCP-01..04` | An official client lists and calls tools over stdio and HTTP; generated MCP engines preflight the published catalog; tests cover schemas, naming collisions, errors, cancellation boundaries, statelessness, boundary security, and the configured mount path with its path-suffix resource metadata |
 | `AE-MCP-CLIENT-01..03` | Public type tests prove SDK isolation; stdio and HTTP fixtures cover exact descriptors, initialization, pagination, manual calls, cancellation, closure, secure URLs, authentication, and byte limits |
 | `AE-SEC-01..02` | Authentication occurs before `invoke`; authorization occurs before `run`; insecure authentication requires explicit opt-in |
 | `AE-INSTALL-01..05` | Packed creator smoke tests install a built local engine; target transactions cover confirmation, idempotency, drift, locks, rollback, management, remote descriptors, and secret-free diagnostics without process or network access |

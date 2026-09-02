@@ -56,7 +56,19 @@ describe("runProbe target URL rules", () => {
     ["a trailing slash", "https://engine.example/mcp/"],
     ["a different case", "https://engine.example/MCP"],
     ["a longer path", "https://engine.example/mcp/extra"],
-    ["a prefixed path", "https://engine.example/a/mcp"],
+    ["a mounted path with a trailing slash", "https://engine.example/a/mcp/"],
+    ["a mounted path with an empty segment", "https://engine.example/a//mcp"],
+    ["a mounted path with a dot segment", "https://engine.example/a/./mcp"],
+    ["a mounted path with a parent segment", "https://engine.example/a/../mcp"],
+    ["a mounted path with percent encoding", "https://engine.example/%61/mcp"],
+    [
+      "a mounted path with a reserved character",
+      "https://engine.example/a:b/mcp",
+    ],
+    [
+      "a mounted path longer than 256 bytes",
+      `https://engine.example/${"a".repeat(253)}/mcp`,
+    ],
     ["a percent-encoded path", "https://engine.example/%6dcp"],
     ["a dot segment", "https://engine.example/./mcp"],
     ["plain HTTP to a public host", "http://engine.example/mcp"],
@@ -70,12 +82,14 @@ describe("runProbe target URL rules", () => {
     await expectUsageRejection(["--url", url]);
   });
 
-  it("accepts loopback HTTP, IPv6 loopback HTTP, and HTTPS", async () => {
+  it("accepts loopback HTTP, IPv6 loopback HTTP, HTTPS, and mounted paths", async () => {
     const port = closedUrl.split(":")[2]?.split("/")[0] ?? "";
     for (const url of [
       `http://127.0.0.1:${port}/mcp`,
       `http://[::1]:${port}/mcp`,
       `https://127.0.0.1:${port}/mcp`,
+      `https://127.0.0.1:${port}/e/orders-v2/mcp`,
+      `https://127.0.0.1:${port}/${"a".repeat(251)}/mcp`,
     ]) {
       const result = await run(["--url", url]);
       expect(result.exitCode).toBe(1);

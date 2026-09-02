@@ -3,7 +3,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 
 import { probeProtocolVersion } from "../probe-contract.js";
-import { type ProbeOptions, probePath } from "./options.js";
+import type { ProbeOptions } from "./options.js";
 
 export { probeProtocolVersion };
 
@@ -106,7 +106,7 @@ export function sendProbeRequest(
           protocol: options.url.protocol,
           hostname,
           port,
-          path: probePath,
+          path: options.url.pathname,
           method: "POST",
           // A fresh, agentless socket per invocation: no pooling, no reuse.
           agent: false,

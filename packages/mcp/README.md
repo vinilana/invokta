@@ -34,6 +34,33 @@ and answers unauthenticated requests with a `WWW-Authenticate` challenge naming
 it. Authorization servers must use HTTPS; a loopback HTTP resource may name a
 loopback HTTP authorization server for local development.
 
+The protocol endpoint is `/mcp` by default. `path` mounts it under a prefix so
+several engines can share one origin, each behind its own loopback-bound
+server and its own resource identifier
+([ADR 0039](../../docs/adr/0039-configurable-mcp-http-mount-path.md)):
+
+```ts
+const orders = await serveMcpHttp(ordersEngine, {
+  port: 3101,
+  path: "/e/orders/mcp",
+  allowedHosts: ["gateway.example.com"],
+  auth: {
+    mode: "required",
+    authenticate,
+    resourceMetadata: {
+      resource: "https://gateway.example.com/e/orders/mcp",
+      authorizationServers: ["https://gateway.example.com"],
+    },
+  },
+});
+```
+
+A mount path is an absolute path of unreserved ASCII segments, at most 256
+bytes, without a dot segment, an empty segment, percent encoding, a query, a
+fragment, or a trailing slash, and its final segment is `mcp`. The resource
+must use exactly that path, and its metadata is served at
+`/.well-known/oauth-protected-resource<path>`.
+
 Tool names are derived from capability IDs with `toMcpToolName`, which keeps
 dotted domain IDs visible to clients that enforce `^[a-zA-Z0-9_-]{1,64}$`
 ([ADR 0025](../../docs/adr/0025-portable-mcp-tool-names.md)).

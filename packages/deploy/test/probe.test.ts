@@ -82,6 +82,18 @@ describe("runProbe request shape", () => {
     });
   });
 
+  it("sends the request to a mounted path exactly as written", async () => {
+    const endpoint = await stub(respondWithJsonInitializeResult);
+    const mounted = endpoint.url.replace(/\/mcp$/u, "/e/orders/mcp");
+
+    const result = await probe(["--url", mounted]);
+
+    expect(result.exitCode).toBe(0);
+    expect(endpoint.requests.map((request) => request.target)).toEqual([
+      "/e/orders/mcp",
+    ]);
+  });
+
   it("declares the body length instead of streaming it in chunks", async () => {
     const endpoint = await stub(respondWithJsonInitializeResult);
 
