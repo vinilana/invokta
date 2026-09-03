@@ -246,7 +246,7 @@ npm create invokta-capability-library@latest my-library
 
 ## Contribute to Invokta
 
-This repository uses Node.js 22.20.0 and Yarn 1.22.22.
+This repository uses Node.js 24.20.0 and Yarn 1.22.22.
 
 ```sh
 corepack enable

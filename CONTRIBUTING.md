@@ -8,7 +8,7 @@ covers the repository workflow; generated Action Engines carry their own
 ## Prerequisites
 
 - Git;
-- Node.js 22.20.0, matching `.node-version`; and
+- Node.js 24.20.0, matching `.node-version`; and
 - Yarn 1.22.22, provided through Corepack.
 
 Clone and validate the repository:
