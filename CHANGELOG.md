@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-03
+
 ### Added
 
 - `serveMcpHttp` accepts an optional `path` that mounts the stateless MCP HTTP
@@ -456,7 +458,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/vinilana/invokta/releases/tag/v0.8.0
 [0.7.0]: https://github.com/vinilana/invokta/releases/tag/v0.7.0
 [0.6.1]: https://github.com/vinilana/invokta/releases/tag/v0.6.1
 [0.6.0]: https://github.com/vinilana/invokta/releases/tag/v0.6.0
