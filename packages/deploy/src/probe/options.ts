@@ -1,4 +1,5 @@
 import { environmentNamePattern } from "../manifest.js";
+import { isCanonicalMcpPath } from "../mcp-path.js";
 import { probeTimeoutDefaultMs } from "../probe-contract.js";
 
 export { probeTimeoutDefaultMs };
@@ -19,7 +20,6 @@ export type ProbeOptionsResult =
   | { readonly ok: true; readonly options: ProbeOptions }
   | { readonly ok: false };
 
-export const probePath = "/mcp";
 export const probeTimeoutMinMs = 1;
 export const probeTimeoutMaxMs = 60_000;
 
@@ -96,7 +96,9 @@ function parseProbeUrl(value: string): URL | undefined {
   if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
   if (url.username !== "" || url.password !== "") return undefined;
   if (url.search !== "" || url.hash !== "") return undefined;
-  if (url.pathname !== probePath || rawPathOf(value) !== probePath) {
+  // The raw path must be the single canonical spelling the adapter serves:
+  // `URL` would otherwise accept a dot-segment or percent-encoded alias.
+  if (!isCanonicalMcpPath(url.pathname) || rawPathOf(value) !== url.pathname) {
     return undefined;
   }
   // Plain HTTP is a loopback development affordance only; every other target

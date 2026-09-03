@@ -141,7 +141,7 @@ ENGINE_PROBE_TOKEN='runtime-secret' \
 
 | Option | Contract |
 | --- | --- |
-| `--url` | Required absolute exact `/mcp` URL, at most 2,048 characters, without credentials, query, or fragment |
+| `--url` | Required absolute URL whose path is `/mcp` or a canonical engine mount path ending in `/mcp`, at most 2,048 characters, without credentials, query, or fragment |
 | `--expect` | `alive` by default or `ready` |
 | `--bearer-env` | Environment variable name, allowed only with `ready`; token is non-empty visible ASCII up to 4,096 characters |
 | `--host-header` | Visible ASCII Host override up to 255 characters; changes the header, not the network destination |
@@ -196,7 +196,8 @@ not register a client, perform login or consent, exchange a code, refresh a
 token, or mutate the remote service. It follows no redirect and performs no
 retry. OAuth/OIDC well-known fallbacks are separate protocol attempts.
 
-The exact `/mcp` target excludes userinfo, query, and fragment. HTTPS is
+The target path is `/mcp` or a canonical engine mount path ending in `/mcp`,
+sent exactly as written, and excludes userinfo, query, and fragment. HTTPS is
 required except for literal loopback addresses. `--timeout-ms` is one deadline
 for the complete sequence, defaults to `10000`, and is bounded to `1..60000`.
 Each response is capped at 256 KiB.

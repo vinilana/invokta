@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `serveMcpHttp` accepts an optional `path` that mounts the stateless MCP HTTP
+  endpoint under a prefix such as `/e/orders/mcp`, so several engines can share
+  one origin, each with its own resource identifier. The default stays `/mcp`.
+  A mount path is validated before listening, the Protected Resource Metadata
+  resource must use exactly that path, and its document is served at the RFC
+  9728 path-suffix location. `invokta-deploy probe` and `inspect-oauth` accept
+  the same mount paths and send their request to the path as written
+  (ADR 0039).
+
 ## [0.7.0] - 2026-08-22
 
 ### Added

@@ -172,10 +172,15 @@ Each accepted POST creates a fresh MCP server and transport. The adapter has no
 session ID, resumption, event store, server-to-client SSE, cross-request
 cancellation, resources, prompts, sampling, elicitation, or tasks.
 
-The sole protocol endpoint is the exact canonical `POST /mcp`. When Protected
-Resource Metadata is configured, its generated well-known GET route is the only
-non-protocol route. Dot segments, percent-encoded aliases, queries, fragments,
-absolute-form targets, and batches never reach protocol dispatch.
+The sole protocol endpoint is the exact canonical `POST` mount path, `/mcp` by
+default. The optional `path` option mounts it under a prefix such as
+`/e/orders/mcp` so several engines can share one origin, each with its own
+resource identifier; a mount path uses unreserved ASCII segments, at most 256
+bytes, and ends in `/mcp`. When Protected Resource Metadata is configured, its
+generated well-known GET route is the only non-protocol route, served at the
+RFC 9728 path-suffix location for the mounted path. Dot segments,
+percent-encoded aliases, queries, fragments, absolute-form targets, and batches
+never reach protocol dispatch.
 
 ### HTTP request boundary
 

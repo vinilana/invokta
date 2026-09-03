@@ -248,8 +248,8 @@ integrations MUST continuously drain server stdout and MUST provide process
 supervision capable of terminating a stalled process. The adapter does not claim
 interruptible teardown for a non-reading Windows peer.
 
-**AE-MCP-04 — Stateless HTTP.** The sole endpoint is `/mcp`; each request is
-independent. The default bind address is `127.0.0.1`. `Host` and `Origin` MUST be
+**AE-MCP-04 — Stateless HTTP.** The sole protocol endpoint is the configured
+mount path, `/mcp` by default; each request is independent. The default bind address is `127.0.0.1`. `Host` and `Origin` MUST be
 validated. Unauthenticated mode requires an explicit development option whose
 name communicates the risk.
 
@@ -257,9 +257,12 @@ The protocol endpoint accepts only `POST`. Each accepted POST creates a new MCP
 server and a new transport with sessions, resumption, event storage, and
 server-to-client SSE disabled. When OAuth Protected Resource Metadata is
 configured, its public well-known GET route is the only non-protocol route.
-Only the exact, canonical `/mcp` request target reaches protocol dispatch; dot
-segments, percent encoding, a query, a fragment, and absolute-form targets are
-rejected. The `2025-11-25` profile accepts exactly one top-level JSON-RPC message
+Only the exact, canonical mount path reaches protocol dispatch; dot segments,
+percent encoding, a query, a fragment, and absolute-form targets are rejected.
+A configured mount path is validated before listening: an absolute path of
+unreserved ASCII segments, at most 256 bytes, without a dot segment, an empty
+segment, percent encoding, a query, a fragment, or a trailing slash, whose final
+segment is `mcp` (ADR 0039). The `2025-11-25` profile accepts exactly one top-level JSON-RPC message
 and rejects every top-level array before SDK dispatch. `Accept` must contain the
 exact `application/json` and `text/event-stream` media ranges with positive
 quality. After successful authentication, exactly one raw `Content-Type` header
@@ -303,7 +306,8 @@ Cross-request MCP cancellation is not promised by the stateless profile because
 no transport or session survives between requests.
 
 Protected Resource Metadata requires an HTTP(S) resource whose path is exactly
-`/mcp`, without credentials, query, or fragment. HTTPS is mandatory except for an
+the configured mount path, without credentials, query, or fragment; its document
+is served at the RFC 9728 path-suffix location. HTTPS is mandatory except for an
 explicit loopback HTTP development resource. At least one authorization server
 is required; each authorization server uses HTTPS without credentials, query, or
 fragment. Authorization-server paths are allowed because OAuth issuer identifiers
