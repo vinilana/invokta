@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-08-22
+- Last reviewed: 2026-09-03
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
@@ -21,8 +21,9 @@
   accepted in ADR 0033; harness configuration variants and VS Code remote user
   scope accepted in ADR 0034; example archive path and subtree validation
   accepted in ADR 0035; engine-owned outbound connectors accepted in ADR 0036;
-  typed connector definitions accepted in ADR 0037; and guided OpenAPI
-  capability import accepted in ADR 0038.
+  typed connector definitions accepted in ADR 0037; guided OpenAPI
+  capability import accepted in ADR 0038; and the configurable MCP HTTP
+  mount path accepted in ADR 0039.
 - Architectural conventions: ADR 0036 defines engine-owned outbound connectors;
   ADR 0037 adds their optional typed core authoring definition without changing
   capability contracts, the error-code taxonomy, or the execution path.
@@ -49,9 +50,9 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 3,120 tests with one
-  intentional skip, V8 coverage, and the full TypeScript build. Coverage is
-  78.90% statements, 74.28% branches, 83.41% functions, and 80.63% lines.
+- `yarn run check` passes typecheck, lint, formatting, 3,144 tests with two
+  intentional skips, V8 coverage, and the full TypeScript build. Coverage is
+  78.92% statements, 74.32% branches, 83.41% functions, and 80.64% lines.
 - `yarn release:verify` passes metadata alignment and clean tarball inspection
   for all 10 public packages, isolated ESM imports, all four packed engine
   profiles, authenticated MCP HTTP exchange, DevTools doctor checks, and the
