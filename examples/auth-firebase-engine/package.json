@@ -13,12 +13,12 @@
     "devtools:doctor": "tsc -b --pretty false && invokta-devtools doctor dist/engine.js"
   },
   "dependencies": {
-    "@invokta/core": "0.8.0",
-    "@invokta/mcp": "0.8.0",
+    "@invokta/core": "0.8.1",
+    "@invokta/mcp": "0.8.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@invokta/devtools": "0.8.0",
-    "@invokta/tooling": "0.8.0"
+    "@invokta/devtools": "0.8.1",
+    "@invokta/tooling": "0.8.1"
   }
 }

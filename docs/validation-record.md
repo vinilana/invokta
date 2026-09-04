@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-09-03
+- Last reviewed: 2026-09-04
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
@@ -50,16 +50,18 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` passes typecheck, lint, formatting, 3,144 tests with two
-  intentional skips, V8 coverage, and the full TypeScript build. Coverage is
-  78.92% statements, 74.32% branches, 83.41% functions, and 80.64% lines.
+- `yarn run check` on Node.js 24.20.0 and npm 11.19.0 passes typecheck, lint,
+  formatting, 3,145 tests with one intentional skip, V8 coverage, and the full
+  TypeScript build. Coverage is 78.95% statements, 74.34% branches, 83.45%
+  functions, and 80.67% lines.
 - `yarn release:verify` passes metadata alignment and clean tarball inspection
   for all 10 public packages, isolated ESM imports, all four packed engine
   profiles, authenticated MCP HTTP exchange, DevTools doctor checks, and the
   atomic and capability-library creator smoke tests.
 - `yarn validate` in `apps/docs` passes 15 route and link contract tests, zero
   Astro diagnostics, and the 49-page production site build.
-- `yarn audit` reports zero vulnerabilities across 307 audited packages.
+- `yarn audit` reports zero vulnerabilities across 307 audited root packages;
+  the docs application audit reports zero vulnerabilities across 537 packages.
 
 ## Boundaries exercised
 
