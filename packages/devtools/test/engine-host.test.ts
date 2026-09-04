@@ -20,6 +20,26 @@ const devtoolsOrigin = "http://127.0.0.1:4100";
 
 type FixtureValue = Readonly<Record<string, unknown>>;
 
+interface Deferred {
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+}
+
+function deferred(): Deferred {
+  let resolvePromise: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}
+
+let invocationOrderGate:
+  | {
+      readonly firstStarted: Deferred;
+      readonly releaseFirst: Deferred;
+    }
+  | undefined;
+
 const fixtureSchema = {
   "~standard": {
     version: 1,
@@ -57,11 +77,9 @@ function buildEngine(events: EngineEvent[]) {
         output: fixtureSchema,
         access: "public",
         async run({ input }) {
-          const delayMs = input.delayMs;
-          if (typeof delayMs === "number" && delayMs > 0) {
-            await new Promise((resolvePromise) =>
-              setTimeout(resolvePromise, delayMs),
-            );
+          if (input.call === "first" && invocationOrderGate !== undefined) {
+            invocationOrderGate.firstStarted.resolve();
+            await invocationOrderGate.releaseFirst.promise;
           }
           return { echoed: input };
         },
@@ -207,16 +225,23 @@ describe("startEngineHost", () => {
 
   it("keeps unique arrival sequences when concurrent calls finish out of order", async () => {
     records.length = 0;
+    const firstStarted = deferred();
+    const releaseFirst = deferred();
+    invocationOrderGate = { firstStarted, releaseFirst };
 
     const first = callEcho(
-      { call: "first", delayMs: 40 },
+      { call: "first" },
       { authorization: `Bearer ${token}` },
     );
-    const second = callEcho(
-      { call: "second" },
-      { authorization: `Bearer ${token}` },
-    );
-    await Promise.all([first, second]);
+    try {
+      await firstStarted.promise;
+      await callEcho({ call: "second" }, { authorization: `Bearer ${token}` });
+      releaseFirst.resolve();
+      await first;
+    } finally {
+      releaseFirst.resolve();
+      invocationOrderGate = undefined;
+    }
 
     expect(records[0]?.sequence).toBe((records[1]?.sequence ?? 0) + 1);
     expect(new Set(records.map((record) => record.sequence)).size).toBe(2);
