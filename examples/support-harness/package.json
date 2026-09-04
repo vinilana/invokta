@@ -13,6 +13,6 @@
     "@modelcontextprotocol/sdk": "1.30.0"
   },
   "devDependencies": {
-    "@invokta/devtools": "0.8.0"
+    "@invokta/devtools": "0.8.1"
   }
 }

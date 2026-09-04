@@ -20,14 +20,14 @@
     "mcp:http": "node dist/mcp-http.js"
   },
   "dependencies": {
-    "@invokta/cli": "0.8.0",
-    "@invokta/core": "0.8.0",
-    "@invokta/mcp": "0.8.0",
+    "@invokta/cli": "0.8.1",
+    "@invokta/core": "0.8.1",
+    "@invokta/mcp": "0.8.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@invokta/devtools": "0.8.0",
-    "@invokta/tooling": "0.8.0",
+    "@invokta/devtools": "0.8.1",
+    "@invokta/tooling": "0.8.1",
     "@modelcontextprotocol/sdk": "1.30.0"
   }
 }

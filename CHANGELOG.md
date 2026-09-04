@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-04
+
+### Fixed
+
+- Release verification now runs on Node.js 24 with npm 11, avoiding the npm 10
+  Arborist peer-resolution crash that blocked the `v0.8.0` tag workflow. The
+  published packages continue to support Node.js 22.20.0 and later.
+
 ## [0.8.0] - 2026-09-03
 
 ### Added
@@ -458,7 +466,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/vinilana/invokta/releases/tag/v0.8.1
 [0.8.0]: https://github.com/vinilana/invokta/releases/tag/v0.8.0
 [0.7.0]: https://github.com/vinilana/invokta/releases/tag/v0.7.0
 [0.6.1]: https://github.com/vinilana/invokta/releases/tag/v0.6.1
