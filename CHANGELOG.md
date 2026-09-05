@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- The installer accepts canonical mounted MCP URLs such as `/e/brain/mcp`
+  instead of rejecting them with `REMOTE_INVALID`. Direct remote installation,
+  registry entries, persisted state, and client configuration conversion now
+  preserve the full resource path using one validator. Existing `/mcp` URLs and
+  the HTTPS, literal-loopback HTTP, and credential restrictions remain unchanged
+  (ADR 0040).
+
 ## [0.8.1] - 2026-09-04
 
 ### Fixed

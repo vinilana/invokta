@@ -13,6 +13,40 @@ function expectRemoteInvalid(operation: () => unknown): void {
 }
 
 describe("remote MCP installation source", () => {
+  it.each([
+    "http://127.0.0.1:3100/e/brain/mcp",
+    "http://[::1]:3100/e/brain/mcp",
+    "https://gateway.example.com/e/brain/mcp",
+    `https://gateway.example.com/${"a".repeat(251)}/mcp`,
+  ])("accepts the canonical mounted endpoint %s", (url) => {
+    expect(
+      createRemoteInstallDescriptor({ serverName: "brain", url }).server
+        .transport,
+    ).toMatchObject({ url });
+  });
+  it.each([
+    "/e/brain/mcp/",
+    "/e//brain/mcp",
+    "/e/./brain/mcp",
+    "/e/other/../brain/mcp",
+    "/e/%62rain/mcp",
+    "/e/brain%2fmcp",
+    "/e/brain/MCP",
+    "/e/brain/tools",
+    `/e/${"a".repeat(252)}/mcp`,
+    "/e/bráin/mcp",
+    "/e/brain/mcp?",
+    "/e/brain/mcp#",
+    "/e/brain/mcp\n",
+    "/e\\brain/mcp",
+  ])("rejects a mounted URL alias or unsupported path %s", (path) => {
+    expectRemoteInvalid(() =>
+      createRemoteInstallDescriptor({
+        serverName: "brain",
+        url: `https://gateway.example.com${path}`,
+      }),
+    );
+  });
   it("normalizes an HTTPS descriptor using environment references only", () => {
     const fetchBefore = globalThis.fetch;
     const fetchSpy = vi.fn();

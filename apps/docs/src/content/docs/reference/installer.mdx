@@ -173,9 +173,21 @@ invokta-installer install --http support-engine https://support.example.com/mcp 
 ```
 
 This command performs no network request. The URL must be canonical HTTPS with
-the exact `/mcp` path. Canonical `http://127.0.0.1/mcp` and
-`http://[::1]/mcp` are accepted for local development. User information, query
-strings, fragments, embedded credentials, and other paths are rejected.
+a canonical MCP mount path: `/mcp` or an unreserved ASCII prefix ending in `/mcp`,
+with no empty or dot segments and at most 256 bytes. For example:
+
+```sh
+invokta-installer install --http brain http://127.0.0.1:3100/e/brain/mcp
+```
+
+Literal `127.0.0.1` and `[::1]` HTTP origins are accepted for local development.
+User information, query strings, fragments, embedded credentials, percent encoding,
+and other noncanonical paths are rejected.
+
+Mounted paths require a build containing ADR 0040. The published installer 0.8.1
+still accepts only `/mcp`; from an updated source checkout, build with `yarn build`
+and run `node packages/installer/dist/cli.js install --http brain <url>`.
+The installer registers the URL; the selected client handles OAuth when it connects.
 
 Authentication and header options name environment variables; they never read
 or persist their values. `--header-env` may be repeated. Header names are

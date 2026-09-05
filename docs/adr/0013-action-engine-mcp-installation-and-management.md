@@ -88,9 +88,10 @@ configuration writes.
 `install --http` accepts an explicit server name and canonical Streamable HTTP
 URL plus optional environment-variable references for a bearer token and HTTP
 headers. It performs no request. HTTPS is required except for canonical loopback
-HTTP development URLs. Credentials, query strings, fragments, user information,
-and non-`/mcp` paths are rejected. Only environment variable names are persisted;
-their values are never read into configuration, state, or diagnostics.
+HTTP development URLs. Credentials, query strings, fragments, and user information
+are rejected. ADR 0040 extends the original exact `/mcp` restriction to the
+canonical mounted paths defined by ADR 0039. Only environment variable names are
+persisted; their values are never read into configuration, state, or diagnostics.
 
 ### Selection and authority
 

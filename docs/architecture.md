@@ -340,7 +340,9 @@ reviewed bundled descriptor, an explicitly selected project-local
 URL. It MUST NOT discover remote servers, download or load packages, reflect on
 or execute an engine, start a transport, call a capability, or open a network
 connection. Local manifests and persisted state contain environment variable
-names but no environment values or credentials.
+names but no environment values or credentials. Remote URLs preserve the complete
+canonical MCP mount path from ADRs 0039 and 0040, including through registry,
+client configuration, and managed-state validation.
 
 **AE-INSTALL-02 — Confirmed user scope.** Installation targets only the finite
 catalog of supported default user configurations. All compatible eligible
