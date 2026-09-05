@@ -43,7 +43,9 @@ invokta-installer --version
 ```
 
 Management commands select one eligible managed installation interactively and
-perform at most one target transaction. Unknown, reordered, repeated, or mixed
+perform at most one target transaction. ADR 0041 extends argument-free `remove`
+to multiple selected installations with one confirmation and independent
+transactions. Unknown, reordered, repeated, or mixed
 source options are invalid usage. The new stable diagnostic codes are
 `ENGINE_MANIFEST_INVALID`, `ENGINE_PATH_UNSAFE`, `ENGINE_ENTRYPOINT_MISSING`,
 `REMOTE_INVALID`, and `INSTALLATION_UNAVAILABLE`; existing ownership,

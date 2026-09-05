@@ -365,7 +365,11 @@ missing runtime when execution would require it. Removal does not require the
 engine runtime: it deletes only a definition whose persisted managed identity
 and ownership evidence still match, then removes its ownership record. The
 engine-scoped overload applies that rule independently to every state record
-selected by one validated manifest ID.
+selected by one validated manifest ID. Under ADR 0041, argument-free `remove`
+lets the operator select several eligible engine/client pairs, starting with no
+selection. It reviews the exact deduplicated set before one confirmation and
+removes each entry in inventory order using its own persisted descriptor.
+Failures are reported per entry without stopping independent removals.
 
 **AE-INSTALL-04 — Per-target transaction.** Each client mutation acquires the
 shared state lock before its configuration lock, revalidates after locking,

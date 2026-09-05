@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Interactive `remove` supports selecting multiple managed installations, with
+  Space for individual choices and A to select all eligible entries. One
+  confirmation reviews the selected engine/client pairs; removals preserve
+  unselected entries and report independent successes and failures (ADR 0041).
+
 ### Fixed
 
 - The self-hosted OAuth example's lockfile includes `@invokta/tooling` and the

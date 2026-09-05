@@ -216,12 +216,30 @@ that already committed. Repeating the same installation is idempotent.
 `status` is read-only and reports installer-managed entries as enabled,
 disabled, outdated, drifted, unavailable, or missing their runtime requirement.
 
-`enable`, `disable`, and `remove` each present only eligible managed entries,
-select one interactively, and require confirmation. Disable uses the client's
-native toggle when available and otherwise detaches the server definition while
-retaining its descriptor in installer state. Enable restores the exact managed
-definition. Remove deletes the owned server entry and state record; it never
-deletes the surrounding client configuration.
+`enable` and `disable` present only eligible managed entries, select one
+interactively, and require confirmation. Disable uses the client's native toggle
+when available and otherwise detaches the server definition while retaining its
+descriptor in installer state. Enable restores the exact managed definition.
+
+### Remove several installations
+
+`remove` lets you select one or more managed installations, including a remote
+engine such as `brain` across several clients:
+
+```sh
+invokta-installer remove
+```
+
+No entries are preselected. Use the arrow keys to move, **Space** to select an
+entry, or **A** to select all eligible entries. Press **Enter** to review the
+selected engine/client pairs, then confirm once. Removal deletes only those
+owned server entries and state records, preserving other installations and the
+surrounding client configuration. It reports each result and continues if an
+individual removal fails; successful removals remain committed.
+
+Multiple selection requires a build containing ADR 0041. The published installer
+0.8.2 still selects one entry at a time. From an updated Invokta source checkout,
+run `yarn build`, then `node packages/installer/dist/cli.js remove`.
 
 An entry changed outside the installer is drift and is never overwritten or
 removed automatically. A different server using the same name is a conflict.

@@ -38,9 +38,13 @@ function cancel(prompter: InteractivePrompter): 130 {
   return 130;
 }
 
+function installationLabel(view: ManagedInstallationView): string {
+  return `${view.installation.serverName} · ${view.displayName}`;
+}
+
 function statusLine(view: ManagedInstallationView, runtime?: string): string {
   const status = runtime === undefined ? view.status : "missing-runtime";
-  return `${view.installation.serverName} · ${view.displayName}: ${status}${runtime === undefined ? "" : ` (${runtime})`}`;
+  return `${installationLabel(view)}: ${status}${runtime === undefined ? "" : ` (${runtime})`}`;
 }
 
 async function showStatus(
@@ -74,6 +78,81 @@ async function showStatus(
   return 0;
 }
 
+async function removeSelectedInstallations(
+  options: RunManagementSessionOptions,
+  candidates: readonly ManagedInstallationView[],
+): Promise<InstallerExitCode> {
+  const selection = await options.prompter.multiselect({
+    message: "Select installations to remove (Space: select, A: select all).",
+    options: candidates.map((view) => ({
+      value: view.key,
+      label: installationLabel(view),
+      hint: view.status,
+    })),
+    initialValues: [],
+  });
+  if (selection.kind === "cancelled") return cancel(options.prompter);
+  const selectedKeys = new Set(selection.value);
+  if (selectedKeys.size === 0) {
+    options.prompter.outro("No changes were made.");
+    return 0;
+  }
+  const candidateKeys = new Set(candidates.map((view) => view.key));
+  if ([...selectedKeys].some((key) => !candidateKeys.has(key))) {
+    throw new InstallerError("INSTALLATION_UNAVAILABLE");
+  }
+  const selected = candidates
+    .filter((view) => selectedKeys.has(view.key))
+    .map((view) => {
+      if (view.descriptor === undefined) {
+        throw new InstallerError("INSTALLATION_UNAVAILABLE");
+      }
+      return { view, descriptor: view.descriptor };
+    });
+  options.prompter.note(
+    selected.map(({ view }) => installationLabel(view)).join("\n"),
+    "Selected installations",
+  );
+  const confirmation = await options.prompter.confirm(
+    `Remove ${String(selected.length)} selected MCP installation${selected.length === 1 ? "" : "s"}?`,
+  );
+  if (confirmation.kind === "cancelled") return cancel(options.prompter);
+  if (!confirmation.value) {
+    options.prompter.outro("No changes were made.");
+    return 0;
+  }
+
+  let failed = false;
+  for (const { view, descriptor } of selected) {
+    const [result] = await mutateDescriptorAcrossTargets({
+      action: "remove",
+      dependencies: options.dependencies,
+      descriptor,
+      snapshot: options.snapshot,
+      targetIds: [view.installation.targetId],
+    });
+    if (result === undefined || result.outcome === "failed") {
+      failed = true;
+      const code = result?.code ?? "INSTALLATION_UNAVAILABLE";
+      options.prompter.log(
+        "error",
+        `${installationLabel(view)}: ${code}: ${installerErrorMessages[code]}`,
+      );
+    } else {
+      options.prompter.log(
+        "success",
+        `${installationLabel(view)}: ${result.outcome === "unchanged" ? "already absent" : "removed"}.`,
+      );
+    }
+  }
+  options.prompter.outro(
+    failed
+      ? "Removal completed with errors."
+      : "Selected installations removed. Restart or reload the affected MCP clients.",
+  );
+  return failed ? 1 : 0;
+}
+
 export async function runManagementSession(
   options: RunManagementSessionOptions,
 ): Promise<InstallerExitCode> {
@@ -95,6 +174,9 @@ export async function runManagementSession(
   if (candidates.length === 0) {
     throw new InstallerError("INSTALLATION_UNAVAILABLE");
   }
+  if (options.action === "remove") {
+    return removeSelectedInstallations(options, candidates);
+  }
   const choices = new Map(
     candidates.map((view, index) => [String(index), view] as const),
   );
@@ -102,7 +184,7 @@ export async function runManagementSession(
     message: `Select an installation to ${options.action}.`,
     options: candidates.map((view, index) => ({
       value: String(index),
-      label: `${view.installation.serverName} · ${view.displayName}`,
+      label: installationLabel(view),
       hint: view.status,
     })),
   });
@@ -123,7 +205,7 @@ export async function runManagementSession(
     }
   }
   const confirmation = await options.prompter.confirm(
-    `${options.action === "enable" ? "Enable" : options.action === "disable" ? "Disable" : "Remove"} ${selected.installation.serverName} in ${selected.displayName}?`,
+    `${options.action === "enable" ? "Enable" : "Disable"} ${selected.installation.serverName} in ${selected.displayName}?`,
   );
   if (confirmation.kind === "cancelled") return cancel(options.prompter);
   if (!confirmation.value) {
