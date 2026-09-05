@@ -184,9 +184,13 @@ Literal `127.0.0.1` and `[::1]` HTTP origins are accepted for local development.
 User information, query strings, fragments, embedded credentials, percent encoding,
 and other noncanonical paths are rejected.
 
-Mounted paths require a build containing ADR 0040. The published installer 0.8.1
-still accepts only `/mcp`; from an updated source checkout, build with `yarn build`
-and run `node packages/installer/dist/cli.js install --http brain <url>`.
+Mounted paths require installer 0.8.2 or later (ADR 0040). Version 0.8.1
+and earlier accept only `/mcp`. To select the compatible release explicitly:
+
+```sh
+npx @invokta/installer@0.8.2 install --http brain http://127.0.0.1:3100/e/brain/mcp
+```
+
 The installer registers the URL; the selected client handles OAuth when it connects.
 
 Authentication and header options name environment variables; they never read

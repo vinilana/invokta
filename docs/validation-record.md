@@ -53,8 +53,8 @@ consumer can use the protocol surface without coupling to engine code.
 
 - `yarn run check` on Node.js 24.20.0 and Yarn 1.22.22 passes typecheck, lint,
   formatting, 3,178 tests with one intentional skip, V8 coverage, and the full
-  TypeScript build. Coverage is 78.92% statements, 74.29% branches, 83.45%
-  functions, and 80.63% lines.
+  TypeScript build, followed by 19 example gates. Coverage is 78.92% statements,
+  74.30% branches, 83.45% functions, and 80.63% lines.
 - `yarn release:verify` passes metadata alignment and clean tarball inspection
   for all 10 public packages, isolated ESM imports, all four packed engine
   profiles, authenticated MCP HTTP exchange, DevTools doctor checks, and the
@@ -150,5 +150,18 @@ from the rebuilt source checkout against that URL. It reached client selection;
 the smoke test cancelled before confirmation or configuration writes. The live
 endpoint returned the expected OAuth 401 challenge and its path-specific RFC 9728
 metadata. No capability was invoked and no OAuth credentials were acquired.
-This verifies the source build; npm release 0.8.1 is unchanged and still rejects
-mounted endpoints.
+This initial smoke verified the source build. Installer 0.8.1 and earlier reject
+mounted endpoints; the compatible release is 0.8.2.
+
+## Release 0.8.2 preparation
+
+The release synchronizes all 10 public package versions, exact internal pins,
+example manifests, release assertions, and MCP client identification. The
+self-hosted OAuth example's committed lockfile uses integrity values derived
+from the matching locally packed artifacts. The changelog and installer
+reference identify 0.8.2 as the mounted-URL fix from ADR 0040.
+
+The full repository and documentation gates and both audits above were rerun
+for this release. These results establish local preparation evidence;
+publication requires the annotated release tag's successful GitHub Actions
+workflow and its protected npm environment approval.
