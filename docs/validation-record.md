@@ -54,7 +54,7 @@ consumer can use the protocol surface without coupling to engine code.
 - `yarn run check` on Node.js 24.20.0 and Yarn 1.22.22 passes typecheck, lint,
   formatting, 3,178 tests with one intentional skip, V8 coverage, and the full
   TypeScript build, followed by 19 example gates. Coverage is 78.92% statements,
-  74.30% branches, 83.45% functions, and 80.63% lines.
+  74.29% branches, 83.45% functions, and 80.63% lines.
 - `yarn release:verify` passes metadata alignment and clean tarball inspection
   for all 10 public packages, isolated ESM imports, all four packed engine
   profiles, authenticated MCP HTTP exchange, DevTools doctor checks, and the
@@ -165,3 +165,9 @@ The full repository and documentation gates and both audits above were rerun
 for this release. These results establish local preparation evidence;
 publication requires the annotated release tag's successful GitHub Actions
 workflow and its protected npm environment approval.
+
+The first release PR CI run exposed a 25 ms deadline in the existing session
+lock recovery test. The successful recovery path now uses the store's normal
+lock budget; the live-owner rejection still exercises the short deadline.
+The CI timeout is the RED evidence. All 14 session example tests and the full
+repository gate passed after this test-only correction, with the totals above.
