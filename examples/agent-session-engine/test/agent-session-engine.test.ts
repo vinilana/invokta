@@ -357,7 +357,12 @@ describe("the agent session engine example", () => {
       { mode: 0o600 },
     );
     await utimes(lockPath, oldTime, oldTime);
-    await expect(store.create(session)).resolves.toBe("created");
+    // Successful recovery includes filesystem syncs; use the normal lock budget.
+    const recoveryStore = createFileAgentSessionStore({
+      dataDirectory,
+      staleLockMs: 1,
+    });
+    await expect(recoveryStore.create(session)).resolves.toBe("created");
   });
 
   it("persists every schema-valid maximum-length session identifier", async () => {
