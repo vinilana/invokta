@@ -1,3 +1,4 @@
+import { validateRemoteMcpUrl } from "./remote-mcp-url.js";
 import { InstallerError } from "./installer-error.js";
 import type { CapabilityInstallDescriptor } from "./registry.js";
 
@@ -29,53 +30,9 @@ function invalid(cause?: unknown): never {
 }
 
 function canonicalUrl(value: string): string {
-  if (value.includes("\0")) return invalid();
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch (cause) {
-    return invalid(cause);
-  }
-  const schemeSeparator = value.indexOf("://");
-  if (schemeSeparator <= 0) return invalid();
-  const authorityTail = value.slice(schemeSeparator + 3);
-  const authorityEnd = authorityTail.search(/[/?#]/u);
-  const authority = authorityTail.slice(
-    0,
-    authorityEnd === -1 ? undefined : authorityEnd,
-  );
-  const rawTarget =
-    authorityEnd === -1 ? "" : authorityTail.slice(authorityEnd);
-  const queryOrFragment = rawTarget.search(/[?#]/u);
-  const rawPath = rawTarget.slice(
-    0,
-    queryOrFragment === -1 ? undefined : queryOrFragment,
-  );
-  const rawHost = authority.startsWith("[")
-    ? authority.slice(0, authority.indexOf("]") + 1)
-    : authority.split(":", 1)[0];
-  if (
-    (url.protocol !== "https:" && url.protocol !== "http:") ||
-    authority === "" ||
-    authority.includes("@") ||
-    url.hostname === "" ||
-    url.username !== "" ||
-    url.password !== "" ||
-    rawPath !== "/mcp" ||
-    url.pathname !== "/mcp" ||
-    value.includes("?") ||
-    value.includes("#")
-  ) {
-    return invalid();
-  }
-  if (
-    url.protocol === "http:" &&
-    rawHost !== "127.0.0.1" &&
-    rawHost !== "[::1]"
-  ) {
-    return invalid();
-  }
-  return url.href;
+  const result = validateRemoteMcpUrl(value);
+  if (result.url === undefined) return invalid();
+  return result.url;
 }
 
 function headersFromEnvironment(

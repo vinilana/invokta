@@ -1,3 +1,4 @@
+import { validateRemoteMcpUrl } from "./remote-mcp-url.js";
 import type { InstallerFileSystem } from "./file-system.js";
 import { InstallerError } from "./installer-error.js";
 
@@ -413,58 +414,8 @@ function validateUrl(
   path: JsonPath,
   issues: RegistryIssue[],
 ): void {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    addIssue(issues, path, "INVALID_URL");
-    return;
-  }
-  const schemeSeparator = value.indexOf("://");
-  if (schemeSeparator <= 0) {
-    addIssue(issues, path, "INVALID_URL");
-    return;
-  }
-  const authorityStart = schemeSeparator + 3;
-  const authorityTail = value.slice(authorityStart);
-  const authorityEnd = authorityTail.search(/[/?#]/u);
-  const authority = authorityTail.slice(
-    0,
-    authorityEnd === -1 ? undefined : authorityEnd,
-  );
-  const rawTarget =
-    authorityEnd === -1 ? "" : authorityTail.slice(authorityEnd);
-  const queryOrFragment = rawTarget.search(/[?#]/u);
-  const rawPath = rawTarget.slice(
-    0,
-    queryOrFragment === -1 ? undefined : queryOrFragment,
-  );
-  const rawHost = authority.startsWith("[")
-    ? authority.slice(0, authority.indexOf("]") + 1)
-    : authority.split(":", 1)[0];
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    addIssue(issues, path, "INVALID_URL");
-  }
-  if (authority.includes("@") || url.username !== "" || url.password !== "") {
-    addIssue(issues, path, "CREDENTIAL_URL");
-  }
-  if (
-    authority === "" ||
-    url.hostname === "" ||
-    rawPath !== "/mcp" ||
-    url.pathname !== "/mcp" ||
-    value.includes("?") ||
-    value.includes("#")
-  ) {
-    addIssue(issues, path, "INVALID_URL");
-  }
-  if (
-    url.protocol === "http:" &&
-    rawHost !== "127.0.0.1" &&
-    rawHost !== "[::1]"
-  ) {
-    addIssue(issues, path, "INSECURE_URL");
-  }
+  for (const code of validateRemoteMcpUrl(value).issues)
+    addIssue(issues, path, code);
 }
 
 function validateAuthentication(

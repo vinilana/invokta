@@ -101,6 +101,16 @@ function expectIssue(
 }
 
 describe("local capability registry", () => {
+  it("accepts mounted endpoints without changing their resource identity", () => {
+    const entry = httpEntry();
+    entry.server.transport.url = "http://127.0.0.1:3100/e/brain/mcp";
+    const result = validate(document([entry])).result;
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected a valid mounted endpoint.");
+    expect(
+      result.registry.entries[0]?.descriptor.server.transport,
+    ).toMatchObject({ url: entry.server.transport.url });
+  });
   it("defines exactly the eleven compatibility targets", () => {
     expect(configurationTargetIds).toEqual([
       "antigravity",

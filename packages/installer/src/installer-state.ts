@@ -1,3 +1,4 @@
+import { validateRemoteMcpUrl } from "./remote-mcp-url.js";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -305,51 +306,7 @@ function validateStringArray(
 }
 
 function validateUrl(value: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-  if (parsed.username !== "" || parsed.password !== "") return false;
-  const schemeSeparator = value.indexOf("://");
-  if (schemeSeparator <= 0) return false;
-  const authorityTail = value.slice(schemeSeparator + 3);
-  const authorityEnd = authorityTail.search(/[/?#]/u);
-  const authority = authorityTail.slice(
-    0,
-    authorityEnd === -1 ? undefined : authorityEnd,
-  );
-  const rawTarget =
-    authorityEnd === -1 ? "" : authorityTail.slice(authorityEnd);
-  const queryOrFragment = rawTarget.search(/[?#]/u);
-  const rawPath = rawTarget.slice(
-    0,
-    queryOrFragment === -1 ? undefined : queryOrFragment,
-  );
-  const rawHost = authority.startsWith("[")
-    ? authority.slice(0, authority.indexOf("]") + 1)
-    : authority.split(":", 1)[0];
-  if (
-    authority === "" ||
-    authority.includes("@") ||
-    parsed.hostname === "" ||
-    rawPath !== "/mcp" ||
-    parsed.pathname !== "/mcp" ||
-    value.includes("?") ||
-    value.includes("#")
-  ) {
-    return false;
-  }
-  if (
-    parsed.protocol === "http:" &&
-    rawHost !== "127.0.0.1" &&
-    rawHost !== "[::1]"
-  ) {
-    return false;
-  }
-  return true;
+  return validateRemoteMcpUrl(value).url !== undefined;
 }
 
 function validateAuthentication(

@@ -70,6 +70,59 @@ function credentialFreeHttpDescriptor(): CapabilityInstallDescriptor {
   };
 }
 
+describe("mounted MCP URLs", () => {
+  it.each([
+    "codex",
+    "hermes",
+    "openclaw",
+    "cursor",
+    "claude-code",
+    "vscode",
+  ] as const)(
+    "round-trips a mounted endpoint in %s configuration",
+    (targetId) => {
+      const adapter = configurationTargetAdapters[targetId];
+      const base = credentialFreeHttpDescriptor();
+      const descriptor: CapabilityInstallDescriptor = {
+        ...base,
+        server: {
+          ...base.server,
+          transport: {
+            type: "streamable-http",
+            url: "http://127.0.0.1:3100/e/brain/mcp",
+            authentication: { type: "none" },
+            headersFromEnv: {},
+          },
+        },
+      };
+      const definition = adapter.descriptorToDefinition(descriptor);
+      expect(
+        adapter.definitionToSuspendedDescriptor(
+          descriptor.server.name,
+          definition,
+        ),
+      ).toEqual(descriptor.server);
+      const patch = adapter.constructPatch({
+        action: "install",
+        definition,
+        inspection: adapter.inspect({
+          source: undefined,
+          serverName: descriptor.server.name,
+        }),
+      });
+      expect(patch.kind).toBe("changed");
+      if (patch.kind !== "changed")
+        throw new Error("Expected a changed patch.");
+      expect(
+        adapter.inspect({
+          source: patch.postImage,
+          serverName: descriptor.server.name,
+        }).currentServer,
+      ).toEqual({ kind: "present", definition });
+    },
+  );
+});
+
 function install(
   targetId: "codex" | "hermes" | "openclaw",
   descriptor: CapabilityInstallDescriptor,

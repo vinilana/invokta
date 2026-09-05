@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-09-04
+- Last reviewed: 2026-09-05
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
@@ -23,7 +23,8 @@
   accepted in ADR 0035; engine-owned outbound connectors accepted in ADR 0036;
   typed connector definitions accepted in ADR 0037; guided OpenAPI
   capability import accepted in ADR 0038; and the configurable MCP HTTP
-  mount path accepted in ADR 0039.
+  mount path accepted in ADR 0039; installer support for those mounted URLs
+  accepted in ADR 0040.
 - Architectural conventions: ADR 0036 defines engine-owned outbound connectors;
   ADR 0037 adds their optional typed core authoring definition without changing
   capability contracts, the error-code taxonomy, or the execution path.
@@ -50,10 +51,10 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` on Node.js 24.20.0 and npm 11.19.0 passes typecheck, lint,
-  formatting, 3,145 tests with one intentional skip, V8 coverage, and the full
-  TypeScript build. Coverage is 78.95% statements, 74.34% branches, 83.45%
-  functions, and 80.67% lines.
+- `yarn run check` on Node.js 24.20.0 and Yarn 1.22.22 passes typecheck, lint,
+  formatting, 3,178 tests with one intentional skip, V8 coverage, and the full
+  TypeScript build. Coverage is 78.92% statements, 74.29% branches, 83.45%
+  functions, and 80.63% lines.
 - `yarn release:verify` passes metadata alignment and clean tarball inspection
   for all 10 public packages, isolated ESM imports, all four packed engine
   profiles, authenticated MCP HTTP exchange, DevTools doctor checks, and the
@@ -135,3 +136,19 @@ The examples validate framework reuse; they do not claim provider quality,
 production identity assurance, evaluation coverage, cost control, incident
 readiness, privacy compliance, or safety for a particular domain. Those claims
 require evidence from the engine and its deployment environment.
+
+## Mounted installer URLs (ADR 0040)
+
+Issue #75 was reproduced with `install --http brain` and a Gateway resource at
+`http://127.0.0.1:3100/e/brain/mcp`. Test-first validation found seven failures in
+remote-source/registry/state acceptance and six in target inverse conversion.
+After the shared URL validator change, all 698 installer tests passed, followed
+by the full repository gate and the documentation application's validation.
+
+The exact `npx @invokta/installer install --http brain` command was also exercised
+from the rebuilt source checkout against that URL. It reached client selection;
+the smoke test cancelled before confirmation or configuration writes. The live
+endpoint returned the expected OAuth 401 challenge and its path-specific RFC 9728
+metadata. No capability was invoked and no OAuth credentials were acquired.
+This verifies the source build; npm release 0.8.1 is unchanged and still rejects
+mounted endpoints.

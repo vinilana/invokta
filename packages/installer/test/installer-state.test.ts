@@ -539,6 +539,14 @@ describe("installer state validation", () => {
 
   it.each([
     ["https://example.com/mcp", true],
+    ["http://127.0.0.1:3100/e/brain/mcp", true],
+    ["https://gateway.example.com/e/brain/mcp", true],
+    [`https://gateway.example.com/${"a".repeat(251)}/mcp`, true],
+    [`https://gateway.example.com/${"a".repeat(252)}/mcp`, false],
+    ["https://gateway.example.com/e//brain/mcp", false],
+    ["https://gateway.example.com/e/./brain/mcp", false],
+    ["https://gateway.example.com/e/%62rain/mcp", false],
+    ["https://gateway.example.com/e/brain/mcp/", false],
     ["http://127.0.0.1/mcp", true],
     ["http://[::1]/mcp", true],
     ["https:///mcp", false],
