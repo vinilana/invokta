@@ -56,17 +56,15 @@ consumer can use the protocol surface without coupling to engine code.
   formatting, 3,190 tests with one intentional skip, V8 coverage, and the full
   TypeScript build, followed by 19 example gates. Coverage is 79% statements,
   74.4% branches, 83.52% functions, and 80.71% lines.
-- `yarn release:verify` passed during 0.8.2 preparation: metadata alignment and
+- `yarn release:verify` passes for 0.9.0: metadata alignment and
   clean tarball inspection for all 10 public packages, isolated ESM imports,
   all four packed engine profiles, authenticated MCP HTTP exchange, DevTools
   doctor checks, and the
   atomic and capability-library creator smoke tests.
 - `yarn validate` in `apps/docs` passes 15 route and link contract tests, zero
   Astro diagnostics, and the 49-page production site build.
-- The 0.8.2 preparation audits reported zero vulnerabilities across 307 audited
-  root packages and 537 documentation packages. These audits and packed release
-  verification were not rerun for ADR 0041, which changes no dependencies or
-  release metadata.
+- The 0.9.0 preparation audits report zero vulnerabilities across 307 audited
+  root packages and 537 documentation packages.
 
 ## Boundaries exercised
 
@@ -212,6 +210,34 @@ pairs, and the single confirmation defaulted to No. Refusing returned exit
 status 0. SHA-256 comparisons proved all nine involved configuration and state
 files byte-identical afterward; no live installation was removed.
 
-This evidence covers the source build. Published installer 0.8.2 still removes
-one interactively selected installation per command; this feature does not
-change release versions or publish packages.
+This evidence initially covered the source build: published installer 0.8.2
+removes one interactively selected installation per command. The feature slice
+did not change release versions or publish packages; release 0.9.0 carries the
+multiple-selection behavior.
+
+## Release 0.9.0 preparation
+
+The release follows the repository's minor-version policy for added
+functionality. It synchronizes all 10 public versions, exact internal package
+and example pins, release assertions, and MCP client identification. The
+changelog and installer reference identify 0.9.0 as the multiple-removal
+release from ADR 0041. This preparation is metadata-only and adds no executable
+behavior, so it uses the documentation/tooling exception to a new RED test; the
+feature's RED/GREEN evidence remains recorded above.
+
+The full repository gate passes with 3,190 tests and one intentional skip, the
+coverage totals above, and 19 example gates. The documentation gate passes all
+15 tests, zero Astro diagnostics, and 49 built pages. Both dependency audits
+were rerun with the counts above. A clean throwaway checkout produced all 10
+release tarballs; the self-hosted OAuth example's seven locked Invokta packages
+use those artifacts' SHA-512 integrity values, derived before a workspace
+installation can alter generated command file modes. No dependency versions
+outside the Invokta package set changed.
+
+`yarn release:pack` passes all 10 package dry-runs. `yarn release:verify` passes
+from the staged release tree, including clean tarballs, isolated ESM imports,
+all four generated engine profiles, authenticated MCP HTTP, DevTools doctor,
+and atomic and capability-library consumers. Publication remains subject to
+the release PR CI, the annotated tag's Verify job, and the protected npm
+environment. Registry integrity and a clean example `npm ci` must be checked
+again after publication.

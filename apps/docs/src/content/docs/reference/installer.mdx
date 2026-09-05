@@ -237,9 +237,12 @@ owned server entries and state records, preserving other installations and the
 surrounding client configuration. It reports each result and continues if an
 individual removal fails; successful removals remain committed.
 
-Multiple selection requires a build containing ADR 0041. The published installer
-0.8.2 still selects one entry at a time. From an updated Invokta source checkout,
-run `yarn build`, then `node packages/installer/dist/cli.js remove`.
+Multiple selection requires installer 0.9.0 or later (ADR 0041). Version 0.8.2
+and earlier select one entry at a time. To use the release with multiple removal:
+
+```sh
+npx @invokta/installer@0.9.0 remove
+```
 
 An entry changed outside the installer is drift and is never overwritten or
 removed automatically. A different server using the same name is a conflict.

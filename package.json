@@ -1,6 +1,6 @@
 {
   "name": "invokta",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "private": true,
   "description": "A TypeScript framework for building reusable Action Engines.",
   "author": "Vini Lana <vini@aicoders.academy>",
