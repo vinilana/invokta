@@ -24,7 +24,8 @@
   typed connector definitions accepted in ADR 0037; guided OpenAPI
   capability import accepted in ADR 0038; and the configurable MCP HTTP
   mount path accepted in ADR 0039; installer support for those mounted URLs
-  accepted in ADR 0040.
+  accepted in ADR 0040; multiple managed installation removal accepted in
+  ADR 0041.
 - Architectural conventions: ADR 0036 defines engine-owned outbound connectors;
   ADR 0037 adds their optional typed core authoring definition without changing
   capability contracts, the error-code taxonomy, or the execution path.
@@ -52,17 +53,20 @@ consumer can use the protocol surface without coupling to engine code.
 ## Current delivery gates
 
 - `yarn run check` on Node.js 24.20.0 and Yarn 1.22.22 passes typecheck, lint,
-  formatting, 3,178 tests with one intentional skip, V8 coverage, and the full
-  TypeScript build, followed by 19 example gates. Coverage is 78.92% statements,
-  74.29% branches, 83.45% functions, and 80.63% lines.
-- `yarn release:verify` passes metadata alignment and clean tarball inspection
-  for all 10 public packages, isolated ESM imports, all four packed engine
-  profiles, authenticated MCP HTTP exchange, DevTools doctor checks, and the
+  formatting, 3,190 tests with one intentional skip, V8 coverage, and the full
+  TypeScript build, followed by 19 example gates. Coverage is 79% statements,
+  74.4% branches, 83.52% functions, and 80.71% lines.
+- `yarn release:verify` passed during 0.8.2 preparation: metadata alignment and
+  clean tarball inspection for all 10 public packages, isolated ESM imports,
+  all four packed engine profiles, authenticated MCP HTTP exchange, DevTools
+  doctor checks, and the
   atomic and capability-library creator smoke tests.
 - `yarn validate` in `apps/docs` passes 15 route and link contract tests, zero
   Astro diagnostics, and the 49-page production site build.
-- `yarn audit` reports zero vulnerabilities across 307 audited root packages;
-  the docs application audit reports zero vulnerabilities across 537 packages.
+- The 0.8.2 preparation audits reported zero vulnerabilities across 307 audited
+  root packages and 537 documentation packages. These audits and packed release
+  verification were not rerun for ADR 0041, which changes no dependencies or
+  release metadata.
 
 ## Boundaries exercised
 
@@ -161,7 +165,7 @@ self-hosted OAuth example's committed lockfile uses integrity values derived
 from the matching locally packed artifacts. The changelog and installer
 reference identify 0.8.2 as the mounted-URL fix from ADR 0040.
 
-The full repository and documentation gates and both audits above were rerun
+The full repository and documentation gates and both audits were rerun
 for this release. These results establish local preparation evidence;
 publication requires the annotated release tag's successful GitHub Actions
 workflow and its protected npm environment approval.
@@ -170,7 +174,8 @@ The first release PR CI run exposed a 25 ms deadline in the existing session
 lock recovery test. The successful recovery path now uses the store's normal
 lock budget; the live-owner rejection still exercises the short deadline.
 The CI timeout is the RED evidence. All 14 session example tests and the full
-repository gate passed after this test-only correction, with the totals above.
+repository gate passed after this test-only correction, with 3,178 passing tests
+and one intentional skip for that release.
 
 ## Release 0.8.2 example lockfile follow-up
 
@@ -183,3 +188,30 @@ An isolated `npm ci` also exposed the missing `@invokta/tooling@0.8.2` entry.
 After synchronizing that entry with the manifest, `npm ci --ignore-scripts
 --no-audit --no-fund` installed all 211 packages successfully. This follow-up
 changes example metadata and release guidance, not the published packages.
+
+## Multiple managed installation removal (ADR 0041)
+
+The first focused regression installed the same mounted HTTP engine in two
+isolated client configurations. Against the previous implementation, removal
+left the Cursor installation and its state record behind after removing only
+Codex. After switching argument-free removal to the shared multiselect prompt,
+that test passed.
+
+All 12 new session tests pass against real temporary configuration and state
+files. They cover one confirmation, empty and cancelled selection, refused and
+cancelled confirmation without writes, unknown-choice rejection, deterministic
+deduplication, several engines in one client, preservation of unselected and
+drifted entries, locked revalidation with partial failures, native and detached
+disabled entries, and distinct persisted descriptors for the same engine in
+different clients. Removal requires no runtime or credential values. The full
+repository and documentation gates passed with the current totals above.
+
+A terminal smoke test of the built CLI showed 16 unselected installations. The
+`A` shortcut selected every eligible entry, Enter displayed all engine/client
+pairs, and the single confirmation defaulted to No. Refusing returned exit
+status 0. SHA-256 comparisons proved all nine involved configuration and state
+files byte-identical afterward; no live installation was removed.
+
+This evidence covers the source build. Published installer 0.8.2 still removes
+one interactively selected installation per command; this feature does not
+change release versions or publish packages.

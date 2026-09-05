@@ -51,7 +51,8 @@ engine import, transport startup, or capability invocation. Existing installer
 path-selection environment variables remain available for locating user
 configuration and state. Removal uses only the persisted descriptor, current
 target contract, safe configuration evidence, and exact ownership fingerprint.
-The argument-free `remove` command retains its single-selection behavior.
+The argument-free `remove` command originally retained its single-selection
+behavior; ADR 0041 adds multiple managed installation selection to that command.
 
 `create-invokta-engine` adds the build-free package script
 `mcp:uninstall = "invokta-installer remove --engine ."` and documents it beside
