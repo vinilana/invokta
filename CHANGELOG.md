@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-05
+
 ### Added
 
 - Interactive `remove` supports selecting multiple managed installations, with
@@ -17,7 +19,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Fixed
 
 - The self-hosted OAuth example's lockfile includes `@invokta/tooling` and the
-  published 0.8.2 tarball integrity values, restoring clean `npm ci` installs.
+  matching release tarball integrity values, restoring clean `npm ci` installs.
 
 ## [0.8.2] - 2026-09-05
 
@@ -489,7 +491,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/vinilana/invokta/releases/tag/v0.9.0
 [0.8.2]: https://github.com/vinilana/invokta/releases/tag/v0.8.2
 [0.8.1]: https://github.com/vinilana/invokta/releases/tag/v0.8.1
 [0.8.0]: https://github.com/vinilana/invokta/releases/tag/v0.8.0
