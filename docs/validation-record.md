@@ -171,3 +171,15 @@ lock recovery test. The successful recovery path now uses the store's normal
 lock budget; the live-owner rejection still exercises the short deadline.
 The CI timeout is the RED evidence. All 14 session example tests and the full
 repository gate passed after this test-only correction, with the totals above.
+
+## Release 0.8.2 example lockfile follow-up
+
+Registry verification found that three local tarballs had executable command
+file modes while CI's tarballs used regular file modes. Every archived file's
+content matched, but the different modes changed the installer, deploy, and
+devtools integrity hashes. The example lockfile now uses the published hashes.
+
+An isolated `npm ci` also exposed the missing `@invokta/tooling@0.8.2` entry.
+After synchronizing that entry with the manifest, `npm ci --ignore-scripts
+--no-audit --no-fund` installed all 211 packages successfully. This follow-up
+changes example metadata and release guidance, not the published packages.

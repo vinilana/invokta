@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- The self-hosted OAuth example's lockfile includes `@invokta/tooling` and the
+  published 0.8.2 tarball integrity values, restoring clean `npm ci` installs.
+
 ## [0.8.2] - 2026-09-05
 
 ### Fixed

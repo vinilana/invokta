@@ -65,6 +65,9 @@ dry-runs. It does not require npm authentication and makes no registry change.
 
 ## Recovering a partial release
 
+When npm accepts a package but reports that it is still being processed, wait
+until its version and `gitHead` are readable before rerunning the workflow.
+
 npm package publication is irreversible and a ten-package release is not an
 atomic registry operation. If a publish job stops after creating a partial
 release, rerun the failed GitHub Actions workflow. The publication script skips
@@ -77,3 +80,15 @@ move `latest` backward, or recover a version that was previously published under
 a different dist-tag. Do not publish or repair a stable release from a local
 workstation; use the protected workflow so the OIDC identity and audit trail are
 preserved.
+
+## Example lockfile integrity
+
+Derive pre-release integrity values from artifacts built in a clean throwaway
+checkout. A workspace installation can mark generated command files executable,
+changing tarball hashes even when their contents match the CI build. Compare
+file modes as well as contents when investigating an integrity mismatch.
+
+After publication, verify every locked Invokta dependency against the registry's
+`dist.integrity` and run `npm ci --ignore-scripts --no-audit --no-fund` in an
+isolated copy of the example's manifest and lockfile. This also detects declared
+dependencies missing from the lockfile.
