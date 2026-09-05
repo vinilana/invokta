@@ -41,7 +41,7 @@
     "@invokta/core": "0.9.0",
     "@invokta/installer": "0.9.0",
     "@invokta/mcp": "0.9.0",
-    "jose": "^6.2.8",
+    "jose": "^6.2.10",
     "oidc-provider": "~9.11.3",
     "pg": "^8.16.3",
     "zod": "4.4.3"
