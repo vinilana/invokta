@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Refresh the installer JSON parser to Momoa 3.3.13 and development tooling to
+  Biome 2.5.12. Authentication examples use jose 6.2.12 and the self-hosted OAuth
+  provider uses oidc-provider 9.12.2 with PostgreSQL types 8.23.1. The workspace
+  and standalone example lockfiles are synchronized with the dependency updates.
+
+### Security
+
+- Pin the standalone OAuth example's `fast-uri` and `qs` dependencies to patched
+  versions 3.1.6 and 6.16.0 through npm overrides. CI now audits that example's
+  independent lockfile in addition to the workspace and documentation locks.
+
 ## [0.9.0] - 2026-09-05
 
 ### Added

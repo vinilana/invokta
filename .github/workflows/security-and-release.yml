@@ -47,6 +47,10 @@ jobs:
       - name: Audit dependencies
         run: yarn audit
 
+      - name: Audit standalone OAuth example dependencies
+        working-directory: examples/auth-self-hosted-oauth-engine
+        run: npm audit --workspaces=false
+
       - name: Install documentation dependencies
         working-directory: apps/docs
         run: yarn install --frozen-lockfile --non-interactive

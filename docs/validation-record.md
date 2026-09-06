@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-09-05
+- Last reviewed: 2026-09-06
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
@@ -63,8 +63,9 @@ consumer can use the protocol surface without coupling to engine code.
   atomic and capability-library creator smoke tests.
 - `yarn validate` in `apps/docs` passes 15 route and link contract tests, zero
   Astro diagnostics, and the 49-page production site build.
-- The 0.9.0 preparation audits report zero vulnerabilities across 307 audited
-  root packages and 537 documentation packages.
+- The 2026-09-06 dependency refresh audits report zero vulnerabilities across
+  305 audited root packages and 537 documentation packages. The standalone OAuth
+  example's independent npm lockfile also passes its own audit.
 
 ## Boundaries exercised
 
@@ -241,3 +242,40 @@ and atomic and capability-library consumers. Publication remains subject to
 the release PR CI, the annotated tag's Verify job, and the protected npm
 environment. Registry integrity and a clean example `npm ci` must be checked
 again after publication.
+
+## Dependency refresh (2026-09-06)
+
+The refresh consolidates Dependabot PRs #64 through #68 from the released
+0.9.0 mainline. Current stable versions were checked against npm metadata and
+upstream releases, replacing superseded PR targets without changing package
+release versions or adding framework contracts.
+
+| Dependency | Updated version | Upstream reference |
+| --- | --- | --- |
+| `@humanwhocodes/momoa` | 3.3.13 | [Release](https://github.com/humanwhocodes/momoa/releases/tag/momoa-js-v3.3.13) |
+| `@biomejs/biome` | 2.5.12 | [Release](https://github.com/biomejs/biome/releases/tag/%40biomejs/biome%402.5.12) |
+| `jose` | 6.2.12 | [Release](https://github.com/panva/jose/releases/tag/v6.2.12) |
+| `oidc-provider` | 9.12.2 | [Release](https://github.com/panva/node-oidc-provider/releases/tag/v9.12.2) |
+| `@types/pg` | 8.23.1 | [Package](https://www.npmjs.com/package/@types/pg/v/8.23.1) |
+
+The installer package-boundary assertion was updated first and failed while
+the manifest still pinned Momoa 3.3.10. After updating the dependency, all 74
+focused parser, manifest, OAuth-provider, and DevTools integration tests passed.
+The full repository gate passed after deduplicating the MCP SDK's compatible
+`jose` range onto 6.2.12: 3,190 tests, one intentional skip, unchanged coverage,
+and 19 example gates. No application source changes were required.
+
+Review also found six Dependabot alerts affecting two transitive packages in
+the standalone OAuth example. The exact new CI command,
+`npm audit --workspaces=false`, first exited 1 for vulnerable `fast-uri` and
+`qs`. The example now declares npm overrides for 3.1.6 and 6.16.0, matching the
+workspace's existing security resolutions. Its regenerated lockfile passes
+that audit with zero vulnerabilities and installs 211 packages with isolated
+`npm ci --ignore-scripts --no-audit --no-fund`. CI audits this lockfile explicitly
+because the root Yarn audit does not cover it. Published Invokta 0.9.0 artifact
+integrity values remain unchanged in the example lockfile.
+
+The staged tree also passed `yarn release:verify`: all ten public package
+tarballs, isolated ESM imports, executable smoke checks, and generated
+consumers passed. After adding the audit step, lint and formatting checks
+passed, and all nine release-script integration tests remained green.
