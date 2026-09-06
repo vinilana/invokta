@@ -114,9 +114,12 @@ yarn install --frozen-lockfile --non-interactive
 yarn validate
 ```
 
-Pull-request CI also runs a Windows-specific creator test, dependency audit,
-release-package dry run, and package-content verification. Those are additional
-CI and release gates, not substitutes for the focused and full local checks.
+Pull-request CI also runs a Windows-specific creator test, dependency audits,
+release-package dry run, and package-content verification. The standalone OAuth
+example has an independent npm lockfile; audit it from
+`examples/auth-self-hosted-oauth-engine` with `npm audit --workspaces=false`.
+Those are additional CI and release gates, not substitutes for the focused and
+full local checks.
 
 ## Work with a team of agents
 
