@@ -18,7 +18,7 @@
     "@astrojs/starlight": "0.41.5",
     "@fontsource/inter-tight": "5.3.0",
     "@fontsource/jetbrains-mono": "5.3.0",
-    "astro": "7.1.6"
+    "astro": "7.2.8"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
