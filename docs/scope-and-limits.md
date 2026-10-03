@@ -2,13 +2,14 @@
 
 ## Public packages
 
-**AE-SCOPE-01 — Ten packages with isolated roles.** Invokta publishes:
+**AE-SCOPE-01 — Eleven packages with isolated roles.** Invokta publishes:
 
 | Package | Responsibility |
 | --- | --- |
 | `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
+| `@invokta/opentelemetry` | OpenTelemetry spans and metrics derived from the engine `onEvent` hook, with no SDK or vendor dependency |
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |

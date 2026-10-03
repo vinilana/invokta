@@ -1,0 +1,50 @@
+{
+  "name": "@invokta/opentelemetry",
+  "version": "0.9.0",
+  "description": "OpenTelemetry traces and metrics for Invokta Action Engine invocations.",
+  "author": "Vini Lana <vini@aicoders.academy>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vinilana/invokta.git",
+    "directory": "packages/opentelemetry"
+  },
+  "homepage": "https://docs.invokta.dev/reference/opentelemetry/",
+  "bugs": {
+    "url": "https://github.com/vinilana/invokta/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "prepack": "npm run --silent build"
+  },
+  "dependencies": {
+    "@invokta/core": "0.9.0"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0"
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/context-async-hooks": "2.11.0",
+    "@opentelemetry/sdk-metrics": "2.11.0",
+    "@opentelemetry/sdk-trace-base": "2.11.0"
+  }
+}

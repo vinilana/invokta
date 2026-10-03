@@ -1,6 +1,6 @@
 # Releasing Invokta
 
-Invokta publishes its ten public packages from one protected GitHub Actions
+Invokta publishes its eleven public packages from one protected GitHub Actions
 workflow. Stable versions publish directly to the `latest` dist-tag. The
 versioned scripts under `scripts/release` contain the release rules; the
 workflow supplies the trusted environment and orchestration.

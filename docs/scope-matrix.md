@@ -20,7 +20,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Errors | Seven `EngineError` codes and safe adapter mappings | Keep public messages and details safe | Stack or cause disclosure and automatic recovery policy |
 | Cancellation | Propagate signals and optional capability timeout | Make downstream I/O observe signals | Scheduler or durable execution |
 | Retry, fallback, cache, routing | No automatic behavior | Implement domain-specific policies behind a capability or port | Framework-wide retry, model router, or semantic cache |
-| Observability | Minimal payload-free `onEvent` hook | Connect logging, metrics, tracing, and domain measurements | Observability platform or economics envelope |
+| Observability | Minimal payload-free `onEvent` hook and an OpenTelemetry adapter for spans and metrics | Configure the OpenTelemetry SDK and exporter, and add logging and domain measurements | Observability platform, exporter or vendor integration, or economics envelope |
 | AI implementation | Keep implementation replaceable | Own prompts, models, retrieval, tools, evidence, and risk controls | Provider SDKs, prompt registry, RAG abstraction, or memory |
 | Quality | Validate contracts and provide testable direct execution | Own fixtures, evals, regression suites, and human review | Eval runner, automated judge, or canary platform |
 | Capability reuse | Eager explicit composition with deterministic collision detection | Choose imports, effective IDs, and trusted dependencies | Runtime plugin marketplace or remote discovery |

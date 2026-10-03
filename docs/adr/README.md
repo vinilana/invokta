@@ -48,3 +48,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0039](0039-configurable-mcp-http-mount-path.md) | Configurable MCP HTTP mount path | Accepted | 2026-09-02 |
 | [0040](0040-installer-mounted-mcp-urls.md) | Installer support for mounted MCP URLs | Accepted | 2026-09-05 |
 | [0041](0041-multiple-managed-installation-removal.md) | Multiple managed installation removal | Accepted | 2026-09-05 |
+| [0042](0042-opentelemetry-event-adapter.md) | OpenTelemetry adapter over the engine event hook | Accepted | 2026-10-03 |

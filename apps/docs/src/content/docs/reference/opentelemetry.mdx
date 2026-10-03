@@ -1,0 +1,136 @@
+---
+title: '@invokta/opentelemetry'
+description: Send Invokta invocations to any OpenTelemetry-compatible observability platform as spans and metrics.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/opentelemetry` turns the engine's payload-free `onEvent` events into
+OpenTelemetry spans and metrics. It is an event consumer, not another execution
+path: the core, CLI, and MCP packages are unchanged, and capabilities still run
+only through `engine.invoke`.
+
+The package depends on the OpenTelemetry API only. You register the SDK and
+exporter in your own process, so the same engine can report to an OpenTelemetry
+Collector, Datadog, Grafana, Honeycomb, New Relic, Sentry, or any other platform
+that ingests OTLP.
+
+## Install
+
+```sh
+yarn add @invokta/opentelemetry @opentelemetry/api
+```
+
+The package is native ESM and requires Node.js 22.20.0 or later.
+`@opentelemetry/api` is a peer dependency so the application and the adapter
+share one API instance.
+
+## Use
+
+Register an OpenTelemetry SDK once when the process starts, then pass the hook to
+`createEngine`.
+
+```ts
+import { createEngine } from "@invokta/core";
+import { createOpenTelemetryEventHook } from "@invokta/opentelemetry";
+
+export const engine = createEngine({
+  name: "support-engine",
+  version: "1.0.0",
+  capabilities,
+  onEvent: createOpenTelemetryEventHook(),
+});
+```
+
+To export over OTLP, configure the SDK in the host and point it at your platform
+with `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS`.
+
+```ts
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+
+new NodeSDK({
+  serviceName: "support-engine",
+  traceExporter: new OTLPTraceExporter(),
+  metricReader: new PeriodicExportingMetricReader({
+    exporter: new OTLPMetricExporter(),
+  }),
+}).start();
+```
+
+## API
+
+### `createOpenTelemetryEventHook`
+
+```ts
+interface OpenTelemetryEventHookOptions {
+  readonly tracerProvider?: TracerProvider;
+  readonly meterProvider?: MeterProvider;
+  readonly includePrincipalId?: boolean;
+}
+
+function createOpenTelemetryEventHook(
+  options?: OpenTelemetryEventHookOptions,
+): (event: EngineEvent) => void;
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `tracerProvider` | Global tracer provider | Provider used to create invocation spans |
+| `meterProvider` | Global meter provider | Provider used to create metric instruments |
+| `includePrincipalId` | `false` | Add the principal ID to spans as `enduser.id` |
+
+## Spans
+
+Each invocation produces one `INTERNAL` span named
+`invokta.invoke <capabilityId>`. It starts at the event's `startedAt` and ends at
+`startedAt + durationMs`, so its duration matches the engine's own measurement.
+
+| Attribute | Value |
+| --- | --- |
+| `invokta.capability.id` | Capability ID |
+| `invokta.request.id` | Request ID |
+| `invokta.invocation.source` | `direct`, `cli`, `mcp-stdio`, or `mcp-http` |
+| `error.type` | Stable error code, only on failure |
+| `enduser.id` | Principal ID, only with `includePrincipalId: true` |
+
+A failed invocation sets the span status to `ERROR` with the
+[error code](/reference/errors/) as its message. A completed invocation leaves
+the status unset.
+
+## Metrics
+
+| Instrument | Type | Unit | Attributes |
+| --- | --- | --- | --- |
+| `invokta.invocation.duration` | Histogram | `s` | `invokta.capability.id`, `invokta.invocation.source`, `error.type` on failure |
+| `invokta.invocation.active` | Up-down counter | `{invocation}` | `invokta.capability.id`, `invokta.invocation.source` |
+
+The request ID is never a metric attribute, so metric cardinality is bounded by
+the number of capabilities and sources.
+
+## Privacy
+
+The hook reads only the fields of the engine events. Capability input and output,
+credentials, and error messages never reach telemetry. The principal ID can
+identify a person, so it is exported only when you opt in.
+
+## Parent context and limits
+
+The invocation span is a child of the OpenTelemetry context that is active when
+`engine.invoke` runs, for example inside `context.with(...)`. The adapter does
+not read `traceparent` headers from inbound MCP HTTP requests.
+
+<Aside type="caution" title="Spans inside a capability">
+  The invocation span is not active while a capability's `run` executes. Spans
+  that your capability or its HTTP client creates attach to the caller's span, not
+  to the invocation span. Making the span active would need a core extension,
+  which [ADR 0042](https://github.com/vinilana/invokta/blob/main/docs/adr/0042-opentelemetry-event-adapter.md)
+  leaves out of scope.
+</Aside>
+
+Event delivery is best-effort, as defined for `onEvent`: the adapter adds no
+buffering, retry, or backpressure, and the OpenTelemetry SDK owns export
+behavior. To use another `onEvent` consumer as well, call both from one
+function.

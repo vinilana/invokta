@@ -20,7 +20,7 @@ host owns identity and deployment controls.
 | MCP | Tool mapping over stdio and stateless HTTP | Process composition, network exposure, and deployment |
 | Authentication | Required HTTP hook and optional protected-resource metadata | Credential verifier, identity provider, token policy, and verifier timeout |
 | Authorization | Enforcement of each capability's `access` rule | Roles, scopes, tenants, PDP integration, and domain policy |
-| Observability | Payload-free `onEvent` lifecycle hook and logger | Metrics, tracing, storage, alerts, costs, and domain measurements |
+| Observability | Payload-free `onEvent` lifecycle hook, logger, and OpenTelemetry span and metric adapter | OpenTelemetry SDK and exporter setup, storage, alerts, costs, and domain measurements |
 | AI behavior | Replaceable implementation boundary | Prompts, models, retrieval, tools, evidence, evaluations, and review |
 | Supporting tools | Engine creator, composition checker, confirmed MCP client configuration, deployment artifact generator | Engine execution, client policy, and operational authority |
 

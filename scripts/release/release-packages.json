@@ -15,6 +15,11 @@
     "requiredFiles": ["dist/index.js", "dist/index.d.ts"]
   },
   {
+    "directory": "opentelemetry",
+    "name": "@invokta/opentelemetry",
+    "requiredFiles": ["dist/index.js", "dist/index.d.ts"]
+  },
+  {
     "directory": "tooling",
     "name": "@invokta/tooling",
     "requiredFiles": ["dist/index.js", "dist/index.d.ts", "dist/cli.js"]

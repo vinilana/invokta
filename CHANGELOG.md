@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `@invokta/opentelemetry` reports every invocation as an OpenTelemetry span and
+  as duration and in-flight metrics through `createOpenTelemetryEventHook`, so an
+  engine can feed any OpenTelemetry-compatible observability platform. It reads
+  only the payload-free engine events, depends on `@opentelemetry/api` as a peer
+  dependency, and leaves the core, CLI, and MCP packages unchanged (ADR 0042).
+
 ### Changed
 
 - Refresh the installer JSON parser to Momoa 3.3.13 and development tooling to

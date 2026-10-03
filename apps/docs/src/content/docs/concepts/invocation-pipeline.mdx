@@ -68,5 +68,8 @@ The optional `onEvent` hook receives a compact lifecycle stream:
 Events contain identifiers, timing, source, and error codes. Payloads and
 credentials are excluded. Delivery is best-effort and never blocks the result.
 
+To send these events to an OpenTelemetry-compatible platform, pass the hook from
+[`@invokta/opentelemetry`](/reference/opentelemetry/) as `onEvent`.
+
 Read the [error reference](/reference/errors/) for the normalized failure
 taxonomy.

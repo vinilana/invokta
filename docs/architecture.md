@@ -169,6 +169,10 @@ asynchronous diagnostic logger are contained without producing an unhandled
 rejection. After successful output validation, the runtime MUST clear its
 capability timeout before invoking the completed hook.
 
+The optional `@invokta/opentelemetry` package consumes these events and nothing
+else. It maps them to spans and metrics through the OpenTelemetry API
+([ADR 0042](./adr/0042-opentelemetry-event-adapter.md)).
+
 ## CLI
 
 **AE-CLI-01 — Commands.** `@invokta/cli` MUST implement `list`, `describe`, and
