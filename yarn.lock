@@ -409,10 +409,10 @@
   dependencies:
     undici-types "~8.3.0"
 
-"@types/oidc-provider@^9.11.1":
-  version "9.11.1"
-  resolved "https://registry.yarnpkg.com/@types/oidc-provider/-/oidc-provider-9.11.1.tgz#964bfdc8a083e40da1e4c54ea4ffbe543615d91b"
-  integrity sha512-dO7uYB0gZeYuw+HiMerjtHjN0g0AToO22kmqDegFYuTvS6P2KOGpv46+ILtRBeKoXqWGU/86f/YwJT6HpU1hMw==
+"@types/oidc-provider@^9.12.1":
+  version "9.12.1"
+  resolved "https://registry.yarnpkg.com/@types/oidc-provider/-/oidc-provider-9.12.1.tgz#33b95f8d8ab0e036dd0bf573343c9683af338a1c"
+  integrity sha512-qRJksCw0I+VloInJxMV/4L4gLL5Qrws9Np9+rW+MZeBKauEz5WqKO99OVCpnj4LKB/o1+utkHoQq1c3GBhuE5g==
   dependencies:
     "@types/keygrip" "*"
     "@types/koa" "*"
