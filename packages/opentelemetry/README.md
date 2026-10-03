@@ -63,7 +63,7 @@ exporters at your platform.
 | --- | --- | --- |
 | Span | `invokta.invoke <capabilityId>` | `INTERNAL`; ends at the engine-reported duration |
 | Histogram | `invokta.invocation.duration` | Seconds; capability, source, and `error.type` on failure |
-| Up-down counter | `invokta.invocation.active` | In-flight invocations by capability and source |
+| Up-down counter | `invokta.invocation.active` | In-flight invocations by source |
 
 Span attributes:
 
@@ -74,6 +74,9 @@ Span attributes:
 | `invokta.invocation.source` | `direct`, `cli`, `mcp-stdio`, or `mcp-http` |
 | `error.type` | Stable `EngineErrorCode`, only on failure |
 | `enduser.id` | Principal ID, only with `includePrincipalId: true` |
+
+When a capability does not exist, the caller-supplied ID is replaced with
+`_OTHER` so untrusted input cannot create unbounded span names or metric series.
 
 A failed invocation also sets the span status to `ERROR` with the error code as
 its message. Capability input, output, credentials, and error messages are never

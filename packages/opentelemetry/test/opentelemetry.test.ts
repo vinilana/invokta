@@ -22,7 +22,10 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import packageManifest from "../package.json" with { type: "json" };
 import { createOpenTelemetryEventHook } from "../src/index.js";
+
+const packageVersion = packageManifest.version;
 
 class TestMetricReader extends MetricReader {
   constructor() {
@@ -326,6 +329,50 @@ describe("createOpenTelemetryEventHook", () => {
         count: 1,
       },
     ]);
+  });
+
+  it("bounds telemetry cardinality for unknown capability IDs", async () => {
+    const engine = createTestEngine();
+    const unknown = ["attacker-1", "attacker-2", "x".repeat(5000)];
+
+    for (const id of unknown) {
+      await engine.invoke(id as "echo", { value: "x" }).catch(() => undefined);
+    }
+    await engine.invoke("echo", { value: "x" });
+
+    const finished = spans.getFinishedSpans();
+    expect(finished.map((span) => span.name)).toEqual([
+      "invokta.invoke _OTHER",
+      "invokta.invoke _OTHER",
+      "invokta.invoke _OTHER",
+      "invokta.invoke echo",
+    ]);
+    expect(
+      finished.map((span) => span.attributes["invokta.capability.id"]),
+    ).toEqual(["_OTHER", "_OTHER", "_OTHER", "echo"]);
+
+    const duration = await metric("invokta.invocation.duration");
+    expect(
+      (duration.dataPoints as DataPoint<Histogram>[])
+        .map((point) => point.attributes["invokta.capability.id"])
+        .sort(),
+    ).toEqual(["_OTHER", "echo"]);
+    const active = await metric("invokta.invocation.active");
+    expect(
+      (active.dataPoints as DataPoint<number>[]).map((point) => ({
+        attributes: point.attributes,
+        value: point.value,
+      })),
+    ).toEqual([
+      { attributes: { "invokta.invocation.source": "direct" }, value: 0 },
+    ]);
+  });
+
+  it("reports the instrumentation scope version", async () => {
+    await createTestEngine().invoke("echo", { value: "x" });
+
+    const [span] = spans.getFinishedSpans();
+    expect(span?.instrumentationScope.version).toBe(packageVersion);
   });
 
   it("returns the active invocation gauge to zero", async () => {

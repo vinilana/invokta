@@ -105,10 +105,12 @@ the status unset.
 | Instrument | Type | Unit | Attributes |
 | --- | --- | --- | --- |
 | `invokta.invocation.duration` | Histogram | `s` | `invokta.capability.id`, `invokta.invocation.source`, `error.type` on failure |
-| `invokta.invocation.active` | Up-down counter | `{invocation}` | `invokta.capability.id`, `invokta.invocation.source` |
+| `invokta.invocation.active` | Up-down counter | `{invocation}` | `invokta.invocation.source` |
 
 The request ID is never a metric attribute, so metric cardinality is bounded by
-the number of capabilities and sources.
+the number of capabilities and sources. When a capability does not exist, the
+caller-supplied ID is replaced with `_OTHER` in the span name, the span
+attribute, and the histogram, so untrusted input cannot create unbounded series.
 
 ## Privacy
 

@@ -1,6 +1,7 @@
+import { createRequire } from "node:module";
+
 import type { EngineEvent } from "@invokta/core";
 import {
-  type Attributes,
   metrics,
   type MeterProvider,
   type Span,
@@ -12,6 +13,13 @@ import {
 } from "@opentelemetry/api";
 
 const instrumentationName = "@invokta/opentelemetry";
+const instrumentationVersion = (
+  createRequire(import.meta.url)("../package.json") as { version: string }
+).version;
+
+// The engine reports the caller-supplied ID when a capability does not exist, so
+// telemetry must not use it as a span name or metric attribute value.
+const unknownCapability = "_OTHER";
 
 // Bucket boundaries, in seconds, recommended by the OpenTelemetry semantic
 // conventions for operation durations.
@@ -33,9 +41,9 @@ export interface OpenTelemetryEventHookOptions {
 
 interface OpenInvocation {
   readonly capabilityId: string;
+  readonly source: string;
   readonly span: Span;
   readonly startedAtMs: number;
-  readonly metricAttributes: Attributes;
 }
 
 /**
@@ -52,9 +60,10 @@ export function createOpenTelemetryEventHook(
 ): (event: EngineEvent) => void {
   const tracer = (
     options.tracerProvider ?? trace.getTracerProvider()
-  ).getTracer(instrumentationName);
+  ).getTracer(instrumentationName, instrumentationVersion);
   const meter = (options.meterProvider ?? metrics.getMeterProvider()).getMeter(
     instrumentationName,
+    instrumentationVersion,
   );
   const duration = meter.createHistogram("invokta.invocation.duration", {
     description: "Duration of Invokta capability invocations.",
@@ -92,15 +101,12 @@ export function createOpenTelemetryEventHook(
       case "invocation.started": {
         const parsed = Date.parse(event.startedAt);
         const startedAtMs = Number.isNaN(parsed) ? Date.now() : parsed;
-        const metricAttributes: Attributes = {
-          "invokta.capability.id": event.capabilityId,
-          "invokta.invocation.source": event.source,
-        };
         const span = tracer.startSpan(`invokta.invoke ${event.capabilityId}`, {
           kind: SpanKind.INTERNAL,
           startTime: new Date(startedAtMs),
           attributes: {
-            ...metricAttributes,
+            "invokta.capability.id": event.capabilityId,
+            "invokta.invocation.source": event.source,
             "invokta.request.id": event.requestId,
             ...(includePrincipalId && event.principalId !== undefined
               ? { "enduser.id": event.principalId }
@@ -110,23 +116,28 @@ export function createOpenTelemetryEventHook(
         const invocations = open.get(event.requestId) ?? [];
         invocations.push({
           capabilityId: event.capabilityId,
+          source: event.source,
           span,
           startedAtMs,
-          metricAttributes,
         });
         open.set(event.requestId, invocations);
-        active.add(1, metricAttributes);
+        active.add(1, { "invokta.invocation.source": event.source });
         return;
       }
       case "invocation.completed":
       case "invocation.failed": {
         const invocation = take(event.requestId, event.capabilityId);
         if (invocation === undefined) return;
-        const attributes: Attributes =
-          event.type === "invocation.failed"
-            ? { ...invocation.metricAttributes, "error.type": event.code }
-            : invocation.metricAttributes;
-        if (event.type === "invocation.failed") {
+        const failed = event.type === "invocation.failed";
+        const capabilityId =
+          failed && event.code === "CAPABILITY_NOT_FOUND"
+            ? unknownCapability
+            : invocation.capabilityId;
+        if (failed) {
+          if (capabilityId === unknownCapability) {
+            invocation.span.updateName(`invokta.invoke ${capabilityId}`);
+            invocation.span.setAttribute("invokta.capability.id", capabilityId);
+          }
           invocation.span.setAttribute("error.type", event.code);
           invocation.span.setStatus({
             code: SpanStatusCode.ERROR,
@@ -136,8 +147,12 @@ export function createOpenTelemetryEventHook(
         invocation.span.end(
           new Date(invocation.startedAtMs + event.durationMs),
         );
-        duration.record(event.durationMs / 1000, attributes);
-        active.add(-1, invocation.metricAttributes);
+        duration.record(event.durationMs / 1000, {
+          "invokta.capability.id": capabilityId,
+          "invokta.invocation.source": invocation.source,
+          ...(failed ? { "error.type": event.code } : {}),
+        });
+        active.add(-1, { "invokta.invocation.source": invocation.source });
         return;
       }
     }

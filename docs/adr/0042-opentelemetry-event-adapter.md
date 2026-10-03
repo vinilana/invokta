@@ -42,7 +42,8 @@ For each invocation the hook produces:
   a completed invocation leaves the status unset;
 - an `invokta.invocation.duration` histogram in seconds with the capability,
   source, and, on failure, `error.type` attributes; and
-- an `invokta.invocation.active` up-down counter for in-flight invocations.
+- an `invokta.invocation.active` up-down counter for in-flight invocations,
+  attributed by source only.
 
 The span is parented to the OpenTelemetry context that is active when the
 engine emits `invocation.started`. Because the engine invokes the hook
@@ -56,8 +57,16 @@ The adapter preserves ADR 0003's payload-free guarantee. It reads only event
 fields, so capability input, output, credentials, and error messages never reach
 telemetry. The principal ID can identify a person, so it is exported as
 `enduser.id` only when the caller passes `includePrincipalId: true`. Request IDs
-are span attributes only and never metric attributes, which keeps metric
-cardinality bounded by the capability and source sets.
+are span attributes only and never metric attributes.
+
+Metric cardinality is bounded by the capability and source sets. The engine
+reports the caller-supplied ID when a capability does not exist, so the adapter
+replaces it with `_OTHER` in the span name, the span attribute, and the duration
+histogram once the invocation fails with `CAPABILITY_NOT_FOUND`. The in-flight
+counter omits the capability ID because it must be attributed before the engine
+resolves the capability. Both instruments therefore stay bounded even when an
+untrusted client sends arbitrary capability IDs. Both tracer and meter report
+the package version as their instrumentation scope version.
 
 Tracer and meter providers default to the OpenTelemetry globals and can be
 injected for tests or for hosts that scope providers per engine.
