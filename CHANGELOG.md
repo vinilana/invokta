@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+
+- Release publication waits up to 10 minutes, with checks backing off from 5 to
+  30 seconds, for npm to make each published version readable. It previously
+  failed after about one minute while npm was still processing the first
+  package, which stopped the 0.9.1 workflow after publishing `@invokta/core`.
+  The publish job timeout increases from 20 to 60 minutes accordingly.
+
 ## [0.9.1] - 2026-10-30
 
 ### Added

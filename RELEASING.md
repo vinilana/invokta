@@ -65,8 +65,13 @@ dry-runs. It does not require npm authentication and makes no registry change.
 
 ## Recovering a partial release
 
-When npm accepts a package but reports that it is still being processed, wait
-until its version and `gitHead` are readable before rerunning the workflow.
+npm can accept a package and report that it is still being processed for
+several minutes. After each publication, the script waits up to 10 minutes for
+the version and `gitHead` to become readable, backing off from 5 to 30 seconds
+between checks, so the publish job allows 60 minutes for all ten packages. If
+that wait still expires, wait until the version and `gitHead` are readable
+before rerunning the workflow: a version npm is still processing reads as
+missing, and publishing it again fails.
 
 npm package publication is irreversible and a ten-package release is not an
 atomic registry operation. If a publish job stops after creating a partial

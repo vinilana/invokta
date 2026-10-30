@@ -394,3 +394,21 @@ labels it as a private MCP consumer. `yarn validate` in `apps/docs` then passes
 15 tests, zero Astro diagnostics, and 49 built pages. The example adds no
 dependencies, so the lockfiles, audits, published package contents, and the
 OAuth example's 0.9.1 integrity values are unchanged.
+
+## Release registry wait
+
+The first 0.9.1 publish job published `@invokta/core` with provenance, then
+failed while npm reported the package as still being processed: the script
+checked the registry 12 times at 5-second intervals, about one minute in total.
+The core package became readable with the expected `gitHead` and `latest`
+dist-tag minutes later; the other nine packages remained unpublished. Release
+0.9.0 had also needed a second workflow attempt.
+
+Two new release-script integration tests simulate npm processing with a stub
+registry and an instant `sleep` stub. Both failed against the previous script,
+which gave up after 55 seconds of waits. The script now waits up to 600 seconds
+per registry field with intervals of 5, 10, 20, and then 30 seconds, logging
+each wait; all 11 release-script tests pass. The publish job timeout rises to
+60 minutes so ten sequential publications fit those waits. The tagged 0.9.1
+workflow still runs the previous script and is recovered by rerunning it as
+`RELEASING.md` describes.
