@@ -49,6 +49,7 @@ type PublishFixtureOptions = {
   gitHead?: string;
   latest: string;
   oidc?: boolean;
+  processingViews?: number;
   targetState: "pending" | "present";
 };
 
@@ -160,6 +161,14 @@ case "\${1:-}" in
         printf 'npm error code E404\n' >&2
         exit 1
       fi
+      if [[ -f "$STUB_PUBLISHED_MARKER" ]]; then
+        processing_views=$(cat "$STUB_PROCESSING_COUNTER" 2>/dev/null || printf '0')
+        if ((processing_views < STUB_PROCESSING_VIEWS)); then
+          printf '%s\n' "$((processing_views + 1))" > "$STUB_PROCESSING_COUNTER"
+          printf 'npm error code E404\n' >&2
+          exit 1
+        fi
+      fi
       if [[ "$field" == "version" ]]; then
         printf '%s\n' "$STUB_VERSION"
       elif [[ -f "$STUB_PUBLISHED_MARKER" ]]; then
@@ -183,9 +192,14 @@ esac
     join(binDirectory, "yarn"),
     "#!/usr/bin/env bash\nset -euo pipefail\n",
   );
+  writeExecutable(
+    join(binDirectory, "sleep"),
+    '#!/usr/bin/env bash\nset -euo pipefail\nprintf \'%s\\n\' "$1" >> "$STUB_SLEEP_LOG"\n',
+  );
 
   const publishLog = join(root, "publish.log");
   const publishedMarker = join(root, "published");
+  const sleepLog = join(root, "sleep.log");
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
@@ -193,8 +207,11 @@ esac
     STUB_GIT_HEAD: options.gitHead ?? releaseCommit,
     STUB_LATEST: options.latest,
     STUB_PACKAGE_NAME: "@invokta/fixture",
+    STUB_PROCESSING_COUNTER: join(root, "processing-views"),
+    STUB_PROCESSING_VIEWS: String(options.processingViews ?? 0),
     STUB_PUBLISHED_MARKER: publishedMarker,
     STUB_PUBLISH_LOG: publishLog,
+    STUB_SLEEP_LOG: sleepLog,
     STUB_REPOSITORY_ROOT: root,
     STUB_TAG_OBJECT: "2222222222222222222222222222222222222222",
     STUB_TARGET_STATE: options.targetState,
@@ -217,6 +234,9 @@ esac
   return {
     publishLog: existsSync(publishLog) ? readFileSync(publishLog, "utf8") : "",
     result,
+    sleeps: existsSync(sleepLog)
+      ? readFileSync(sleepLog, "utf8").trim().split("\n").map(Number)
+      : [],
   };
 }
 
@@ -275,6 +295,41 @@ describe("publish-release.sh", () => {
     expect(result.stdout).toContain("Pending: @invokta/fixture@1.2.3");
     expect(publishLog).toContain(
       "publish ./packages/fixture --access public --tag latest",
+    );
+  });
+
+  it("waits while npm is still processing a published version", () => {
+    const { publishLog, result, sleeps } = runPublishFixture({
+      latest: "1.2.2",
+      processingViews: 15,
+      targetState: "pending",
+    });
+
+    expect(result.status).toBe(0);
+    expect(publishLog).toContain(
+      "publish ./packages/fixture --access public --tag latest",
+    );
+    expect(sleeps.slice(0, 4)).toEqual([5, 10, 20, 30]);
+    expect(Math.max(...sleeps)).toBe(30);
+    expect(
+      sleeps.reduce((total, seconds) => total + seconds, 0),
+    ).toBeGreaterThan(60);
+    expect(result.stdout).toContain(
+      "npm may still be processing the publication",
+    );
+  });
+
+  it("stops waiting for a published version after ten minutes", () => {
+    const { result, sleeps } = runPublishFixture({
+      latest: "1.2.2",
+      processingViews: 1_000,
+      targetState: "pending",
+    });
+
+    expect(result.status).toBe(1);
+    expect(sleeps.reduce((total, seconds) => total + seconds, 0)).toBe(600);
+    expect(result.stderr).toContain(
+      "@invokta/fixture@1.2.3 version is unavailable after 600s, expected 1.2.3",
     );
   });
 

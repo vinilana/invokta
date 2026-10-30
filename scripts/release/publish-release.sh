@@ -72,23 +72,38 @@ process.exit(1);
 NODE
 }
 
+# npm can accept a publication and process it for several minutes before the
+# version becomes readable, so waits back off to a capped interval and give up
+# only after a bounded total.
+registry_wait_budget_seconds=600
+registry_wait_max_interval_seconds=30
+
 wait_for_registry_field() {
   local package_spec="$1"
   local field="$2"
   local expected="$3"
   local actual=""
+  local interval=5
+  local waited=0
 
-  for attempt in {1..12}; do
+  while true; do
     if actual=$(npm_registry_command view "$package_spec" "$field" 2>/dev/null) &&
       [[ "$actual" == "$expected" ]]; then
       return 0
     fi
-    if ((attempt < 12)); then
-      sleep 5
-    fi
+    ((waited < registry_wait_budget_seconds)) || break
+    ((interval <= registry_wait_budget_seconds - waited)) ||
+      interval=$((registry_wait_budget_seconds - waited))
+    printf 'Waiting %ss for %s %s; npm may still be processing the publication.\n' \
+      "$interval" "$package_spec" "$field"
+    sleep "$interval"
+    waited=$((waited + interval))
+    interval=$((interval * 2))
+    ((interval <= registry_wait_max_interval_seconds)) ||
+      interval=$registry_wait_max_interval_seconds
   done
 
-  die "$package_spec $field is ${actual:-unavailable}, expected $expected"
+  die "$package_spec $field is ${actual:-unavailable} after ${waited}s, expected $expected"
 }
 
 check_only=false
