@@ -384,6 +384,13 @@ packages and no nested copy remains.
 Its 17 tests use a local MCP HTTP fixture and cover discovery, dispatch,
 anonymous headers, pagination bounds, input validation, tool errors,
 cancellation, and client cleanup; none calls the public service. The full
-repository gate passes with the counts recorded above. The example adds no
+repository gate passes with the counts recorded above.
+
+The first integration CI run failed the documentation contract that requires
+every repository example in the public examples catalog, because the
+contribution listed the example only in `docs/README.md`. The catalog now lists
+it by problem, operational requirement, and under external integrations, and
+labels it as a private MCP consumer. `yarn validate` in `apps/docs` then passes
+15 tests, zero Astro diagnostics, and 49 built pages. The example adds no
 dependencies, so the lockfiles, audits, published package contents, and the
 OAuth example's 0.9.1 integrity values are unchanged.
