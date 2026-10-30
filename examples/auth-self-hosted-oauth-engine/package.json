@@ -37,27 +37,27 @@
     "deploy:inspect-oauth": "invokta-deploy inspect-oauth"
   },
   "dependencies": {
-    "@invokta/cli": "0.9.0",
-    "@invokta/core": "0.9.0",
-    "@invokta/installer": "0.9.0",
-    "@invokta/mcp": "0.9.0",
+    "@invokta/cli": "0.9.1",
+    "@invokta/core": "0.9.1",
+    "@invokta/installer": "0.9.1",
+    "@invokta/mcp": "0.9.1",
     "jose": "^6.2.12",
     "oidc-provider": "~9.12.2",
     "pg": "^8.16.3",
-    "zod": "4.5.4"
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@invokta/deploy": "0.9.0",
-    "@invokta/devtools": "0.9.0",
-    "@invokta/tooling": "0.9.0",
-    "@types/node": "26.4.1",
-    "@types/oidc-provider": "^9.11.1",
+    "@invokta/deploy": "0.9.1",
+    "@invokta/devtools": "0.9.1",
+    "@invokta/tooling": "0.9.1",
+    "@types/node": "26.6.6",
+    "@types/oidc-provider": "^9.12.1",
     "@types/pg": "^8.23.1",
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   },
   "overrides": {
-    "fast-uri": "3.1.6",
-    "qs": "6.16.0"
+    "fast-uri": "3.1.9",
+    "qs": "6.17.1"
   }
 }

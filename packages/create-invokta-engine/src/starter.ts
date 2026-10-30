@@ -389,7 +389,7 @@ function renderPackageManifest(
     ...(features.mcpStdio || features.mcpHttp
       ? { "@invokta/mcp": invoktaVersion }
       : {}),
-    zod: "4.4.3",
+    zod: "4.6.7",
   };
   const devDependencies = {
     ...(features.mcpHttp ? { "@invokta/deploy": invoktaVersion } : {}),

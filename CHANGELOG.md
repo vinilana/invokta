@@ -7,18 +7,37 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-30
+
 ### Changed
 
-- Refresh the installer JSON parser to Momoa 3.3.13 and development tooling to
-  Biome 2.5.12. Authentication examples use jose 6.2.12 and the self-hosted OAuth
+- Refresh the installer JSON parser to Momoa 3.3.13. Authentication examples
+  use jose 6.2.12 and the self-hosted OAuth
   provider uses oidc-provider 9.12.2 with PostgreSQL types 8.23.1. The workspace
   and standalone example lockfiles are synchronized with the dependency updates.
+- `@invokta/mcp` pins the official MCP TypeScript SDK 1.32.2 instead of 1.30.0
+  after the review required by ADR 0006. The protocol baseline remains
+  `2025-11-25`, the used SDK subpaths are unchanged, and the adapter's own
+  request bounds and manual redirect rejection are unchanged.
+- The installer uses @clack/prompts 1.8.1. Development tooling moves to Biome
+  2.5.15, Vitest 4.1.12, and Node.js types 26.6.6, the documentation site to
+  Astro 7.4.4, and CI to actions/setup-node 7.1.0.
 
 ### Security
 
 - Pin the standalone OAuth example's `fast-uri` and `qs` dependencies to patched
-  versions 3.1.6 and 6.16.0 through npm overrides. CI now audits that example's
+  versions 3.1.9 and 6.17.1 through npm overrides. CI now audits that example's
   independent lockfile in addition to the workspace and documentation locks.
+- MCP SDK 1.32.2 includes the upstream fixes for HTTP request body and batch
+  bounds, OAuth credentials bound to their issuing authorization server, and
+  bearer-token audience and task-session checks reported against 1.30.0.
+- Generated engine, atomic capability, and capability-library projects pin
+  Zod 4.6.7 instead of 4.4.3, and every example uses 4.6.7, fixing memory
+  exhaustion when validating oversized constrained collections.
+- Workspace resolutions move `fast-uri`, `qs`, and `nanoid` to 3.1.9, 6.17.1,
+  and 3.3.20. Locked `proxy-addr`, `body-parser`, `hono`, `@hono/node-server`,
+  `ip-address`, `vite`, and `source-map-js` versions move to patched releases in
+  the workspace, documentation, and standalone OAuth example lockfiles.
 
 ## [0.9.0] - 2026-09-05
 
@@ -504,7 +523,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/vinilana/invokta/releases/tag/v0.9.1
 [0.9.0]: https://github.com/vinilana/invokta/releases/tag/v0.9.0
 [0.8.2]: https://github.com/vinilana/invokta/releases/tag/v0.8.2
 [0.8.1]: https://github.com/vinilana/invokta/releases/tag/v0.8.1

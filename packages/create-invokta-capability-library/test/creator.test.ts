@@ -129,7 +129,7 @@ describe("the capability library starter", () => {
       exports: {
         ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
       },
-      dependencies: { "@invokta/core": "1.2.3-beta.1", zod: "4.4.3" },
+      dependencies: { "@invokta/core": "1.2.3-beta.1", zod: "4.6.7" },
     });
     expect(contents.get("src/index.ts")).toContain(
       'name: "onboarding-capabilities"',

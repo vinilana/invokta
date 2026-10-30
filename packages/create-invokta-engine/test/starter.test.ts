@@ -117,7 +117,7 @@ describe("createStarterFiles", () => {
     expect(source).not.toContain("packages/deploy/src");
     expect(source).not.toContain("../deploy/");
     expect(manifest.dependencies).toEqual({
-      "@invokta/deploy": "0.9.0",
+      "@invokta/deploy": "0.9.1",
       tar: "7.5.22",
       yaml: "2.9.0",
     });
@@ -561,7 +561,7 @@ describe("createStarterFiles", () => {
         "@invokta/core": "1.2.3-beta.1",
         "@invokta/installer": "1.2.3-beta.1",
         "@invokta/mcp": "1.2.3-beta.1",
-        zod: "4.4.3",
+        zod: "4.6.7",
       },
       devDependencies: {
         "@types/node": "26.1.2",

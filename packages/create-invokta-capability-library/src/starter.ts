@@ -140,7 +140,7 @@ function renderPackageManifest(
     },
     dependencies: {
       "@invokta/core": invoktaVersion,
-      zod: "4.4.3",
+      zod: "4.6.7",
     },
     devDependencies: {
       "@types/node": "26.1.2",

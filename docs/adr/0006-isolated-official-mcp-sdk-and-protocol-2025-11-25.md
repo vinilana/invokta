@@ -13,7 +13,7 @@ contracts.
 
 `@invokta/mcp` uses the official MCP TypeScript SDK, pinned exactly to the
 version declared in its package manifest and lockfile. The current approved
-version is `1.30.0`, and the compatibility baseline is protocol `2025-11-25`.
+version is `1.32.2`, and the compatibility baseline is protocol `2025-11-25`.
 Every SDK update requires review of protocol support, exported subpaths,
 release notes, security fixes, and the full MCP conformance suite.
 
@@ -55,6 +55,8 @@ stdout continuously and supervise the process.
 ## Decision evidence
 
 - [MCP specification 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25)
-- [SDK 1.30.0 release](https://github.com/modelcontextprotocol/typescript-sdk/releases/tag/1.30.0)
+- [SDK 1.32.2 release](https://github.com/modelcontextprotocol/typescript-sdk/releases/tag/1.32.2)
+  and the reviewed
+  [1.30.0 to 1.32.2 changes](https://github.com/modelcontextprotocol/typescript-sdk/compare/1.30.0...1.32.2)
 - [SDK stdio buffer limit](https://github.com/modelcontextprotocol/typescript-sdk/pull/2239)
 - [Node process I/O behavior](https://nodejs.org/api/process.html#a-note-on-process-io)
