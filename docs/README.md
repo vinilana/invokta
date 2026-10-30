@@ -70,6 +70,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [`support-engine`: dependency injection and authorization example](../examples/support-engine/)
 - [`auth-self-hosted-oauth-engine`: self-hosted OAuth and production deployment example](../examples/auth-self-hosted-oauth-engine/)
 - [`support-harness`: private MCP consumer](../examples/support-harness/)
+- [`parallel-search`: anonymous web search and fetch through the MCP client](../examples/parallel-search/)
 - [`crawl-engine`: outbound Firecrawl connector behind an engine-owned port](../examples/crawl-engine/)
 - [`cursor-agent-routing-engine`: versioned Cursor subagent and model routing policy](../examples/cursor-agent-routing-engine/)
 - [`image-engine`: multi-provider image production by use case](../examples/image-engine/)
