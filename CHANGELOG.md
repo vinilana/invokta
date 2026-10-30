@@ -9,6 +9,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [0.9.1] - 2026-10-30
 
+### Added
+
+- The private `parallel-search` example uses the `@invokta/mcp` HTTP client
+  facade against Parallel's keyless public search MCP server. Each command
+  discovers and calls one `web_search` or `web_fetch` tool within a shared
+  60-second deadline and closes the connection; its tests use a local MCP HTTP
+  fixture and never call the public service.
+
 ### Changed
 
 - Refresh the installer JSON parser to Momoa 3.3.13. Authentication examples

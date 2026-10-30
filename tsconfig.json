@@ -34,6 +34,7 @@
     { "path": "./examples/obsidian-context-engine" },
     { "path": "./examples/spec-engine" },
     { "path": "./examples/support-engine" },
-    { "path": "./examples/support-harness" }
+    { "path": "./examples/support-harness" },
+    { "path": "./examples/parallel-search" }
   ]
 }

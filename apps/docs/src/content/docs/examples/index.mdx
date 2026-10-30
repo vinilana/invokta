@@ -18,6 +18,7 @@ while its own package owns ports, policies, limits, and outbound connectors.
 | Learn the smallest complete path | `hello-engine` |
 | Inject dependencies and enforce domain authorization | `support-engine` |
 | Consume an engine from a private MCP harness | `support-harness` |
+| Call a remote MCP server through the client facade | `parallel-search` |
 | Build network-backed connectors behind domain ports | `crawl-engine`, `image-engine`, or `observability-engine` |
 | Build filesystem-backed connectors behind domain ports | `obsidian-context-engine` or `agent-session-engine` |
 | Build development workflow actions | `spec-engine`, `review-engine`, or `agent-session-engine` |
@@ -36,6 +37,7 @@ while its own package owns ports, policies, limits, and outbound connectors.
 | `crawl-engine` | `FIRECRAWL_API_KEY` |
 | `image-engine` | `OPENAI_API_KEY`, `ARK_API_KEY`, and `GEMINI_API_KEY` |
 | `observability-engine` | Sentry, Datadog, and New Relic credentials plus their organization or account identifiers |
+| `parallel-search` | Network access to Parallel's public search MCP server for live commands; no API key, and its tests use a local fixture |
 | `auth-*` examples | Nothing for the tests, which verify locally generated credentials offline; each README lists the issuer, audience, or key variables its HTTP entry point needs against a real provider project |
 
 The HTTP entry points use example-specific bearer-token environment variables in
@@ -170,6 +172,13 @@ follows its shape. Each pairs with a page in the
 
     [Open `observability-engine`](https://github.com/vinilana/invokta/tree/main/examples/observability-engine)
   </Card>
+  <Card title="Parallel Search Client" icon="magnifier">
+    Call Parallel's keyless public search MCP server through the `@invokta/mcp`
+    HTTP client facade: discover one tool, call it once within a shared
+    deadline, and close the connection.
+
+    [Open `parallel-search`](https://github.com/vinilana/invokta/tree/main/examples/parallel-search)
+  </Card>
 </CardGrid>
 
 ## Publish and compose capabilities
@@ -190,9 +199,10 @@ follows its shape. Each pairs with a page in the
 </CardGrid>
 
 <Aside type="note" title="Fixtures and consumers are labeled explicitly">
-  `community-capabilities` is a private package fixture, and `support-harness` is
-  a private MCP consumer. They demonstrate package publication and consumption
-  boundaries but are not additional Invokta framework packages.
+  `community-capabilities` is a private package fixture, and `support-harness`
+  and `parallel-search` are private MCP consumers. They demonstrate package
+  publication and consumption boundaries but are not additional Invokta
+  framework packages.
 </Aside>
 
 ## Run an example locally
