@@ -12,6 +12,6 @@
     "test": "vitest run test"
   },
   "dependencies": {
-    "@invokta/mcp": "0.9.0"
+    "@invokta/mcp": "0.9.1"
   }
 }

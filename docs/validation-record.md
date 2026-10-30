@@ -53,9 +53,10 @@ consumer can use the protocol surface without coupling to engine code.
 ## Current delivery gates
 
 - `yarn run check` on Node.js 24.20.0 and Yarn 1.22.22 passes typecheck, lint,
-  formatting, 3,190 tests with one intentional skip, V8 coverage, and the full
-  TypeScript build, followed by 19 example gates. Coverage is 79% statements,
-  74.4% branches, 83.52% functions, and 80.71% lines.
+  formatting, 3,206 tests, V8 coverage, and the full TypeScript build, followed
+  by 19 example gates. A root container skips two tests: the intentional
+  container test and a privilege-dependent deploy test. Coverage is 79.02%
+  statements, 74.47% branches, 83.52% functions, and 80.73% lines.
 - `yarn release:verify` passes for 0.9.1: metadata alignment and
   clean tarball inspection for all 10 public packages, isolated ESM imports,
   all four packed engine profiles, authenticated MCP HTTP exchange, DevTools
@@ -343,7 +344,8 @@ the next release's Invokta packages remove them.
 ## Release 0.9.1 preparation
 
 The release follows the repository's patch-version policy: it carries the
-2026-10-30 security dependency refresh and adds no functionality. It
+2026-10-30 security dependency refresh and the private `parallel-search`
+example, and adds no published package functionality. It
 synchronizes all 10 public versions, exact internal package and example pins,
 release assertions, and MCP client identification. This preparation is
 metadata-only and uses the documentation/tooling exception to a new RED test;
@@ -367,3 +369,21 @@ and atomic and capability-library consumers. Publication remains subject to
 the release PR CI, the annotated tag's Verify job, and the protected npm
 environment. Registry integrity and a clean example `npm ci` must be checked
 again after publication.
+
+## Parallel Search client example (#101)
+
+The external contribution adds the private `examples/parallel-search` consumer
+of the `@invokta/mcp` HTTP client facade. It was written against 0.9.0 and
+merged after release 0.9.1 was prepared. Its stale `@invokta/mcp` 0.9.0 pin no
+longer matched the workspace version, so `yarn install --frozen-lockfile`
+silently installed the published 0.9.0 package and its 0.9.0 core dependency
+under the example instead of linking the workspace. That nested installation
+is the RED evidence. After pinning 0.9.1, the example resolves the workspace
+packages and no nested copy remains.
+
+Its 17 tests use a local MCP HTTP fixture and cover discovery, dispatch,
+anonymous headers, pagination bounds, input validation, tool errors,
+cancellation, and client cleanup; none calls the public service. The full
+repository gate passes with the counts recorded above. The example adds no
+dependencies, so the lockfiles, audits, published package contents, and the
+OAuth example's 0.9.1 integrity values are unchanged.
