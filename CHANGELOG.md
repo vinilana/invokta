@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-30
+
 ### Changed
 
 - Refresh the installer JSON parser to Momoa 3.3.13. Authentication examples
@@ -521,7 +523,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/vinilana/invokta/releases/tag/v0.9.1
 [0.9.0]: https://github.com/vinilana/invokta/releases/tag/v0.9.0
 [0.8.2]: https://github.com/vinilana/invokta/releases/tag/v0.8.2
 [0.8.1]: https://github.com/vinilana/invokta/releases/tag/v0.8.1

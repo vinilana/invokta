@@ -56,7 +56,7 @@ consumer can use the protocol surface without coupling to engine code.
   formatting, 3,190 tests with one intentional skip, V8 coverage, and the full
   TypeScript build, followed by 19 example gates. Coverage is 79% statements,
   74.4% branches, 83.52% functions, and 80.71% lines.
-- `yarn release:verify` passes for 0.9.0: metadata alignment and
+- `yarn release:verify` passes for 0.9.1: metadata alignment and
   clean tarball inspection for all 10 public packages, isolated ESM imports,
   all four packed engine profiles, authenticated MCP HTTP exchange, DevTools
   doctor checks, and the
@@ -339,3 +339,31 @@ also matches its manifest's Zod and Node.js type pins and installs 209 packages
 with `npm ci --ignore-scripts --no-audit --no-fund`. Its remaining audit
 findings are the 1.30.0 MCP SDK pinned by the published `@invokta/mcp` 0.9.0;
 the next release's Invokta packages remove them.
+
+## Release 0.9.1 preparation
+
+The release follows the repository's patch-version policy: it carries the
+2026-10-30 security dependency refresh and adds no functionality. It
+synchronizes all 10 public versions, exact internal package and example pins,
+release assertions, and MCP client identification. This preparation is
+metadata-only and uses the documentation/tooling exception to a new RED test;
+the generated Zod pin's RED/GREEN evidence is recorded above.
+
+The full repository gate passes with the counts and coverage recorded for the
+refresh, and the root audit reports zero vulnerabilities across 300 packages.
+A clean clone built after installation, matching CI's order, produced all 10
+release tarballs. The same procedure applied to the `v0.9.0` tag reproduced the
+registry's `dist.integrity` for all seven Invokta packages in the self-hosted
+OAuth example, whose lockfile now uses the 0.9.1 artifacts' SHA-512 values.
+With those entries resolved to the local tarballs, isolated `npm ci
+--ignore-scripts --no-audit --no-fund` verified every integrity value and
+installed 209 packages with MCP SDK 1.32.2. The example's `npm audit` reports
+zero vulnerabilities.
+
+`yarn release:pack` passes all 10 package dry-runs. `yarn release:verify` passes
+from the staged release tree, including clean tarballs, isolated ESM imports,
+all four generated engine profiles, authenticated MCP HTTP, DevTools doctor,
+and atomic and capability-library consumers. Publication remains subject to
+the release PR CI, the annotated tag's Verify job, and the protected npm
+environment. Registry integrity and a clean example `npm ci` must be checked
+again after publication.
