@@ -28,7 +28,7 @@ describe("@invokta/installer package boundary", () => {
       },
       bin: { "invokta-installer": "./dist/cli.js" },
       dependencies: {
-        "@clack/prompts": "1.7.0",
+        "@clack/prompts": "1.8.1",
         "@humanwhocodes/momoa": "3.3.13",
         "toml-eslint-parser": "1.0.3",
         yaml: "2.9.0",

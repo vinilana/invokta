@@ -20,10 +20,10 @@
     "@invokta/cli": "0.9.0",
     "@invokta/core": "0.9.0",
     "@invokta/mcp": "0.9.0",
-    "zod": "4.5.4"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@invokta/devtools": "0.9.0",
-    "@modelcontextprotocol/sdk": "1.30.0"
+    "@modelcontextprotocol/sdk": "1.32.2"
   }
 }

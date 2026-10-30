@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { expect, it } from "vitest";
 
 const repositoryRoot = new URL("../../../", import.meta.url);
-const approvedSdkVersion = "1.30.0";
+const approvedSdkVersion = "1.32.2";
 const sdkPackageName = "@modelcontextprotocol/sdk";
 
 interface PackageManifest {

@@ -561,7 +561,7 @@ describe("createStarterFiles", () => {
         "@invokta/core": "1.2.3-beta.1",
         "@invokta/installer": "1.2.3-beta.1",
         "@invokta/mcp": "1.2.3-beta.1",
-        zod: "4.4.3",
+        zod: "4.6.7",
       },
       devDependencies: {
         "@types/node": "26.1.2",

@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-09-06
+- Last reviewed: 2026-10-30
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
@@ -63,9 +63,10 @@ consumer can use the protocol surface without coupling to engine code.
   atomic and capability-library creator smoke tests.
 - `yarn validate` in `apps/docs` passes 15 route and link contract tests, zero
   Astro diagnostics, and the 49-page production site build.
-- The 2026-09-06 dependency refresh audits report zero vulnerabilities across
-  305 audited root packages and 537 documentation packages. The standalone OAuth
-  example's independent npm lockfile also passes its own audit.
+- The 2026-10-30 dependency refresh audits report zero vulnerabilities across
+  300 audited root packages and 569 documentation packages. The standalone OAuth
+  example's independent npm lockfile is audited separately; see the refresh
+  record below.
 
 ## Boundaries exercised
 
@@ -279,3 +280,62 @@ The staged tree also passed `yarn release:verify`: all ten public package
 tarballs, isolated ESM imports, executable smoke checks, and generated
 consumers passed. After adding the audit step, lint and formatting checks
 passed, and all nine release-script integration tests remained green.
+
+## Dependency refresh (2026-10-30)
+
+The refresh consolidates Dependabot PRs #96 through #100 and #102 through #116
+from the 0.9.0 mainline, whose CI had failed the workspace audit since early
+October. Current stable versions within each existing major line were checked
+against npm metadata and upstream releases; superseded PR targets were replaced
+by their latest patch where one existed.
+
+| Dependency | Updated version | Upstream reference |
+| --- | --- | --- |
+| `@modelcontextprotocol/sdk` | 1.32.2 | [Release](https://github.com/modelcontextprotocol/typescript-sdk/releases/tag/1.32.2) |
+| `zod` | 4.6.7 | [Package](https://www.npmjs.com/package/zod/v/4.6.7) |
+| `@clack/prompts` | 1.8.1 | [Package](https://www.npmjs.com/package/@clack/prompts/v/1.8.1) |
+| `@biomejs/biome` | 2.5.15 | [Release](https://github.com/biomejs/biome/releases/tag/%40biomejs/biome%402.5.15) |
+| `vitest`, `@vitest/coverage-v8` | 4.1.12 | [Release](https://github.com/vitest-dev/vitest/releases/tag/v4.1.12) |
+| `@types/node` | 26.6.6 | [Package](https://www.npmjs.com/package/@types/node/v/26.6.6) |
+| `@types/oidc-provider` | ^9.12.1 | [Package](https://www.npmjs.com/package/@types/oidc-provider) |
+| `astro` | 7.4.4 | [Release](https://github.com/withastro/astro/releases/tag/astro%407.4.4) |
+| `actions/setup-node` | 7.1.0 | [Release](https://github.com/actions/setup-node/releases/tag/v7.1.0) |
+
+The MCP SDK review required by ADR 0006 covered the 1.30.1, 1.31.0, 1.32.0,
+1.32.1, and 1.32.2 release notes. `LATEST_PROTOCOL_VERSION` remains
+`2025-11-25` with the same supported versions, and the package export map is
+unchanged for every subpath Invokta imports. Upstream changes include bounded
+HTTP request bodies and batches, OAuth credentials bound to their issuer,
+opt-in bearer-token audience and tool-argument limits, session-scoped tasks,
+and same-origin redirects in HTTP client transports. The client facade already
+supplies a fetch that uses `redirect: "manual"` and rejects every 3xx response,
+so redirect behavior is unchanged. The SDK version contract test and the
+support harness manifest assertion were updated with the pin; the full MCP
+conformance, stdio, HTTP, client, and OAuth inspection suites pass.
+
+Generated projects previously pinned Zod 4.4.3, below the 4.6.6 fix for memory
+exhaustion on oversized constrained collections. The engine, atomic capability,
+and capability-library creator assertions were updated first and failed against
+the 4.4.3 pin; after updating the three starters, all 323 focused creator,
+installer boundary, SDK contract, and support harness tests passed.
+
+Yarn kept vulnerable transitive versions that still satisfied their ranges, so
+their lock entries were regenerated: `proxy-addr` 2.0.8, `body-parser` 2.4.0,
+`hono` 4.13.14, `@hono/node-server` 2.1.5, `ip-address` 10.7.5, `vite` 8.3.5,
+and `source-map-js` 1.2.2. Vite 8.3.5 requires `nanoid` ^3.3.20, so the
+workspace and documentation resolutions move to 3.3.20 with `fast-uri` 3.1.9 and
+`qs` 6.17.1; the documentation app also resolves `js-yaml` 4.3.2 and refreshed
+`sharp`, `undici`, `smol-toml`, and `postcss-selector-parser`.
+
+`yarn run check` passes on Node.js 24.20.0: 3,189 tests pass with two skips, the
+intentional container skip and the deploy write-failure test that skips when run
+as root, with 78.99% statement, 74.41% branch, 83.5% function, and 80.7% line
+coverage and 19 example gates. `yarn validate` in
+`apps/docs` passes 15 tests, zero Astro diagnostics, and 49 built pages. The
+root and documentation audits report zero vulnerabilities.
+
+The standalone OAuth example's lockfile, regenerated in an isolated copy, now
+also matches its manifest's Zod and Node.js type pins and installs 209 packages
+with `npm ci --ignore-scripts --no-audit --no-fund`. Its remaining audit
+findings are the 1.30.0 MCP SDK pinned by the published `@invokta/mcp` 0.9.0;
+the next release's Invokta packages remove them.
