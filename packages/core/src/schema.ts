@@ -135,37 +135,46 @@ function freezeJsonValue<Value>(value: Value, visited: Set<object>): Value {
   return Object.freeze(value);
 }
 
-function assertLosslessJson(value: unknown, ignoredOwnProperty?: string): void {
+function assertLosslessJsonStructure(
+  value: unknown,
+  ignoredOwnProperty?: string,
+): void {
   assertJsonValue(value, new Set(), ignoredOwnProperty);
   if (JSON.stringify(value) === undefined) rejectNonJsonValue();
-  if (hostTypeIntrospection === "portable") {
-    rejectProxiesByStructuredClone(value);
-  }
 }
 
 /**
- * Without host introspection, a proxy is invisible to the structural walk.
- * The HTML structured-serialize algorithm throws for every proxy object in
- * the graph, so cloning the value that just passed the walk rejects proxies
- * on any conforming host (ADR 0042). Accessors were already rejected without
- * being invoked, so the clone reads only data properties.
+ * Structured-clones a value that passed the structural walk. Without host
+ * introspection a proxy is invisible to that walk, but the HTML
+ * structured-serialize algorithm throws for every proxy in the graph, so the
+ * clone also rejects proxies on any conforming host (ADR 0042). Accessors were
+ * already rejected without being invoked, so the clone reads only data
+ * properties.
  */
-function rejectProxiesByStructuredClone(value: unknown): void {
+function cloneLosslessJson<Value>(value: Value): Value {
   try {
-    structuredClone(value);
+    return structuredClone(value);
   } catch {
     rejectNonJsonValue();
   }
 }
 
+function assertLosslessJson(value: unknown): void {
+  assertLosslessJsonStructure(value);
+  if (hostTypeIntrospection === "portable") cloneLosslessJson(value);
+}
+
 export function snapshotLosslessJson<Value>(value: Value): Value {
-  assertLosslessJson(value);
-  return freezeJsonValue(structuredClone(value), new Set());
+  assertLosslessJsonStructure(value);
+  return freezeJsonValue(cloneLosslessJson(value), new Set());
 }
 
 function snapshotJsonSchemaDocument(value: unknown): EngineJsonSchema {
-  assertLosslessJson(value, "~standard");
-  return freezeJsonValue(structuredClone(value), new Set()) as EngineJsonSchema;
+  assertLosslessJsonStructure(value, "~standard");
+  return freezeJsonValue(
+    cloneLosslessJson(value),
+    new Set(),
+  ) as EngineJsonSchema;
 }
 
 function assertSafelyJsonSerializable(

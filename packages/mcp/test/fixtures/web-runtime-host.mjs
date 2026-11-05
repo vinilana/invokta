@@ -1,7 +1,8 @@
 // Approximates a Web-standard host inside Node.js before the entry point
 // loads: every Node.js built-in module is unavailable to `import` and
-// `require`, and `process.getBuiltinModule` is gone, so the core must use its
-// portable type-introspection fallback. Run the entry point with
+// `require`, `process.getBuiltinModule` is gone, and `navigator.userAgent`
+// names another runtime, so the core uses its portable type-introspection
+// fallback instead of failing closed as on Node.js. Run the entry point with
 // `--disallow-code-generation-from-strings` to forbid `eval` and
 // `new Function`, as Cloudflare Workers do.
 import { isBuiltin, registerHooks } from "node:module";
@@ -20,3 +21,8 @@ registerHooks({
 if (!Reflect.deleteProperty(process, "getBuiltinModule")) {
   throw new Error("process.getBuiltinModule could not be removed.");
 }
+Object.defineProperty(globalThis, "navigator", {
+  configurable: true,
+  enumerable: true,
+  value: { userAgent: "Invokta-Web-Host-Simulation" },
+});

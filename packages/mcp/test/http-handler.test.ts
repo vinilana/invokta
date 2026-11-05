@@ -523,6 +523,76 @@ describe("Web-standard MCP HTTP handler", () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  it("settles and cancels a stalled body when the request signal aborts", async () => {
+    const engine = createContextEngine();
+    const invoke = vi.spyOn(engine, "invoke");
+    const handler = handlerFor(engine);
+    let cancelled = false;
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"jsonrpc":"2.0",'));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    const response = await handler(
+      new Request(`${ORIGIN}/mcp`, {
+        method: "POST",
+        headers: { ...PROTOCOL_HEADERS, authorization: "Bearer alice" },
+        body: stalled,
+        duplex: "half",
+        signal: AbortSignal.timeout(50),
+      } as RequestInit),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await json(response)).toEqual({
+      jsonrpc: "2.0",
+      error: { code: -32603, message: "Internal server error" },
+      id: null,
+    });
+    expect(cancelled).toBe(true);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("does not read the body of an already aborted request", async () => {
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls += 1;
+          controller.enqueue(new TextEncoder().encode("{}"));
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const controller = new AbortController();
+    const handler = handlerFor(createContextEngine(), {
+      auth: {
+        mode: "required",
+        authenticate: () => {
+          controller.abort();
+          return { id: "user:alice" };
+        },
+      },
+    });
+
+    const response = await handler(
+      new Request(`${ORIGIN}/mcp`, {
+        method: "POST",
+        headers: PROTOCOL_HEADERS,
+        body,
+        duplex: "half",
+        signal: controller.signal,
+      } as RequestInit),
+    );
+
+    expect(response.status).toBe(500);
+    expect(pulls).toBe(0);
+  });
+
   it("accepts a body exactly at the configured boundary", async () => {
     const body = JSON.stringify(toolCall("support_inspect", { value: "x" }));
     const handler = handlerFor(createContextEngine(), {
@@ -617,6 +687,29 @@ describe("Web-standard MCP HTTP handler", () => {
     expect(unauthenticated.status).toBe(401);
     expect(accepted.status).toBe(200);
     expect(invoke).toHaveBeenCalledOnce();
+  });
+
+  it("treats only a comma outside a quoted string as a repeated Content-Type", async () => {
+    const handler = handlerFor();
+    const call = (contentType: string) =>
+      handler(
+        post(toolCall("support_inspect", { value: "quoted" }), {
+          token: "alice",
+          headers: { "content-type": contentType },
+        }),
+      );
+
+    const quoted = await call('application/json; profile="a,b"');
+    const escaped = await call('application/json; profile="a\\",b"');
+    const repeatedAfterQuote = await call(
+      'application/json; profile="a,b", text/plain',
+    );
+    const unterminated = await call('application/json; profile="a, text/plain');
+
+    expect(quoted.status).toBe(200);
+    expect(escaped.status).toBe(200);
+    expect(repeatedAfterQuote.status).toBe(415);
+    expect(unterminated.status).toBe(415);
   });
 
   it("accepts a notification without a protocol result body", async () => {

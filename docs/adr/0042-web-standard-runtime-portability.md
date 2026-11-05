@@ -40,8 +40,17 @@ function. On those hosts the defensive behavior is unchanged: proxies and
 promises are recognized without running user code, and later replacement of
 the global cannot change the captured guards.
 
-Where `process.getBuiltinModule` is unavailable, such as a Web-only isolate,
-the core uses a documented portable fallback:
+Node.js itself never downgrades. A process identifies as Node.js when
+`process.versions.node` is a string, `process.release.name` is `node`, there is
+no Deno, Bun, or `EdgeRuntime` marker, and `navigator.userAgent`, when present,
+names Node.js. If such a process cannot resolve `util.types`, for example on a
+release before 22.3 or because a sandbox replaced or broke
+`process.getBuiltinModule` before the core loaded, importing the core throws an
+error that names the missing function instead of selecting the fallback.
+
+Where `process.getBuiltinModule` is unavailable on a host that does not
+identify as Node.js, such as a Web-only isolate, the core uses a documented
+portable fallback:
 
 - proxy detection reports `false`, and promise detection uses
   `instanceof Promise`;
@@ -52,13 +61,17 @@ the core uses a documented portable fallback:
   configuration is still rejected with the same `INPUT_INVALID`,
   `OUTPUT_INVALID`, or construction `TypeError` as on Node.js. Accessors are
   still rejected before they are invoked, so the clone reads only data
-  properties;
+  properties. Snapshots reuse that clone, so the probe adds one structured
+  clone only to each validated input and output that is not otherwise
+  snapshotted;
 - at the remaining boundaries, which receive capability, connector, and
   composition definitions, Standard Schema contract objects, validator results,
   thrown `EngineError` values, and `AbortSignal` instances, a proxy's traps may
   run during the structural checks. A proxy that forwards to an acceptable
   object may be treated as that object. An `AbortSignal` must still pass the
-  platform brand check performed with the captured `aborted` getter.
+  platform brand check performed with the captured `aborted` getter, but a
+  host whose brand check reads properties through `[[Get]]` lets a forwarding
+  proxy pass it and runs its traps.
 
 The fallback is not fail-closed because no portable check can distinguish a
 proxy from an ordinary object, and rejecting every object would make the
@@ -107,16 +120,20 @@ The Fetch API changes what a handler can observe, so the handler maps each
   mount path. A query, including an empty one, a fragment, and percent encoding
   are rejected. The host's URL parser has already resolved dot segments, so the
   handler routes the normalized path that the host itself routes.
-- **Repeated fields.** Fetch joins repeated header fields with `, `. A comma in
-  `Host` or `Content-Type`, neither of which can legitimately contain one, is
-  treated as a repeated field and rejected. A joined `Authorization` value
+- **Repeated fields.** Fetch joins repeated header fields with `, `. Any comma
+  in `Host`, and a comma outside a quoted parameter value or an unterminated
+  quoted string in `Content-Type`, is treated as a repeated field and
+  rejected; a single `Content-Type` such as
+  `application/json; profile="a,b"` is accepted as by `serveMcpHttp`. A joined
+  `Authorization` value
   cannot be distinguished from one credential with parameters, so it reaches
   the authenticator as one value; a Bearer authenticator rejects it because a
   token cannot contain a comma or a space. `serveMcpHttp` keeps rejecting
   repeated raw `Authorization`, `Host`, and `Content-Type` fields.
 - **Body.** The handler reads `request.body` incrementally, counts bytes,
-  decodes strict UTF-8, and cancels the stream as soon as the limit is crossed
-  or a sequence is malformed, so it holds at most one chunk beyond the limit. A
+  decodes strict UTF-8, and cancels the stream as soon as the limit is crossed,
+  a sequence is malformed, or `request.signal` aborts, so it holds at most one
+  chunk beyond the limit and a stalled body cannot outlive its request. A
   declared `Content-Length` above the limit is rejected before
   authentication when the host exposes it.
 - **Cancellation and connections.** `request.signal` reaches the
@@ -155,8 +172,9 @@ use `globalThis.crypto.randomUUID()`.
 Node.js is the runtime verified by tests, on the supported versions declared in
 each package's `engines` field. The tests also run the portable entry point in a
 Node.js child process where every built-in module is unavailable to `import`
-and `require`, `process.getBuiltinModule` is removed, and code generation from
-strings is disallowed, approximating a Web-only isolate.
+and `require`, `process.getBuiltinModule` is removed, `navigator.userAgent`
+names another runtime, and code generation from strings is disallowed,
+approximating a Web-only isolate.
 
 The core and `@invokta/mcp/web` are supported by design on runtimes that provide
 ES2024, the Fetch API, Web Streams, `TextEncoder` and a fatal `TextDecoder`,
@@ -173,8 +191,11 @@ Node.js packages.
   runtime without a second protocol implementation or execution path.
 - Both adapters share one set of boundary rules, so a future rule change
   applies to Node.js and Fetch hosts together.
-- On hosts without `process.getBuiltinModule`, proxies at non-JSON boundaries
-  may have their traps invoked; JSON values still reject proxies.
+- On hosts without `process.getBuiltinModule` that are not Node.js, proxies at
+  non-JSON boundaries may have their traps invoked; JSON values still reject
+  proxies at the cost of one extra structured clone per validated input and
+  output, which matters on CPU-metered Fetch runtimes. A Node.js process without
+  it refuses to load the core.
 - A Fetch host cannot reveal repeated `Authorization` fields; authenticators
   must reject a value that is not exactly one credential.
 - The package declares a second public entry point, which the release

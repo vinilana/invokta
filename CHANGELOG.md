@@ -27,8 +27,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `globalThis.crypto.randomUUID()` and `globalThis.performance.now()`, and reads
   `util.types` through `process.getBuiltinModule` where the host provides it,
   which keeps proxy and promise detection unchanged on Node.js, Deno, and Bun.
-  Hosts without it use a documented fallback that still rejects proxied JSON
-  values (ADR 0042).
+  A Node.js process without it refuses to load the core instead of weakening
+  those checks; other hosts without it use a documented fallback that still
+  rejects proxied JSON values (ADR 0042).
 - `serveMcpHttp` is now a Node.js adapter over the same protocol implementation
   as `createMcpHttpHandler`; its options, status codes, and connection handling
   are unchanged, and `ServeMcpHttpOptions` extends `McpHttpHandlerOptions`.

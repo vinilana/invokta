@@ -277,27 +277,30 @@ boundary maps to it as follows:
 - The URL's path must equal the mount path. A query, including an empty one, a
   fragment, and percent encoding are rejected. The host has already resolved
   dot segments, so the handler routes the path the host routes.
-- Fetch joins repeated header fields with `, `. A comma in `Host` or
-  `Content-Type` counts as a repeated field and is rejected. A joined
-  `Authorization` value reaches the authenticator as one value, which a Bearer
-  authenticator must reject.
+- Fetch joins repeated header fields with `, `. Any comma in `Host`, and a
+  comma outside a quoted parameter value in `Content-Type`, counts as a
+  repeated field and is rejected; `application/json; profile="a,b"` is
+  accepted. A joined `Authorization` value reaches the authenticator as one
+  value, which a Bearer authenticator must reject.
 - The body is read incrementally from `request.body`, and the stream is
-  cancelled as soon as the limit is crossed or UTF-8 is malformed. A declared
-  `Content-Length` above the limit is rejected before authentication when the
-  host exposes it.
-- `request.signal` is the cancellation signal for authentication and the
-  invocation. The host owns connections and shutdown; the handler sets no
-  hop-by-hop header.
+  cancelled as soon as the limit is crossed, UTF-8 is malformed, or
+  `request.signal` aborts. A declared `Content-Length` above the limit is
+  rejected before authentication when the host exposes it.
+- `request.signal` is the cancellation signal for authentication, body
+  reading, and the invocation. The host owns connections and shutdown; the
+  handler sets no hop-by-hop header.
 
 <Aside type="note" title="Verified and supported runtimes">
-  Node.js is verified by tests, including a run with every Node.js built-in
-  module blocked, no `process.getBuiltinModule`, and code generation from
-  strings disallowed. Deno, Bun, Cloudflare Workers, Vercel Edge, and Node.js
+  Node.js is verified by tests, including a run that approximates a Web-only
+  isolate: every Node.js built-in module blocked, no
+  `process.getBuiltinModule`, a non-Node.js user agent, and code generation
+  from strings disallowed. Deno, Bun, Cloudflare Workers, Vercel Edge, and Node.js
   frameworks such as Hono and Next.js route handlers are supported by design:
   they provide the Fetch API, Web Streams, `TextDecoder`, `structuredClone`,
   `crypto.randomUUID`, and `AbortSignal.any` that the handler and the core use,
-  but they are not run in CI. See ADR 0042 for the core's behavior on hosts
-  without `process.getBuiltinModule`.
+  but they are not run in CI. On Node.js the core refuses to load without
+  `process.getBuiltinModule`; see ADR 0042 for its behavior on other hosts
+  without it.
 </Aside>
 
 ## HTTP authentication

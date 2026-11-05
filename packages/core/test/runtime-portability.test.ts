@@ -6,7 +6,12 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { hostTypeIntrospection, resolveHostTypes } from "../src/host-types.js";
+import {
+  hostTypeIntrospection,
+  identifiesAsNodeJs,
+  resolveHostTypes,
+  selectHostTypes,
+} from "../src/host-types.js";
 
 const sourceRoot = fileURLToPath(new URL("../src/", import.meta.url));
 
@@ -173,31 +178,175 @@ describe("host type introspection", () => {
   });
 });
 
+describe("Node.js host identification", () => {
+  const nodeProcess = {
+    versions: { node: "22.2.0", v8: "12.4.254.14-node.12" },
+    release: { name: "node" },
+  };
+
+  it("identifies the current Node.js process", () => {
+    expect(identifiesAsNodeJs(globalThis)).toBe(true);
+  });
+
+  it.each([
+    [
+      "Node.js with navigator",
+      { process: nodeProcess, navigator: { userAgent: "Node.js/22" } },
+    ],
+    ["Node.js without navigator", { process: nodeProcess }],
+  ])("identifies %s", (_label, host) => {
+    expect(identifiesAsNodeJs(host)).toBe(true);
+  });
+
+  it.each([
+    ["no process global", {}],
+    ["a process without versions", { process: { release: { name: "node" } } }],
+    [
+      "a process without a Node.js version",
+      { process: { versions: {}, release: { name: "node" } } },
+    ],
+    [
+      "a different release name",
+      { process: { ...nodeProcess, release: { name: "io.js" } } },
+    ],
+    [
+      "Deno",
+      {
+        process: {
+          ...nodeProcess,
+          versions: { ...nodeProcess.versions, deno: "2.5.0" },
+        },
+      },
+    ],
+    ["the Deno global", { process: nodeProcess, Deno: {} }],
+    [
+      "Bun",
+      {
+        process: {
+          ...nodeProcess,
+          versions: { ...nodeProcess.versions, bun: "1.4.4" },
+        },
+      },
+    ],
+    ["the Bun global", { process: nodeProcess, Bun: {} }],
+    ["an Edge runtime", { process: nodeProcess, EdgeRuntime: "edge-runtime" }],
+    [
+      "a Worker user agent",
+      { process: nodeProcess, navigator: { userAgent: "Cloudflare-Workers" } },
+    ],
+    [
+      "a throwing process global",
+      Object.defineProperty({}, "process", {
+        get() {
+          throw new Error("process is not available");
+        },
+      }),
+    ],
+  ])("does not identify %s as Node.js", (_label, host) => {
+    expect(identifiesAsNodeJs(host)).toBe(false);
+  });
+
+  it("fails closed when Node.js lacks trap-free introspection", () => {
+    const shadowed = {
+      process: {
+        ...nodeProcess,
+        getBuiltinModule() {
+          throw new Error("blocked by a sandbox");
+        },
+      },
+    };
+
+    expect(() => selectHostTypes({ process: nodeProcess })).toThrow(
+      'process.getBuiltinModule("node:util")',
+    );
+    expect(() => selectHostTypes(shadowed)).toThrow(
+      "@invokta/core requires util.types",
+    );
+    expect(selectHostTypes(globalThis)).toBeDefined();
+  });
+
+  it("selects the portable fallback on a host that is not Node.js", () => {
+    expect(
+      selectHostTypes({
+        process: nodeProcess,
+        navigator: { userAgent: "Cloudflare-Workers" },
+      }),
+    ).toBeUndefined();
+    expect(selectHostTypes({})).toBeUndefined();
+  });
+});
+
 describe("portable fallback without host introspection", () => {
   const descriptor = Object.getOwnPropertyDescriptor(
     process,
     "getBuiltinModule",
+  );
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "navigator",
   );
 
   afterEach(() => {
     if (descriptor !== undefined) {
       Object.defineProperty(process, "getBuiltinModule", descriptor);
     }
+    if (navigatorDescriptor !== undefined) {
+      Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+    }
     vi.resetModules();
   });
 
-  async function importCoreWithoutHostIntrospection() {
+  function removeHostIntrospection(): void {
     Object.defineProperty(process, "getBuiltinModule", {
       configurable: true,
       enumerable: descriptor?.enumerable ?? false,
       writable: true,
       value: undefined,
     });
+  }
+
+  async function importCoreWithoutHostIntrospection() {
+    removeHostIntrospection();
+    // Present a Web host's user agent so this Node.js process is not
+    // identified as Node.js and the portable fallback applies.
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      enumerable: true,
+      value: { userAgent: "Invokta-Portable-Host-Test" },
+    });
     vi.resetModules();
     const hostTypes = await import("../src/host-types.js");
+    const schema = await import("../src/schema.js");
     const core = await import("../src/index.js");
-    return { hostTypes, core };
+    return { hostTypes, schema, core };
   }
+
+  it("clones a snapshot once and rejects nested proxies", async () => {
+    const { schema } = await importCoreWithoutHostIntrospection();
+    const clone = vi.spyOn(globalThis, "structuredClone");
+
+    try {
+      const snapshot = schema.snapshotLosslessJson({ list: [1, { a: "b" }] });
+
+      expect(clone).toHaveBeenCalledOnce();
+      expect(snapshot).toEqual({ list: [1, { a: "b" }] });
+      expect(Object.isFrozen(snapshot.list[1])).toBe(true);
+      expect(() =>
+        schema.snapshotLosslessJson({ nested: [new Proxy({}, {})] }),
+      ).toThrow(TypeError);
+    } finally {
+      clone.mockRestore();
+    }
+  });
+
+  it("refuses to load on Node.js without trap-free introspection", async () => {
+    removeHostIntrospection();
+    vi.resetModules();
+
+    await expect(import("../src/index.js")).rejects.toThrow(
+      "@invokta/core requires util.types",
+    );
+  });
 
   it("selects the portable fallback", async () => {
     const { hostTypes } = await importCoreWithoutHostIntrospection();

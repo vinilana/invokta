@@ -25,11 +25,28 @@ export { McpToolNameCollisionError } from "./protocol-server.js";
 export type McpHttpHandler = (request: Request) => Promise<Response>;
 
 /**
+ * Whether a field value contains a comma outside an RFC 9110 quoted string,
+ * which is where the Fetch API separates the values of repeated fields. An
+ * unterminated quoted string could hide that comma, so it counts as one too.
+ */
+function hasUnquotedComma(value: string): boolean {
+  let quoted = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (quoted && character === "\\") index += 1;
+    else if (character === '"') quoted = !quoted;
+    else if (character === "," && !quoted) return true;
+  }
+  return quoted;
+}
+
+/**
  * Describes a Fetch request for the protocol boundary. The Fetch API merges
- * repeated header fields into one comma-separated value, so a comma marks a
- * repeated `Host` or `Content-Type`, neither of which may legitimately contain
- * one. A merged `Authorization` value is indistinguishable from a single
- * credential with parameters and reaches the authenticator as one value.
+ * repeated header fields into one comma-separated value. A `Host` cannot
+ * contain a comma, and a single `Content-Type` can contain one only inside a
+ * quoted parameter value, so any other comma marks a repeated field. A merged
+ * `Authorization` value is indistinguishable from a single credential with
+ * parameters and reaches the authenticator as one value.
  */
 function describeRequest(request: Request): McpHttpRequestFacts {
   const url = new URL(request.url);
@@ -49,8 +66,10 @@ function describeRequest(request: Request): McpHttpRequestFacts {
           ? [url.host]
           : [host, url.host],
     headers,
-    repeated: (name) =>
-      name === "content-type" && headers.get(name)?.includes(",") === true,
+    repeated: (name) => {
+      const value = name === "content-type" ? headers.get(name) : null;
+      return value !== null && hasUnquotedComma(value);
+    },
     body: request.body,
     signal: request.signal,
   };

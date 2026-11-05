@@ -564,45 +564,59 @@ type BodyReadResult =
 /**
  * Reads at most `maxBytes` from a byte stream, decoding strict UTF-8
  * incrementally. Reading stops, and the stream is cancelled, as soon as the
- * limit is crossed or a byte sequence is malformed, so no more than one chunk
- * beyond the limit is ever held.
+ * limit is crossed, a byte sequence is malformed, or the request signal
+ * aborts, so no more than one chunk beyond the limit is ever held and a
+ * stalled body cannot outlive its request. Cancellation rejects.
  */
 async function readBody(
   body: ReadableStream<Uint8Array> | null,
   maxBytes: number,
+  signal: AbortSignal,
 ): Promise<BodyReadResult> {
   if (body === null) return { status: "ok", body: "" };
+  if (signal.aborted) throw new Error("The request was cancelled.");
   const reader = body.getReader();
-  const stop = (result: BodyReadResult): BodyReadResult => {
-    void reader.cancel().catch(() => undefined);
-    return result;
+  const cancel = (reason?: unknown): void => {
+    void reader.cancel(reason).catch(() => undefined);
   };
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  const chunks: string[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!ArrayBuffer.isView(value)) {
-      void reader.cancel().catch(() => undefined);
-      throw new TypeError("The request body must be a byte stream.");
+  const onAbort = (): void => cancel(signal.reason);
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    const chunks: string[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      // A cancelled reader reports completion; an aborted request never does.
+      if (signal.aborted) throw new Error("The request was cancelled.");
+      if (done) break;
+      if (!ArrayBuffer.isView(value)) {
+        cancel();
+        throw new TypeError("The request body must be a byte stream.");
+      }
+      total += value.byteLength;
+      if (total > maxBytes) {
+        cancel();
+        return { status: "payload-too-large" };
+      }
+      try {
+        const decoded = decoder.decode(value, { stream: true });
+        if (decoded.length > 0) chunks.push(decoded);
+      } catch {
+        cancel();
+        return { status: "invalid-utf8" };
+      }
     }
-    total += value.byteLength;
-    if (total > maxBytes) return stop({ status: "payload-too-large" });
     try {
-      const decoded = decoder.decode(value, { stream: true });
+      const decoded = decoder.decode();
       if (decoded.length > 0) chunks.push(decoded);
     } catch {
-      return stop({ status: "invalid-utf8" });
+      return { status: "invalid-utf8" };
     }
+    return { status: "ok", body: chunks.join("") };
+  } finally {
+    signal.removeEventListener("abort", onAbort);
   }
-  try {
-    const decoded = decoder.decode();
-    if (decoded.length > 0) chunks.push(decoded);
-  } catch {
-    return { status: "invalid-utf8" };
-  }
-  return { status: "ok", body: chunks.join("") };
 }
 
 function declaredBodyExceedsLimit(
@@ -811,7 +825,11 @@ export function createMcpHttpProtocol<Capabilities extends CapabilityMap>(
     );
     let consumedBody = false;
     try {
-      const bodyResult = await readBody(facts.body, maxRequestBodyBytes);
+      const bodyResult = await readBody(
+        facts.body,
+        maxRequestBodyBytes,
+        facts.signal,
+      );
       if (bodyResult.status === "payload-too-large") {
         return early(413, { error: "payload_too_large" });
       }

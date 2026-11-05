@@ -156,9 +156,9 @@ follow from what a Fetch `Request` exposes:
 | --- | --- |
 | Allowed hosts | Loopback names by default; the `Host` header, when present, and the URL authority must each be allowed |
 | Request target | The host has already resolved dot segments; a query, fragment, or percent encoding is still rejected |
-| Repeated header fields | Fetch joins them with `, `; a comma in `Host` or `Content-Type` is rejected, and a joined `Authorization` value reaches the authenticator as one value |
-| Body limit | Enforced while streaming `request.body`, which is cancelled when the limit is crossed |
-| Cancellation | `request.signal` reaches the authenticator and the capability |
+| Repeated header fields | Fetch joins them with `, `; any comma in `Host`, or one outside a quoted parameter value in `Content-Type`, is rejected, and a joined `Authorization` value reaches the authenticator as one value |
+| Body limit | Enforced while streaming `request.body`, which is cancelled when the limit is crossed or the request aborts |
+| Cancellation | `request.signal` reaches the authenticator, body reading, and the capability |
 | Connections and shutdown | Owned by the host; the handler sets no hop-by-hop header |
 
 <Aside type="caution" title="Reject anything that is not exactly one credential">
