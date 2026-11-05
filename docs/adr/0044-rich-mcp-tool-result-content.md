@@ -171,13 +171,19 @@ with the capability ID, tool name, property name, and one code:
 | Code | Meaning |
 | --- | --- |
 | `UNSUPPORTED_MEDIA_TYPE` | An `image/` or `audio/` media type outside the exact allowlist, including another case, parameters, `image/jpg`, or SVG |
-| `MEDIA_WITHOUT_BASE64` | An allowlisted media type without a `contentEncoding: "base64"` property |
+| `MEDIA_WITHOUT_BASE64` | An allowlisted media type whose declared `contentEncoding` is not `base64` |
 | `AMBIGUOUS_MEDIA_OBJECT` | A media object with more than one base64 property |
 | `INCOMPLETE_RESOURCE_LINK` | A `text/uri-list` marker in another spelling, outside a link object, or without a string `uri`, a string `name`, or a string `mimeType` |
 | `UNSUPPORTED_POSITION` | A content annotation inside a union, a type array, a nested object, or a nested array; `$ref` targets are not inspected |
 | `CONTENT_BLOCK_LIMIT` | The contract permits more than 16 planned values, for example an array without `maxItems` |
 
-Warnings read only the contract, never a value, and never fail validation.
+Only explicit content signals warn: a media-like `contentMediaType`, or a
+media-like `mimeType` enum, counts only together with a `contentEncoding`
+keyword, and a `text/uri-list` marker always counts. Media metadata without
+encoded data and inline text such as SVG markup stay silent. Warnings read only
+the contract, never a value, and never fail validation; a schema that the
+diagnostics cannot read produces no warning. Later minor releases may add
+warning codes, so consumers treat an unknown code as a warning.
 `invokta check-mcp` prints them on standard error after the module and export
 lines and still exits `0`. This amends the silent success of ADR 0026 for this
 case only; a catalog without warnings remains silent.

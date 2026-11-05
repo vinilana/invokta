@@ -145,11 +145,16 @@ whose annotations come close but will not map:
 | Warning code | Cause |
 | --- | --- |
 | `UNSUPPORTED_MEDIA_TYPE` | An `image/` or `audio/` type outside the exact allowlist, such as `image/jpg`, `Image/PNG`, or SVG |
-| `MEDIA_WITHOUT_BASE64` | An allowlisted media type without a base64 property |
+| `MEDIA_WITHOUT_BASE64` | An allowlisted media type whose declared `contentEncoding` is not `base64` |
 | `AMBIGUOUS_MEDIA_OBJECT` | More than one base64 property in a media object |
 | `INCOMPLETE_RESOURCE_LINK` | A `text/uri-list` marker in another spelling, outside a link object, or without string `uri` and `name` |
 | `UNSUPPORTED_POSITION` | A content annotation in a union, type array, nested object, or nested array |
 | `CONTENT_BLOCK_LIMIT` | The contract permits more than 16 planned values, such as an array without `maxItems` |
+
+A media type or a `mimeType` enum warns only together with a `contentEncoding`
+keyword, so media metadata without encoded data and inline text such as SVG
+markup stay silent. Warnings never fail validation. Later minor releases may
+add warning codes; treat an unknown code as a warning.
 
 Follow the [rich content recipe](/recipes/mcp-rich-content/) for Zod 4
 authoring.

@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { validateMcpToolCatalog } from "../src/index.js";
 import {
+  createMcpToolCatalogReport,
   createMcpToolResult,
   diagnoseMcpToolContent,
   MAX_TOOL_CONTENT_BLOCKS,
@@ -600,8 +601,13 @@ describe("MCP tool content diagnostics", () => {
             mimeType: z.enum(["image/png", "image/svg+xml"]),
             data: z.base64(),
           }),
-          raw: z.string().meta({ contentMediaType: "image/png" }),
-          noData: z.object({ mimeType: z.literal("image/png"), url: z.url() }),
+          raw: z
+            .string()
+            .meta({ contentEncoding: "base32", contentMediaType: "image/png" }),
+          noData: z.object({
+            mimeType: z.literal("image/png"),
+            data: z.string().meta({ contentEncoding: "base32" }),
+          }),
           twoData: z.object({
             mimeType: z.literal("image/png"),
             data: z.base64(),
@@ -628,6 +634,44 @@ describe("MCP tool content diagnostics", () => {
       { property: "nested", code: "UNSUPPORTED_POSITION" },
       { property: "grid", code: "UNSUPPORTED_POSITION" },
     ]);
+  });
+
+  it("reports nothing for ordinary outputs that declare no encoded content", () => {
+    expect(
+      diagnose(
+        z.object({
+          attachment: z.object({
+            mimeType: z.enum(["image/png", "image/jpeg"]),
+            url: z.url(),
+          }),
+          metadata: z.object({
+            file: z.object({ mimeType: z.literal("image/png") }),
+          }),
+          checksum: z.object({ sha256: z.base64() }),
+          inlineSvg: z.string().meta({ contentMediaType: "image/svg+xml" }),
+          caption: z.string().meta({ contentMediaType: "image/png" }),
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("diagnoses schemas with very large keyword arrays without throwing", () => {
+    const values = Array.from(
+      { length: 300_000 },
+      (_, index) => `v${String(index)}`,
+    );
+    expect(
+      diagnoseMcpToolContent({
+        type: "object",
+        properties: {
+          code: { type: "string", enum: values },
+          nested: {
+            type: "object",
+            properties: { code: { type: "string", enum: values } },
+          },
+        },
+      }),
+    ).toEqual([]);
   });
 
   it("reports a contract that permits more planned values than the limit", () => {
@@ -697,5 +741,43 @@ describe("MCP tool catalog report", () => {
     expect(Object.isFrozen(report)).toBe(true);
     expect(Object.isFrozen(report.contentWarnings)).toBe(true);
     expect(Object.isFrozen(report.contentWarnings[0])).toBe(true);
+  });
+
+  it("never fails catalog validation because of a diagnostic", () => {
+    const hostile = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("unreadable schema");
+        },
+        getOwnPropertyDescriptor() {
+          throw new Error("unreadable schema");
+        },
+        ownKeys() {
+          throw new Error("unreadable schema");
+        },
+      },
+    );
+    expect(
+      createMcpToolCatalogReport([
+        { capabilityId: "a.b", toolName: "a_b", outputSchema: hostile },
+        {
+          capabilityId: "c.d",
+          toolName: "c_d",
+          outputSchema: outputSchemaOf(
+            z.object({ chart: base64Media("image/jpg") }),
+          ),
+        },
+      ]),
+    ).toEqual({
+      contentWarnings: [
+        {
+          capabilityId: "c.d",
+          toolName: "c_d",
+          property: "chart",
+          code: "UNSUPPORTED_MEDIA_TYPE",
+        },
+      ],
+    });
   });
 });

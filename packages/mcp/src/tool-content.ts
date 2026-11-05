@@ -92,6 +92,7 @@ export type McpToolCallResult = {
   readonly structuredContent: JsonRecord;
 };
 
+/** Later minor releases may add codes; treat an unknown code as a warning. */
 export type McpToolContentWarningCode =
   | "UNSUPPORTED_MEDIA_TYPE"
   | "MEDIA_WITHOUT_BASE64"
@@ -235,17 +236,39 @@ function isLinkLike(value: unknown): boolean {
   );
 }
 
-/** A schema node that carries a content annotation the adapter recognizes. */
+function hasEncoding(schema: unknown): boolean {
+  return isRecord(schema) && Object.hasOwn(schema, "contentEncoding");
+}
+
+function encodedPropertyCount(properties: JsonRecord): number {
+  return Object.keys(properties).filter(
+    (key) => key !== "mimeType" && hasEncoding(properties[key]),
+  ).length;
+}
+
+/**
+ * An object that declares a media-like `mimeType` next to an encoded
+ * property. A `mimeType` without encoded data is ordinary metadata.
+ */
+function isEncodedMediaObject(properties: JsonRecord): boolean {
+  const mimeType = ownValue(properties, "mimeType");
+  return (
+    isRecord(mimeType) &&
+    declaredValues(mimeType).some(isMediaLike) &&
+    encodedPropertyCount(properties) > 0
+  );
+}
+
+/**
+ * A schema node that explicitly asks for content: an encoded string with a
+ * media-like type, a `text/uri-list` link marker, or an encoded media object.
+ */
 function hasContentSignal(node: JsonRecord): boolean {
   const contentMediaType = ownValue(node, "contentMediaType");
-  if (isMediaLike(contentMediaType) || isLinkLike(contentMediaType)) {
-    return true;
-  }
+  if (isLinkLike(contentMediaType)) return true;
+  if (isMediaLike(contentMediaType) && hasEncoding(node)) return true;
   const properties = ownValue(node, "properties");
-  const mimeType = isRecord(properties)
-    ? ownValue(properties, "mimeType")
-    : undefined;
-  return isRecord(mimeType) && declaredValues(mimeType).some(isMediaLike);
+  return isRecord(properties) && isEncodedMediaObject(properties);
 }
 
 function nearMiss(schema: unknown): McpToolContentWarningCode | undefined {
@@ -253,7 +276,9 @@ function nearMiss(schema: unknown): McpToolContentWarningCode | undefined {
   if (isStringSchema(schema)) {
     const contentMediaType = ownValue(schema, "contentMediaType");
     if (isLinkLike(contentMediaType)) return "INCOMPLETE_RESOURCE_LINK";
-    if (!isMediaLike(contentMediaType)) return undefined;
+    if (!isMediaLike(contentMediaType) || !hasEncoding(schema)) {
+      return undefined;
+    }
     return mediaBlockType(contentMediaType) === undefined
       ? "UNSUPPORTED_MEDIA_TYPE"
       : "MEDIA_WITHOUT_BASE64";
@@ -266,11 +291,8 @@ function nearMiss(schema: unknown): McpToolContentWarningCode | undefined {
   if (isRecord(uri) && isLinkLike(ownValue(uri, "contentMediaType"))) {
     return "INCOMPLETE_RESOURCE_LINK";
   }
-  const mimeType = ownValue(properties, "mimeType");
-  if (!isRecord(mimeType)) return undefined;
-  const values = declaredValues(mimeType);
-  if (!values.some(isMediaLike)) return undefined;
-  if (declaredMediaTypes(mimeType) === undefined) {
+  if (!isEncodedMediaObject(properties)) return undefined;
+  if (declaredMediaTypes(ownValue(properties, "mimeType")) === undefined) {
     return "UNSUPPORTED_MEDIA_TYPE";
   }
   return base64PropertyKeys(properties).length === 0
@@ -289,7 +311,11 @@ function containsContentSignal(schema: unknown): boolean {
     if (!Array.isArray(node) && hasContentSignal(node as JsonRecord)) {
       return true;
     }
-    pending.push(...Object.values(node));
+    // One push per child: spreading a large keyword array into `push` would
+    // exceed the engine's argument limit.
+    for (const child of Object.values(node)) {
+      if (typeof child === "object" && child !== null) pending.push(child);
+    }
   }
   return false;
 }
@@ -348,7 +374,14 @@ export function createMcpToolCatalogReport(
 ): McpToolCatalogReport {
   const contentWarnings: McpToolContentWarning[] = [];
   for (const { capabilityId, toolName, outputSchema } of tools) {
-    for (const { property, code } of diagnoseMcpToolContent(outputSchema)) {
+    let diagnostics: ReturnType<typeof diagnoseMcpToolContent>;
+    try {
+      diagnostics = diagnoseMcpToolContent(outputSchema);
+    } catch {
+      // Diagnostics are advisory and can never fail catalog validation.
+      continue;
+    }
+    for (const { property, code } of diagnostics) {
       contentWarnings.push(
         Object.freeze({ capabilityId, toolName, property, code }),
       );
