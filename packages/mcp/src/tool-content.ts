@@ -4,15 +4,21 @@ import type { EngineJsonSchema } from "@invokta/core";
  * Maps annotated top-level output properties to MCP image, audio, and
  * resource-link content blocks (ADR 0044). The plan is derived once per tool
  * from the captured output JSON Schema; the result mapping is a pure function
- * of that plan and the validated output, so stdio and HTTP present the same
- * capability result identically.
+ * of that plan, the validated output, and the negotiated protocol revision, so
+ * stdio and HTTP present the same capability result identically.
  */
 
-/** Content blocks generated for one result, besides the JSON text block. */
+/** Planned values presented for one result, besides the JSON text block. */
 export const MAX_TOOL_CONTENT_BLOCKS = 16;
 
-const MAX_LINK_URI_BYTES = 8_192;
+const MAX_LINK_URI_LENGTH = 8_192;
 const MAX_LINK_NAME_BYTES = 1_024;
+const MAX_LINK_MIME_TYPE_LENGTH = 255;
+const LINK_URI_MEDIA_TYPE = "text/uri-list";
+
+/** The first protocol revision that defines each generated block type. */
+const AUDIO_SINCE_PROTOCOL = "2025-03-26";
+const RESOURCE_LINK_SINCE_PROTOCOL = "2025-06-18";
 
 const IMAGE_MEDIA_TYPES: ReadonlySet<string> = new Set([
   "image/png",
@@ -28,14 +34,17 @@ const AUDIO_MEDIA_TYPES: ReadonlySet<string> = new Set([
   "audio/flac",
   "audio/aac",
 ]);
-const LINK_PROPERTIES: ReadonlySet<string> = new Set([
-  "uri",
-  "name",
-  "mimeType",
-]);
-// RFC 6838 restricted names, without parameters.
-const MEDIA_TYPE_PATTERN =
-  /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}$/u;
+
+// RFC 9110 media type: `type/subtype` with optional parameters.
+const TOKEN = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
+const QUOTED_STRING =
+  '"(?:[\\t \\x21\\x23-\\x5b\\x5d-\\x7e]|\\\\[\\t \\x21-\\x7e])*"';
+const MEDIA_TYPE_PATTERN = new RegExp(
+  `^${TOKEN}/${TOKEN}(?:[\\t ]*;[\\t ]*${TOKEN}=(?:${TOKEN}|${QUOTED_STRING}))*$`,
+  "u",
+);
+const LINK_SCHEME_PATTERN = /^https?:\/\//iu;
+const MEDIA_FAMILY_PATTERN = /^(?:image|audio)\//iu;
 
 type JsonRecord = Readonly<Record<string, unknown>>;
 
@@ -56,6 +65,8 @@ interface PlannedProperty {
 
 export type McpToolContentPlan = ReadonlyArray<PlannedProperty>;
 
+// Type aliases rather than interfaces, so results satisfy the SDK's indexed
+// result type without importing it here.
 type TextContentBlock = {
   readonly type: "text";
   readonly text: string;
@@ -76,12 +87,30 @@ type ResourceLinkContentBlock = {
 
 type GeneratedContentBlock = MediaContentBlock | ResourceLinkContentBlock;
 
-// Type aliases rather than interfaces, so results satisfy the SDK's indexed
-// result type without importing it here.
 export type McpToolCallResult = {
   readonly content: Array<TextContentBlock | GeneratedContentBlock>;
   readonly structuredContent: JsonRecord;
 };
+
+export type McpToolContentWarningCode =
+  | "UNSUPPORTED_MEDIA_TYPE"
+  | "MEDIA_WITHOUT_BASE64"
+  | "AMBIGUOUS_MEDIA_OBJECT"
+  | "INCOMPLETE_RESOURCE_LINK"
+  | "UNSUPPORTED_POSITION"
+  | "CONTENT_BLOCK_LIMIT";
+
+export interface McpToolContentWarning {
+  readonly capabilityId: string;
+  readonly toolName: string;
+  /** The top-level output property the warning refers to. */
+  readonly property: string;
+  readonly code: McpToolContentWarningCode;
+}
+
+export interface McpToolCatalogReport {
+  readonly contentWarnings: ReadonlyArray<McpToolContentWarning>;
+}
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -108,13 +137,17 @@ function isBase64StringSchema(schema: unknown): boolean {
   );
 }
 
-function declaredMediaTypes(schema: unknown): ReadonlySet<string> | undefined {
-  if (!isStringSchema(schema)) return undefined;
+function declaredValues(schema: JsonRecord): unknown[] {
   const enumValues = ownValue(schema, "enum");
-  const values = [
+  return [
     ...(Object.hasOwn(schema, "const") ? [ownValue(schema, "const")] : []),
     ...(Array.isArray(enumValues) ? enumValues : []),
   ];
+}
+
+function declaredMediaTypes(schema: unknown): ReadonlySet<string> | undefined {
+  if (!isStringSchema(schema)) return undefined;
+  const values = declaredValues(schema);
   if (values.length === 0) return undefined;
   if (!values.every((value) => mediaBlockType(value) !== undefined)) {
     return undefined;
@@ -122,12 +155,17 @@ function declaredMediaTypes(schema: unknown): ReadonlySet<string> | undefined {
   return new Set(values as string[]);
 }
 
+function base64PropertyKeys(properties: JsonRecord): string[] {
+  return Object.keys(properties).filter(
+    (key) => key !== "mimeType" && isBase64StringSchema(properties[key]),
+  );
+}
+
 function isResourceLinkSchema(properties: JsonRecord): boolean {
   const uri = ownValue(properties, "uri");
   return (
-    Object.keys(properties).every((key) => LINK_PROPERTIES.has(key)) &&
     isStringSchema(uri) &&
-    ownValue(uri, "format") === "uri" &&
+    ownValue(uri, "contentMediaType") === LINK_URI_MEDIA_TYPE &&
     isStringSchema(ownValue(properties, "name")) &&
     (!Object.hasOwn(properties, "mimeType") ||
       isStringSchema(ownValue(properties, "mimeType")))
@@ -150,12 +188,23 @@ function recognizeForm(schema: unknown): ContentForm | undefined {
 
   const mimeTypes = declaredMediaTypes(ownValue(properties, "mimeType"));
   if (mimeTypes === undefined) return undefined;
-  const dataKeys = Object.keys(properties).filter(
-    (key) => key !== "mimeType" && isBase64StringSchema(properties[key]),
-  );
+  const dataKeys = base64PropertyKeys(properties);
   const [dataKey] = dataKeys;
   return dataKeys.length === 1 && dataKey !== undefined
     ? { kind: "media-object", dataKey, mimeTypes }
+    : undefined;
+}
+
+function topLevelProperties(outputSchema: EngineJsonSchema): JsonRecord {
+  const properties = ownValue(outputSchema, "properties");
+  return ownValue(outputSchema, "type") === "object" && isRecord(properties)
+    ? properties
+    : {};
+}
+
+function listItems(schema: unknown): unknown {
+  return isRecord(schema) && ownValue(schema, "type") === "array"
+    ? ownValue(schema, "items")
     : undefined;
 }
 
@@ -163,22 +212,149 @@ function recognizeForm(schema: unknown): ContentForm | undefined {
 export function planMcpToolContent(
   outputSchema: EngineJsonSchema,
 ): McpToolContentPlan {
-  const properties = ownValue(outputSchema, "properties");
-  if (ownValue(outputSchema, "type") !== "object" || !isRecord(properties)) {
-    return Object.freeze([]);
-  }
+  const properties = topLevelProperties(outputSchema);
   const plan: PlannedProperty[] = [];
   for (const key of Object.keys(properties)) {
     const schema = properties[key];
-    const isList = isRecord(schema) && ownValue(schema, "type") === "array";
-    const form = recognizeForm(
-      isList ? ownValue(schema as JsonRecord, "items") : schema,
-    );
-    if (form !== undefined) {
-      plan.push(Object.freeze({ key, list: isList, form }));
-    }
+    const items = listItems(schema);
+    const list = items !== undefined;
+    const form = recognizeForm(list ? items : schema);
+    if (form !== undefined) plan.push(Object.freeze({ key, list, form }));
   }
   return Object.freeze(plan);
+}
+
+function isMediaLike(value: unknown): boolean {
+  return typeof value === "string" && MEDIA_FAMILY_PATTERN.test(value);
+}
+
+function isLinkLike(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    value.toLowerCase().startsWith(LINK_URI_MEDIA_TYPE)
+  );
+}
+
+/** A schema node that carries a content annotation the adapter recognizes. */
+function hasContentSignal(node: JsonRecord): boolean {
+  const contentMediaType = ownValue(node, "contentMediaType");
+  if (isMediaLike(contentMediaType) || isLinkLike(contentMediaType)) {
+    return true;
+  }
+  const properties = ownValue(node, "properties");
+  const mimeType = isRecord(properties)
+    ? ownValue(properties, "mimeType")
+    : undefined;
+  return isRecord(mimeType) && declaredValues(mimeType).some(isMediaLike);
+}
+
+function nearMiss(schema: unknown): McpToolContentWarningCode | undefined {
+  if (!isRecord(schema)) return undefined;
+  if (isStringSchema(schema)) {
+    const contentMediaType = ownValue(schema, "contentMediaType");
+    if (isLinkLike(contentMediaType)) return "INCOMPLETE_RESOURCE_LINK";
+    if (!isMediaLike(contentMediaType)) return undefined;
+    return mediaBlockType(contentMediaType) === undefined
+      ? "UNSUPPORTED_MEDIA_TYPE"
+      : "MEDIA_WITHOUT_BASE64";
+  }
+  const properties = ownValue(schema, "properties");
+  if (ownValue(schema, "type") !== "object" || !isRecord(properties)) {
+    return undefined;
+  }
+  const uri = ownValue(properties, "uri");
+  if (isRecord(uri) && isLinkLike(ownValue(uri, "contentMediaType"))) {
+    return "INCOMPLETE_RESOURCE_LINK";
+  }
+  const mimeType = ownValue(properties, "mimeType");
+  if (!isRecord(mimeType)) return undefined;
+  const values = declaredValues(mimeType);
+  if (!values.some(isMediaLike)) return undefined;
+  if (declaredMediaTypes(mimeType) === undefined) {
+    return "UNSUPPORTED_MEDIA_TYPE";
+  }
+  return base64PropertyKeys(properties).length === 0
+    ? "MEDIA_WITHOUT_BASE64"
+    : "AMBIGUOUS_MEDIA_OBJECT";
+}
+
+/** Finds a content annotation anywhere below an unrecognized property. */
+function containsContentSignal(schema: unknown): boolean {
+  const pending: unknown[] = [schema];
+  const seen = new Set<object>();
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (typeof node !== "object" || node === null || seen.has(node)) continue;
+    seen.add(node);
+    if (!Array.isArray(node) && hasContentSignal(node as JsonRecord)) {
+      return true;
+    }
+    pending.push(...Object.values(node));
+  }
+  return false;
+}
+
+function maximumListLength(schema: unknown): number {
+  const maxItems = isRecord(schema) ? ownValue(schema, "maxItems") : undefined;
+  return typeof maxItems === "number" &&
+    Number.isSafeInteger(maxItems) &&
+    maxItems >= 0
+    ? maxItems
+    : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Explains, without reading any value, why annotated output properties of one
+ * tool will not produce content blocks, and whether its contract permits more
+ * planned values than one result may present.
+ */
+export function diagnoseMcpToolContent(
+  outputSchema: EngineJsonSchema,
+): ReadonlyArray<{
+  readonly property: string;
+  readonly code: McpToolContentWarningCode;
+}> {
+  const properties = topLevelProperties(outputSchema);
+  const warnings: { property: string; code: McpToolContentWarningCode }[] = [];
+  let maximumBlocks = 0;
+  let limitReported = false;
+  for (const key of Object.keys(properties)) {
+    const schema = properties[key];
+    const items = listItems(schema);
+    const candidate = items === undefined ? schema : items;
+    if (recognizeForm(candidate) !== undefined) {
+      maximumBlocks += items === undefined ? 1 : maximumListLength(schema);
+      if (!limitReported && maximumBlocks > MAX_TOOL_CONTENT_BLOCKS) {
+        limitReported = true;
+        warnings.push({ property: key, code: "CONTENT_BLOCK_LIMIT" });
+      }
+      continue;
+    }
+    const code =
+      nearMiss(candidate) ??
+      (containsContentSignal(schema) ? "UNSUPPORTED_POSITION" : undefined);
+    if (code !== undefined) warnings.push({ property: key, code });
+  }
+  return warnings;
+}
+
+/** Builds the payload-free content report for a validated tool catalog. */
+export function createMcpToolCatalogReport(
+  tools: Iterable<{
+    readonly capabilityId: string;
+    readonly toolName: string;
+    readonly outputSchema: EngineJsonSchema;
+  }>,
+): McpToolCatalogReport {
+  const contentWarnings: McpToolContentWarning[] = [];
+  for (const { capabilityId, toolName, outputSchema } of tools) {
+    for (const { property, code } of diagnoseMcpToolContent(outputSchema)) {
+      contentWarnings.push(
+        Object.freeze({ capabilityId, toolName, property, code }),
+      );
+    }
+  }
+  return Object.freeze({ contentWarnings: Object.freeze(contentWarnings) });
 }
 
 function isBase64Code(code: number): boolean {
@@ -205,41 +381,131 @@ function isBase64(value: unknown): value is string {
   return true;
 }
 
-function utf8Bytes(value: string): number {
-  return new TextEncoder().encode(value).byteLength;
+function isHexCode(code: number): boolean {
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 70) ||
+    (code >= 97 && code <= 102)
+  );
 }
 
-function isLinkUri(value: unknown): value is string {
-  if (typeof value !== "string" || value.length > MAX_LINK_URI_BYTES) {
-    return false;
+/** RFC 3986 characters only, with well-formed percent-encoding. */
+function isRfc3986(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code === 37) {
+      if (
+        !isHexCode(value.charCodeAt(index + 1)) ||
+        !isHexCode(value.charCodeAt(index + 2))
+      ) {
+        return false;
+      }
+      index += 2;
+      continue;
+    }
+    const allowed =
+      (code >= 0x30 && code <= 0x39) ||
+      (code >= 0x41 && code <= 0x5a) ||
+      (code >= 0x61 && code <= 0x7a) ||
+      "-._~:/?#[]@!$&'()*+,;=".includes(String.fromCharCode(code));
+    if (!allowed) return false;
+  }
+  return true;
+}
+
+/**
+ * Returns the normalized URL a resource link carries, or `undefined`. The raw
+ * value must be unambiguous across URL parsers: an `http(s)` scheme in any
+ * case, a non-empty authority without user information, and no whitespace,
+ * control character, or backslash.
+ */
+function linkUri(value: unknown): string | undefined {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > MAX_LINK_URI_LENGTH
+  ) {
+    return undefined;
   }
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
-    // Printable ASCII only, so the UTF-16 length is the UTF-8 byte length.
-    if (code < 0x21 || code > 0x7e) return false;
+    if (code <= 0x20 || code === 0x7f || code === 0x5c) return undefined;
   }
-  if (!value.startsWith("https://") && !value.startsWith("http://")) {
-    return false;
-  }
-  if (!URL.canParse(value)) return false;
+  const scheme = LINK_SCHEME_PATTERN.exec(value);
+  if (scheme === null) return undefined;
+  const tail = value.slice(scheme[0].length);
+  const authorityEnd = tail.search(/[/?#]/u);
+  const authority = authorityEnd === -1 ? tail : tail.slice(0, authorityEnd);
+  if (authority === "" || authority.includes("@")) return undefined;
+  if (!URL.canParse(value)) return undefined;
   const url = new URL(value);
-  return url.username === "" && url.password === "" && url.hostname !== "";
+  if (
+    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    url.hostname === "" ||
+    url.username !== "" ||
+    url.password !== ""
+  ) {
+    return undefined;
+  }
+  const href = url.href;
+  return href.length <= MAX_LINK_URI_LENGTH && isRfc3986(href)
+    ? href
+    : undefined;
+}
+
+function isLinkName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    // A UTF-8 encoding is never shorter than the UTF-16 length.
+    value.length <= MAX_LINK_NAME_BYTES &&
+    new TextEncoder().encode(value).byteLength <= MAX_LINK_NAME_BYTES
+  );
+}
+
+function isLinkMimeType(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "string" &&
+      value.length <= MAX_LINK_MIME_TYPE_LENGTH &&
+      MEDIA_TYPE_PATTERN.test(value))
+  );
+}
+
+function supportsBlock(
+  type: GeneratedContentBlock["type"],
+  protocolVersion: string,
+): boolean {
+  if (type === "audio") return protocolVersion >= AUDIO_SINCE_PROTOCOL;
+  if (type === "resource_link") {
+    return protocolVersion >= RESOURCE_LINK_SINCE_PROTOCOL;
+  }
+  return true;
+}
+
+/** The text-block stand-in for base64 data that a generated block carries. */
+function placeholder(contentIndex: number, mimeType: string): string {
+  return `[content ${String(contentIndex)}: ${mimeType}]`;
 }
 
 interface MappedValue {
   readonly block: GeneratedContentBlock;
-  /** The value for the text block; `undefined` removes it. */
+  /** The value that replaces the original one in the text block. */
   readonly text: unknown;
 }
 
-function mapValue(form: ContentForm, value: unknown): MappedValue | undefined {
+function mapForm(
+  form: ContentForm,
+  value: unknown,
+  contentIndex: number,
+): MappedValue | undefined {
   switch (form.kind) {
     case "media": {
       const type = mediaBlockType(form.mimeType);
       if (type === undefined || !isBase64(value)) return undefined;
       return {
         block: { type, data: value, mimeType: form.mimeType },
-        text: undefined,
+        text: placeholder(contentIndex, form.mimeType),
       };
     }
     case "media-object": {
@@ -254,26 +520,23 @@ function mapValue(form: ContentForm, value: unknown): MappedValue | undefined {
       ) {
         return undefined;
       }
+      const stand = placeholder(contentIndex, mimeType as string);
       return {
         block: { type, data, mimeType: mimeType as string },
         text: Object.fromEntries(
-          Object.entries(value).filter(([key]) => key !== form.dataKey),
+          Object.entries(value).map(([key, entry]) => [
+            key,
+            key === form.dataKey ? stand : entry,
+          ]),
         ),
       };
     }
     case "resource-link": {
       if (!isRecord(value)) return undefined;
-      const uri = ownValue(value, "uri");
+      const uri = linkUri(ownValue(value, "uri"));
       const name = ownValue(value, "name");
       const mimeType = ownValue(value, "mimeType");
-      if (
-        !isLinkUri(uri) ||
-        typeof name !== "string" ||
-        name.length === 0 ||
-        utf8Bytes(name) > MAX_LINK_NAME_BYTES ||
-        (mimeType !== undefined &&
-          (typeof mimeType !== "string" || !MEDIA_TYPE_PATTERN.test(mimeType)))
-      ) {
+      if (uri === undefined || !isLinkName(name) || !isLinkMimeType(mimeType)) {
         return undefined;
       }
       return {
@@ -281,7 +544,7 @@ function mapValue(form: ContentForm, value: unknown): MappedValue | undefined {
           type: "resource_link",
           uri,
           name,
-          ...(mimeType === undefined ? {} : { mimeType }),
+          ...(mimeType === undefined ? {} : { mimeType: mimeType as string }),
         },
         text: value,
       };
@@ -289,79 +552,87 @@ function mapValue(form: ContentForm, value: unknown): MappedValue | undefined {
   }
 }
 
-/**
- * Returns the generated blocks and the text value, or `undefined` when the
- * result must keep the legacy presentation: no planned value is present, a
- * planned value is invalid, or the block limit would be exceeded.
- */
-function mapResult(
+function mapValue(
+  form: ContentForm,
+  value: unknown,
+  contentIndex: number,
+  protocolVersion: string,
+): MappedValue | undefined {
+  const mapped = mapForm(form, value, contentIndex);
+  return mapped !== undefined &&
+    supportsBlock(mapped.block.type, protocolVersion)
+    ? mapped
+    : undefined;
+}
+
+function countPlannedValues(
   plan: McpToolContentPlan,
   output: JsonRecord,
-):
-  | {
-      readonly blocks: GeneratedContentBlock[];
-      readonly text: Map<string, unknown>;
-    }
-  | undefined {
-  const blocks: GeneratedContentBlock[] = [];
-  const text = new Map<string, unknown>();
-  for (const { key, list, form } of plan) {
+): number {
+  let count = 0;
+  for (const { key, list } of plan) {
     if (!Object.hasOwn(output, key)) continue;
     const value = output[key];
-    if (!list) {
-      if (blocks.length >= MAX_TOOL_CONTENT_BLOCKS) return undefined;
-      const mapped = mapValue(form, value);
-      if (mapped === undefined) return undefined;
-      blocks.push(mapped.block);
-      text.set(key, mapped.text);
-      continue;
-    }
-    if (!Array.isArray(value)) return undefined;
-    if (value.length === 0) continue;
-    if (blocks.length + value.length > MAX_TOOL_CONTENT_BLOCKS) {
-      return undefined;
-    }
-    const items: unknown[] = [];
-    for (const item of value) {
-      const mapped = mapValue(form, item);
-      if (mapped === undefined) return undefined;
-      blocks.push(mapped.block);
-      items.push(mapped.text);
-    }
-    text.set(key, form.kind === "media" ? undefined : items);
+    count += list && Array.isArray(value) ? value.length : 1;
+    if (count > MAX_TOOL_CONTENT_BLOCKS) break;
   }
-  return blocks.length === 0 ? undefined : { blocks, text };
+  return count;
+}
+
+function legacyResult(output: JsonRecord): McpToolCallResult {
+  return {
+    content: [{ type: "text", text: JSON.stringify(output) }],
+    structuredContent: output,
+  };
 }
 
 /**
  * Presents one validated output as an MCP tool result. `structuredContent` is
- * always the complete output. Without generated blocks, the result is exactly
- * the legacy JSON text fallback; with them, the text block omits every base64
- * value that a block already carries.
+ * always the complete output. Each planned value either becomes one block, and
+ * its base64 data is replaced by a placeholder in the text block, or stays in
+ * the text block unchanged. Without any block, or with more planned values
+ * than the limit, the result is exactly the legacy JSON text fallback.
  */
 export function createMcpToolResult(
   plan: McpToolContentPlan,
   output: JsonRecord,
+  protocolVersion: string,
 ): McpToolCallResult {
-  const mapped = plan.length === 0 ? undefined : mapResult(plan, output);
-  if (mapped === undefined) {
-    return {
-      content: [{ type: "text", text: JSON.stringify(output) }],
-      structuredContent: output,
-    };
+  if (
+    plan.length === 0 ||
+    countPlannedValues(plan, output) > MAX_TOOL_CONTENT_BLOCKS
+  ) {
+    return legacyResult(output);
   }
+  const blocks: GeneratedContentBlock[] = [];
+  const text = new Map<string, unknown>();
+  const map = (form: ContentForm, value: unknown): unknown => {
+    const mapped = mapValue(form, value, blocks.length + 1, protocolVersion);
+    if (mapped === undefined) return value;
+    blocks.push(mapped.block);
+    return mapped.text;
+  };
+  for (const { key, list, form } of plan) {
+    if (!Object.hasOwn(output, key)) continue;
+    const value = output[key];
+    if (!list) {
+      text.set(key, map(form, value));
+    } else if (Array.isArray(value)) {
+      text.set(
+        key,
+        value.map((item: unknown) => map(form, item)),
+      );
+    }
+  }
+  if (blocks.length === 0) return legacyResult(output);
   const textValue = Object.fromEntries(
-    Object.entries(output).flatMap(([key, value]): [string, unknown][] => {
-      if (!mapped.text.has(key)) return [[key, value]];
-      const replacement = mapped.text.get(key);
-      return replacement === undefined ? [] : [[key, replacement]];
-    }),
+    Object.entries(output).map(([key, value]) => [
+      key,
+      text.has(key) ? text.get(key) : value,
+    ]),
   );
   return {
-    content: [
-      { type: "text", text: JSON.stringify(textValue) },
-      ...mapped.blocks,
-    ],
+    content: [{ type: "text", text: JSON.stringify(textValue) }, ...blocks],
     structuredContent: output,
   };
 }

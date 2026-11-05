@@ -8,7 +8,7 @@ import {
   type ExecutionSource,
   type Principal,
 } from "@invokta/core";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
   ErrorCode,
@@ -16,9 +16,12 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { ProtocolVersionServer } from "./protocol-version.js";
 import {
+  createMcpToolCatalogReport,
   createMcpToolResult,
   type McpToolCallResult,
+  type McpToolCatalogReport,
   type McpToolContentPlan,
   planMcpToolContent,
 } from "./tool-content.js";
@@ -132,6 +135,7 @@ export interface McpToolCatalog<Capabilities extends CapabilityMap> {
   toolResult(
     capabilityId: string,
     output: Readonly<Record<string, unknown>>,
+    protocolVersion: string,
   ): McpToolCallResult;
 }
 
@@ -204,19 +208,31 @@ export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
     toolResult: (
       capabilityId: string,
       output: Readonly<Record<string, unknown>>,
+      protocolVersion: string,
     ) =>
       createMcpToolResult(
         contentPlanByCapabilityId.get(capabilityId) ?? [],
         output,
+        protocolVersion,
       ),
   });
 }
 
-/** Validates the exact MCP tool catalog without starting an adapter. */
+/**
+ * Validates the exact MCP tool catalog without starting an adapter and reports
+ * annotated output properties that will not produce content blocks.
+ */
 export function validateMcpToolCatalog<Capabilities extends CapabilityMap>(
   engine: Engine<Capabilities>,
-): void {
-  createMcpToolCatalog(engine);
+): McpToolCatalogReport {
+  const catalog = createMcpToolCatalog(engine);
+  return createMcpToolCatalogReport(
+    catalog.tools.map((tool) => ({
+      capabilityId: catalog.capabilityIdForToolName(tool.name) as string,
+      toolName: tool.name,
+      outputSchema: tool.outputSchema,
+    })),
+  );
 }
 
 export function createMcpServer<Capabilities extends CapabilityMap>(
@@ -224,7 +240,7 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
   options: McpServerOptions,
   catalog: McpToolCatalog<Capabilities> = createMcpToolCatalog(engine),
 ): Server {
-  const server = new Server(
+  const server = new ProtocolVersionServer(
     { name: engine.name, version: engine.version },
     { capabilities: { tools: {} } },
   );
@@ -257,6 +273,7 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
       return catalog.toolResult(
         capabilityId,
         result as Readonly<Record<string, unknown>>,
+        server.protocolVersionFor(extra),
       );
     } catch (error) {
       return errorResult(error);

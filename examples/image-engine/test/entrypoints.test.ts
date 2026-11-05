@@ -53,13 +53,16 @@ function providerEnvironment(): NodeJS.ProcessEnv & Record<string, string> {
 
 /**
  * MCP returns the generated image as a native image block. The JSON text
- * fallback omits the base64 data that the block and `structuredContent`
- * already carry.
+ * fallback replaces the base64 data that the block and `structuredContent`
+ * already carry with a placeholder naming that block.
  */
 function nativeImageResult(base64Data: string) {
   return {
     content: [
-      { type: "text", text: '{"image":{"mimeType":"image/png"}}' },
+      {
+        type: "text",
+        text: '{"image":{"mimeType":"image/png","base64Data":"[content 1: image/png]"}}',
+      },
       { type: "image", data: base64Data, mimeType: "image/png" },
     ],
     structuredContent: { image: { mimeType: "image/png", base64Data } },

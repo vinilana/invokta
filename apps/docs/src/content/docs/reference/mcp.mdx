@@ -27,7 +27,9 @@ The package root exports:
 
 - `serveMcpStdio` and `ServeMcpStdioOptions`;
 - `toMcpToolName`;
-- `validateMcpToolCatalog` and `McpToolNameCollisionError`;
+- `validateMcpToolCatalog`, `McpToolNameCollisionError`, and the
+  `McpToolCatalogReport`, `McpToolContentWarning`, and
+  `McpToolContentWarningCode` types;
 - `serveMcpHttp` and `ServeMcpHttpOptions`;
 - `McpHttpAuthOptions`;
 - `McpHttpAuthenticationRequest` and `McpHttpHeaderView`;
@@ -68,7 +70,9 @@ Build tooling can call `validateMcpToolCatalog(engine)` to construct this exact
 catalog without starting stdio or HTTP. A collision throws
 `McpToolNameCollisionError`, a `TypeError` with code
 `MCP_TOOL_NAME_COLLISION`, the derived `toolName`, and the two
-`capabilityIds`.
+`capabilityIds`. Otherwise it returns a frozen report whose `contentWarnings`
+explain annotated output properties that will not produce
+[rich content blocks](#rich-tool-results).
 
 A successful call returns the validated result as `structuredContent` plus a
 JSON text fallback. An output contract can also add native image, audio, and
@@ -94,43 +98,61 @@ request.
 ## Rich tool results
 
 The adapter reads the capability's output JSON Schema and maps annotated
-top-level properties to MCP `2025-11-25` content blocks (ADR 0044). The mapping
-is derived once per tool when the catalog is built, so stdio and HTTP present
-the same result. No adapter option exists; the output contract is the only
-declaration.
+top-level properties to MCP content blocks (ADR 0044). The mapping is derived
+once per tool when the catalog is built, so stdio and HTTP present the same
+result. No adapter option exists; the output contract is the only declaration,
+and every form needs an explicit content keyword.
 
 | Top-level property schema (or its array `items`) | Generated block |
 | --- | --- |
 | String with `contentEncoding: "base64"` and an allowlisted `contentMediaType` | `image` or `audio` with that media type |
 | Object with a `mimeType` whose `enum` or `const` lists only allowlisted types, plus exactly one base64 string property | `image` or `audio` with the value's `mimeType` |
-| Object with exactly `uri` (`format: "uri"`), `name`, and optional `mimeType` string properties | `resource_link` |
+| Object whose `uri` string declares `contentMediaType: "text/uri-list"`, with a string `name` and an optional string `mimeType` | `resource_link` |
 
 Allowlisted media types are `image/png`, `image/jpeg`, `image/gif`,
 `image/webp`, `audio/wav`, `audio/mpeg`, `audio/ogg`, `audio/webm`,
 `audio/flac`, and `audio/aac`, spelled exactly in lowercase. Other annotations,
-`$ref`, unions, nested properties, and nested arrays are ignored.
+`$ref`, unions, nested properties, and nested arrays are ignored; an object
+shaped like `{ uri, name }` without the marker stays plain JSON.
 
-A presented result keeps the complete output in `structuredContent`. The text
-block comes first and omits every base64 value that a generated block carries:
-a typed media property is omitted, and a media object keeps every property
-except its data. Resource links stay in the text. Blocks follow the schema's
-property order and each array's index order.
+`structuredContent` is always the complete output. The text block comes first
+and keeps the output's structure: each base64 string carried by a block is
+replaced by `[content N: <media type>]`, where `N` is that block's index in
+`content`. Resource links stay unchanged in the text. Blocks follow the
+schema's property order and each array's index order.
 
 | Rule | Behavior |
 | --- | --- |
 | Base64 data | Non-empty, padded RFC 4648 standard alphabet |
-| Resource-link `uri` | `https://` or `http://`, printable ASCII, a host, no user information, at most 8,192 bytes |
+| Resource-link `uri` | `http://` or `https://` in any case, a non-empty authority without `@`, no whitespace, control character, or backslash; the block carries the normalized URL, at most 8,192 RFC 3986 characters |
 | Resource-link `name` | Non-empty, at most 1,024 UTF-8 bytes |
-| Resource-link `mimeType` | Optional `type/subtype` without parameters |
-| Generated blocks | At most 16 per result, after the text block |
-| Absent optional property or empty array | Contributes no block |
-| No block, an invalid value, or more than 16 blocks | The unchanged structured result and full JSON text fallback |
+| Resource-link `mimeType` | Optional RFC 9110 media type, parameters allowed, at most 255 characters |
+| Protocol revision | `image` always; `audio` from `2025-03-26`; `resource_link` from `2025-06-18` |
+| Invalid or unsupported value | No block; the value stays in the text block, and other values are unaffected |
+| Absent optional property or empty array | Contributes nothing |
+| No block, or more than 16 planned values | The unchanged structured result and full JSON text fallback |
 
-The fallback is atomic and is not an error result. A capability without a
-recognized form returns exactly what earlier versions returned. The adapter
-does not serve linked URIs through `resources/read` and produces no embedded
-resources or content annotations. Follow the
-[rich content recipe](/recipes/mcp-rich-content/) for Zod 4 authoring.
+Over stdio, the revision is the one `initialize` negotiated. Over HTTP, it is
+the request's `MCP-Protocol-Version` header, or `2025-03-26` when the header is
+absent. A fallback is not an error result. A capability without a recognized
+form returns exactly what earlier versions returned. The adapter does not serve
+linked URIs through `resources/read` and produces no embedded resources or
+content annotations.
+
+`validateMcpToolCatalog` reports, without reading any value, the properties
+whose annotations come close but will not map:
+
+| Warning code | Cause |
+| --- | --- |
+| `UNSUPPORTED_MEDIA_TYPE` | An `image/` or `audio/` type outside the exact allowlist, such as `image/jpg`, `Image/PNG`, or SVG |
+| `MEDIA_WITHOUT_BASE64` | An allowlisted media type without a base64 property |
+| `AMBIGUOUS_MEDIA_OBJECT` | More than one base64 property in a media object |
+| `INCOMPLETE_RESOURCE_LINK` | A `text/uri-list` marker in another spelling, outside a link object, or without string `uri` and `name` |
+| `UNSUPPORTED_POSITION` | A content annotation in a union, type array, nested object, or nested array |
+| `CONTENT_BLOCK_LIMIT` | The contract permits more than 16 planned values, such as an array without `maxItems` |
+
+Follow the [rich content recipe](/recipes/mcp-rich-content/) for Zod 4
+authoring.
 
 ## `serveMcpStdio`
 

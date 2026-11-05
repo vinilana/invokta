@@ -113,9 +113,24 @@ invokta check-mcp ./dist/engine.js
 invokta check-mcp ./dist/application.js --export supportEngine
 ```
 
-Success is silent. A duplicate derived alias exits `1` with
-`MCP_TOOL_NAME_COLLISION`, the public tool name, and both capability IDs. Usage,
-module loading, export selection, or invalid-engine failures exit `2`.
+A valid catalog without content warnings is silent. A duplicate derived alias
+exits `1` with `MCP_TOOL_NAME_COLLISION`, the public tool name, and both
+capability IDs. Usage, module loading, export selection, or invalid-engine
+failures exit `2`.
+
+Annotated output properties that will not produce
+[MCP content blocks](/reference/mcp/#rich-tool-results) are reported as
+warnings on standard error while the command still exits `0`:
+
+```text
+invokta: the MCP tool catalog has content warnings.
+module: "./dist/engine.js"
+export: "engine"
+warning: code="UNSUPPORTED_MEDIA_TYPE" toolName="media_render" capabilityId="media.render" property="chart"
+```
+
+Each line names only the warning code, tool, capability, and top-level output
+property; no schema or value content is printed.
 
 ## CI setup
 

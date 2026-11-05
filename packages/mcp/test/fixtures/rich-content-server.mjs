@@ -14,13 +14,15 @@ const engine = createEngine({
       input: z.object({ caption: z.string() }),
       output: z.object({
         caption: z.string(),
-        chart: z.base64().meta({ contentMediaType: "image/png" }),
+        chart: z
+          .string()
+          .meta({ contentEncoding: "base64", contentMediaType: "image/png" }),
         voice: z.object({
           mimeType: z.enum(["audio/wav", "audio/mpeg"]),
           data: z.base64(),
         }),
         report: z.object({
-          uri: z.url(),
+          uri: z.httpUrl().meta({ contentMediaType: "text/uri-list" }),
           name: z.string(),
           mimeType: z.string().optional(),
         }),

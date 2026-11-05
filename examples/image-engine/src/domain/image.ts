@@ -17,14 +17,33 @@ export type ImageResolution = (typeof imageResolutions)[number];
 export const maximumReferenceImageBytes = 10 * 1024 * 1024;
 export const maximumGeneratedImageBytes = 32 * 1024 * 1024;
 
-const base64Pattern =
-  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
+function isBase64Code(code: number): boolean {
+  return (
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    (code >= 48 && code <= 57) ||
+    code === 43 ||
+    code === 47
+  );
+}
 
+/**
+ * Accepts non-empty, padded RFC 4648 base64 whose decoded size is within the
+ * bound. A linear character scan, rather than a regular expression, keeps
+ * multi-megabyte images from exhausting the regular-expression stack.
+ */
 export function isBoundedBase64(value: string, maximumBytes: number): boolean {
-  if (value === "" || !base64Pattern.test(value)) return false;
-  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
-  const decodedBytes = (value.length / 4) * 3 - padding;
-  return decodedBytes <= maximumBytes;
+  const length = value.length;
+  if (length === 0 || length % 4 !== 0) return false;
+  let end = length;
+  if (value.charCodeAt(end - 1) === 61) end -= 1;
+  if (value.charCodeAt(end - 1) === 61) end -= 1;
+  const decodedBytes = (length / 4) * 3 - (length - end);
+  if (decodedBytes > maximumBytes) return false;
+  for (let index = 0; index < end; index += 1) {
+    if (!isBase64Code(value.charCodeAt(index))) return false;
+  }
+  return true;
 }
 
 export function imageFileExtension(mimeType: ImageMimeType): string {

@@ -15,6 +15,10 @@ import type {
   ReferenceImage,
 } from "../src/application/ports.js";
 import {
+  isBoundedBase64,
+  maximumGeneratedImageBytes,
+} from "../src/domain/image.js";
+import {
   createConfiguredImageEngine,
   createImageEngine,
 } from "../src/engine.js";
@@ -350,11 +354,10 @@ describe("the multi-provider image engine", () => {
           {
             type: "text",
             text: JSON.stringify({
-              images: [
-                { mimeType: "image/png" },
-                { mimeType: "image/png" },
-                { mimeType: "image/png" },
-              ],
+              images: [1, 2, 3].map((index) => ({
+                mimeType: "image/png",
+                base64Data: `[content ${String(index)}: image/png]`,
+              })),
             }),
           },
           { type: "image", data: pngData, mimeType: "image/png" },
@@ -404,4 +407,27 @@ describe("the multi-provider image engine", () => {
       "image_compose-reference-asset",
     ]);
   });
+});
+
+describe("the bounded base64 image contract", () => {
+  it("validates large generated images in linear time", () => {
+    const large = Buffer.alloc(8 * 1024 * 1024, 7).toString("base64");
+
+    expect(isBoundedBase64(large, maximumGeneratedImageBytes)).toBe(true);
+    expect(isBoundedBase64(`${large.slice(0, -4)}AA=A`, Infinity)).toBe(false);
+  });
+
+  it("bounds the decoded size inclusively", () => {
+    expect(isBoundedBase64("AAAA", 3)).toBe(true);
+    expect(isBoundedBase64("AAAA", 2)).toBe(false);
+    expect(isBoundedBase64("AAA=", 2)).toBe(true);
+    expect(isBoundedBase64("AA==", 1)).toBe(true);
+  });
+
+  it.each(["", "AAA", "AAAAA", "A===", "====", "AA=A", "AA A", "AA-_"])(
+    "rejects the non-canonical base64 value %j",
+    (value) => {
+      expect(isBoundedBase64(value, Infinity)).toBe(false);
+    },
+  );
 });

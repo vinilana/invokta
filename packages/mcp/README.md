@@ -76,14 +76,25 @@ the same behavior over stdio and HTTP
 
 ```ts
 output: z.object({
-  chart: z.base64().meta({ contentMediaType: "image/png" }),
-  report: z.object({ uri: z.url(), name: z.string() }),
+  chart: z
+    .string()
+    .meta({ contentEncoding: "base64", contentMediaType: "image/png" })
+    .refine(isBase64), // an engine-owned linear validator
+  report: z.object({
+    uri: z.httpUrl().meta({ contentMediaType: "text/uri-list" }),
+    name: z.string(),
+  }),
 }),
 ```
 
-At most 16 blocks are generated per result. An invalid value or a larger
-result falls back to the unchanged JSON result; unannotated outputs are never
-affected.
+Prefer a plain string with a linear refinement over `z.base64()` for media:
+its JSON Schema `pattern` exhausts the stack of AJV-based clients on values of
+a few MiB. Each value maps independently: an invalid value, or a block type the
+negotiated protocol revision does not define, stays in the text block, where
+mapped base64 values are replaced by `[content N: <media type>]` placeholders.
+More than 16 planned values fall back to the unchanged JSON result, and
+unannotated outputs are never affected. `validateMcpToolCatalog` returns
+`contentWarnings` for annotations that come close but will not map.
 
 ## Connecting as a client
 

@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 
 import type { CapabilityMap, Engine } from "@invokta/core";
 import {
+  type McpToolCatalogReport,
   McpToolNameCollisionError,
   validateMcpToolCatalog,
 } from "@invokta/mcp";
@@ -35,7 +36,9 @@ already be built to ESM. The selected export defaults to "engine" and must be
 an Invokta engine.
 
 Exit codes:
-  0  every capability publishes one unique portable MCP tool name
+  0  every capability publishes one unique portable MCP tool name; content
+     annotations that will not produce MCP content blocks are reported as
+     warnings
   1  the engine's MCP tool catalog is invalid
   2  invalid usage, a module that failed to load, a missing export, or an
      export that is not a usable Invokta engine`;
@@ -123,6 +126,20 @@ function renderCollision(
     ...renderContext(command),
     `issue: code=${quote(error.code)} toolName=${quote(error.toolName)} capabilityIds=${String(error.capabilityIds.length)}`,
     ...error.capabilityIds.map((id) => `  capability: id=${quote(id)}`),
+  ]);
+}
+
+function renderContentWarnings(
+  command: CheckCommand,
+  report: McpToolCatalogReport,
+): string {
+  return renderLines([
+    "invokta: the MCP tool catalog has content warnings.",
+    ...renderContext(command),
+    ...report.contentWarnings.map(
+      (warning) =>
+        `warning: code=${quote(warning.code)} toolName=${quote(warning.toolName)} capabilityId=${quote(warning.capabilityId)} property=${quote(warning.property)}`,
+    ),
   ]);
 }
 
@@ -224,8 +241,9 @@ export async function checkMcp(options: CheckMcpOptions = {}): Promise<number> {
     return 2;
   }
 
+  let report: McpToolCatalogReport;
   try {
-    validateMcpToolCatalog(selected.value);
+    report = validateMcpToolCatalog(selected.value);
   } catch (error) {
     if (error instanceof McpToolNameCollisionError) {
       await writeStderr(io, renderCollision(command, error));
@@ -233,6 +251,9 @@ export async function checkMcp(options: CheckMcpOptions = {}): Promise<number> {
     }
     await writeStderr(io, renderInvalidEngine(command));
     return 2;
+  }
+  if (report.contentWarnings.length > 0) {
+    await writeStderr(io, renderContentWarnings(command, report));
   }
   return 0;
 }
