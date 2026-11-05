@@ -118,6 +118,17 @@ fixture demonstrates all three package entry points.
    engine that imports one atomic capability should not evaluate unrelated
    exports.
 
+   <Aside type="caution" title="Resolve one copy of @invokta/core">
+     The engine recognizes a capability's declared domain errors only when the
+     `CapabilityError` comes from the same installed copy of `@invokta/core`
+     as `createEngine`. If the engine resolves a second copy for the package,
+     for example because its range covers a different 0.x minor version,
+     `describe` still lists the declared errors, but each one is reported as
+     `EXECUTION_FAILED`. Declare `@invokta/core` as a peer dependency of the
+     capability package (with a development dependency for its own tests), or
+     make sure the engine's install deduplicates it to one version.
+   </Aside>
+
 </Steps>
 
 ## Publish a capability library
@@ -316,7 +327,7 @@ Detected collisions and selection or import issues produce
 `CapabilityCompositionError`, a construction-time `TypeError` with code
 `CAPABILITY_COMPOSITION_INVALID`. Malformed descriptors, options, or import
 entries can throw a plain `TypeError` before issue collection. Both are separate
-from the seven invocation `EngineError` codes.
+from the invocation `EngineError` codes.
 
 ```ts
 try {

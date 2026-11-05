@@ -78,7 +78,14 @@ A successful call returns the validated result as `structuredContent` plus a
 JSON text fallback. An output contract can also add native image, audio, and
 resource-link blocks; see [rich tool results](#rich-tool-results). Invocation
 failures return `isError: true` with one safe JSON text error and no
-`structuredContent`. Unsafe or unknown errors fall back to:
+`structuredContent`. A declared domain error keeps its domain code, retry hint,
+and validated details in `publicDetails`:
+
+```json
+{"code":"DOMAIN_ERROR","message":"The requested ticket does not exist.","publicDetails":{"code":"TICKET_NOT_FOUND","retryable":false,"details":{"ticketId":"T-404"}}}
+```
+
+Unsafe or unknown errors fall back to:
 
 ```json
 {"code":"EXECUTION_FAILED","message":"Capability execution failed."}

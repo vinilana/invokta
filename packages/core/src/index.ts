@@ -1,5 +1,13 @@
 export { defineCapability } from "./capability.js";
 export type {
+  CapabilityErrorArguments,
+  CapabilityErrorDeclaration,
+  CapabilityErrorDescription,
+  CapabilityErrorMap,
+  DomainErrorPublicDetails,
+} from "./capability-error.js";
+export { CapabilityError } from "./capability-error.js";
+export type {
   AnyCapabilityImport,
   CapabilityImport,
   CapabilityLibrary,
