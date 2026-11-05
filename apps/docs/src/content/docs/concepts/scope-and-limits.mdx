@@ -21,7 +21,7 @@ host owns identity and deployment controls.
 | Plain HTTP JSON | Web-standard list, describe, invoke, and OpenAPI 3.1 routes | Mounting, network exposure, TLS, and rate limits |
 | Authentication | Required HTTP hook, optional protected-resource metadata, and the optional `@invokta/auth-jwt` JWT bearer authenticator | Credential verifier or helper configuration, identity provider, token policy, and verifier timeout |
 | Authorization | Enforcement of each capability's `access` rule | Roles, scopes, tenants, PDP integration, and domain policy |
-| Observability | Payload-free `onEvent` lifecycle hook and logger | Metrics, tracing, storage, alerts, costs, and domain measurements |
+| Observability | Payload-free `onEvent` lifecycle hook, logger, and `@invokta/otel` spans and invocation metrics | OpenTelemetry SDK and exporters, storage, alerts, costs, and domain measurements |
 | AI behavior | Replaceable implementation boundary | Prompts, models, retrieval, tools, evidence, evaluations, and review |
 | Supporting tools | Engine creator, composition checker, confirmed MCP client configuration, deployment artifact generator | Engine execution, client policy, and operational authority |
 

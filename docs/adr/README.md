@@ -53,3 +53,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0047](0047-schema-derived-cli-flags-and-capability-help.md) | Schema-derived CLI flags and capability help | Accepted | 2026-11-05 |
 | [0048](0048-plain-http-json-adapter-with-openapi-export.md) | Plain HTTP JSON adapter with OpenAPI export | Accepted | 2026-11-05 |
 | [0049](0049-jwt-bearer-authentication-helper.md) | JWT bearer authentication helper | Accepted | 2026-11-05 |
+| [0050](0050-opentelemetry-instrumentation-from-engine-events.md) | OpenTelemetry instrumentation from engine events | Accepted | 2026-11-05 |

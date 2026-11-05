@@ -21,7 +21,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Errors | Eight `EngineError` codes, contract-checked declared domain errors, and safe adapter mappings | Declare domain outcomes and keep public messages and details safe | Stack or cause disclosure and automatic recovery policy |
 | Cancellation | Propagate signals and optional capability timeout | Make downstream I/O observe signals | Scheduler or durable execution |
 | Retry, fallback, cache, routing | No automatic behavior | Implement domain-specific policies behind a capability or port | Framework-wide retry, model router, or semantic cache |
-| Observability | Minimal payload-free `onEvent` hook | Connect logging, metrics, tracing, and domain measurements | Observability platform or economics envelope |
+| Observability | Minimal payload-free `onEvent` hook and `@invokta/otel` spans and invocation metrics through the OpenTelemetry API | Register the OpenTelemetry SDK and exporter; connect logging and domain measurements | Observability platform, OpenTelemetry SDK or exporter, or economics envelope |
 | AI implementation | Keep implementation replaceable | Own prompts, models, retrieval, tools, evidence, and risk controls | Provider SDKs, prompt registry, RAG abstraction, or memory |
 | Quality | Validate contracts and provide testable direct execution | Own fixtures, evals, regression suites, and human review | Eval runner, automated judge, or canary platform |
 | Capability reuse | Eager explicit composition with deterministic collision detection | Choose imports, effective IDs, and trusted dependencies | Runtime plugin marketplace or remote discovery |
@@ -33,7 +33,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | --- | --- |
 | Framework runtime packages | 4 |
 | Supporting packages | 7 |
-| Optional runtime helper packages | 1: auth-jwt |
+| Optional runtime helper packages | 2: auth-jwt and otel |
 | Official inbound adapters | 3: CLI, MCP, and plain HTTP JSON |
 | MCP transports | 2: stdio and stateless Streamable HTTP |
 | Core primitives | 5: Capability, Connector Definition, Engine, Context, Principal |
@@ -76,7 +76,7 @@ observable repetition, for example:
 | Lifecycle | Multiple dependencies repeatedly require coordinated start and stop |
 | Concurrency control | An engine demonstrates saturation that its host cannot solve |
 | Eval runner | Multiple domains share a dataset and execution format |
-| Observability package | Minimal events prove insufficient across real engines |
+| Observability package beyond `@invokta/otel` | Event-based instrumentation proves insufficient across real engines |
 | Model router | Multiple capabilities repeat a selection or fallback policy |
 | Context compiler | Repeated context strategies cause measurable inconsistency |
 

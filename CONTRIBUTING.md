@@ -55,6 +55,7 @@ contract change requires an explicit decision before implementation.
 | `packages/mcp` | MCP stdio and stateless HTTP adapters over `engine.invoke` |
 | `packages/http` | Plain HTTP JSON adapter and OpenAPI export over `engine.invoke` |
 | `packages/auth-jwt` | Optional JWT bearer authentication hook for HTTP adapters |
+| `packages/otel` | Optional OpenTelemetry instrumentation of engine events through the `onEvent` hook |
 | `packages/create-*` | Deterministic standalone project creators |
 | `packages/tooling`, `packages/installer`, `packages/deploy`, `packages/devtools` | Development and delivery applications |
 | `examples/` | Runnable contract and integration examples |

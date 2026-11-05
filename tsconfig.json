@@ -11,6 +11,7 @@
     { "path": "./packages/create-invokta-capability-library" },
     { "path": "./packages/create-invokta-engine" },
     { "path": "./packages/installer" },
+    { "path": "./packages/otel" },
     { "path": "./packages/tooling" },
     { "path": "./packages/auth-jwt" },
     { "path": "./examples/auth-api-key-engine" },

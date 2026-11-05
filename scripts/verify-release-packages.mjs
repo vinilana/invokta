@@ -697,6 +697,7 @@ try {
     const http = await import("@invokta/http");
     const httpNode = await import("@invokta/http/node");
     const authJwt = await import("@invokta/auth-jwt");
+    const otel = await import("@invokta/otel");
     const tooling = await import("@invokta/tooling");
     const deploy = await import("@invokta/deploy");
     const deployScaffold = await import("@invokta/deploy/scaffold");
@@ -708,6 +709,7 @@ try {
     if (typeof http.createHttpHandler !== "function") throw new Error("http import failed");
     if (typeof httpNode.serveHttp !== "function") throw new Error("http node import failed");
     if (typeof authJwt.createJwtBearerAuthenticator !== "function") throw new Error("auth-jwt import failed");
+    if (typeof otel.createOpenTelemetryEventHandler !== "function") throw new Error("otel import failed");
     if (typeof tooling.checkCapabilities !== "function") throw new Error("tooling import failed");
     if (typeof deploy.runDeployCli !== "function") throw new Error("deploy import failed");
     if (typeof deployScaffold.createMcpHttpScaffoldFiles !== "function") throw new Error("deploy scaffold import failed");
