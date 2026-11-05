@@ -104,6 +104,7 @@ export default defineConfig({
             { slug: "concepts/capabilities" },
             { slug: "concepts/invocation-pipeline" },
             { slug: "concepts/scope-and-limits" },
+            { slug: "concepts/stability" },
           ],
         },
         {
@@ -115,6 +116,7 @@ export default defineConfig({
             { slug: "guides/http-authentication" },
             { slug: "guides/capability-authorization" },
             { slug: "guides/deployment" },
+            { slug: "guides/contract-evolution" },
           ],
         },
         {

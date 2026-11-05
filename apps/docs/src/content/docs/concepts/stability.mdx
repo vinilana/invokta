@@ -1,0 +1,101 @@
+---
+title: Stability and versioning
+description: What Invokta treats as public API, how releases signal compatibility, how deprecation works, and what 1.0 requires.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Invokta is pre-1.0; the current release line is `0.9.x`. This page summarizes
+the normative
+[stability policy](https://github.com/vinilana/invokta/blob/main/docs/stability-policy.md)
+and ADR 0046.
+
+## Release model
+
+All public packages are released together from one workflow, always with the
+same version, and their internal `@invokta/*` dependencies are pinned to that
+exact version. Use matching versions of every Invokta package.
+
+The changelog follows Keep a Changelog with `Added`, `Changed`, `Deprecated`,
+`Removed`, `Fixed`, and `Security` sections.
+
+## Public API
+
+| Package | Public surface |
+| --- | --- |
+| `@invokta/core` | Package-root exports and types; pipeline order, error codes, `publicDetails`, events, `list` and `describe` results, and construction limits |
+| `@invokta/cli` | `runCli` and its types; the `list`, `describe`, and `run` grammar; exit codes; output JSON shapes |
+| `@invokta/mcp` | Package-root exports; tool mapping, including portable names and `_meta["dev.invokta/deprecated"]`; stdio and HTTP options, limits, and status behavior; the protocol baseline |
+| `@invokta/tooling` | `invokta` commands, options, and exit codes; package-root exports; the contract snapshot format and diff change codes |
+| `@invokta/installer`, `@invokta/deploy`, `@invokta/devtools` | Commands, flags, exit codes, documented exports, and persisted manifest and state formats |
+| Project creators | Command flags, profiles, and exit codes |
+
+Internal modules, `dist` layout, undocumented exports, log and diagnostic text,
+construction `TypeError` wording, the devtools UI, examples, and this site are
+not public API. A generated project belongs to its author: template changes do
+not break existing projects. Adding a field to an object the framework returns
+is compatible, even though hand-written implementations of that type must add
+it.
+
+## Versioning
+
+| Release | Before 1.0 | From 1.0 |
+| --- | --- | --- |
+| Major | Not used | Any breaking change |
+| Minor | New features; may contain breaking changes, each listed under `Changed` or `Removed` with migration steps | Compatible additions and deprecations only |
+| Patch | Compatible fixes, documentation, and dependency updates | Fixes that restore documented behavior |
+
+From 1.0, breaking changes include removing or renaming an export, command,
+flag, or option; adding a required input field; changing the pipeline order,
+an error code, an event shape, or an exit code; widening a closed union such as
+`EngineErrorCode`; tightening a documented limit; and raising the minimum
+Node.js version.
+
+## Deprecation
+
+A framework deprecation ships with a `@deprecated` JSDoc tag, a reference note,
+and a `Deprecated` changelog entry. The deprecated API keeps working:
+
+- before 1.0, for at least one more minor release when a transition path
+  exists; and
+- from 1.0, until the next major release.
+
+Security fixes may change behavior without a deprecation window.
+
+## Supported platforms
+
+- **Node.js:** `>=22.20.0`, as declared by every package. CI runs on Node.js
+  24.20.0; Node.js 22 is declared but not exercised by CI today. Raising the
+  minimum is a minor change before 1.0 and a major change from 1.0.
+- **Modules:** native ESM only.
+- **MCP:** protocol baseline `2025-11-25` through the exactly pinned official
+  SDK. SDK updates are reviewed and must pass the conformance tests. A baseline
+  change requires a new ADR; from 1.0, dropping a revision that clients still
+  negotiate is a major change.
+
+## Security fixes
+
+Security fixes ship as a patch release of every package on the latest release
+line, described under `Security` in the changelog without exploit details.
+There is no dedicated security contact yet: open a GitHub issue asking the
+maintainer for a private channel, without the vulnerability details.
+
+## Criteria for 1.0
+
+<Aside type="note" title="A state, not a date">
+  No date has been set for 1.0. It requires all of the following.
+</Aside>
+
+1. Every package's public API is reviewed and no known breaking change is
+   pending.
+2. At least one minor release has followed this policy, including a completed
+   deprecation.
+3. CI exercises every supported Node.js major version.
+4. A security policy publishes a private reporting channel and supported
+   release lines.
+5. Release verification detects unintended export changes.
+6. The official examples gate their contracts with `invokta contract diff`.
+7. The MCP SDK review and conformance process passes on the baseline.
+
+Engine authors apply the same discipline to their own capabilities: see
+[Evolving capability contracts](/guides/contract-evolution/).

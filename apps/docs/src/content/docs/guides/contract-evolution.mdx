@@ -1,0 +1,144 @@
+---
+title: Evolving capability contracts
+description: Deprecate capabilities, classify contract changes, and gate engine releases with contract snapshots in CI.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Every capability an engine publishes is a contract: its ID, input and output
+schemas, access kind, timeout, and annotations. Agents, CLI scripts, and
+applications depend on it. This guide shows how to change that contract
+without surprising them.
+
+## Version the engine
+
+Give the engine a Semantic Versioning `version` and bump it by the strongest
+change in a release:
+
+| Change | Engine version |
+| --- | --- |
+| Remove or rename a capability; add a required input property; narrow an input; widen or drop part of an output; make access stricter | Major |
+| Add a capability or an optional input property; widen an input; add an output property; deprecate a capability | Minor |
+| Fix a handler without changing the contract | Patch |
+
+Consumers must tolerate output properties they do not know, so adding one is
+compatible even when the output schema closes the object. Changing what an
+existing field means is breaking even when no schema changes; tooling cannot see
+it.
+
+## Deprecate before removing
+
+Mark the capability with a notice. Its behavior does not change.
+
+```ts
+export const classifyTicket = defineCapability({
+  description: "Classify a support ticket.",
+  input,
+  output,
+  access: "authenticated",
+  deprecated: {
+    reason: "Superseded by the triage flow.",
+    since: "2.0.0",
+    replacement: "support.triage-ticket",
+  },
+  run,
+});
+```
+
+Consumers see the notice everywhere the contract is published:
+
+- `engine.list()`, `engine.describe()`, and CLI `list` and `describe` include
+  `deprecated`;
+- MCP clients see a description that starts with
+  `Deprecated since 2.0.0: Superseded by the triage flow.` and a
+  `Replacement:` line, and the same object under
+  `_meta["dev.invokta/deprecated"]`; and
+- the engine logger receives one `Deprecated capability invoked.` warning the
+  first time each deprecated capability is called, so you can tell whether a
+  consumer still depends on it.
+
+`reason` is required and limited to 1,024 characters, `since` to 64, and
+`replacement` to 256. Invalid notices fail `createEngine`.
+
+## Rename without breaking
+
+<Steps>
+
+1. Register the same definition under the new ID.
+
+   ```ts
+   const engine = createEngine({
+     name: "support-engine",
+     version: "2.1.0",
+     capabilities: {
+       "support.triage-ticket": triageTicket,
+       "support.classify-ticket": {
+         ...triageTicket,
+         deprecated: {
+           reason: "Renamed to support.triage-ticket.",
+           since: "2.1.0",
+           replacement: "support.triage-ticket",
+         },
+       },
+     },
+   });
+   ```
+
+2. Release a minor version. Both IDs work, and every channel shows the
+   deprecation on the old one.
+
+3. Remove the old ID in the next major version of the engine.
+
+</Steps>
+
+## Gate releases in CI
+
+`@invokta/tooling` records the public contract of a built engine and compares
+it with the accepted baseline:
+
+```sh
+yarn add --dev @invokta/tooling
+yarn build
+npx invokta contract snapshot ./dist/engine.js --output contract.json
+git add contract.json
+```
+
+In CI, snapshot the current build and diff it against the committed baseline:
+
+```sh
+npx invokta contract snapshot ./dist/engine.js --output contract.next.json
+npx invokta contract diff contract.json contract.next.json
+```
+
+The diff exits `1` when it finds a breaking change. Add
+`--fail-on-potentially-breaking` to also stop on changes that need review, such
+as a shorter timeout, a lost `readOnly` guarantee, or a JSON Schema change the
+tool cannot decide (`$ref`, `anyOf`, `oneOf`, `allOf`, `not`, a replaced
+`pattern`, and similar keywords). When a release intentionally changes the
+contract, bump the engine version and commit the new snapshot as the baseline.
+
+The same check runs in a test:
+
+```ts
+import { readFile } from "node:fs/promises";
+
+import {
+  createContractSnapshot,
+  diffContractSnapshots,
+} from "@invokta/tooling";
+
+const baseline = JSON.parse(await readFile("contract.json", "utf8"));
+const diff = diffContractSnapshots(baseline, createContractSnapshot(engine));
+
+expect(diff.breaking).toBe(0);
+```
+
+<Aside type="caution" title="The diff is structural">
+  It compares published contracts. A changed handler, a stricter function
+  access rule, a different model, or worse output quality are invisible to it.
+  Keep behavior tests and reviews for those.
+</Aside>
+
+See the [`@invokta/tooling` reference](/reference/tooling/) for every change
+code and the [stability policy](/concepts/stability/) for the framework's own
+commitments.

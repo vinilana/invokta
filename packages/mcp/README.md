@@ -25,7 +25,10 @@ const server = await serveMcpHttp(engine, {
 ```
 
 Both adapters execute every tool call through `engine.invoke`, so the CLI,
-direct calls, and MCP share one execution path. `serveMcpHttp` is stateless and
+direct calls, and MCP share one execution path. A capability with a
+`deprecated` notice keeps its tool; the description starts with the notice and
+`_meta["dev.invokta/deprecated"]` carries it as structured data
+([ADR 0046](../../docs/adr/0046-stability-policy-capability-deprecation-and-contract-diff.md)). `serveMcpHttp` is stateless and
 requires an explicit `auth` choice: `mode: "required"` with an `authenticate`
 hook, or the deliberately verbose
 `mode: "dangerously-disabled-for-development"`. When `auth.resourceMetadata` is

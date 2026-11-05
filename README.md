@@ -169,7 +169,8 @@ turning the framework into a service container.
   `engine.invoke`.
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure,
   stateless Streamable HTTP.
-- `@invokta/tooling` validates composed capabilities and final MCP tool names.
+- `@invokta/tooling` validates composed capabilities and final MCP tool names,
+  and snapshots and diffs capability contracts for release gates.
 - `@invokta/devtools` provides an engine inspector plus MCP and CLI
   workbenches.
 - `@invokta/installer` installs and manages local or remote Action Engines in
@@ -265,6 +266,7 @@ validation, agent-team coordination, commits, and pull-request evidence.
 - [Architecture and contracts](./docs/architecture.md)
 - [Scope and limits](./docs/scope-and-limits.md)
 - [Architecture decisions](./docs/adr/README.md)
+- [Stability policy](./docs/stability-policy.md)
 - [Changelog](./CHANGELOG.md)
 
 Invokta is available under the [MIT License](./LICENSE).

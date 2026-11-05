@@ -1,13 +1,14 @@
 ---
 title: '@invokta/tooling'
-description: Command and API reference for validating capability composition and MCP catalogs during development and CI.
+description: Command and API reference for validating capability composition and MCP catalogs, and for gating capability contract changes, during development and CI.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
 `@invokta/tooling` provides development-time build gates for capability
-composition and the final MCP tool catalog. Each command imports a built ESM
-module and delegates validation to the same framework boundary used at runtime.
+composition, the final MCP tool catalog, and capability contract compatibility.
+Each command imports a built ESM module and delegates validation to the same
+framework boundary used at runtime.
 
 The package adds no runtime contract, adapter, or transport. It never invokes a
 capability or starts an engine.
@@ -21,11 +22,11 @@ yarn add --dev @invokta/tooling
 ```
 
 The package is native ESM and requires Node.js 22.20.0 or later. It exposes the
-`invokta` binary and two package-root programmatic APIs.
+`invokta` binary and package-root programmatic APIs.
 
 ## Commands
 
-The package provides two commands.
+The package provides three commands.
 
 ### `check-capabilities`
 
@@ -117,6 +118,97 @@ Success is silent. A duplicate derived alias exits `1` with
 `MCP_TOOL_NAME_COLLISION`, the public tool name, and both capability IDs. Usage,
 module loading, export selection, or invalid-engine failures exit `2`.
 
+### `contract`
+
+```text
+invokta contract snapshot <esm-module> [--export <name>] [--output <file>]
+invokta contract diff <previous-snapshot> <next-snapshot> [--fail-on-potentially-breaking]
+```
+
+`contract snapshot` imports a built module, selects the `engine` export by
+default, and writes a deterministic JSON snapshot of the engine's public
+contract to standard output, or to `--output`. It reads only `engine.list()` and
+`engine.describe()`; no capability is invoked.
+
+```json
+{
+  "formatVersion": 1,
+  "engine": { "name": "support-engine", "version": "2.0.0" },
+  "capabilities": {
+    "support.classify-ticket": {
+      "title": "Classify ticket",
+      "description": "Classify a support ticket.",
+      "access": "authenticated",
+      "timeoutMs": 30000,
+      "annotations": { "readOnly": true },
+      "deprecated": { "reason": "Superseded by the triage flow." },
+      "inputSchema": { "type": "object" },
+      "outputSchema": { "type": "object" }
+    }
+  }
+}
+```
+
+Capability IDs and JSON Schema keywords are sorted, so declaration and keyword
+order never change the bytes. Only the four boolean annotation hints are
+recorded. The snapshot command fails with exit code `2` if the engine's
+descriptions do not include an access kind.
+
+`contract diff` compares two snapshots and writes a report to standard output.
+Each change has a severity, a stable code, the capability ID, and, inside a
+schema, an `input#` or `output#` JSON Pointer location:
+
+```text
+breaking changes: 1
+  REQUIRED_CHANGED capability="support.classify-ticket" at="input#/properties/priority": The property is now required.
+```
+
+An input schema is what the engine must keep accepting, and an output schema is
+what it must keep promising, so narrowing an input or widening an output is
+breaking.
+
+| Code | Severity | Example |
+| --- | --- | --- |
+| `CAPABILITY_REMOVED` | Breaking | A capability ID disappeared; a rename is a removal plus an addition |
+| `CAPABILITY_ADDED` | Compatible | A new capability ID |
+| `PROPERTY_ADDED` | Breaking for a required input property, otherwise compatible | `priority` added to `required` and `properties` |
+| `PROPERTY_REMOVED` | Breaking for output or a closed input object, otherwise potentially breaking | An output property was dropped |
+| `REQUIRED_CHANGED` | Breaking when an input becomes required or an output becomes optional | `required` changed |
+| `TYPE_CHANGED` | By direction; disjoint types are breaking | `string` to `number`; `integer` to `number` widens |
+| `VALUES_CHANGED` | By direction; removing and adding is breaking | An `enum` value or `const` changed |
+| `CONSTRAINT_CHANGED` | By direction; a replaced `pattern` or `multipleOf` and any `format` change are potentially breaking | `minimum`, `maxLength`, `minItems`, `uniqueItems`, `pattern` |
+| `ADDITIONAL_PROPERTIES_CHANGED` | By direction; adding output properties is always compatible | An input started rejecting unknown properties |
+| `KEYWORD_CHANGED` | Potentially breaking | `$ref`, `$defs`, `anyOf`, `oneOf`, `allOf`, `not`, `if`, `default`, or any other keyword |
+| `ACCESS_CHANGED` | Breaking from `public`; compatible to `public`; otherwise potentially breaking | `public` to `authenticated` |
+| `TIMEOUT_CHANGED` | Potentially breaking when added or shortened | `timeoutMs` from 30000 to 5000 |
+| `ANNOTATIONS_CHANGED` | Potentially breaking when a guarantee is lost | `readOnly` from true to false |
+| `DEPRECATION_CHANGED` | Compatible | The capability was deprecated |
+| `METADATA_CHANGED` | Compatible | A title, description, or schema example changed |
+| `ENGINE_NAME_CHANGED` | Potentially breaking | The MCP server identity changed |
+
+The comparison never guesses: any JSON Schema change it cannot decide is
+potentially breaking. Consumers must tolerate unknown output properties, so an
+added output property is compatible even when the output schema sets
+`additionalProperties: false`.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | The snapshot was written, or no breaking change was found |
+| `1` | A breaking change was found, or a potentially breaking change with `--fail-on-potentially-breaking` |
+| `2` | Usage, module loading, export selection, invalid engine, unwritable output, or an unreadable or invalid snapshot |
+
+A snapshot file may be at most 16 MiB with at most 256 nesting levels per
+schema document. Unknown fields and other format versions are rejected, and
+invalid JSON is reported without echoing parser messages, which can quote file
+content.
+
+<Aside type="note" title="A structural check">
+  The diff compares published contracts. Handler behavior, a function access
+  rule's logic, and output quality are outside its view; review them
+  separately. The [stability policy](/concepts/stability/) lists what counts as
+  breaking.
+</Aside>
+
 ## CI setup
 
 Add the gate after the engine build:
@@ -127,7 +219,9 @@ Add the gate after the engine build:
     "build": "tsc -b --pretty false",
     "check:capabilities":
       "invokta check-capabilities ./dist/capabilities.js",
-    "check:mcp": "invokta check-mcp ./dist/engine.js"
+    "check:mcp": "invokta check-mcp ./dist/engine.js",
+    "check:contract":
+      "invokta contract snapshot ./dist/engine.js --output contract.next.json && invokta contract diff contract.json contract.next.json"
   }
 }
 ```
@@ -136,7 +230,11 @@ Add the gate after the engine build:
 yarn build
 yarn check:capabilities
 yarn check:mcp
+yarn check:contract
 ```
+
+Commit `contract.json` as the accepted baseline and replace it with the new
+snapshot when a release intentionally changes the contract.
 
 Run it for every engine that composes imported capabilities. Literal IDs also
 receive TypeScript diagnostics, but the built-module gate covers values widened
@@ -144,7 +242,8 @@ or computed at runtime.
 
 ## API
 
-The package root exports both functions and their option types:
+The package root exports the command functions, the contract helpers, and
+their types:
 
 ```ts
 import {
@@ -154,6 +253,18 @@ import {
   checkMcp,
   type CheckMcpIo,
   type CheckMcpOptions,
+  runContractCommand,
+  type ContractCommandIo,
+  type ContractCommandOptions,
+  createContractSnapshot,
+  serializeContractSnapshot,
+  diffContractSnapshots,
+  type ContractSnapshot,
+  type ContractCapabilitySnapshot,
+  type ContractDiff,
+  type ContractChange,
+  type ContractChangeCode,
+  type ContractChangeSeverity,
 } from "@invokta/tooling";
 ```
 
@@ -205,3 +316,58 @@ process.exitCode = exitCode;
 Both functions return a numeric exit code and never terminate the process.
 Read [Capability packages](/guides/capability-packages/) for the complete
 authoring and importing flow.
+
+### Contract API
+
+```ts
+interface ContractCommandIo {
+  readonly writeStdout: (text: string) => void | Promise<void>;
+  readonly writeStderr: (text: string) => void | Promise<void>;
+}
+
+interface ContractCommandOptions {
+  readonly argv?: readonly string[];
+  readonly cwd?: string;
+  readonly io?: Partial<ContractCommandIo>;
+}
+
+function runContractCommand(
+  options?: ContractCommandOptions,
+): Promise<number>;
+
+function createContractSnapshot(engine: Engine): ContractSnapshot;
+function serializeContractSnapshot(snapshot: ContractSnapshot): string;
+function diffContractSnapshots(
+  previous: ContractSnapshot,
+  next: ContractSnapshot,
+): ContractDiff;
+
+interface ContractDiff {
+  readonly changes: readonly ContractChange[];
+  readonly breaking: number;
+  readonly potentiallyBreaking: number;
+  readonly compatible: number;
+}
+
+interface ContractChange {
+  readonly severity: "breaking" | "potentially-breaking" | "compatible";
+  readonly code: ContractChangeCode;
+  readonly capabilityId?: string;
+  readonly schema?: "input" | "output";
+  readonly path?: string;
+  readonly message: string;
+}
+```
+
+`runContractCommand` takes `argv` starting with `contract` and returns the same
+exit code as the binary. `createContractSnapshot` returns a frozen snapshot;
+`serializeContractSnapshot` returns the exact bytes the command writes.
+`diffContractSnapshots` validates both snapshots and throws a `TypeError` for an
+invalid one. It lets an engine test compare a committed baseline directly:
+
+```ts
+const baseline = JSON.parse(await readFile("contract.json", "utf8"));
+const diff = diffContractSnapshots(baseline, createContractSnapshot(engine));
+
+expect(diff.breaking).toBe(0);
+```

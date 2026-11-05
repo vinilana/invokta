@@ -9,7 +9,7 @@
 | `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
-| `@invokta/tooling` | Development-time validation of capability composition |
+| `@invokta/tooling` | Development-time validation of capability composition and MCP catalogs, and capability contract snapshots and diffs |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
 | `@invokta/devtools` | Development-time engine dev server with per-adapter capability emulation, doctor diagnostics, installed MCP inspection and homologation, and installed CLI inspection and homologation |
@@ -78,6 +78,8 @@ while the example owns one replaceable Authorization Server implementation.
 | Generated OpenAPI runtime URL | 8,192 UTF-8 bytes |
 | Generated OpenAPI runtime request body | 10 MiB serialized JSON |
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |
+| Capability deprecation `reason`, `since`, `replacement` | 1,024, 64, and 256 characters |
+| Contract snapshot file | 16 MiB; 256 JSON nesting levels per schema document |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,
@@ -92,7 +94,13 @@ on values imported by the application.
 context compiler, memory, RAG abstraction, prompt registry, official provider
 connectors or connector catalog, connector lifecycle, semantic cache, economics
 engine, eval runner, automated judge,
-release gate, or canary platform.
+release gate, or canary platform. The tooling contract diff (AE-EVOLVE-02) is a
+structural compatibility check between two contract snapshots: it does not
+inspect handler behavior, function access rule logic, prompts, models, or
+quality, does not choose or bump a version, and does not publish or block a
+release by itself. JSON Schema changes it cannot decide are reported as
+potentially breaking for human review. A deprecated capability is not removed,
+hidden, or rerouted by the framework.
 
 **AE-LIMIT-04 — Security.** Invokta does not provide an identity provider,
 token issuer, universal JWT/JWKS or introspection client, DPoP, mTLS, policy

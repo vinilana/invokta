@@ -7,6 +7,38 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- The [stability policy](./docs/stability-policy.md) defines each package's
+  public API, Semantic Versioning before and after 1.0, the deprecation process
+  and window, supported Node.js versions, the MCP baseline update rules, how
+  security fixes ship, the criteria for 1.0, and which capability contract
+  changes are breaking for engine authors (ADR 0046).
+- Capability definitions accept an optional
+  `deprecated: { reason, since?, replacement? }` notice, validated with bounded
+  lengths at engine construction and published by `list()` and `describe()`.
+  The CLI prints it, and MCP tool listings prefix the description with the
+  notice and expose it as `_meta["dev.invokta/deprecated"]`. Invocation does
+  not change; the engine logger receives one warning per deprecated capability
+  on its first invocation (ADR 0046).
+- `describe()` publishes the access rule kind as `access`: `public`,
+  `authenticated`, or `function`. New `CapabilityDeprecation` and
+  `CapabilityAccessKind` types are exported from `@invokta/core`.
+- `invokta contract snapshot <esm-module>` writes a deterministic JSON snapshot
+  of an engine's public contract, and `invokta contract diff <previous> <next>`
+  classifies the changes as breaking, potentially breaking, or compatible,
+  prints a report, and exits `1` on breaking changes (or potentially breaking
+  ones with `--fail-on-potentially-breaking`). `@invokta/tooling` also exports
+  `runContractCommand`, `createContractSnapshot`, `serializeContractSnapshot`,
+  and `diffContractSnapshots` (ADR 0046).
+
+### Changed
+
+- `engine.describe()` results, and therefore CLI `describe` output, include the
+  new required `access` field. Tests that compare a whole description for exact
+  equality must add it, and hand-written `Engine` implementations must return
+  it.
+
 ### Fixed
 
 - Release publication waits up to 10 minutes, with checks backing off from 5 to

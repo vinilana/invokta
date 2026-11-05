@@ -216,6 +216,7 @@ describe("the core public contract", () => {
       access: 0,
       timeoutMs: 0,
       annotations: 0,
+      deprecated: 0,
       run: 0,
     };
     const run = vi.fn(
@@ -231,6 +232,7 @@ describe("the core public contract", () => {
       access: "public",
       timeoutMs: 25,
       annotations: { readOnly: true },
+      deprecated: { reason: "Use the stable replacement." },
       run,
     } as const;
     const descriptors = Object.fromEntries(
@@ -267,6 +269,7 @@ describe("the core public contract", () => {
       description: "Use one coherent capability snapshot.",
       timeoutMs: 25,
       annotations: { readOnly: true },
+      deprecated: { reason: "Use the stable replacement." },
     });
     expect(reads).toEqual({
       description: 1,
@@ -276,6 +279,7 @@ describe("the core public contract", () => {
       access: 1,
       timeoutMs: 1,
       annotations: 1,
+      deprecated: 1,
       run: 1,
     });
     expect(run).toHaveBeenCalledOnce();
@@ -387,6 +391,7 @@ describe("the core public contract", () => {
         idempotent: true,
         openWorld: false,
       },
+      access: "public",
       inputSchema: {
         type: "object",
         properties: {
