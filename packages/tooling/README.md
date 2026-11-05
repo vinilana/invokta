@@ -82,7 +82,10 @@ Domain IDs such as `tasks.create` remain valid. The command validates their
 derived public aliases and exits `1` when two IDs collide, for example
 `support.echo` and `support_echo` both becoming `support_echo`. The diagnostic
 contains only the stable issue code, tool name, and colliding capability IDs.
-Usage, loading, export, and invalid-engine failures exit `2`; success is silent.
+Usage, loading, export, and invalid-engine failures exit `2`. A valid catalog is
+silent unless annotated output properties will not produce MCP content blocks
+(ADR 0044); those are printed as `warning:` lines with the code, tool name,
+capability ID, and property name, and the command still exits `0`.
 
 ```bash
 invokta check-mcp dist/engine.js

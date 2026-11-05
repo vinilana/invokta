@@ -129,6 +129,7 @@ export default defineConfig({
             { slug: "recipes/capability-composition" },
             { slug: "recipes/capability-middleware" },
             { slug: "recipes/mcp-stdio-consumer" },
+            { slug: "recipes/mcp-rich-content" },
             { slug: "recipes/external-provider" },
             { slug: "recipes/opentelemetry" },
             {
