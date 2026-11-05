@@ -6,7 +6,10 @@ import {
   type ProgressReport,
 } from "@invokta/core";
 
+import { deriveCapabilityFlags, parseFlagInput } from "./flags.js";
+import { renderCapabilityHelp } from "./help.js";
 import { InvalidUtf8Error, readUtf8 } from "./stdin.js";
+import { CliUsageError, generalHelp, usage } from "./usage.js";
 
 export interface CliIo {
   readonly readStdin: () => Promise<string>;
@@ -24,7 +27,9 @@ export interface RunCliOptions {
 
 type CliCommand =
   | { readonly name: "list" }
+  | { readonly name: "help" }
   | { readonly name: "describe"; readonly capabilityId: string }
+  | { readonly name: "capability-help"; readonly capabilityId: string }
   | {
       readonly name: "run";
       readonly capabilityId: string;
@@ -32,24 +37,9 @@ type CliCommand =
         | { readonly source: "argument"; readonly value: string }
         | {
             readonly source: "stdin";
-          };
+          }
+        | { readonly source: "flags"; readonly arguments: readonly string[] };
     };
-
-const usage = `Usage:
-  engine list
-  engine describe <capability-id>
-  engine run <capability-id> --input '<json>'
-  engine run <capability-id> --stdin`;
-
-class CliUsageError extends Error {
-  readonly showUsage: boolean;
-
-  constructor(message: string, showUsage = true) {
-    super(message);
-    this.name = "CliUsageError";
-    this.showUsage = showUsage;
-  }
-}
 
 class CliStdoutError extends Error {
   constructor(cause: unknown) {
@@ -58,8 +48,23 @@ class CliStdoutError extends Error {
   }
 }
 
+function optionName(token: unknown): string | undefined {
+  if (typeof token !== "string" || !token.startsWith("--")) return undefined;
+  const separator = token.indexOf("=");
+  return token.slice(2, separator === -1 ? undefined : separator);
+}
+
 function parseCommand(argv: readonly string[]): CliCommand {
   const [command, ...args] = argv;
+  if (
+    ((command === "help" || command === "--help") && args.length === 0) ||
+    (command === "help" && args.length === 1 && args[0] === "--help")
+  ) {
+    return { name: "help" };
+  }
+  if (command === "help" && args.length === 1 && args[0] !== "") {
+    return { name: "capability-help", capabilityId: args[0] as string };
+  }
   if (command === "list" && args.length === 0) return { name: "list" };
   if (command === "describe" && args.length === 1 && args[0] !== "") {
     return { name: "describe", capabilityId: args[0] as string };
@@ -84,7 +89,27 @@ function parseCommand(argv: readonly string[]): CliCommand {
       input: { source: "argument", value: runArguments[1] },
     };
   }
-  throw new CliUsageError("Invalid command or arguments.");
+  if (runArguments.length === 1 && runArguments[0] === "--help") {
+    return { name: "capability-help", capabilityId };
+  }
+  for (const token of runArguments) {
+    const name = optionName(token);
+    if (name === "input" || name === "stdin") {
+      throw new CliUsageError(
+        "Use exactly one input source: --input '<json>', --stdin, or schema-derived flags.",
+      );
+    }
+    if (name === "help") {
+      throw new CliUsageError(
+        "Use --help as the only argument after the capability ID.",
+      );
+    }
+  }
+  return {
+    name: "run",
+    capabilityId,
+    input: { source: "flags", arguments: runArguments },
+  };
 }
 
 async function readProcessStdin(): Promise<string> {
@@ -223,6 +248,10 @@ async function execute<Capabilities extends CapabilityMap>(
     await writeStdout(io, serialize(engine.list(), options.format));
     return;
   }
+  if (command.name === "help") {
+    await writeStdout(io, generalHelp);
+    return;
+  }
   const capabilityId = command.capabilityId as CapabilityId<Capabilities>;
   if (command.name === "describe") {
     await writeStdout(
@@ -231,12 +260,32 @@ async function execute<Capabilities extends CapabilityMap>(
     );
     return;
   }
+  if (command.name === "capability-help") {
+    const description = engine.describe(capabilityId);
+    await writeStdout(
+      io,
+      renderCapabilityHelp(description, deriveCapabilityFlags(description)),
+    );
+    return;
+  }
 
-  const encodedInput =
-    command.input.source === "stdin"
-      ? await io.readStdin()
-      : command.input.value;
-  const input = parseInput(encodedInput);
+  let input: unknown;
+  if (command.input.source === "flags") {
+    // Flags need the published input schema to decode their values; the
+    // resulting object still goes through engine.invoke validation.
+    const description = engine.describe(capabilityId);
+    input = parseFlagInput(
+      command.capabilityId,
+      deriveCapabilityFlags(description),
+      command.input.arguments,
+    );
+  } else {
+    input = parseInput(
+      command.input.source === "stdin"
+        ? await io.readStdin()
+        : command.input.value,
+    );
+  }
   const result = await engine.invoke(capabilityId, input as never, {
     source: "cli",
     principal: options.principal,

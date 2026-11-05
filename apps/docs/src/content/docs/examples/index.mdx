@@ -74,8 +74,8 @@ so review provider data handling and billing before running them.
   </Card>
   <Card title="Support Engine" icon="puzzle">
     Classify support tickets with injected repository, classifier, and
-    permission ports. The example covers authorization, safe errors,
-    cancellation, and all four entry points.
+    permission ports. The example covers authorization, a declared domain
+    error, cancellation, and all four entry points.
 
     [Open `support-engine`](https://github.com/vinilana/invokta/tree/main/examples/support-engine)
   </Card>
@@ -144,7 +144,7 @@ follows its shape. Each pairs with a page in the
 
 | Example | Shows |
 | --- | --- |
-| [`auth-jwt-bearer-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-jwt-bearer-engine) | Provider-neutral JWKS verification with `jose`, claims-to-`Principal` mapping, and Protected Resource Metadata for MCP OAuth discovery |
+| [`auth-jwt-bearer-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-jwt-bearer-engine) | Provider-neutral JWKS verification with `@invokta/auth-jwt`, claims-to-`Principal` mapping, required scopes, and Protected Resource Metadata for MCP OAuth discovery |
 | [`auth-self-hosted-oauth-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-self-hosted-oauth-engine) | Production-oriented self-hosted OAuth with PKCE, DCR, ES256 tokens, rotating refresh tokens, PostgreSQL, and Caddy or Traefik deployment assets |
 | [`auth-supabase-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-supabase-engine) | Supabase Auth asymmetric JWTs verified against the project JWKS |
 | [`auth-clerk-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-clerk-engine) | Clerk session tokens with authorized-party enforcement and organization claims |

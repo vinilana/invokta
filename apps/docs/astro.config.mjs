@@ -115,6 +115,7 @@ export default defineConfig({
             { slug: "guides/http-authentication" },
             { slug: "guides/capability-authorization" },
             { slug: "guides/deployment" },
+            { slug: "guides/web-standard-runtimes" },
           ],
         },
         {
@@ -156,6 +157,7 @@ export default defineConfig({
             { slug: "reference/core" },
             { slug: "reference/cli" },
             { slug: "reference/mcp" },
+            { slug: "reference/auth-jwt" },
             { slug: "reference/tooling" },
             { slug: "reference/devtools" },
             { slug: "reference/installer" },

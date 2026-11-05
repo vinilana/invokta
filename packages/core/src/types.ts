@@ -1,3 +1,7 @@
+import type {
+  CapabilityErrorDescription,
+  CapabilityErrorMap,
+} from "./capability-error.js";
 import type { EngineErrorCode } from "./error.js";
 import type {
   EngineJsonSchema,
@@ -73,6 +77,7 @@ export interface CapabilityDefinition<
   readonly access: AccessRule<InferSchemaOutput<InputSchema>>;
   readonly timeoutMs?: number;
   readonly annotations?: CapabilityAnnotations;
+  readonly errors?: CapabilityErrorMap;
   readonly run: (args: {
     readonly input: InferSchemaOutput<InputSchema>;
     readonly context: ExecutionContext;
@@ -87,6 +92,7 @@ export interface AnyCapability {
   readonly access: AccessRule<never>;
   readonly timeoutMs?: number;
   readonly annotations?: CapabilityAnnotations;
+  readonly errors?: CapabilityErrorMap;
   readonly run: (args: {
     readonly input: never;
     readonly context: ExecutionContext;
@@ -116,6 +122,7 @@ export type EngineEvent =
       readonly capabilityId: string;
       readonly durationMs: number;
       readonly code: EngineErrorCode;
+      readonly domainCode?: string;
     };
 
 export interface CapabilitySummary {
@@ -129,6 +136,7 @@ export interface CapabilityDescription extends CapabilitySummary {
   readonly inputSchema: EngineJsonSchema;
   readonly outputSchema: EngineJsonSchema;
   readonly timeoutMs?: number;
+  readonly errors?: ReadonlyArray<CapabilityErrorDescription>;
 }
 
 export interface InvokeOptions {

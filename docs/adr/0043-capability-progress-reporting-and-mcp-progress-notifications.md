@@ -116,9 +116,32 @@ single `tools/call` request that carries a usable progress token. That POST
 alone receives a `text/event-stream` response: the SDK transport for that
 request is created with `enableJsonResponse: false`, the stream carries only
 the progress notifications for that request followed by its JSON-RPC response,
-and it closes after the response. The adapter relays the stream event by event
-instead of buffering the whole body. The SDK
-sends an SSE keep-alive comment every 15 seconds while the stream is open.
+and it closes after the response. This lives in the protocol boundary that
+ADR 0042 shares between `createMcpHttpHandler` and `serveMcpHttp`, so both
+hosts behave the same:
+
+- **Bound.** The boundary relays the SDK's event stream through its own queue
+  of at most one chunk and uses that queue as the forwarder's gate: a
+  notification is offered only while the queue is empty, that is, after the
+  consumer took the previous chunk. When the consumer stops pulling, for
+  example a Fetch platform whose client stopped reading or a Node.js socket
+  that needs drain, a request holds at most one queued notification, one held
+  report, the final held report and result once the call succeeds, and the
+  SDK's 13-byte keep-alive comment every 15 seconds. The capability's report
+  rate, message size, and run time no longer change that amount.
+- **Node.js relay.** `serveMcpHttp` reads the next chunk only after the socket
+  has taken the previous one, so its response buffer stays below the write
+  high-water mark plus one chunk, beyond the operating system's socket
+  buffers.
+- **Connection.** The SDK's connection-scoped `Connection`, `Keep-Alive`, and
+  `Transfer-Encoding` fields are removed from the response, so the host
+  applies its own connection rules. `serveMcpHttp` then honors a client's
+  `Connection: close` and closes the connection after the final chunk.
+- **Cancellation.** Cancelling the response stream aborts the invocation in
+  every host, in addition to `request.signal` and the Node.js disconnect.
+
+The SDK sends an SSE keep-alive comment every 15 seconds while the stream is
+open.
 
 This fits the stateless profile of ADR 0007 because the stream belongs to one
 request and nothing survives it: there is no session ID, event store, event ID,

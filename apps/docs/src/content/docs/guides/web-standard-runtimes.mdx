@@ -1,0 +1,172 @@
+---
+title: Web-standard runtimes
+description: Mount an engine's MCP HTTP endpoint in a server you own, Hono, or a Cloudflare Worker with the Web-standard handler.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+`serveMcpHttp` starts a Node.js listener that Invokta owns. When the endpoint
+must live inside a server you already run, or on a runtime without `node:http`,
+use `createMcpHttpHandler` from `@invokta/mcp/web` instead. It turns one
+engine into a `(request: Request) => Promise<Response>` function with the same
+stateless boundary, authentication, and `engine.invoke` path.
+
+`@invokta/core` and `@invokta/mcp/web` import no Node.js built-in module.
+Node.js is the runtime verified by tests. Deno, Bun, Cloudflare Workers, Vercel
+Edge, and Node.js frameworks that speak the Fetch API are supported by design
+but are not run in CI. The CLI, MCP stdio, and the MCP client remain Node.js
+packages.
+
+## Create the handler
+
+Create the handler once, next to the engine, and reuse it for every request:
+
+```ts title="src/mcp-handler.ts"
+import { createMcpHttpHandler } from "@invokta/mcp/web";
+
+import { authenticate } from "./http-auth.js";
+import { engine } from "./engine.js";
+
+export const mcpHandler = createMcpHttpHandler(engine, {
+  allowedHosts: ["engine.example.com", "127.0.0.1", "localhost"],
+  auth: { mode: "required", authenticate },
+});
+```
+
+`authenticate` is the same hook you would pass to `serveMcpHttp`; the
+[HTTP authentication guide](/guides/http-authentication/) explains how to write
+it. Options are validated when the handler is created. Without
+`allowedHosts`, the handler accepts only the loopback host names, so a deployed
+endpoint returns 403 until you list its public host names.
+
+The handler matches the full path of the request URL. Route the configured
+mount path, `/mcp` by default, to it with every method, and pass the request
+with its body unread. When you configure `auth.resourceMetadata`, also route
+`GET /.well-known/oauth-protected-resource/mcp`, the path-suffix location for
+the mount path.
+
+## Mount it
+
+<Tabs>
+  <TabItem label="Node.js server">
+    A Node.js server that accepts a Fetch handler, such as
+    `@hono/node-server`, can serve it directly:
+
+    ```ts title="src/mcp-http.ts"
+    import { serve } from "@hono/node-server";
+
+    import { mcpHandler } from "./mcp-handler.js";
+
+    serve({ fetch: mcpHandler, hostname: "127.0.0.1", port: 3000 });
+    ```
+
+    When Invokta can own the listener, `serveMcpHttp` remains the shorter
+    choice: it adds raw-header checks and connection management that a Fetch
+    adapter cannot see.
+  </TabItem>
+  <TabItem label="Hono">
+    Mount the handler beside your other routes. `c.req.raw` is the unread Fetch
+    request:
+
+    ```ts title="src/app.ts"
+    import { Hono } from "hono";
+
+    import { mcpHandler } from "./mcp-handler.js";
+
+    const app = new Hono();
+
+    app.get("/health", (c) => c.text("ok"));
+    app.all("/mcp", (c) => mcpHandler(c.req.raw));
+    app.get("/.well-known/oauth-protected-resource/mcp", (c) =>
+      mcpHandler(c.req.raw),
+    );
+
+    export default app;
+    ```
+
+    Do not read the body in middleware before the MCP route. If the app is
+    mounted under a prefix, configure `path` with the full public path, such as
+    `/api/mcp`, because the handler routes on the request URL it receives.
+  </TabItem>
+  <TabItem label="Cloudflare Worker">
+    Bindings arrive with each request, so build the engine and the handler once
+    per isolate on the first request:
+
+    ```ts title="src/worker.ts"
+    import { createMcpHttpHandler, type McpHttpHandler } from "@invokta/mcp/web";
+
+    import { createAppEngine } from "./engine.js";
+    import { createAuthenticate } from "./http-auth.js";
+
+    interface Env {
+      readonly PUBLIC_HOST: string;
+      readonly TOKEN_ISSUER: string;
+    }
+
+    let handler: McpHttpHandler | undefined;
+
+    export default {
+      fetch(request: Request, env: Env): Promise<Response> {
+        handler ??= createMcpHttpHandler(createAppEngine(env), {
+          allowedHosts: [env.PUBLIC_HOST],
+          auth: {
+            mode: "required",
+            authenticate: createAuthenticate(env.TOKEN_ISSUER),
+          },
+        });
+        return handler(request);
+      },
+    };
+    ```
+
+    The handler is designed to run without a Node.js compatibility flag. When
+    the platform provides `process.getBuiltinModule`, the core uses it to
+    recognize proxies without running their traps; otherwise it applies the
+    portable fallback described in ADR 0042.
+  </TabItem>
+</Tabs>
+
+Deno and Bun accept the handler as their server callback:
+`Deno.serve({ hostname: "127.0.0.1", port: 3000 }, mcpHandler)` or
+`Bun.serve({ hostname: "127.0.0.1", port: 3000, fetch: mcpHandler })`.
+
+## Verify it
+
+List the tools with a credential your authenticator accepts:
+
+```sh
+curl -sS http://127.0.0.1:3000/mcp \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer $ENGINE_TOKEN" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+The response is one JSON-RPC result listing one tool per capability. Without
+the `authorization` header the handler answers 401 with a `WWW-Authenticate`
+challenge, and a request whose host is not in `allowedHosts` receives 403
+before the authenticator runs. `invokta-deploy probe` accepts the same URL.
+
+## What changes on a Fetch host
+
+The boundary is the same one `serveMcpHttp` enforces, and these differences
+follow from what a Fetch `Request` exposes:
+
+| Concern | Web-standard handler |
+| --- | --- |
+| Allowed hosts | Loopback names by default; the `Host` header, when present, and the URL authority must each be allowed |
+| Request target | The host has already resolved dot segments; a query, fragment, or percent encoding is still rejected |
+| Repeated header fields | Fetch joins them with `, `; any comma in `Host`, or one outside a quoted parameter value in `Content-Type`, is rejected, and a joined `Authorization` value reaches the authenticator as one value |
+| Body limit | Enforced while streaming `request.body`, which is cancelled when the limit is crossed or the request aborts |
+| Cancellation | `request.signal` reaches the authenticator, body reading, and the capability |
+| Connections and shutdown | Owned by the host; the handler sets no hop-by-hop header |
+| Progress | A progress-token `tools/call` returns a `text/event-stream` body; the platform must stream it, and a stalled reader holds at most one queued notification and one held report |
+
+<Aside type="caution" title="Reject anything that is not exactly one credential">
+  A repeated `Authorization` header arrives as `Bearer a, Bearer b`. Match the
+  whole value against one credential form, as `^Bearer (\S+)$` does, and return
+  `null` otherwise.
+</Aside>
+
+See the [`@invokta/mcp` reference](/reference/mcp/#createmcphttphandler) for
+the complete API.

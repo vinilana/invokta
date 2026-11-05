@@ -1,4 +1,8 @@
-import { defineCapability, EngineError } from "@invokta/core";
+import {
+  CapabilityError,
+  type CapabilityErrorMap,
+  defineCapability,
+} from "@invokta/core";
 import { z } from "zod";
 
 import type { SupportDependencies } from "../application/ports.js";
@@ -12,6 +16,14 @@ const output = z.object({
   confidence: z.number().min(0).max(1),
   rationale: z.string().min(1),
 });
+
+const errors = {
+  TICKET_NOT_FOUND: {
+    description: "The requested ticket does not exist.",
+    details: z.object({ ticketId: z.string() }),
+    retryable: false,
+  },
+} satisfies CapabilityErrorMap;
 
 export function createClassifyTicket({
   tickets,
@@ -38,13 +50,12 @@ export function createClassifyTicket({
       idempotent: true,
       openWorld: false,
     },
+    errors,
     async run({ input: executionInput, context }) {
       const ticket = await tickets.findById(executionInput.ticketId);
       if (ticket === null) {
-        throw new EngineError({
-          code: "EXECUTION_FAILED",
-          message: "Ticket not found.",
-          publicDetails: { ticketId: executionInput.ticketId },
+        throw new CapabilityError<typeof errors>("TICKET_NOT_FOUND", {
+          details: { ticketId: executionInput.ticketId },
         });
       }
       return classifier.classify(ticket, { signal: context.signal });

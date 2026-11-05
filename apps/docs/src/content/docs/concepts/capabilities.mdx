@@ -56,7 +56,10 @@ trusted-code boundary.
 | `access` | Declare public, authenticated, or domain-specific authorization |
 | `run` | Execute the capability with validated input and an execution context |
 
-`title`, `timeoutMs`, and MCP-compatible `annotations` are optional.
+`title`, `timeoutMs`, MCP-compatible `annotations`, and declared domain
+`errors` are optional. Declared errors publish stable failure outcomes, such as
+`SLOT_CONFLICT`, that `run` raises with `CapabilityError`; see
+[declared domain errors](/reference/errors/#declared-domain-errors).
 
 ## Schemas
 

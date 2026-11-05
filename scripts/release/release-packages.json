@@ -12,6 +12,16 @@
   {
     "directory": "mcp",
     "name": "@invokta/mcp",
+    "requiredFiles": [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/web.js",
+      "dist/web.d.ts"
+    ]
+  },
+  {
+    "directory": "auth-jwt",
+    "name": "@invokta/auth-jwt",
     "requiredFiles": ["dist/index.js", "dist/index.d.ts"]
   },
   {

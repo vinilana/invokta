@@ -66,16 +66,34 @@ accept actor, role, or login flags.
     my-engine run onboarding.create-welcome-message --input '{"name":"Ada"}'
     ```
   </TabItem>
+  <TabItem label="Run with flags">
+    ```sh
+    my-engine run onboarding.create-welcome-message --name Ada
+    ```
+  </TabItem>
   <TabItem label="Run from stdin">
     ```sh
     printf '%s' '{"name":"Ada"}' | \
       my-engine run onboarding.create-welcome-message --stdin
     ```
   </TabItem>
+  <TabItem label="Help">
+    ```sh
+    my-engine help onboarding.create-welcome-message
+    ```
+  </TabItem>
 </Tabs>
 
-Standard output contains only the requested JSON result. Diagnostics are written
-to standard error, which makes the binary safe to compose in shell pipelines.
+Flags are derived from the top-level properties of the capability's input
+schema, so `--name Ada` builds `{"name":"Ada"}` and still goes through
+`engine.invoke` validation. Nested objects and other values that flags cannot
+express use `--input` or `--stdin`; a run accepts exactly one of the three
+input sources. `help <capability-id>` lists the flags, required markers,
+allowed values, and defaults of one capability.
+
+Standard output contains only the requested JSON result or help text.
+Diagnostics are written to standard error, which makes the binary safe to
+compose in shell pipelines.
 
 ## MCP stdio
 
@@ -139,6 +157,10 @@ Follow the [HTTP authentication guide](/guides/http-authentication/) before
 exposing the endpoint beyond loopback. It covers bearer verification,
 protected-resource metadata, Host and Origin checks, trusted proxy behavior,
 and authentication-hook limits.
+
+To serve the same endpoint from a server or runtime you already operate, mount
+`createMcpHttpHandler` from `@invokta/mcp/web` as described in the
+[Web-standard runtimes guide](/guides/web-standard-runtimes/).
 
 ## What stays consistent
 

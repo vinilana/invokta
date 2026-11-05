@@ -4,11 +4,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createAuth0AccessTokenVerifier } from "../src/identity/verifier.js";
 import { startAuth0McpHttp } from "../src/mcp-http.js";
 import {
   type Auth0TokenFactory,
   createAuth0TokenFactory,
+  type JwksOutage,
+  startJwksOutage,
   testAudience,
   testDomain,
   testIssuer,
@@ -19,6 +20,7 @@ const resource = "https://engine.example.com/mcp";
 let tokens: Auth0TokenFactory;
 let healthy: McpHttpServerHandle;
 let unavailable: McpHttpServerHandle;
+let outage: JwksOutage;
 
 function endpoint(server: McpHttpServerHandle): URL {
   const address = server.address();
@@ -41,20 +43,13 @@ function callToolRequest(): RequestInit {
   };
 }
 
-function createVerifier(keySource: Auth0TokenFactory["keySource"]) {
-  return createAuth0AccessTokenVerifier({
-    domain: testDomain,
-    audience: testAudience,
-    keySource,
-  });
-}
-
 beforeAll(async () => {
   tokens = await createAuth0TokenFactory();
+  outage = await startJwksOutage();
   healthy = await startAuth0McpHttp({
     domain: testDomain,
     audience: testAudience,
-    verifier: createVerifier(tokens.keySource),
+    keySource: { jwks: tokens.jwks },
     host: "127.0.0.1",
     port: 0,
     resource,
@@ -64,7 +59,7 @@ beforeAll(async () => {
   unavailable = await startAuth0McpHttp({
     domain: testDomain,
     audience: testAudience,
-    verifier: createVerifier(tokens.failingKeySource),
+    keySource: { jwksUrl: outage.url },
     host: "127.0.0.1",
     port: 0,
   });
@@ -73,6 +68,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await healthy?.close();
   await unavailable?.close();
+  await outage?.close();
 });
 
 describe("auth0 MCP HTTP boundary", () => {
@@ -157,6 +153,8 @@ describe("auth0 MCP HTTP boundary", () => {
     const body = await response.text();
 
     expect(response.status).toBe(500);
+    expect(JSON.parse(body)).toEqual({ error: "authentication_failed" });
     expect(body).not.toContain(token);
+    expect(body).not.toContain(outage.url.host);
   });
 });

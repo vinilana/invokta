@@ -36,9 +36,11 @@ loopback HTTP authorization server for local development.
 
 A `tools/call` request that carries `_meta.progressToken` receives the
 capability's `context.reportProgress` reports as `notifications/progress` with
-the same token, at most one per 100 ms. Over HTTP, that request alone is
-answered with a request-scoped `text/event-stream` response that ends with the
-result; every other request keeps the JSON response
+the same token, at most one per 100 ms, and a client that stops reading holds
+at most one queued notification and one held report. Over HTTP, from both
+`serveMcpHttp` and `createMcpHttpHandler`, that request alone is answered with
+a request-scoped `text/event-stream` response that ends with the result; every
+other request keeps the JSON response
 ([ADR 0043](../../docs/adr/0043-capability-progress-reporting-and-mcp-progress-notifications.md)).
 
 The protocol endpoint is `/mcp` by default. `path` mounts it under a prefix so
@@ -74,6 +76,31 @@ dotted domain IDs visible to clients that enforce `^[a-zA-Z0-9_-]{1,64}$`
 `validateMcpToolCatalog(engine)` fails closed with an
 `McpToolNameCollisionError` when two capability IDs would publish the same tool
 name.
+
+## Serving from a Web-standard runtime
+
+```ts
+import { createMcpHttpHandler } from "@invokta/mcp/web";
+
+const handler = createMcpHttpHandler(engine, {
+  allowedHosts: ["engine.example.com"],
+  auth: { mode: "required", authenticate },
+});
+
+export default { fetch: handler };
+```
+
+`createMcpHttpHandler` returns a `(request: Request) => Promise<Response>`
+function with the same stateless boundary, options, and `engine.invoke` path as
+`serveMcpHttp`, which is a Node.js listener over the same protocol
+implementation ([ADR 0042](../../docs/adr/0042-web-standard-runtime-portability.md)).
+The `@invokta/mcp/web` entry point imports no Node.js built-in module, so it can
+be mounted in Hono, a Next.js route handler, or a Node.js server that accepts a
+Fetch handler, and deployed to Cloudflare Workers, Deno, Bun, or Vercel Edge.
+Node.js is verified by tests; the other runtimes are supported by design.
+Without `allowedHosts`, the handler accepts only the loopback host names. Fetch
+joins repeated header fields, so authenticators must reject an `Authorization`
+value that is not exactly one credential.
 
 ## Connecting as a client
 

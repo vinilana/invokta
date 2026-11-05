@@ -36,6 +36,17 @@ authoring boundary.
 connector directly. All inbound adapters use `engine.invoke`. Authentication
 produces a `Principal`; authorization remains inside `invoke`.
 
+**AE-ARCH-04 — Runtime portability.** The core MUST NOT import a Node.js
+built-in module; it uses only ECMAScript and Web platform globals, and an
+architecture test enforces the import rule. The core reads `util.types` once
+through `process.getBuiltinModule` where the host provides it (Node.js, Deno,
+Bun) to recognize proxies and promises without running user code. A process
+that identifies as Node.js but cannot resolve it MUST fail to load the core.
+Other hosts use the documented fallback of ADR 0042: JSON values still reject
+proxies through structured cloning, while other defensive boundaries may
+invoke proxy traps. `@invokta/mcp/web` MUST NOT load a Node.js built-in module. Node.js is
+the runtime verified by tests; Fetch runtimes are supported by design.
+
 ## Outbound connectors
 
 **AE-CONNECTOR-01 — Construction.** A custom engine owns each outbound port and
@@ -94,7 +105,8 @@ nor authorization mutation changes the data that execution observes.
 `createEngine` is also the capability-contract boundary. It MUST capture every
 top-level capability field exactly once at construction so later replacement or
 changing accessors for `input`, `output`, `access`, `run`, metadata, annotations,
-or timeout configuration cannot create a split registered contract. The same
+declared domain errors, or timeout configuration cannot create a split registered
+contract. The same
 captured `timeoutMs` value is validated, described, and used for execution.
 Standard JSON Schema converters run synchronously during construction. Their
 documents MUST be object-rooted lossless JSON, copied away from converter-owned
@@ -121,14 +133,32 @@ construction with `TypeError`; they never reach the host timer implementation.
 - `FORBIDDEN`;
 - `OUTPUT_INVALID`;
 - `CANCELLED`;
-- `EXECUTION_FAILED`.
+- `EXECUTION_FAILED`;
+- `DOMAIN_ERROR`.
 
 Unknown errors become `EXECUTION_FAILED`. Only `publicDetails` may be serialized;
 `cause` and the stack remain internal. Cancellation or a timeout observed by the
 runtime becomes `CANCELLED`. A thrown `EngineError` is preserved only when its
 own `code` and `message` data properties form a stable public error. A proxy,
-accessor-backed property, missing message, or code outside the seven-code
-taxonomy is treated as an unknown error without invoking the unsafe property.
+accessor-backed property, missing message, or code outside the first seven codes
+of the taxonomy is treated as an unknown error without invoking the unsafe
+property; proxy recognition depends on host introspection (AE-ARCH-04).
+
+**AE-ERR-02 — Declared domain errors.** Only the runtime issues `DOMAIN_ERROR`.
+When `run` rejects with a `CapabilityError` created by the core's constructor,
+its constructor-time code must be declared in the capability's `errors` field
+and its details must pass the declared schema, as a lossless JSON object, within
+the capability timeout and cancellation race. The resulting error has the
+declared description as its message and `publicDetails` of
+`{ code, retryable, details? }` with the domain code, the declared retry hint,
+and the validated frozen details. An undeclared code, missing, unexpected, or
+invalid details, and a look-alike, prototype-forged, or proxied error become
+`EXECUTION_FAILED` with the original kept as the internal cause. Cancellation
+observed by the runtime keeps precedence. A thrown `EngineError` with code
+`DOMAIN_ERROR`, including one issued by another invocation, is never preserved,
+and a `CapabilityError` raised outside `run` is never a domain error; it is
+normalized like any other access-rule or validator failure. ADR 0045
+defines the declaration limits.
 
 Reading `requestId`, `source`, and `onProgress` from invocation options is part
 of this error boundary. If any of these property accesses throws, or
@@ -142,11 +172,13 @@ boundary and always produce a sanitized `UNAUTHENTICATED` error. Failures while
 reading `signal` or setting up caller-signal state always produce a sanitized
 `EXECUTION_FAILED` error. An `EngineError` thrown by either caller-controlled
 boundary cannot select its public code, message, or details. `InvokeOptions.signal`
-must be a platform-branded `AbortSignal` from the supported runtime. The runtime
-rejects proxies without invoking their traps, then checks the platform brand with
-a captured intrinsic before it invokes any signal method. Structural, polyfilled,
+must be a platform-branded `AbortSignal` from the supported runtime. Where the
+host provides trap-free introspection (AE-ARCH-04), the runtime rejects proxies
+without invoking their traps; it then checks the platform brand with a captured
+intrinsic before it invokes any signal method. Structural, polyfilled,
 or proxy substitutes fail as `EXECUTION_FAILED` without executing their accessors,
-traps, or listener methods. Captured platform intrinsics also bypass hostile
+traps, or listener methods. Without that introspection, a forwarding proxy may
+pass a brand check that reads properties through `[[Get]]`, and its traps run. Captured platform intrinsics also bypass hostile
 own-property overrides. Authorization receives a runtime-owned, no-timeout signal
 view, while execution retains the caller signal identity when no timeout is
 configured. The capability timeout still starts only after authorization
@@ -159,7 +191,8 @@ with the events `invocation.started`, `invocation.completed`, and
 `invocation.failed`. The started event contains `requestId`, `capabilityId`,
 `source`, optional `principalId`, and ISO `startedAt`. The completed event contains
 `requestId`, `capabilityId`, and `durationMs`. The failed event contains those
-identifiers, `durationMs`, and an `EngineErrorCode`. Payloads, tokens, and
+identifiers, `durationMs`, an `EngineErrorCode`, and, only for `DOMAIN_ERROR`,
+the declared `domainCode`; domain error details are never included. Payloads, tokens, and
 credentials are not included by default. A rejected or thrown `onEvent` hook
 MUST NOT change the invocation result; the runtime MAY send a payload-free
 diagnostic to the configured logger. The runtime invokes the started hook and
@@ -202,13 +235,15 @@ the complete boundary.
 
 ## CLI
 
-**AE-CLI-01 — Commands.** `@invokta/cli` MUST implement `list`, `describe`, and
-`run`, accept JSON through `--input` or stdin, and receive the local principal
-through the composition root. It MUST NOT provide an actor, role, or login flag.
+**AE-CLI-01 — Commands.** `@invokta/cli` MUST implement `list`, `describe`,
+`run`, and `help`, accept JSON through `--input` or stdin, and receive the local
+principal through the composition root. It MUST NOT provide an actor, role, or
+login flag; schema-derived flags populate business input only.
 
 **AE-CLI-02 — I/O.** `stdout` contains only the requested result; logs and
 diagnostics go to `stderr`. The exit code is `0` for success, `1` for an execution
-or authorization failure, and `2` for invalid usage or JSON. `runCli` returns the
+or authorization failure, including a declared domain error, and `2` for invalid
+usage or JSON. `runCli` returns the
 exit code and does not terminate the process or mutate `process.exitCode`; the
 composition root owns that process-level decision. Errors are compact JSON with
 only `code`, `message`, and optional `publicDetails`. JSON is the default output
@@ -234,6 +269,29 @@ exit code `1`. A stderr writer that throws or rejects is contained; it MUST NOT
 create an unhandled rejection or prevent `runCli` from resolving the numeric code
 selected for the original outcome.
 
+**AE-CLI-03 — Schema-derived flags.** `run` accepts exactly one input source:
+`--input <json>`, `--stdin`, or flags derived from the top-level properties of
+the capability's published input schema. Combined sources are invalid usage.
+Flags cover `string`, `number`, `integer`, and `boolean` properties, `enum` and
+`const` values of one such type, and arrays of them through repeated flags.
+Property names map deterministically to kebab-case spellings; reserved names
+(`input`, `stdin`, `help`, `format`) and colliding spellings fail closed for
+every property involved. Nested objects, undecidable unions, and other schemas
+are input-only and MUST be supplied through `--input` or `--stdin`. Flag parsing
+only decodes values by their declared type: it MUST NOT check required
+properties, apply defaults, or enforce constraints, and the resulting object
+MUST go through `engine.invoke`. Unknown flags, undecodable values, duplicates,
+and flags for input-only properties are invalid usage and never echo values.
+`--input` and `--stdin` do not read the capability description. See ADR 0047.
+
+**AE-CLI-04 — Help.** `help` and `--help` print the general usage;
+`help <capability-id>` and `run <capability-id> --help` print a deterministic,
+bounded, sanitized text page with the capability's title, description,
+annotations, flags, required markers, allowed values, declared defaults, and
+input-only properties. Help is written to stdout with exit code `0`, ignores the
+`format` option, and never invokes a capability. Shell completion is not
+provided.
+
 ## MCP
 
 **AE-MCP-01 — One capability, one tool.** Title, description, schemas, and
@@ -245,7 +303,9 @@ MUST fail closed if two keys map to the same tool name. Success returns
 error; all other capability errors return `isError: true`. Error serialization
 is atomic: if the adapter cannot safely read or serialize the structured
 `EngineError`, it MUST return the generic `EXECUTION_FAILED` tool error and MUST
-NOT let the SDK convert the failure into an internal protocol error. Generated
+NOT let the SDK convert the failure into an internal protocol error. A
+`DOMAIN_ERROR` is a capability error whose `publicDetails` carry the domain
+code, retry hint, and validated details. Generated
 profiles that include MCP MUST run the same catalog construction as a build-time
 preflight from their canonical check, without starting an adapter or invoking a
 capability.
@@ -289,14 +349,35 @@ mount path, `/mcp` by default; each request is independent. The default bind add
 validated. Unauthenticated mode requires an explicit development option whose
 name communicates the risk.
 
+One protocol implementation enforces this boundary for two host adapters
+(ADR 0042): `serveMcpHttp` owns a `node:http` listener, and
+`createMcpHttpHandler`, also exported by the portable `@invokta/mcp/web` entry
+point, serves a Fetch `Request` and returns a `Response`. The rules below apply
+to both. A Fetch host cannot reveal repeated raw header fields or an
+unnormalized request target, so the handler requires every authority it can
+observe, the `Host` header and the URL authority, to be allowed; it defaults to
+the loopback host names; it treats any comma in `Host`, and a comma outside a
+quoted string in `Content-Type`, as a repeated field; and it routes the host's
+normalized path, still rejecting a query, a fragment, and percent encoding. A
+merged `Authorization` value reaches the authenticator as one value. The
+handler cancels the request body stream when it stops reading, including when
+`request.signal` aborts, sets no hop-by-hop header, and leaves connections and
+shutdown to the host; `request.signal` is the request cancellation signal.
+
 The protocol endpoint accepts only `POST`. Each accepted POST creates a new MCP
 server and a new transport with sessions, resumption, event storage, and
 server-to-client SSE disabled. Every response is one JSON body, except that a
 `tools/call` request carrying a usable progress token (`AE-PROGRESS-01`)
-receives a `text/event-stream` response for that request only. That stream
-carries the request's progress notifications followed by its JSON-RPC response,
-closes after the response, and has no event ID, priming event, or
-resumption.
+receives a `text/event-stream` response for that request only, from both
+`serveMcpHttp` and `createMcpHttpHandler`. That stream carries the request's
+progress notifications followed by its JSON-RPC response, closes after the
+response, and has no event ID, priming event, resumption, or connection-scoped
+header. The boundary relays it through a queue of at most one chunk and offers
+the next progress notification only while that queue is empty, so a consumer
+that stops reading leaves at most one queued notification and one held report
+per request; cancelling the stream aborts the invocation. The Node.js adapter
+reads the next chunk only after the socket has taken the previous one and
+applies Node.js connection rules, including a client's `Connection: close`.
 When OAuth Protected Resource Metadata is
 configured, its public well-known GET route is the only non-protocol route.
 Only the exact, canonical mount path reaches protocol dispatch; dot segments,
@@ -373,6 +454,19 @@ gives `access` and `run` independent copies. Malformed or uncloneable identity i
 
 The framework does not issue tokens, perform login, store users, validate JWTs
 from a specific provider, or implement an Authorization Server/policy engine.
+
+**AE-SEC-03 — Optional JWT bearer helper.** `@invokta/auth-jwt` MAY supply the
+HTTP `authenticate` hook for signed JWT bearer tokens from one configured
+issuer (ADR 0049). It MUST require an exact issuer, an audience, an explicit
+asymmetric algorithm allowlist, one key source, `sub`, and `exp`; parse only a
+bounded `Bearer <compact JWS>` credential; resolve `null` for every invalid or
+insufficiently scoped credential without revealing the failed check, including
+a token without `kid` that none of at most eight matching keys verifies; reject
+with a fixed, causeless error when the key set cannot be fetched or used or the
+request is cancelled; not refetch a failing remote key set within a bounded
+window; and never pass the raw token to the principal mapper. It depends
+only on `jose`; the core and adapters do not depend on it, and claim mapping
+beyond its default remains host code.
 
 ## MCP client installation
 

@@ -1,7 +1,11 @@
+import { ServerResponse } from "node:http";
+import { createConnection } from "node:net";
+
 import { createEngine, defineCapability } from "@invokta/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type {
   JSONRPCMessage,
@@ -17,6 +21,7 @@ import {
 } from "../src/progress.js";
 import { createMcpServer } from "../src/protocol-server.js";
 import { preserveFalsyRequestIds } from "../src/request-id-transport.js";
+import { createMcpHttpHandler } from "../src/web.js";
 
 const openServers: McpHttpServerHandle[] = [];
 const openClients: Client[] = [];
@@ -757,5 +762,223 @@ describe("MCP progress notifications over stateless HTTP", () => {
     await expect(server.close()).resolves.toBeUndefined();
     await expect(didAbort).resolves.toBeUndefined();
     await reader?.cancel().catch(() => undefined);
+  });
+});
+
+/** Reports every 20 ms for about one second with large, escaped payloads. */
+function floodSteps(): ReadonlyArray<Step> {
+  return Array.from({ length: 50 }, (_, index) => [
+    { progress: index + 1, message: "\u0001".repeat(1_024) },
+    { waitMs: 20 },
+  ]).flat();
+}
+
+const floodToken = "\u0001".repeat(256);
+
+function countProgressSends() {
+  const send = vi.spyOn(
+    WebStandardStreamableHTTPServerTransport.prototype,
+    "send",
+  );
+  return {
+    count: () =>
+      send.mock.calls.filter(([message]) => isProgressNotification(message))
+        .length,
+    restore: () => send.mockRestore(),
+  };
+}
+
+function signalWhenFinished() {
+  let finished!: () => void;
+  const didFinish = new Promise<void>((resolve) => {
+    finished = resolve;
+  });
+  return { didFinish, beforeReturn: async () => finished() };
+}
+
+describe("MCP progress notifications through the Web handler", () => {
+  function webRequest(message: JSONRPCMessage): Request {
+    return new Request("http://127.0.0.1/mcp", {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(message),
+    });
+  }
+
+  it("answers a progress-token call with an SSE stream without hop-by-hop headers", async () => {
+    const handle = createMcpHttpHandler(createScriptEngine(), {
+      auth: { mode: "dangerously-disabled-for-development" },
+    });
+
+    const response = await handle(
+      webRequest(toolCall(0, [{ progress: 1 }], { progressToken: "web-0" })),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    expect(response.headers.has("connection")).toBe(false);
+    expect(response.headers.has("keep-alive")).toBe(false);
+    expect(response.headers.has("transfer-encoding")).toBe(false);
+    expect(parseServerSentEvents(await response.text())).toEqual([
+      {
+        jsonrpc: "2.0",
+        method: "notifications/progress",
+        params: { progressToken: "web-0", progress: 1 },
+      },
+      expect.objectContaining({ id: 0, result: expect.any(Object) }),
+    ]);
+  });
+
+  it("holds at most one report while the reader of the stream is stalled", async () => {
+    const sends = countProgressSends();
+    const run = signalWhenFinished();
+    try {
+      const handle = createMcpHttpHandler(createScriptEngine(run), {
+        auth: { mode: "dangerously-disabled-for-development" },
+      });
+      const response = await handle(
+        webRequest(
+          toolCall("web-stalled", floodSteps(), { progressToken: floodToken }),
+        ),
+      );
+      const reader = response.body?.getReader();
+      const first = await reader?.read();
+      expect(new TextDecoder().decode(first?.value)).toContain(
+        "notifications/progress",
+      );
+
+      // Without a bound, about ten notifications per second would queue.
+      await run.didFinish;
+      await sleep(50);
+      expect(sends.count()).toBeLessThanOrEqual(3);
+
+      let text = new TextDecoder().decode(first?.value);
+      for (;;) {
+        const chunk = await reader?.read();
+        if (chunk === undefined || chunk.done) break;
+        text += new TextDecoder().decode(chunk.value);
+      }
+      const events = parseServerSentEvents(text);
+      expect(events.length).toBeLessThanOrEqual(4);
+      expect(events.at(-1)).toMatchObject({
+        id: "web-stalled",
+        result: { structuredContent: { rendered: true } },
+      });
+    } finally {
+      sends.restore();
+    }
+  });
+
+  it("aborts the capability when the response stream is cancelled", async () => {
+    let aborted!: () => void;
+    const didAbort = new Promise<void>((resolve) => {
+      aborted = resolve;
+    });
+    const handle = createMcpHttpHandler(
+      createScriptEngine({
+        beforeReturn: () => new Promise(() => undefined),
+        onAbort: () => aborted(),
+      }),
+      { auth: { mode: "dangerously-disabled-for-development" } },
+    );
+
+    const response = await handle(
+      webRequest(
+        toolCall("web-cancel", [{ progress: 1 }], {
+          progressToken: "web-cancel",
+        }),
+      ),
+    );
+    const reader = response.body?.getReader();
+    await reader?.read();
+    await reader?.cancel();
+
+    await expect(didAbort).resolves.toBeUndefined();
+  });
+});
+
+describe("MCP progress notifications through the Node.js adapter", () => {
+  it("stops relaying while the socket cannot take more data", async () => {
+    const sends = countProgressSends();
+    const realWrite = ServerResponse.prototype.write;
+    // Every chunk is still written, but the response reports a full buffer
+    // and never drains, as a client that stopped reading would cause.
+    const write = vi
+      .spyOn(ServerResponse.prototype, "write")
+      .mockImplementation(function (
+        this: ServerResponse,
+        ...args: Parameters<ServerResponse["write"]>
+      ) {
+        Reflect.apply(realWrite, this, args);
+        return false;
+      });
+    const run = signalWhenFinished();
+    const controller = new AbortController();
+    try {
+      const server = await startHttp(createScriptEngine(run));
+      const response = await postToolCall(
+        server,
+        toolCall("node-stalled", floodSteps(), { progressToken: floodToken }),
+        controller.signal,
+      );
+      const reader = response.body?.getReader();
+      await reader?.read();
+
+      await run.didFinish;
+      await sleep(50);
+      expect(sends.count()).toBeLessThanOrEqual(3);
+      expect(write.mock.calls.length).toBeLessThanOrEqual(2);
+    } finally {
+      controller.abort();
+      write.mockRestore();
+      sends.restore();
+    }
+  });
+
+  it("closes the connection after the stream when the request asks for it", async () => {
+    const server = await startHttp();
+    const address = server.address();
+    const body = JSON.stringify(
+      toolCall("close", [{ progress: 1 }], { progressToken: "close" }),
+    );
+    const socket = createConnection({
+      host: address.host,
+      port: address.port,
+    });
+    let received = "";
+    let endedAt: number | undefined;
+    const closed = new Promise<number>((resolve) => {
+      socket.once("close", () => resolve(performance.now()));
+    });
+    socket.on("data", (chunk: Buffer) => {
+      received += chunk.toString("utf8");
+      if (received.endsWith("0\r\n\r\n")) endedAt ??= performance.now();
+    });
+    socket.write(
+      [
+        "POST /mcp HTTP/1.1",
+        `Host: ${address.host}:${String(address.port)}`,
+        "Authorization: Bearer progress",
+        "Accept: application/json, text/event-stream",
+        "Content-Type: application/json",
+        "Connection: close",
+        `Content-Length: ${String(Buffer.byteLength(body))}`,
+        "",
+        body,
+      ].join("\r\n"),
+    );
+
+    const closedAt = await closed;
+    const head = received.slice(0, received.indexOf("\r\n\r\n")).toLowerCase();
+
+    expect(head).toContain("content-type: text/event-stream");
+    expect(head).toContain("connection: close");
+    expect(head).not.toContain("keep-alive");
+    expect(received).toContain('"id":"close"');
+    expect(endedAt).toBeDefined();
+    expect(closedAt - (endedAt ?? closedAt)).toBeLessThan(1_000);
   });
 });
