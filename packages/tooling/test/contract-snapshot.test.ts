@@ -303,6 +303,71 @@ describe("contract snapshots", () => {
     ]);
   });
 
+  it("captures declared domain errors keyed by code", () => {
+    const declarations = [
+      [
+        "SLOT_TAKEN",
+        {
+          description: "The slot is taken.",
+          retryable: true,
+          details: z.object({ until: z.string(), slotId: z.string() }),
+        },
+      ],
+      ["BOOKING_CLOSED", { description: "Booking is closed." }],
+    ] as const;
+    const engineWith = (order: readonly (typeof declarations)[number][]) =>
+      createEngine({
+        name: "booking-engine",
+        version: "1.0.0",
+        capabilities: {
+          "booking.reserve": defineCapability({
+            description: "Reserves a slot.",
+            input: z.object({ slotId: z.string() }),
+            output: z.object({ ok: z.boolean() }),
+            access: "public",
+            errors: Object.fromEntries(order),
+            async run() {
+              return { ok: true };
+            },
+          }),
+        },
+      });
+    const forwardEngine = engineWith(declarations);
+    const reverseEngine = engineWith([...declarations].reverse());
+
+    const snapshot = createContractSnapshot(forwardEngine);
+
+    expect(snapshot.capabilities["booking.reserve"]?.errors).toEqual({
+      BOOKING_CLOSED: { description: "Booking is closed.", retryable: false },
+      SLOT_TAKEN: {
+        description: "The slot is taken.",
+        retryable: true,
+        detailsSchema: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          additionalProperties: false,
+          properties: {
+            slotId: { type: "string" },
+            until: { type: "string" },
+          },
+          required: ["slotId", "until"],
+          type: "object",
+        },
+      },
+    });
+    expect(
+      Object.keys(snapshot.capabilities["booking.reserve"]?.errors ?? {}),
+    ).toEqual(["BOOKING_CLOSED", "SLOT_TAKEN"]);
+    expect(
+      serializeContractSnapshot(createContractSnapshot(reverseEngine)),
+    ).toBe(serializeContractSnapshot(snapshot));
+    expect(
+      Object.hasOwn(
+        createContractSnapshot(engine).capabilities["support.triage"] ?? {},
+        "errors",
+      ),
+    ).toBe(false);
+  });
+
   it("captures a capability whose ID is __proto__", () => {
     const capabilities = Object.defineProperty({}, "__proto__", {
       configurable: true,

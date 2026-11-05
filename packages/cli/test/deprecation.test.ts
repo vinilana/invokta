@@ -91,6 +91,22 @@ describe("CLI deprecation output", () => {
     expect(output.stderr).toEqual([]);
   });
 
+  it("shows the deprecation notice on the capability help page", async () => {
+    const output = createIo();
+
+    const code = await runCli(createDeprecationEngine(), {
+      argv: ["help", "support.classify"],
+      principal: null,
+      io: output.io,
+    });
+
+    expect(code).toBe(0);
+    expect(output.stdout.join("")).toContain(
+      "Description: Classifies a support ticket.\nDeprecated since 2.0.0: Superseded by the triage flow.\nReplacement: support.triage\n",
+    );
+    expect(output.stderr).toEqual([]);
+  });
+
   it("runs a deprecated capability with an unchanged result", async () => {
     const output = createIo();
 

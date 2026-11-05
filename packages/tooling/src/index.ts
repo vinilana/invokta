@@ -12,10 +12,12 @@ export type {
   ContractChangeCode,
   ContractChangeSeverity,
   ContractDiff,
+  ContractSchemaLocation,
 } from "./contract-diff.js";
 export { diffContractSnapshots } from "./contract-diff.js";
 export type {
   ContractCapabilitySnapshot,
+  ContractErrorSnapshot,
   ContractSnapshot,
 } from "./contract-snapshot.js";
 export {

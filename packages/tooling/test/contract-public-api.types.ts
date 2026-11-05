@@ -8,6 +8,8 @@ import {
   type ContractCommandIo,
   type ContractCommandOptions,
   type ContractDiff,
+  type ContractErrorSnapshot,
+  type ContractSchemaLocation,
   type ContractSnapshot,
   createContractSnapshot,
   diffContractSnapshots,
@@ -33,8 +35,15 @@ expectTypeOf<ContractChangeSeverity>().toEqualTypeOf<
   "breaking" | "potentially-breaking" | "compatible"
 >();
 expectTypeOf<ContractChange["schema"]>().toEqualTypeOf<
-  "input" | "output" | undefined
+  ContractSchemaLocation | undefined
 >();
+expectTypeOf<ContractSchemaLocation>().toEqualTypeOf<
+  "input" | "output" | "errors"
+>();
+expectTypeOf<ContractCapabilitySnapshot["errors"]>().toEqualTypeOf<
+  Readonly<Record<string, ContractErrorSnapshot>> | undefined
+>();
+expectTypeOf<ContractErrorSnapshot["retryable"]>().toEqualTypeOf<boolean>();
 
 expectTypeOf(
   runContractCommand({

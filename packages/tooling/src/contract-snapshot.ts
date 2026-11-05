@@ -9,6 +9,13 @@ import type {
 
 import { quoteIdentifier } from "./contract-text.js";
 
+/** One declared domain error, keyed by its code in the snapshot. */
+export interface ContractErrorSnapshot {
+  readonly description: string;
+  readonly retryable: boolean;
+  readonly detailsSchema?: EngineJsonSchema;
+}
+
 /** The public contract of one capability as recorded in a snapshot. */
 export interface ContractCapabilitySnapshot {
   readonly title?: string;
@@ -19,6 +26,8 @@ export interface ContractCapabilitySnapshot {
   readonly deprecated?: CapabilityDeprecation;
   readonly inputSchema: EngineJsonSchema;
   readonly outputSchema: EngineJsonSchema;
+  /** Declared domain errors keyed by code; absent when none is declared. */
+  readonly errors?: Readonly<Record<string, ContractErrorSnapshot>>;
 }
 
 /** A deterministic record of an engine's public contract for CI comparison. */
@@ -56,7 +65,9 @@ const capabilityKeys = [
   "deprecated",
   "inputSchema",
   "outputSchema",
+  "errors",
 ] as const;
+const errorKeys = ["description", "retryable", "detailsSchema"] as const;
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
@@ -275,6 +286,45 @@ function readDeprecation(
   });
 }
 
+function readErrors(
+  value: unknown,
+  path: string,
+): Readonly<Record<string, ContractErrorSnapshot>> | undefined {
+  if (value === undefined) return undefined;
+  const record = expectRecord(value, path);
+  const entries = Object.keys(record)
+    .sort(compareCodeUnits)
+    .map((code) => {
+      const entryPath = `${path}[${quoteIdentifier(code)}]`;
+      const entry = expectRecord(record[code], entryPath);
+      expectOnlyKeys(entry, errorKeys, entryPath);
+      const retryable = own(entry, "retryable");
+      if (typeof retryable !== "boolean") {
+        fail(`${entryPath}.retryable must be a boolean.`);
+      }
+      const detailsSchema = own(entry, "detailsSchema");
+      return [
+        code,
+        Object.freeze({
+          description: expectString(
+            own(entry, "description"),
+            `${entryPath}.description`,
+          ),
+          retryable,
+          ...(detailsSchema === undefined
+            ? {}
+            : {
+                detailsSchema: readSchema(
+                  detailsSchema,
+                  `${entryPath}.detailsSchema`,
+                ),
+              }),
+        }),
+      ] as const;
+    });
+  return Object.freeze(Object.fromEntries(entries));
+}
+
 function readCapability(
   value: unknown,
   path: string,
@@ -303,6 +353,7 @@ function readCapability(
     own(record, "deprecated"),
     `${path}.deprecated`,
   );
+  const errors = readErrors(own(record, "errors"), `${path}.errors`);
   return Object.freeze({
     ...(title === undefined
       ? {}
@@ -320,6 +371,7 @@ function readCapability(
       own(record, "outputSchema"),
       `${path}.outputSchema`,
     ),
+    ...(errors === undefined ? {} : { errors }),
   });
 }
 
@@ -380,7 +432,36 @@ function captureCapability(
     if (hints.length === 0) delete fields.annotations;
     else fields.annotations = Object.fromEntries(hints);
   }
+  const errors = own(record as UnknownRecord, "errors");
+  if (errors !== undefined) fields.errors = captureErrors(errors, id);
   return fields;
+}
+
+/**
+ * Converts the declaration-ordered `describe().errors` list into a record
+ * keyed by code, so reordering declarations never changes the snapshot.
+ */
+function captureErrors(value: unknown, id: string): Record<string, unknown> {
+  const path = `capability ${quoteIdentifier(id)} errors`;
+  if (!Array.isArray(value)) fail(`${path} must be a list.`);
+  // A null prototype keeps a code such as `__proto__` an ordinary own member.
+  const errors = Object.create(null) as Record<string, unknown>;
+  for (const entry of value) {
+    const code = isRecord(entry) ? own(entry, "code") : undefined;
+    if (typeof code !== "string")
+      fail(`${path} contain an entry without a code.`);
+    if (Object.hasOwn(errors, code)) {
+      fail(`${path} declare ${quoteIdentifier(code)} more than once.`);
+    }
+    const declaration = entry as UnknownRecord;
+    errors[code] = Object.fromEntries(
+      errorKeys.flatMap((key) => {
+        const field = own(declaration, key);
+        return field === undefined ? [] : [[key, field]];
+      }),
+    );
+  }
+  return errors;
 }
 
 /**

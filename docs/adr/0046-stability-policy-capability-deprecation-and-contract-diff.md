@@ -85,8 +85,9 @@ engine. `list()` and the MCP tool listing do not include it.
   default, and writes a deterministic JSON snapshot through `list` and
   `describe` only. The snapshot has `formatVersion: 1`, the engine name and
   version, and each capability's title, description, access kind, timeout,
-  boolean annotation hints, deprecation notice, and input and output JSON
-  Schemas. Object keys, including capability IDs and JSON Schema keywords, are
+  boolean annotation hints, deprecation notice, input and output JSON Schemas,
+  and declared domain errors (ADR 0045) as a record keyed by code with the
+  description, `retryable`, and details JSON Schema. Object keys, including capability IDs and JSON Schema keywords, are
   sorted by code unit, except that JSON serialization emits integer-like keys
   such as `"9"` and `"10"` first in ascending numeric order. The set-valued
   `required`, `type`, and `enum` arrays are sorted too; data arrays inside
@@ -126,7 +127,13 @@ compatible would hide that failure, so it is reported for review and the
 policy recommends releasing it in a minor version with a notice. Adding a
 property to an open output object stays compatible. Capability-level rules
 cover removal and addition (a rename is both), access, timeout, annotation
-guarantees, deprecation, documentation, and the engine name.
+guarantees, deprecation, documentation, and the engine name. For declared
+domain errors, a removed code is breaking (`ERROR_REMOVED`), an added code is
+compatible (`ERROR_ADDED`), a changed `retryable` flag is potentially breaking
+(`ERROR_RETRYABLE_CHANGED`), removing details is breaking and adding them is
+compatible (`ERROR_DETAILS_CHANGED`), and a changed details schema is compared
+with the output rules, because details are what the engine promises; those
+changes are located at `errors#/<CODE>/detailsSchema`.
 
 `contract diff` exits `0` without breaking changes, `1` with breaking changes
 (or potentially breaking changes under the flag), and `2` for usage errors and
@@ -152,8 +159,8 @@ package root exports `runContractCommand`, `createContractSnapshot`,
 - CI can gate engine releases on contract compatibility. The diff is a
   structural check: handler semantics, function access logic, and quality are
   out of its reach, and undecidable schema changes need human review.
-- The snapshot format is a public, versioned contract of the tooling. Adding a
-  field to it, such as declared domain errors, is a later extension of this
-  format.
+- The snapshot format is a public, versioned contract of the tooling. A new
+  optional field is an extension of format version 1 that older tooling
+  rejects explicitly rather than ignoring.
 - No runtime execution path, adapter, error code, event, or pipeline stage is
   added.

@@ -2,6 +2,7 @@ import type { CapabilityAccessKind } from "@invokta/core";
 
 import {
   type ContractCapabilitySnapshot,
+  type ContractErrorSnapshot,
   ContractSnapshotError,
   type ContractSnapshot,
   readContractSnapshot,
@@ -34,7 +35,17 @@ export type ContractChangeCode =
   | "VALUES_CHANGED"
   | "CONSTRAINT_CHANGED"
   | "ADDITIONAL_PROPERTIES_CHANGED"
+  | "ERROR_REMOVED"
+  | "ERROR_ADDED"
+  | "ERROR_RETRYABLE_CHANGED"
+  | "ERROR_DETAILS_CHANGED"
   | "KEYWORD_CHANGED";
+
+/**
+ * The schema a change is inside: the input, the output, or the `details`
+ * schema of a declared domain error (`path` then starts with `/<CODE>`).
+ */
+export type ContractSchemaLocation = "input" | "output" | "errors";
 
 /** One classified difference between two contract snapshots. */
 export interface ContractChange {
@@ -43,7 +54,7 @@ export interface ContractChange {
   /** Absent for engine-level changes. */
   readonly capabilityId?: string;
   /** The schema that changed, when the change is inside one. */
-  readonly schema?: "input" | "output";
+  readonly schema?: ContractSchemaLocation;
   /** JSON Pointer inside `schema`; `""` is the schema root. */
   readonly path?: string;
   readonly message: string;
@@ -70,8 +81,21 @@ type UnknownRecord = Readonly<Record<string, unknown>>;
 
 interface SchemaScope {
   readonly capabilityId: string;
+  /** Error details are promised by the engine, so they use output rules. */
   readonly direction: Direction;
+  readonly location: ContractSchemaLocation;
   readonly changes: ContractChange[];
+}
+
+/** The consumers that cache a closed schema differ by location. */
+function closedSchemaConsequence(scope: SchemaScope): string {
+  return scope.location === "errors"
+    ? "Consumers that validate error details against the previously published closed schema reject the new property."
+    : "Clients that validate results against a cached copy of the previous closed schema, such as the official MCP SDK client, reject results until they list tools again.";
+}
+
+function propertyNoun(scope: SchemaScope): string {
+  return scope.location === "errors" ? "error details" : scope.direction;
 }
 
 const documentationKeywords = [
@@ -183,7 +207,7 @@ function record(
     severity,
     code,
     capabilityId: scope.capabilityId,
-    schema: scope.direction,
+    schema: scope.location,
     path,
     message,
   });
@@ -624,7 +648,7 @@ function compareAdditionalProperties(
       path,
       "ADDITIONAL_PROPERTIES_CHANGED",
       "potentially-breaking",
-      `${message} Clients that validate results against a cached copy of the previous closed schema, such as the official MCP SDK client, reject additional properties until they list tools again.`,
+      `${message} ${closedSchemaConsequence(scope)}`,
     );
     return;
   }
@@ -746,7 +770,7 @@ function compareAddedProperty(
   required: boolean,
   previous: { readonly additional: unknown; readonly patterned: boolean },
 ): void {
-  const label = `${required ? "A required" : "An optional"} ${scope.direction} property was added`;
+  const label = `${required ? "A required" : "An optional"} ${propertyNoun(scope)} property was added`;
   if (scope.direction === "input" && required) {
     record(scope, path, "PROPERTY_ADDED", "breaking", `${label}.`);
     return;
@@ -772,7 +796,7 @@ function compareAddedProperty(
       path,
       "CLOSED_OUTPUT_PROPERTY_ADDED",
       "potentially-breaking",
-      `${label} to an object whose previous schema rejected additional properties. Clients that validate results against a cached copy of that schema, such as the official MCP SDK client, reject results until they list tools again.`,
+      `${label} to an object whose previous schema rejected additional properties. ${closedSchemaConsequence(scope)}`,
     );
     return;
   }
@@ -1162,17 +1186,102 @@ function compareCapability(
     );
   }
   compareSchema(
-    { capabilityId: id, direction: "input", changes },
+    { capabilityId: id, direction: "input", location: "input", changes },
     before.inputSchema,
     after.inputSchema,
     "",
   );
   compareSchema(
-    { capabilityId: id, direction: "output", changes },
+    { capabilityId: id, direction: "output", location: "output", changes },
     before.outputSchema,
     after.outputSchema,
     "",
   );
+  compareErrors(changes, id, before.errors ?? {}, after.errors ?? {});
+}
+
+/**
+ * Compares declared domain errors. Callers may handle each code, so removing
+ * one is breaking and adding one is compatible. Details are something the
+ * engine promises, so their schemas follow the output rules.
+ */
+function compareErrors(
+  changes: ContractChange[],
+  id: string,
+  before: Readonly<Record<string, ContractErrorSnapshot>>,
+  after: Readonly<Record<string, ContractErrorSnapshot>>,
+): void {
+  const codes = new Set([...Object.keys(before), ...Object.keys(after)]);
+  for (const code of [...codes].sort(compareCodeUnits)) {
+    const previous = Object.hasOwn(before, code) ? before[code] : undefined;
+    const next = Object.hasOwn(after, code) ? after[code] : undefined;
+    const label = `The declared domain error ${quote(code)}`;
+    if (next === undefined) {
+      capabilityChange(
+        changes,
+        id,
+        "ERROR_REMOVED",
+        "breaking",
+        `${label} was removed.`,
+      );
+      continue;
+    }
+    if (previous === undefined) {
+      capabilityChange(
+        changes,
+        id,
+        "ERROR_ADDED",
+        "compatible",
+        `${label} was added.`,
+      );
+      continue;
+    }
+    if (previous.description !== next.description) {
+      capabilityChange(
+        changes,
+        id,
+        "METADATA_CHANGED",
+        "compatible",
+        `${label} changed its description.`,
+      );
+    }
+    if (previous.retryable !== next.retryable) {
+      capabilityChange(
+        changes,
+        id,
+        "ERROR_RETRYABLE_CHANGED",
+        "potentially-breaking",
+        `${label} changed "retryable" from ${String(previous.retryable)} to ${String(next.retryable)}.`,
+      );
+    }
+    if (
+      previous.detailsSchema === undefined &&
+      next.detailsSchema === undefined
+    ) {
+      continue;
+    }
+    if (
+      previous.detailsSchema === undefined ||
+      next.detailsSchema === undefined
+    ) {
+      capabilityChange(
+        changes,
+        id,
+        "ERROR_DETAILS_CHANGED",
+        previous.detailsSchema === undefined ? "compatible" : "breaking",
+        previous.detailsSchema === undefined
+          ? `${label} now carries details.`
+          : `${label} no longer carries details.`,
+      );
+      continue;
+    }
+    compareSchema(
+      { capabilityId: id, direction: "output", location: "errors", changes },
+      previous.detailsSchema,
+      next.detailsSchema,
+      `/${escapePointer(code)}/detailsSchema`,
+    );
+  }
 }
 
 function readSnapshotArgument(

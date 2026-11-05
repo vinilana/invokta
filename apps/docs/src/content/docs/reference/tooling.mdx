@@ -143,7 +143,14 @@ contract to standard output, or to `--output`. It reads only `engine.list()` and
       "annotations": { "readOnly": true },
       "deprecated": { "reason": "Superseded by the triage flow." },
       "inputSchema": { "type": "object" },
-      "outputSchema": { "type": "object" }
+      "outputSchema": { "type": "object" },
+      "errors": {
+        "TICKET_NOT_FOUND": {
+          "description": "The ticket does not exist.",
+          "retryable": false,
+          "detailsSchema": { "type": "object" }
+        }
+      }
     }
   }
 }
@@ -190,6 +197,15 @@ breaking.
 | `DEPRECATION_CHANGED` | Compatible | The capability was deprecated |
 | `METADATA_CHANGED` | Compatible | A title, description, or schema example changed |
 | `ENGINE_NAME_CHANGED` | Potentially breaking | The MCP server identity changed |
+| `ERROR_REMOVED` | Breaking | A declared domain error code disappeared |
+| `ERROR_ADDED` | Compatible | A new declared domain error code |
+| `ERROR_RETRYABLE_CHANGED` | Potentially breaking | `retryable` changed from false to true |
+| `ERROR_DETAILS_CHANGED` | Breaking when details are removed, compatible when they are added | A domain error stopped carrying details |
+
+Declared domain errors are recorded as a record keyed by code, so declaration
+order does not matter. A changed details schema is compared with the output
+rules, because details are what the engine promises; those changes use the
+schema codes above at `errors#/<CODE>/detailsSchema`.
 
 The comparison never guesses: any JSON Schema change it cannot decide is
 potentially breaking. A nullable value, `anyOf: [S, { type: "null" }]` in either

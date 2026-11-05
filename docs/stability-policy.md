@@ -210,6 +210,10 @@ compatible.
 | Change `anyOf`, `oneOf`, `allOf`, `not`, `if`, `$ref`, `$defs`, `patternProperties`, `format`, `default`, or replace a `pattern` | Potentially breaking: review manually |
 | Change anything inside a union or discriminated union, which Zod emits as `anyOf` or `oneOf` | Potentially breaking: review manually. A nullable value (`anyOf: [S, { type: "null" }]`) is compared through `S` |
 | Rename the engine | Potentially breaking: it is the MCP server identity |
+| Remove a declared domain error code, or stop sending its details | Breaking |
+| Change a declared error's `retryable` flag | Potentially breaking |
+| Change a declared error's details schema | Classified like an output schema |
+| Add a declared domain error code, or add details to one | Compatible |
 | Add a capability, or add an optional input property | Compatible, assuming callers did not already send that property with another type |
 | Widen an input, narrow an output, make an input property optional, add an output property to an object that allows additional properties | Compatible |
 | Deprecate a capability, or change titles, descriptions, and examples | Compatible |

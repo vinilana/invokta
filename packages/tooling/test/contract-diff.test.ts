@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   type ContractCapabilitySnapshot,
   type ContractDiff,
+  type ContractErrorSnapshot,
   type ContractSnapshot,
   diffContractSnapshots,
   runContractCommand,
@@ -872,6 +873,136 @@ describe("undecidable schema changes", () => {
   });
 });
 
+describe("declared domain errors", () => {
+  const details = (
+    properties: Readonly<Record<string, unknown>>,
+    extra: Schema = { additionalProperties: false },
+  ) => objectSchema(properties, Object.keys(properties), extra);
+  const slotTaken = (
+    overrides: Partial<ContractErrorSnapshot> = {},
+  ): ContractErrorSnapshot => ({
+    description: "The slot is taken.",
+    retryable: false,
+    detailsSchema: details({ slotId: { type: "string" } }),
+    ...overrides,
+  });
+  const diffErrors = (
+    previous: Readonly<Record<string, ContractErrorSnapshot>> | undefined,
+    next: Readonly<Record<string, ContractErrorSnapshot>> | undefined,
+  ) =>
+    diffCapability(
+      previous === undefined ? {} : { errors: previous },
+      next === undefined ? {} : { errors: next },
+    );
+
+  it("classifies a removed error code as breaking and an added one as compatible", () => {
+    expect(diffErrors({ SLOT_TAKEN: slotTaken() }, undefined)).toEqual([
+      "breaking ERROR_REMOVED c -",
+    ]);
+    expect(
+      diffErrors(
+        { SLOT_TAKEN: slotTaken() },
+        { BOOKING_CLOSED: slotTaken(), SLOT_TAKEN: slotTaken() },
+      ),
+    ).toEqual(["compatible ERROR_ADDED c -"]);
+  });
+
+  it("classifies a retryable change as potentially breaking", () => {
+    expect(
+      diffErrors(
+        { SLOT_TAKEN: slotTaken() },
+        { SLOT_TAKEN: slotTaken({ retryable: true }) },
+      ),
+    ).toEqual(["potentially-breaking ERROR_RETRYABLE_CHANGED c -"]);
+  });
+
+  it("classifies a description change as compatible", () => {
+    expect(
+      diffErrors(
+        { SLOT_TAKEN: slotTaken() },
+        { SLOT_TAKEN: slotTaken({ description: "Someone booked it." }) },
+      ),
+    ).toEqual(["compatible METADATA_CHANGED c -"]);
+  });
+
+  it("classifies adding details as compatible and removing them as breaking", () => {
+    const { detailsSchema: _omitted, ...withoutDetails } = slotTaken();
+
+    expect(
+      diffErrors({ SLOT_TAKEN: withoutDetails }, { SLOT_TAKEN: slotTaken() }),
+    ).toEqual(["compatible ERROR_DETAILS_CHANGED c -"]);
+    expect(
+      diffErrors({ SLOT_TAKEN: slotTaken() }, { SLOT_TAKEN: withoutDetails }),
+    ).toEqual(["breaking ERROR_DETAILS_CHANGED c -"]);
+  });
+
+  it("compares details schemas with the output rules", () => {
+    expect(
+      diffErrors(
+        {
+          SLOT_TAKEN: slotTaken({
+            detailsSchema: details({
+              slotId: { type: "string" },
+              until: { type: "string" },
+            }),
+          }),
+        },
+        { SLOT_TAKEN: slotTaken() },
+      ),
+    ).toEqual([
+      "breaking PROPERTY_REMOVED c errors#/SLOT_TAKEN/detailsSchema/properties/until",
+    ]);
+    expect(
+      diffErrors(
+        { SLOT_TAKEN: slotTaken() },
+        {
+          SLOT_TAKEN: slotTaken({
+            detailsSchema: details({ slotId: { type: ["number", "string"] } }),
+          }),
+        },
+      ),
+    ).toEqual([
+      "breaking TYPE_CHANGED c errors#/SLOT_TAKEN/detailsSchema/properties/slotId",
+    ]);
+    expect(
+      diffErrors(
+        {
+          SLOT_TAKEN: slotTaken({
+            detailsSchema: details({ slotId: { type: ["number", "string"] } }),
+          }),
+        },
+        { SLOT_TAKEN: slotTaken() },
+      ),
+    ).toEqual([
+      "compatible TYPE_CHANGED c errors#/SLOT_TAKEN/detailsSchema/properties/slotId",
+    ]);
+  });
+
+  it("flags a property added to closed details for review", () => {
+    const diff = diffContractSnapshots(
+      snapshot({ c: capability({ errors: { SLOT_TAKEN: slotTaken() } }) }),
+      snapshot({
+        c: capability({
+          errors: {
+            SLOT_TAKEN: slotTaken({
+              detailsSchema: details({
+                slotId: { type: "string" },
+                until: { type: "string" },
+              }),
+            }),
+          },
+        }),
+      }),
+    );
+
+    expect(summarize(diff)).toEqual([
+      "potentially-breaking CLOSED_OUTPUT_PROPERTY_ADDED c errors#/SLOT_TAKEN/detailsSchema/properties/until",
+    ]);
+    expect(diff.changes[0]?.message).toContain("error details property");
+    expect(diff.changes[0]?.message).not.toContain("MCP SDK");
+  });
+});
+
 describe("invokta contract diff", () => {
   const previous = snapshot({
     "support.classify": capability({
@@ -1051,10 +1182,24 @@ result: compatible
       snapshot({
         a: {
           ...capability(),
-          errors: [],
+          outcomes: [],
         } as unknown as ContractCapabilitySnapshot,
       }),
-      'capabilities["a"] contains the unsupported field "errors".',
+      'capabilities["a"] contains the unsupported field "outcomes".',
+    ],
+    [
+      "a non-boolean retryable flag",
+      snapshot({
+        a: capability({
+          errors: {
+            SLOT_TAKEN: {
+              description: "The slot is taken.",
+              retryable: "yes" as unknown as boolean,
+            },
+          },
+        }),
+      }),
+      'capabilities["a"].errors["SLOT_TAKEN"].retryable must be a boolean.',
     ],
     [
       "an invalid access kind",

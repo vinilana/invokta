@@ -103,7 +103,7 @@ The capability contract release gate
 and writes a deterministic JSON snapshot of its public contract to stdout or to
 `--output`: `formatVersion` `1`, the engine name and version, and each
 capability's title, description, access kind, timeout, annotations, deprecation
-notice, and input and output JSON Schemas. Object keys are sorted by code unit
+notice, input and output JSON Schemas, and declared domain errors keyed by code. Object keys are sorted by code unit
 (JSON serialization still writes integer-like keys such as `"9"` and `"10"`
 first, in numeric order), and the set-valued `required`, `type`, and `enum`
 arrays are sorted, so reordering properties, keywords, required names, or enum

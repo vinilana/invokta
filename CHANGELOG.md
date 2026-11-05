@@ -46,16 +46,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Capability definitions accept an optional
   `deprecated: { reason, since?, replacement? }` notice, validated with bounded
   lengths at engine construction and published by `list()` and `describe()`.
-  The CLI prints it, and MCP tool listings prefix the description with the
-  notice and expose it as `_meta["dev.invokta/deprecated"]`. Invocation does
-  not change; the engine logger receives one warning per deprecated capability
+  The CLI prints it in `list`, `describe`, and capability help, and MCP tool
+  listings prefix the description with the notice and expose it as
+  `_meta["dev.invokta/deprecated"]`. Invocation does not change; the engine logger receives one warning per deprecated capability
   on its first invocation (ADR 0046).
 - `describe()` publishes the access rule kind as `access`: `public`,
   `authenticated`, or `function`. New `CapabilityDeprecation` and
   `CapabilityAccessKind` types are exported from `@invokta/core`.
 - `invokta contract snapshot <esm-module>` writes a deterministic JSON snapshot
-  of an engine's public contract, and `invokta contract diff <previous> <next>`
-  classifies the changes as breaking, potentially breaking, or compatible,
+  of an engine's public contract, including declared domain errors, and
+  `invokta contract diff <previous> <next>` classifies the changes as breaking,
+  potentially breaking, or compatible,
   prints a report, and exits `1` on breaking changes (or potentially breaking
   ones with `--fail-on-potentially-breaking`). `@invokta/tooling` also exports
   `runContractCommand`, `createContractSnapshot`, `serializeContractSnapshot`,

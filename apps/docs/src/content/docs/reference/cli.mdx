@@ -170,6 +170,9 @@ Flags build one JSON input object that the capability's input schema
 validates. Use --input or --stdin for values that flags cannot express.
 ```
 
+A deprecated capability adds a `Deprecated[ since <version>]: <reason>` line,
+and a `Replacement:` line when one is declared, after its description.
+
 Each flag shows its type, `required` and `repeatable` markers, description,
 allowed values, and declared default. Input-only properties are listed with the
 reason they need `--input` or `--stdin`. Help is plain text on standard output
