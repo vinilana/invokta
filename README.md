@@ -165,8 +165,8 @@ turning the framework into a service container.
 
 - `@invokta/core` defines capabilities, typed connector factories, engines,
   validation, access, cancellation, errors, and events.
-- `@invokta/cli` provides `list`, `describe`, and `run` through
-  `engine.invoke`.
+- `@invokta/cli` provides `list`, `describe`, capability help, and `run` with
+  JSON or schema-derived flags through `engine.invoke`.
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure,
   stateless Streamable HTTP.
 - `@invokta/tooling` validates composed capabilities and final MCP tool names.

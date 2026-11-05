@@ -1536,6 +1536,7 @@ function adaptReadme(
   }
   const quotedDirectInput = `'${directInput.replaceAll("'", `'"'"'`)}'`;
   return contents
+    .replace(/^.*onboarding\.create-welcome-message --name Ada\n/mu, "")
     .replace(
       "with one\ndeterministic capability",
       `with ${String(operations.length)} generated OpenAPI capabilities`,
