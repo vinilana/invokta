@@ -16,6 +16,8 @@ import {
 } from "./schema.js";
 import type {
   AnyCapability,
+  CapabilityAccessKind,
+  CapabilityDeprecation,
   CapabilityDescription,
   CapabilityMap,
   CapabilitySummary,
@@ -139,6 +141,80 @@ function validateTimeoutMs(
   }
 }
 
+const deprecationLimits = {
+  reason: 1_024,
+  since: 64,
+  replacement: 256,
+} as const;
+
+type DeprecationField = keyof typeof deprecationLimits;
+
+function isDeprecationField(key: string | symbol): key is DeprecationField {
+  return typeof key === "string" && Object.hasOwn(deprecationLimits, key);
+}
+
+/**
+ * Validates and copies optional deprecation metadata once, at construction.
+ * Only enumerable own data properties named by the contract are read, so an
+ * accessor or proxy trap never runs and the published notice stays bounded.
+ */
+function snapshotDeprecation(
+  capabilityId: string,
+  deprecated: unknown,
+): CapabilityDeprecation | undefined {
+  if (deprecated === undefined) return undefined;
+  if (isProxy(deprecated) || !isRecord(deprecated)) {
+    throw new TypeError(
+      `Capability ${capabilityId} deprecated must be a plain object.`,
+    );
+  }
+  const values: Partial<Record<DeprecationField, string>> = {};
+  for (const key of Reflect.ownKeys(deprecated)) {
+    const descriptor = Object.getOwnPropertyDescriptor(deprecated, key);
+    if (
+      !isDeprecationField(key) ||
+      descriptor === undefined ||
+      descriptor.enumerable !== true ||
+      !("value" in descriptor)
+    ) {
+      throw new TypeError(
+        `Capability ${capabilityId} deprecated may contain only reason, since, and replacement data properties.`,
+      );
+    }
+    const value: unknown = descriptor.value;
+    if (value === undefined && key !== "reason") continue;
+    if (
+      typeof value !== "string" ||
+      value.length > deprecationLimits[key] ||
+      !/\S/u.test(value)
+    ) {
+      throw new TypeError(
+        `Capability ${capabilityId} deprecated.${key} must be a non-blank string of at most ${deprecationLimits[key]} characters.`,
+      );
+    }
+    values[key] = value;
+  }
+  if (values.reason === undefined) {
+    throw new TypeError(
+      `Capability ${capabilityId} deprecated.reason must be a non-blank string of at most ${deprecationLimits.reason} characters.`,
+    );
+  }
+  return Object.freeze({
+    reason: values.reason,
+    ...(values.since === undefined ? {} : { since: values.since }),
+    ...(values.replacement === undefined
+      ? {}
+      : { replacement: values.replacement }),
+  });
+}
+
+/** Mirrors `enforceAccess`, which runs every other value as a function rule. */
+function accessKind(access: AnyCapability["access"]): CapabilityAccessKind {
+  return access === "public" || access === "authenticated"
+    ? access
+    : "function";
+}
+
 function describeCapability(
   capabilityId: string,
   capability: AnyCapability,
@@ -182,6 +258,10 @@ function describeCapability(
     ...(capability.annotations === undefined
       ? {}
       : { annotations: capability.annotations }),
+    ...(capability.deprecated === undefined
+      ? {}
+      : { deprecated: capability.deprecated }),
+    access: accessKind(capability.access),
     ...(capability.timeoutMs === undefined
       ? {}
       : { timeoutMs: capability.timeoutMs }),
@@ -199,6 +279,9 @@ function toSummary(description: CapabilityDescription): CapabilitySummary {
     ...(description.annotations === undefined
       ? {}
       : { annotations: description.annotations }),
+    ...(description.deprecated === undefined
+      ? {}
+      : { deprecated: description.deprecated }),
   });
 }
 
@@ -213,6 +296,7 @@ function snapshotCapability(
   const access = capability.access;
   const timeoutMs = capability.timeoutMs;
   const annotations = capability.annotations;
+  const deprecated = snapshotDeprecation(capabilityId, capability.deprecated);
   const errors = capability.errors;
   const run = capability.run;
 
@@ -228,6 +312,7 @@ function snapshotCapability(
     ...(annotations === undefined
       ? {}
       : { annotations: snapshotLosslessJson(annotations) }),
+    ...(deprecated === undefined ? {} : { deprecated }),
     ...(declaredErrors === undefined ? {} : { errors: declaredErrors }),
     run,
   }) as AnyCapability;
@@ -602,6 +687,34 @@ export function createEngine<const Capabilities extends CapabilityMap>(
     }
   };
 
+  const warnedDeprecations = new Set<string>();
+  const warnDeprecatedInvocation = (
+    capabilityId: string,
+    deprecated: CapabilityDeprecation,
+    requestId: string,
+  ): void => {
+    if (warnedDeprecations.has(capabilityId)) return;
+    warnedDeprecations.add(capabilityId);
+    try {
+      const diagnosticResult: unknown = logger.warn(
+        "Deprecated capability invoked.",
+        {
+          capabilityId,
+          requestId,
+          ...(deprecated.since === undefined
+            ? {}
+            : { since: deprecated.since }),
+          ...(deprecated.replacement === undefined
+            ? {}
+            : { replacement: deprecated.replacement }),
+        },
+      );
+      void Promise.resolve(diagnosticResult).catch(() => undefined);
+    } catch {
+      // A deprecation diagnostic must not change invocation behavior.
+    }
+  };
+
   const emit = (event: EngineEvent): void => {
     if (onEvent === undefined) return;
     try {
@@ -687,6 +800,13 @@ export function createEngine<const Capabilities extends CapabilityMap>(
             message: "Capability not found.",
             publicDetails: { capabilityId },
           });
+        }
+        if (capability.deprecated !== undefined) {
+          warnDeprecatedInvocation(
+            capabilityId,
+            capability.deprecated,
+            requestId,
+          );
         }
         const validatedInput = await validateSchema(
           capability.input,

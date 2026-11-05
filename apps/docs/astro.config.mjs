@@ -104,6 +104,7 @@ export default defineConfig({
             { slug: "concepts/capabilities" },
             { slug: "concepts/invocation-pipeline" },
             { slug: "concepts/scope-and-limits" },
+            { slug: "concepts/stability" },
           ],
         },
         {
@@ -116,6 +117,7 @@ export default defineConfig({
             { slug: "guides/capability-authorization" },
             { slug: "guides/deployment" },
             { slug: "guides/web-standard-runtimes" },
+            { slug: "guides/contract-evolution" },
           ],
         },
         {
@@ -127,9 +129,12 @@ export default defineConfig({
             { slug: "recipes/dependency-injection" },
             { slug: "recipes/domain-authorization" },
             { slug: "recipes/capability-composition" },
+            { slug: "recipes/capability-middleware" },
             { slug: "recipes/mcp-stdio-consumer" },
+            { slug: "recipes/mcp-rich-content" },
             { slug: "recipes/external-provider" },
             { slug: "recipes/long-running-progress" },
+            { slug: "recipes/opentelemetry" },
             {
               label: "Authentication",
               items: [
@@ -157,7 +162,9 @@ export default defineConfig({
             { slug: "reference/core" },
             { slug: "reference/cli" },
             { slug: "reference/mcp" },
+            { slug: "reference/http" },
             { slug: "reference/auth-jwt" },
+            { slug: "reference/otel" },
             { slug: "reference/tooling" },
             { slug: "reference/devtools" },
             { slug: "reference/installer" },

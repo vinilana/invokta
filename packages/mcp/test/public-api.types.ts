@@ -26,6 +26,9 @@ import {
   type McpOAuthInspection,
   type McpOAuthStep,
   type McpOAuthStepName,
+  type McpToolCatalogReport,
+  type McpToolContentWarning,
+  type McpToolContentWarningCode,
   McpToolNameCollisionError,
   type ServeMcpHttpOptions,
   type ServeMcpStdioOptions,
@@ -40,7 +43,26 @@ expectTypeOf(toMcpToolName("support.classify-ticket")).toEqualTypeOf<string>();
 expectTypeOf(isForbiddenMcpClientHeader("X-API-Key")).toEqualTypeOf<boolean>();
 
 declare const catalogEngine: Engine;
-expectTypeOf(validateMcpToolCatalog(catalogEngine)).toEqualTypeOf<void>();
+expectTypeOf(
+  validateMcpToolCatalog(catalogEngine),
+).toEqualTypeOf<McpToolCatalogReport>();
+expectTypeOf<McpToolCatalogReport["contentWarnings"]>().toEqualTypeOf<
+  ReadonlyArray<McpToolContentWarning>
+>();
+expectTypeOf<McpToolContentWarning>().toEqualTypeOf<{
+  readonly capabilityId: string;
+  readonly toolName: string;
+  readonly property: string;
+  readonly code: McpToolContentWarningCode;
+}>();
+expectTypeOf<McpToolContentWarningCode>().toEqualTypeOf<
+  | "UNSUPPORTED_MEDIA_TYPE"
+  | "MEDIA_WITHOUT_BASE64"
+  | "AMBIGUOUS_MEDIA_OBJECT"
+  | "INCOMPLETE_RESOURCE_LINK"
+  | "UNSUPPORTED_POSITION"
+  | "CONTENT_BLOCK_LIMIT"
+>();
 const collision = new McpToolNameCollisionError(
   ["support.echo", "support_echo"],
   "support_echo",

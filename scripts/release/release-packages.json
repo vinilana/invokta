@@ -20,8 +20,23 @@
     ]
   },
   {
+    "directory": "http",
+    "name": "@invokta/http",
+    "requiredFiles": [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/node.js",
+      "dist/node.d.ts"
+    ]
+  },
+  {
     "directory": "auth-jwt",
     "name": "@invokta/auth-jwt",
+    "requiredFiles": ["dist/index.js", "dist/index.d.ts"]
+  },
+  {
+    "directory": "otel",
+    "name": "@invokta/otel",
     "requiredFiles": ["dist/index.js", "dist/index.d.ts"]
   },
   {

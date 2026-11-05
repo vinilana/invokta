@@ -34,9 +34,17 @@ export const referenceImageSchema = z.object({
   base64Data: boundedBase64Schema(maximumReferenceImageBytes),
 });
 
+/**
+ * Declaring the standard `contentEncoding` keyword next to the enumerated
+ * `mimeType` lets the MCP adapter return each generated asset as a native
+ * image content block (ADR 0044). Validation and the direct and CLI results
+ * are unchanged.
+ */
 export const imageAssetSchema = z.object({
   mimeType: z.enum(imageMimeTypes),
-  base64Data: boundedBase64Schema(maximumGeneratedImageBytes),
+  base64Data: boundedBase64Schema(maximumGeneratedImageBytes).meta({
+    contentEncoding: "base64",
+  }),
 });
 
 export const singleImageOutputSchema = z.object({ image: imageAssetSchema });

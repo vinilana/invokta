@@ -154,6 +154,13 @@ unchanged: canonical target, method, `Host`, `Origin`, authentication,
 A client disconnect during the stream aborts the invocation, and server close
 aborts it and closes the connection, as before.
 
+### Plain HTTP
+
+The plain HTTP JSON adapter of ADR 0048 answers every invocation with one
+complete JSON body, which cannot carry progress before the result. It passes no
+sink, so `reportProgress` is a no-op for its callers and its responses are
+unchanged. Progress over HTTP remains an MCP feature.
+
 ### CLI
 
 The CLI keeps stdout for the requested result only. In the default `json`

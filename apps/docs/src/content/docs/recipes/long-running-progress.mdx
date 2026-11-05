@@ -110,6 +110,8 @@ Over MCP HTTP, that one request is answered with a `text/event-stream`
 response that carries its notifications and then its result. A CLI composed
 with `format: "human"` writes one `progress <progress>[/<total>][: <message>]`
 line per report to standard error; the default JSON format ignores progress.
+The plain HTTP adapter `@invokta/http` answers with one JSON body and does not
+deliver progress.
 
 ## Run it
 

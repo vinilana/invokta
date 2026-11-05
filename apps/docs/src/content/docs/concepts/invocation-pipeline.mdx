@@ -57,6 +57,16 @@ await pending; // throws EngineError with code CANCELLED
 A capability can also declare `timeoutMs`. Its timer starts after authorization,
 so an expensive access check does not consume the capability's execution budget.
 
+## Capability middleware
+
+Cross-cutting behavior such as audit records, rate limits, and caches can wrap
+a capability's handler with `applyMiddleware`. The wrapper replaces only `run`,
+so it executes inside stage 5: after input validation and the access rule,
+within the timeout and cancellation signal, and before output validation. It is
+composed into the capability map before `createEngine` and adds no stage or
+hook. Read the [middleware recipe](/recipes/capability-middleware/) for tested
+examples.
+
 ## Progress
 
 A long-running handler can tell its caller that it is still working with
@@ -94,6 +104,8 @@ The optional `onEvent` hook receives a compact lifecycle stream:
 
 Events contain identifiers, timing, source, and error codes. Payloads and
 credentials are excluded. Delivery is best-effort and never blocks the result.
+[`@invokta/otel`](/reference/otel/) turns these events into OpenTelemetry
+spans and invocation metrics.
 
 Read the [error reference](/reference/errors/) for the normalized failure
 taxonomy.

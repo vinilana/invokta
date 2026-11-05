@@ -17,6 +17,10 @@ Edge, and Node.js frameworks that speak the Fetch API are supported by design
 but are not run in CI. The CLI, MCP stdio, and the MCP client remain Node.js
 packages.
 
+To publish plain HTTP JSON routes and an OpenAPI description instead of MCP,
+mount `createHttpHandler` from [`@invokta/http`](/reference/http/) the same
+way; it has the same portability.
+
 ## Create the handler
 
 Create the handler once, next to the engine, and reuse it for every request:

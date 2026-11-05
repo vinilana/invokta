@@ -76,13 +76,17 @@ omit adapters, but MUST NOT claim that an omitted channel is supported.
 
 **AE-CAP-01 — Minimal capability.** Every capability MUST declare exactly five
 required elements: `description`, `input`, `output`, `access`, and `run`. `title`,
-`timeoutMs`, `annotations`, and `errors` are optional. The ID is not part of the definition;
-it is the key used in `createEngine`. When provided, `timeoutMs` MUST be a
-positive integer no greater than `2_147_483_647`. When provided, `errors`
-declares at most 64 domain errors keyed by UPPER_SNAKE_CASE codes that differ
-from every framework code; each declares a `description`, an optional `retryable`
-flag, and an optional object-rooted `details` schema (ADR 0045). A handler raises
-one with the standalone `CapabilityError`, not through the context.
+`timeoutMs`, `annotations`, `errors`, and `deprecated` are optional. The ID is not
+part of the definition; it is the key used in `createEngine`. When provided,
+`timeoutMs` MUST be a positive integer no greater than `2_147_483_647`. When
+provided, `errors` declares at most 64 domain errors keyed by UPPER_SNAKE_CASE
+codes that differ from every framework code; each declares a `description`, an
+optional `retryable` flag, and an optional object-rooted `details` schema (ADR
+0045). A handler raises one with the standalone `CapabilityError`, not through
+the context. When provided, `deprecated` MUST contain a non-blank `reason` of at
+most 1,024 characters and MAY contain a non-blank `since` of at most 64
+characters and a non-blank `replacement` of at most 256 characters (ADR 0046).
+Deprecation is published metadata; it does not change invocation.
 
 **AE-ENG-01 — Minimal engine.** Every engine MUST declare `name`, `version`, and
 `capabilities`. `logger` and `onEvent` are optional. The resulting public API
@@ -117,10 +121,10 @@ when it returns `true`.
 
 **AE-CTX-01 — Minimal context.** `ExecutionContext` MUST contain only `requestId`,
 `source`, `principal`, `signal`, `logger`, and `reportProgress`. `source` is
-`direct`, `cli`, `mcp-stdio`, or `mcp-http`. `reportProgress` is the advisory,
-non-throwing progress reporter of `AE-PROGRESS-01` (ADR 0043). The context MUST
-NOT contain a service locator, port registry, error factory, policy context, or
-mutable metadata bag.
+`direct`, `cli`, `mcp-stdio`, `mcp-http`, or `http`. `reportProgress` is the
+advisory, non-throwing progress reporter of `AE-PROGRESS-01` (ADR 0043). The
+context MUST NOT contain a service locator, port registry, error factory,
+policy context, or mutable metadata bag.
 
 **AE-PRINCIPAL-01 — Minimal identity.** `Principal` MUST be a structured-cloneable
 record with a non-empty string `id` and MAY contain `attributes` as a
@@ -134,5 +138,6 @@ non-null identity fails as `UNAUTHENTICATED` before `access` or `run`.
 
 Invokta addresses level B, a contracted capability, and level C, a reusable
 engine. It provides minimal extension points for level D through pluggable
-authentication, authorization, and events. It MUST NOT attempt to implement the
+authentication, authorization, events, and explicit capability middleware
+composition. It MUST NOT attempt to implement the
 federated platform of level E.

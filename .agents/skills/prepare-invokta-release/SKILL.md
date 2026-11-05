@@ -14,8 +14,8 @@ description: "Prepare Invokta versioned releases on dedicated release branches w
    recent tags, `CHANGELOG.md`, and commits since the latest release. Preserve
    unrelated changes and stop if they make the release slice ambiguous.
 3. Select the next semantic version from the compatibility of the Unreleased
-   changes and the repository's prior release policy. Request a decision when
-   the correct increment is ambiguous.
+   changes and `docs/stability-policy.md`. Request a decision when the correct
+   increment is ambiguous.
 4. Confirm the intended mainline base. If local `main` and `origin/main`
    diverge, resolve the base explicitly before continuing.
 5. Create or switch to `chore/release-X.Y.Z` from the confirmed mainline before

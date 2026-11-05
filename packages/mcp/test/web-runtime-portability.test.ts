@@ -78,8 +78,10 @@ describe("@invokta/mcp/web portability", () => {
       "http-protocol.ts",
       "progress.ts",
       "protocol-server.ts",
+      "protocol-version.ts",
       "request-id-transport.ts",
       "sha256.ts",
+      "tool-content.ts",
       "tool-name.ts",
       "web.ts",
     ]);

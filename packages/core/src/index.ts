@@ -46,6 +46,11 @@ export { createEngine } from "./engine.js";
 export type { EngineErrorCode } from "./error.js";
 export { EngineError } from "./error.js";
 export type {
+  CapabilityMiddleware,
+  CapabilityMiddlewareArgs,
+} from "./middleware.js";
+export { applyMiddleware } from "./middleware.js";
+export type {
   EngineJsonSchema,
   EngineSchema,
   InferSchemaInput,
@@ -54,8 +59,10 @@ export type {
 export type {
   AccessRule,
   AnyCapability,
+  CapabilityAccessKind,
   CapabilityAnnotations,
   CapabilityDefinition,
+  CapabilityDeprecation,
   CapabilityDescription,
   CapabilityMap,
   CapabilitySummary,

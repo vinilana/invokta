@@ -1,6 +1,6 @@
 ---
 title: '@invokta/core'
-description: Complete public API reference for capability and connector contracts, engine execution, schemas, events, errors, and composition.
+description: Complete public API reference for capability and connector contracts, engine execution, schemas, events, errors, composition, and middleware.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -32,7 +32,7 @@ The package root exposes these public groups:
 
 | Group | Exports |
 | --- | --- |
-| Capability | `defineCapability`, `CapabilityDefinition`, `AnyCapability`, `CapabilityMap`, `CapabilityAnnotations`, `AccessRule` |
+| Capability | `defineCapability`, `CapabilityDefinition`, `AnyCapability`, `CapabilityMap`, `CapabilityAnnotations`, `CapabilityDeprecation`, `AccessRule`, `CapabilityAccessKind` |
 | Connector | `defineConnector`, `ConnectorConfigSchema`, `ConnectorDefinition`, `ConnectorFactory`, `ConnectorInstance`, `ConnectorPorts`, `InferConnectorConfigInput`, `InferConnectorConfigOutput` |
 | Engine | `createEngine`, `Engine`, `EngineDefinition`, `InvokeOptions`, `CapabilitySummary`, `CapabilityDescription` |
 | Schema | `EngineSchema`, `EngineJsonSchema`, `InferSchemaInput`, `InferSchemaOutput` |
@@ -43,6 +43,7 @@ The package root exposes these public groups:
 | Composition values | `ExportedCapability`, `CapabilityLibrary`, `CapabilityImport`, `AnyCapabilityImport`, `ComposedCapabilities`, `CapabilitySource` |
 | Composition functions | `defineExportedCapability`, `defineCapabilityLibrary`, `importCapability`, `importCapabilities`, `composeCapabilities`, `isComposedCapabilities` |
 | Composition diagnostics | `CapabilityCompositionError`, `CapabilityCompositionIssue`, `CapabilityDeclarationProvenance`, `isCapabilityCompositionError` |
+| Middleware | `applyMiddleware`, `CapabilityMiddleware`, `CapabilityMiddlewareArgs` |
 
 Only the package root is exported. Internal schema, pipeline, and composition
 helpers are not public subpaths.
@@ -70,6 +71,7 @@ interface CapabilityDefinition<InputSchema, OutputSchema> {
   readonly access: AccessRule<InferSchemaOutput<InputSchema>>;
   readonly timeoutMs?: number;
   readonly annotations?: CapabilityAnnotations;
+  readonly deprecated?: CapabilityDeprecation;
   readonly errors?: CapabilityErrorMap;
   readonly run: (args: {
     readonly input: InferSchemaOutput<InputSchema>;
@@ -159,6 +161,59 @@ deduplicated to one version. With the optional type arguments,
 `CapabilityError<typeof errors>` types `code` as the union of declared codes and
 `CapabilityError<typeof errors, "TICKET_NOT_FOUND">` as that one code; both stay
 assignable to `CapabilityError`.
+
+### Deprecation
+
+```ts
+interface CapabilityDeprecation {
+  readonly reason: string;
+  readonly since?: string;
+  readonly replacement?: string;
+}
+```
+
+```ts
+const classifyTicket = defineCapability({
+  description: "Classify a support ticket.",
+  input,
+  output,
+  access: "authenticated",
+  deprecated: {
+    reason: "Superseded by the triage flow.",
+    since: "2.0.0",
+    replacement: "support.triage-ticket",
+  },
+  run,
+});
+```
+
+`deprecated` marks a capability that consumers should stop using. `reason` is
+required. `since` usually names the engine version that deprecated the
+capability, and `replacement` usually names the capability to use instead; the
+core does not check that it exists, because composition may remap IDs.
+
+`createEngine` validates the notice synchronously. It must be a plain object of
+enumerable data properties named `reason`, `since`, or `replacement`, and each
+present value must be a non-blank string of at most 1,024, 64, and 256
+characters respectively. An `undefined` optional value counts as absent.
+Anything else, including accessors, proxies, and unknown fields, throws a
+`TypeError` without running caller code.
+
+Deprecation does not change invocation: the same pipeline, events, errors, and
+results apply. The first time each deprecated capability is invoked in an
+engine, after the capability is resolved and before input validation, the
+engine logs one warning:
+
+```ts
+logger.warn("Deprecated capability invoked.", {
+  capabilityId,
+  requestId,
+  since,       // when declared
+  replacement, // when declared
+});
+```
+
+A throwing or rejecting logger does not affect the invocation.
 
 ## `defineConnector`
 
@@ -289,8 +344,9 @@ function createEngine<Capabilities extends CapabilityMap>(
 ```
 
 Construction captures every capability's top-level contract once. It validates
-timeouts, domain error declarations, and JSON Schema documents synchronously,
-and copies annotations, declarations, and schemas away from producer-owned
+timeouts, domain error declarations, deprecation notices, and JSON Schema
+documents synchronously, and copies annotations, declarations, deprecation
+notices, and schemas away from producer-owned
 objects. Later mutation of the original map or
 definition cannot alter the registered contract.
 
@@ -324,7 +380,7 @@ interface InvokeOptions {
 
 `requestId` defaults to a generated UUID, `source` defaults to `direct`, and
 `principal` defaults to `null`. `source` is one of `direct`, `cli`, `mcp-stdio`,
-or `mcp-http`.
+`mcp-http`, or `http`.
 
 `onProgress` receives a fresh, frozen snapshot of every progress report the
 capability delivers while `run` is pending. It is called synchronously; a
@@ -349,7 +405,7 @@ list(): ReadonlyArray<CapabilitySummary>;
 ```
 
 Returns fresh, deeply frozen summaries containing `id`, `description`, optional
-`title`, and optional annotations.
+`title`, optional annotations, and the optional `deprecated` notice.
 
 ### `engine.describe`
 
@@ -357,10 +413,13 @@ Returns fresh, deeply frozen summaries containing `id`, `description`, optional
 describe(capabilityId): CapabilityDescription;
 ```
 
-Adds frozen `inputSchema`, `outputSchema`, optional `timeoutMs`, and optional
-`errors` to the summary. A missing ID throws `CAPABILITY_NOT_FOUND`.
+Adds frozen `inputSchema`, `outputSchema`, optional `timeoutMs`, the access
+kind, and optional `errors` to the summary. A missing ID throws
+`CAPABILITY_NOT_FOUND`.
 
 ```ts
+type CapabilityAccessKind = "public" | "authenticated" | "function";
+
 interface CapabilityErrorDescription {
   readonly code: string;
   readonly description: string;
@@ -369,6 +428,7 @@ interface CapabilityErrorDescription {
 }
 ```
 
+`access` is `function` for a function rule; the rule itself is never exposed.
 `errors` lists the declared domain errors in declaration order and is omitted
 when none is declared. `detailsSchema` is the output-side JSON Schema of the
 declared details schema.
@@ -431,7 +491,9 @@ interface ProgressReport {
 `context.reportProgress` sends advisory progress to the caller's progress sink:
 `InvokeOptions.onProgress` for a direct call, a `notifications/progress`
 notification for an MCP client that sent a progress token, or a stderr line
-for the CLI in the `human` format. It returns nothing and never throws.
+for the CLI in the `human` format. The plain HTTP adapter `@invokta/http`
+answers with one JSON body and passes no sink, so its callers receive no
+progress. It returns nothing and never throws.
 
 | Rule | Behavior |
 | --- | --- |
@@ -474,7 +536,9 @@ must provide `reportProgress`, for example `() => undefined`.
 The runtime calls started and exactly one terminal event in pipeline order.
 Event promises are observed but not awaited, and hook or diagnostic-logger
 failures do not replace the invocation result. Events are best-effort and carry
-no business payload or credential by default.
+no business payload or credential by default. Use
+[`@invokta/otel`](/reference/otel/) to export them as OpenTelemetry spans and
+metrics.
 
 ## Capability composition
 
@@ -522,6 +586,108 @@ Use `isCapabilityCompositionError(error)` rather than `instanceof` when two
 installed copies of the core may exist. It recognizes the stable code and issue
 shape. Use `isComposedCapabilities(value)` to confirm a map retains composition
 provenance.
+
+## `applyMiddleware`
+
+```ts
+interface CapabilityMiddlewareArgs {
+  readonly capabilityId: string;
+  readonly input: unknown;
+  readonly context: ExecutionContext;
+  readonly next: () => Promise<unknown>;
+}
+
+type CapabilityMiddleware = (
+  args: CapabilityMiddlewareArgs,
+) => Promise<unknown>;
+
+function applyMiddleware<Capabilities extends CapabilityMap>(
+  capabilities: Capabilities,
+  ...middleware: readonly CapabilityMiddleware[]
+): Capabilities;
+```
+
+`applyMiddleware` returns a new frozen map with the same keys, in the same
+order, and the same static type. Each capability is a frozen copy that replaces
+only `run` with the middleware chain. It keeps by identity every own property,
+enumerable or not, and the contract fields `title`, `description`, `input`,
+`output`, `access`, `timeoutMs`, `annotations`, `errors`, `deprecated`, and
+`run` even when they are inherited. Other inherited members of a class-based
+capability, such as methods and lazy getters, are neither invoked nor copied.
+The function is eager and synchronous: it
+reads each field once, registers nothing, performs no I/O, and calls no
+middleware, access rule, or handler. With no middleware it returns a frozen copy
+holding the original capabilities.
+
+```ts
+const timing: CapabilityMiddleware = async ({ capabilityId, context, next }) => {
+  const startedAt = performance.now();
+  try {
+    return await next();
+  } finally {
+    context.logger.debug("capability.timing", {
+      capabilityId,
+      durationMs: performance.now() - startedAt,
+    });
+  }
+};
+
+const capabilities = applyMiddleware(
+  composeCapabilities({ local, imports }),
+  timing,
+);
+
+const engine = createEngine({ name, version, capabilities });
+```
+
+The first listed middleware is outermost and `run` is innermost. Applying
+middleware to an already wrapped map adds the new chain outside the earlier one.
+Because the chain replaces `run`, the engine validates input and enforces
+`access` before the first middleware, applies `timeoutMs` and caller
+cancellation to the whole chain through `context.signal`, validates the
+outermost result against the output schema, and normalizes a middleware error
+exactly like a `run` error. A `CapabilityError` from `run` passes through the
+chain unchanged, and one thrown by a middleware resolves against the same
+`errors` declaration. Either is published as `DOMAIN_ERROR` only when its code
+is declared.
+
+| Argument | Value |
+| --- | --- |
+| `capabilityId` | The capability's key in the map passed to `applyMiddleware` |
+| `input` | A deep-frozen snapshot of the validated input, taken on first read and shared by the invocation's middleware; `run` receives its own unmodified copy |
+| `context` | The engine's frozen `ExecutionContext`, passed through unchanged; `context.principal` is the same object `run` receives and must not be mutated |
+| `next` | Runs the rest of the chain and `run`, resolving to the unvalidated result |
+
+`next()` accepts no replacement input or context. A middleware may call it at
+most once while it is pending. A repeated call, including a re-entrant one from
+the next layer, or a call after the middleware settled rejects with `TypeError`
+without running the next layer, and becomes
+`EXECUTION_FAILED` if it propagates. A call after the invocation signal aborted
+rejects with the abort reason without running the next layer. A layer started
+with `next()` always settles before the calling middleware's result is
+returned. When the middleware did not await it, its outcome is ignored. No part
+of the chain outlives the invocation.
+
+Read `input` before calling `next()` when the value as validated matters: `run`
+owns its copy and may change it before a later first read. Identity decisions
+belong in `access`, not in middleware. A middleware that never reads `input`
+adds no copy of the payload. A wrapped `run` called directly outside the engine
+needs a platform `AbortSignal` in its context and accepts the same inputs as the
+original until a middleware reads `input`. The snapshot is memoized per `run`
+arguments object, so pass a fresh arguments object to each direct call.
+
+When the source map is a composed map, the result keeps its composition
+provenance and `isComposedCapabilities` returns `true`; a plain map never gains
+it. Wrapped capabilities may also be passed to `composeCapabilities`,
+`defineExportedCapability`, and `defineCapabilityLibrary`. Middleware applied
+before composition observes the key at that point, such as a library default
+ID, rather than the consumer's effective ID.
+
+A non-object or proxy map, a non-function middleware, and a capability that is
+not a non-proxy object with a `run` function throw `TypeError`. The core ships
+no concrete middleware; the [middleware recipe](/recipes/capability-middleware/)
+provides tested audit, rate-limit, and cache examples with their production
+limits.
 
 ## Invocation errors
 

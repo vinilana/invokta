@@ -52,6 +52,24 @@ function providerEnvironment(): NodeJS.ProcessEnv & Record<string, string> {
   } as NodeJS.ProcessEnv & Record<string, string>;
 }
 
+/**
+ * MCP returns the generated image as a native image block. The JSON text
+ * fallback replaces the base64 data that the block and `structuredContent`
+ * already carry with a placeholder naming that block.
+ */
+function nativeImageResult(base64Data: string) {
+  return {
+    content: [
+      {
+        type: "text",
+        text: '{"image":{"mimeType":"image/png","base64Data":"[content 1: image/png]"}}',
+      },
+      { type: "image", data: base64Data, mimeType: "image/png" },
+    ],
+    structuredContent: { image: { mimeType: "image/png", base64Data } },
+  };
+}
+
 interface CommandResult {
   readonly status: number | null;
   readonly stdout: string;
@@ -159,11 +177,7 @@ describe("image engine entrypoints", () => {
           undefined,
           { onprogress: (update) => void progress.push(update) },
         ),
-      ).resolves.toMatchObject({
-        structuredContent: {
-          image: { mimeType: "image/png", base64Data: stub.generatedData },
-        },
-      });
+      ).resolves.toEqual(nativeImageResult(stub.generatedData));
       expect(progress).toEqual([
         { progress: 0, message: "Composing the reference image asset." },
       ]);
@@ -233,11 +247,7 @@ describe("image engine entrypoints", () => {
           undefined,
           { onprogress: (update) => void progress.push(update) },
         ),
-      ).resolves.toMatchObject({
-        structuredContent: {
-          image: { mimeType: "image/png", base64Data: stub.generatedData },
-        },
-      });
+      ).resolves.toEqual(nativeImageResult(stub.generatedData));
       expect(progress).toEqual([
         { progress: 0, message: "Editing the image asset." },
       ]);

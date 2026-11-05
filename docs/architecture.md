@@ -8,6 +8,7 @@ flowchart LR
   CLI[CLI] --> INVOKE
   STDIO[MCP stdio] --> INVOKE
   HTTP[MCP HTTP] --> AUTHN[authenticate]
+  JSON[HTTP JSON] --> AUTHN
   AUTHN --> INVOKE
   INVOKE --> VALIDATE[Validate input]
   VALIDATE --> ACCESS[Enforce access]
@@ -44,7 +45,8 @@ Bun) to recognize proxies and promises without running user code. A process
 that identifies as Node.js but cannot resolve it MUST fail to load the core.
 Other hosts use the documented fallback of ADR 0042: JSON values still reject
 proxies through structured cloning, while other defensive boundaries may
-invoke proxy traps. `@invokta/mcp/web` MUST NOT load a Node.js built-in module. Node.js is
+invoke proxy traps. `@invokta/mcp/web` and the `@invokta/http` package root
+MUST NOT load a Node.js built-in module. Node.js is
 the runtime verified by tests; Fetch runtimes are supported by design.
 
 ## Outbound connectors
@@ -91,6 +93,8 @@ ADR 0037 defines the optional typed construction helper.
 This pipeline has no port registry, concurrency slot, queue,
 before/after/onError policies, obligations, retry, fallback, cache, or model
 routing. Those decisions belong to the capability or its injected dependencies.
+Middleware composed into a capability's `run` (AE-MIDDLEWARE-01) is part of
+the capability, not a pipeline policy.
 
 Input and output validation includes checking the value produced by the Standard
 Schema transformation against the lossless JSON data model in ADR 0002. A value
@@ -105,16 +109,18 @@ nor authorization mutation changes the data that execution observes.
 `createEngine` is also the capability-contract boundary. It MUST capture every
 top-level capability field exactly once at construction so later replacement or
 changing accessors for `input`, `output`, `access`, `run`, metadata, annotations,
-declared domain errors, or timeout configuration cannot create a split registered
-contract. The same
-captured `timeoutMs` value is validated, described, and used for execution.
+declared domain errors, deprecation, or timeout configuration cannot create a
+split registered contract. The same captured `timeoutMs` value is validated,
+described, and used for execution.
 Standard JSON Schema converters run synchronously during construction. Their
 documents MUST be object-rooted lossless JSON, copied away from converter-owned
 objects, and deeply frozen internally. Cyclic, proxy-backed, accessor-backed, or
 otherwise non-JSON documents fail construction synchronously. `list` and
 `describe` return
 fresh, deeply frozen snapshots, preventing a caller or adapter request from
-changing later runtime or MCP contracts. Standard Schema validation itself
+changing later runtime or MCP contracts. `describe` also publishes the kind of
+the access rule as `access`: `public`, `authenticated`, or `function`; a
+function rule itself is never exposed. Standard Schema validation itself
 continues to run only at invocation through the captured input and output schema
 objects.
 
@@ -122,6 +128,35 @@ When present, `timeoutMs` MUST be an integer from `1` through `2_147_483_647`,
 inclusive. `createEngine` validates this limit synchronously. Zero, negative or
 fractional values, non-finite numbers, and values above the limit fail
 construction with `TypeError`; they never reach the host timer implementation.
+
+## Capability middleware
+
+**AE-MIDDLEWARE-01 — Composition, not a pipeline stage.**
+`applyMiddleware(capabilities, ...middleware)` MAY wrap the `run` of every
+capability in an explicit map before `createEngine`. It is pure, eager, and
+synchronous. It returns a new frozen map with the same keys. Each capability
+is copied with its own properties and its possibly inherited contract fields
+kept by identity, and only `run` is replaced. It registers nothing and invokes no middleware,
+access rule, or handler. The chain therefore executes
+inside stage 5: input validation and `access` complete before the first
+middleware, the capability timeout and caller cancellation cover the whole
+chain through `context.signal`, the outermost result is validated against the
+output schema, and middleware failures are normalized exactly like `run`
+failures. That includes a `CapabilityError`, which becomes `DOMAIN_ERROR` only
+when the wrapped capability declares its code. A middleware receives:
+
+- the map key as `capabilityId`;
+- a lazily taken, deep-frozen input snapshot shared by the invocation's
+  middleware;
+- the unchanged `ExecutionContext`, whose principal it MUST NOT mutate; and
+- an argument-free `next()`.
+
+The first listed middleware is outermost. `next()` may start the next layer at
+most once, only while its middleware is pending and the signal is not aborted;
+other calls reject with `TypeError` or the abort reason. A started layer
+settles before its caller's result is returned, so no layer outlives the
+invocation. A composed map keeps its composition provenance; a plain map never
+gains it. ADR 0051 defines the complete boundary.
 
 ## Errors
 
@@ -203,6 +238,29 @@ framework provides no delivery-completion guarantee. Rejections from the hook an
 asynchronous diagnostic logger are contained without producing an unhandled
 rejection. After successful output validation, the runtime MUST clear its
 capability timeout before invoking the completed hook.
+Capability middleware (AE-MIDDLEWARE-01) is composed into a capability's `run`
+before engine construction; it is not an engine hook and does not change this
+event stream.
+
+**AE-OBS-02 — OpenTelemetry instrumentation.** `@invokta/otel` provides
+`createOpenTelemetryEventHandler`, an `onEvent` hook built only on the
+OpenTelemetry API peer. It MUST NOT add an OpenTelemetry dependency to the core
+or another package, MUST NOT throw into the engine, and MUST treat error codes
+and sources as opaque strings. It starts one `INTERNAL` span named
+`invoke {capabilityId}` at the event's `startedAt` in the active context,
+correlates the terminal event by `requestId`, and ends the span after
+`durationMs` with an error status and code on failure, plus the declared
+`domainCode` of a `DOMAIN_ERROR`. It records the
+`invokta.invocations` and `invokta.invocation.failures` counters and the
+`invokta.invocation.duration` histogram with bounded attributes. Principal IDs
+are recorded only on explicit opt-in and never on metrics. Pending spans are
+capped and the oldest is evicted. Spans and `contextFor` are accurate only while
+request IDs are unique among concurrent invocations; when a running
+invocation's request ID is reused, the handler MUST NOT assign an outcome
+across the overlapping invocations within the `maxPendingSpans` bound. The invocation span is not active inside
+`access` or `run`; a capability nests its own spans through the injected
+`contextFor(requestId)` accessor. ADR 0050 defines the attribute names,
+metric units, and limits.
 
 ## Progress
 
@@ -230,8 +288,9 @@ previous one has been written and while the response channel reports capacity.
 It holds at most one report, the latest, delivers it just before a successful
 result, and drops it when the call fails or is cancelled; send failures never
 change the tool result. The CLI passes a
-sink only in the `human` format and writes progress to stderr. ADR 0043 defines
-the complete boundary.
+sink only in the `human` format and writes progress to stderr. The plain HTTP
+adapter (`AE-HTTP-01`) answers with one JSON body and passes no sink, so its
+callers receive no progress. ADR 0043 defines the complete boundary.
 
 ## CLI
 
@@ -298,7 +357,10 @@ provided.
 annotations map directly to the tool. The capability key maps deterministically
 to a portable tool name matching `^[a-zA-Z0-9_-]{1,64}$`, and `tools/call`
 resolves that name back to the original key before `engine.invoke`. The adapter
-MUST fail closed if two keys map to the same tool name. Success returns
+MUST fail closed if two keys map to the same tool name. A deprecated capability
+keeps its tool; its description starts with the deprecation notice and the same
+notice is published as `_meta["dev.invokta/deprecated"]` (AE-EVOLVE-01).
+Success returns
 `structuredContent` and a JSON text fallback. A nonexistent tool is a protocol
 error; all other capability errors return `isError: true`. Error serialization
 is atomic: if the adapter cannot safely read or serialize the structured
@@ -309,6 +371,25 @@ code, retry hint, and validated details. Generated
 profiles that include MCP MUST run the same catalog construction as a build-time
 preflight from their canonical check, without starting an adapter or invoking a
 capability.
+
+Rich tool result content is derived from the output contract (ADR 0044). While
+building the catalog shared by stdio and HTTP, the adapter plans each tool from
+the top-level properties of its output JSON Schema, directly or as array items:
+a base64 string whose `contentMediaType` is an allowlisted image or audio type,
+a media object with an enumerated allowlisted `mimeType` and one base64
+property, or a resource-link object whose `uri` declares
+`contentMediaType: "text/uri-list"` and that has a string `name`. A shape
+without a content keyword never opts in. Each valid value whose block type the
+request's protocol revision defines becomes an `image`, `audio`, or
+`resource_link` block after the JSON text block; an invalid or unsupported
+value only stays in the text block. `structuredContent` MUST remain the
+complete validated output, and the text block MUST keep its structure,
+replacing each base64 value a block carries with a placeholder naming that
+block. A result with more than 16 planned values, or without any block, MUST be
+the unchanged structured result and full JSON text fallback, so a capability
+without a recognized form is presented byte for byte as before. The catalog
+preflight reports close-but-unsupported content annotations as warnings
+without failing; the core and its contracts gain no MCP concept.
 
 **AE-MCP-02 — Isolated SDK.** `@invokta/mcp` encapsulates the official SDK and
 MUST NOT leak its types through the public API or copy it into the core. The
@@ -436,11 +517,57 @@ is required; each authorization server uses HTTPS without credentials, query, or
 fragment. Authorization-server paths are allowed because OAuth issuer identifiers
 may use path components.
 
+## Plain HTTP JSON
+
+**AE-HTTP-01 — Web-standard handler.** `@invokta/http` exports
+`createHttpHandler(engine, options)`, a `(request: Request) => Promise<Response>`
+handler whose package-root modules import no Node.js built-in module
+(AE-ARCH-04), and
+`createHttpOpenApiDocument(engine, options?)`. Relative to a validated
+`basePath` (default `/`), `GET /capabilities` returns `{ capabilities }` from
+`engine.list()`, `GET /capabilities/{id}` returns `engine.describe(id)`,
+`POST /capabilities/{id}` returns the output of `engine.invoke(id, body)` with
+source `http`, and `GET /openapi.json` returns the generated document. `{id}`
+is one percent-encoded segment decoded once; construction rejects the
+unreachable keys `.` and `..`. The handler validates and snapshots its
+configuration and capability IDs at construction and never rejects. The
+optional `@invokta/http/node` subpath serves the same handler on `node:http`
+without adding routes, limits, or statuses, and rejects a duplicated `Host` or
+`Authorization` header and every request target that URL normalization would
+change, including dot-segment aliases (ADR 0048).
+
+**AE-HTTP-02 — Boundary.** Each request is checked in order: host allowlist
+(loopback names by default), `Origin` (rejected unless CORS lists it exactly),
+route, CORS preflight, method (405 with `Allow`), declared body size (413),
+authentication, capability ID (an ID outside the captured catalog is 404
+`CAPABILITY_NOT_FOUND` without reaching `engine.invoke`, emitting an event, or
+reading the body), `application/json` content type (415), streamed strict UTF-8
+body within the limit (default 1,048,576 bytes; 413), and JSON parsing
+(400 `INVALID_JSON`). `auth` is required and uses the same required or
+`dangerously-disabled-for-development` modes and the same structural
+`{ path, method, headers, signal }` request as MCP HTTP; required mode protects
+every route, including the OpenAPI document. `null` or a malformed principal is
+401 with `WWW-Authenticate: Bearer`; a thrown authenticator is a sanitized 500.
+`request.signal` reaches the authenticator and `engine.invoke`.
+
+**AE-HTTP-03 — Errors and export.** Every error body is
+`{ error: { code, message, publicDetails? } }` without causes or stacks.
+`INPUT_INVALID` is 400, `UNAUTHENTICATED` 401, `FORBIDDEN` 403,
+`CAPABILITY_NOT_FOUND` 404, `DOMAIN_ERROR` 422, `OUTPUT_INVALID` and
+`EXECUTION_FAILED` 500, and
+`CANCELLED` 503; an unstable or unserializable error is the generic
+`EXECUTION_FAILED` 500. The OpenAPI 3.1 document is derived only from `list`
+and `describe`, embeds each schema as a component with local references rebased
+onto it, uses the base path as a relative server URL, and declares Bearer
+security only when authentication is required. A JSON Schema `$id` or anchor
+that would occur twice in the document fails generation with a `TypeError`.
+
 ## Authentication and authorization
 
 **AE-SEC-01 — Hybrid model.** The core contains `Principal` and `AccessRule`, and
-enforces the access rule. MCP HTTP receives an `authenticate` hook. The custom
-engine decides domain authorization and may call any PDP through a function.
+enforces the access rule. MCP HTTP and plain HTTP receive an `authenticate`
+hook. The custom engine decides domain authorization and may call any PDP
+through a function.
 
 **AE-SEC-02 — Boundaries.** Identity never comes from the input. When HTTP
 authentication is required, a missing or failed identity produces a 401 before
@@ -467,6 +594,27 @@ request is cancelled; not refetch a failing remote key set within a bounded
 window; and never pass the raw token to the principal mapper. It depends
 only on `jose`; the core and adapters do not depend on it, and claim mapping
 beyond its default remains host code.
+
+## Contract evolution
+
+**AE-EVOLVE-01 — Deprecation notice.** A capability MAY declare
+`deprecated: { reason, since?, replacement? }` within the bounds of AE-CAP-01.
+`createEngine` validates and freezes it, and `list`, `describe`, the CLI, and
+the MCP tool listing publish it. A deprecated capability is invoked exactly like
+any other: no stage, event, error, or result changes. On the first invocation of
+each deprecated capability, after resolution and before input validation, the
+engine calls `logger.warn` once per engine instance with the capability ID,
+request ID, and the optional `since` and `replacement`; a failing logger is
+contained. ADR 0046 defines the exact rules.
+
+**AE-EVOLVE-02 — Contract snapshot and diff.** `@invokta/tooling` MAY capture
+an engine's public contract through `list` and `describe` as a deterministic
+JSON snapshot and compare two snapshots. The comparison classifies each change
+as breaking, potentially breaking, or compatible, classifies every JSON Schema
+change it cannot decide as potentially breaking, and exits non-zero when a
+breaking change is found. It never invokes a capability or starts an adapter.
+The [stability policy](./stability-policy.md) defines the classification for
+engine authors.
 
 ## MCP client installation
 

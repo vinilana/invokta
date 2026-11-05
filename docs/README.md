@@ -2,8 +2,8 @@
 
 Invokta is a TypeScript framework for building agent-ready software without
 coupling domain capabilities to one agent harness. Define a capability once and
-execute the same implementation through a direct call, the CLI, MCP stdio, or
-stateless MCP Streamable HTTP.
+execute the same implementation through a direct call, the CLI, MCP stdio,
+stateless MCP Streamable HTTP, or plain HTTP JSON with an OpenAPI description.
 
 An Action Engine is the headless capability boundary behind those channels. A
 customer can use an MCP-compatible agent, an internal team can change harnesses,
@@ -26,6 +26,7 @@ contracts below define one implementation of that concept.
 | Install an engine in agent clients | [Installer reference](../apps/docs/src/content/docs/reference/installer.mdx) |
 | Contribute to Invokta | [Contributor guide](../CONTRIBUTING.md) |
 | Change a public contract | Follow the maintainer reading order below before editing |
+| Judge compatibility, deprecation, and upgrade risk | [Stability policy](./stability-policy.md) |
 
 ## Framework maintainer reading order
 
@@ -39,7 +40,9 @@ contracts below define one implementation of that concept.
 
 The [ADR index](./adr/README.md) is the canonical inventory of accepted
 decisions. The [changelog](../CHANGELOG.md) records release-level delivery and
-known limitations; this index does not duplicate either chronology.
+known limitations; this index does not duplicate either chronology. The
+[stability policy](./stability-policy.md) defines the public API, versioning,
+deprecation, platform support, security releases, and the criteria for 1.0.
 
 ## Design notes
 
@@ -63,6 +66,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [OAuth client interoperability release checklist](./oauth-client-interoperability-checklist.md)
 - [Integrating a PDP through a capability access rule](./capability-authorization.md)
 - [Building an outbound connector](../apps/docs/src/content/docs/recipes/external-provider.mdx)
+- [Instrumenting an engine with OpenTelemetry](../apps/docs/src/content/docs/recipes/opentelemetry.mdx)
 - [Authoring and composing community capabilities](./capability-composition.md)
 - [Installing Action Engines in MCP clients](../apps/docs/src/content/docs/reference/installer.mdx)
 - [Scope and maturity matrix](./scope-matrix.md)

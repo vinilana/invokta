@@ -41,11 +41,23 @@ shows how to run and verify the result locally.
 
     [Open recipe](/recipes/capability-composition/)
   </Card>
+  <Card title="Wrap capabilities with middleware" icon="setting">
+    Share audit logging, rate limiting, and caching across capabilities without
+    bypassing validation or access.
+
+    [Open recipe](/recipes/capability-middleware/)
+  </Card>
   <Card title="Consume MCP stdio" icon="transfer">
     Connect an independent harness with the official MCP client, discover a
     tool, invoke it, and close the child transport.
 
     [Open recipe](/recipes/mcp-stdio-consumer/)
+  </Card>
+  <Card title="Return images over MCP" icon="seti:image">
+    Annotate an output contract so MCP clients receive native image, audio, and
+    resource-link blocks.
+
+    [Open recipe](/recipes/mcp-rich-content/)
   </Card>
   <Card title="Build an outbound connector" icon="transfer">
     Implement a provider behind engine-owned ports with explicit configuration,
@@ -58,6 +70,12 @@ shows how to run and verify the result locally.
     work.
 
     [Open recipe](/recipes/long-running-progress/)
+  </Card>
+  <Card title="Instrument with OpenTelemetry" icon="magnifier">
+    Export one span per invocation and invocation metrics from engine events
+    to the OpenTelemetry SDK your host runs.
+
+    [Open recipe](/recipes/opentelemetry/)
   </Card>
   <Card title="Authenticate requests" icon="lock">
     Connect Supabase, Clerk, Auth0, Cognito, Firebase, Better Auth, Auth.js,

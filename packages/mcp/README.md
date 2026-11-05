@@ -25,7 +25,10 @@ const server = await serveMcpHttp(engine, {
 ```
 
 Both adapters execute every tool call through `engine.invoke`, so the CLI,
-direct calls, and MCP share one execution path. `serveMcpHttp` is stateless and
+direct calls, and MCP share one execution path. A capability with a
+`deprecated` notice keeps its tool; the description starts with the notice and
+`_meta["dev.invokta/deprecated"]` carries it as structured data
+([ADR 0046](../../docs/adr/0046-stability-policy-capability-deprecation-and-contract-diff.md)). `serveMcpHttp` is stateless and
 requires an explicit `auth` choice: `mode: "required"` with an `authenticate`
 hook, or the deliberately verbose
 `mode: "dangerously-disabled-for-development"`. When `auth.resourceMetadata` is
@@ -76,6 +79,34 @@ dotted domain IDs visible to clients that enforce `^[a-zA-Z0-9_-]{1,64}$`
 `validateMcpToolCatalog(engine)` fails closed with an
 `McpToolNameCollisionError` when two capability IDs would publish the same tool
 name.
+
+Tool results carry the validated output as `structuredContent` and a JSON text
+block. Top-level output properties annotated with standard JSON Schema content
+keywords also become native `image`, `audio`, or `resource_link` blocks, with
+the same behavior over stdio and HTTP
+([ADR 0044](../../docs/adr/0044-rich-mcp-tool-result-content.md)):
+
+```ts
+output: z.object({
+  chart: z
+    .string()
+    .meta({ contentEncoding: "base64", contentMediaType: "image/png" })
+    .refine(isBase64), // an engine-owned linear validator
+  report: z.object({
+    uri: z.httpUrl().meta({ contentMediaType: "text/uri-list" }),
+    name: z.string(),
+  }),
+}),
+```
+
+Prefer a plain string with a linear refinement over `z.base64()` for media:
+its JSON Schema `pattern` exhausts the stack of AJV-based clients on values of
+a few MiB. Each value maps independently: an invalid value, or a block type the
+negotiated protocol revision does not define, stays in the text block, where
+mapped base64 values are replaced by `[content N: <media type>]` placeholders.
+More than 16 planned values fall back to the unchanged JSON result, and
+unannotated outputs are never affected. `validateMcpToolCatalog` returns
+`contentWarnings` for annotations that come close but will not map.
 
 ## Serving from a Web-standard runtime
 

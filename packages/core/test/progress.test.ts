@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import {
+  applyMiddleware,
   createEngine,
   defineCapability,
   type EngineEvent,
@@ -500,5 +501,48 @@ describe("capability progress reporting", () => {
       expect.objectContaining({ source: "direct" }),
       expect.objectContaining({ source: "direct" }),
     ]);
+  });
+
+  it("reports progress through a capability wrapped with applyMiddleware", async () => {
+    const reported: number[] = [];
+    const contexts: ExecutionContext[] = [];
+    const capabilities = applyMiddleware(
+      {
+        work: defineCapability({
+          description: "Reports progress inside middleware.",
+          input,
+          output,
+          access: "public",
+          async run({ input, context }) {
+            contexts.push(context);
+            context.reportProgress({ progress: 2, total: 3 });
+            return { result: input.value };
+          },
+        }),
+      },
+      async ({ context, next }) => {
+        contexts.push(context);
+        context.reportProgress({ progress: 1, total: 3 });
+        const result = await next();
+        context.reportProgress({ progress: 3, total: 3 });
+        return result;
+      },
+    );
+    const engine = createEngine({
+      name: "middleware-progress-engine",
+      version: "0.1.0",
+      capabilities,
+    });
+
+    await expect(
+      engine.invoke(
+        "work",
+        { value: "wrapped" },
+        { onProgress: (report) => void reported.push(report.progress) },
+      ),
+    ).resolves.toEqual({ result: "wrapped" });
+
+    expect(reported).toEqual([1, 2, 3]);
+    expect(contexts[0]).toBe(contexts[1]);
   });
 });

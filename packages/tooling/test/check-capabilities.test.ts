@@ -159,6 +159,30 @@ describe("invokta check-capabilities", () => {
     expect(result.stderr).not.toContain("CAPABILITY_ID_COLLISION");
   });
 
+  it("accepts a tracked composition wrapped with capability middleware", () => {
+    const result = runCommand(
+      "check-capabilities",
+      fixture("middleware-composition.js"),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("");
+  });
+
+  it("keeps rejecting an untracked map after capability middleware wraps it", () => {
+    const result = runCommand(
+      "check-capabilities",
+      fixture("middleware-untracked-spread.js"),
+    );
+
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain(
+      "the selected export is not a tracked capability composition",
+    );
+  });
+
   it("selects a non-default export name with --export", () => {
     const result = runCommand(
       "check-capabilities",

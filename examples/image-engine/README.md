@@ -187,6 +187,16 @@ Generated images are returned inline as base64 so direct, CLI, and MCP consumers
 observe the same output contract. Hosts should account for that bounded payload
 when selecting their own transport and process memory limits.
 
+The output asset schema annotates `base64Data` with the standard
+`contentEncoding: "base64"` keyword next to its enumerated `mimeType`. The MCP
+adapters therefore also return every generated asset as a native `image` content
+block that clients can render
+([ADR 0044](../../docs/adr/0044-rich-mcp-tool-result-content.md)). In the MCP
+text block, each asset's `base64Data` is replaced by a placeholder such as
+`[content 1: image/png]` that names its block; the complete data remains in
+`structuredContent`. Base64 validation is a linear character scan, so
+multi-megabyte images never exhaust the regular-expression stack.
+
 Provider choice expresses the best-fit production path, not a deterministic
 visual-quality guarantee. This example validates schemas, counts, formats, and
 sizes, but it does not run OCR or perceptual evaluations. A production workflow

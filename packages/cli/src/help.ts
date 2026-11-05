@@ -108,6 +108,24 @@ function renderAnnotations(annotations: unknown): string[] {
   return rendered.length === 0 ? [] : [`Annotations: ${rendered.join(", ")}`];
 }
 
+function renderDeprecation(
+  deprecated: CapabilityDescription["deprecated"],
+): readonly string[] {
+  if (deprecated === undefined || typeof deprecated.reason !== "string") {
+    return [];
+  }
+  const since =
+    typeof deprecated.since === "string"
+      ? ` since ${text(deprecated.since)}`
+      : "";
+  return [
+    `Deprecated${since}: ${text(deprecated.reason)}`,
+    ...(typeof deprecated.replacement === "string"
+      ? [`Replacement: ${text(deprecated.replacement)}`]
+      : []),
+  ];
+}
+
 /** Renders the deterministic, bounded human-readable page of one capability. */
 export function renderCapabilityHelp(
   description: CapabilityDescription,
@@ -133,6 +151,7 @@ export function renderCapabilityHelp(
       ? [`Description: ${text(description.description)}`]
       : []),
     ...renderAnnotations(description.annotations),
+    ...renderDeprecation(description.deprecated),
     "",
     "Usage:",
     ...(table.flags.length === 0 ? [] : [`  engine run ${id} [flags]`]),

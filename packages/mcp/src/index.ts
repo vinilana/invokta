@@ -46,6 +46,11 @@ export {
   McpToolNameCollisionError,
   validateMcpToolCatalog,
 } from "./protocol-server.js";
+export type {
+  McpToolCatalogReport,
+  McpToolContentWarning,
+  McpToolContentWarningCode,
+} from "./tool-content.js";
 
 import { createMcpServer } from "./protocol-server.js";
 import { preserveFalsyRequestIds } from "./request-id-transport.js";
