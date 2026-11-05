@@ -1,0 +1,142 @@
+---
+title: Return images, audio, and links over MCP
+description: Annotate an output contract so MCP clients receive native image, audio, and resource-link content blocks.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An MCP client can render an image or play audio when the tool result contains a
+native content block. Invokta derives those blocks from standard JSON Schema
+keywords in the capability's output contract, so the handler, direct calls, and
+the CLI keep returning the same validated JSON.
+
+This recipe follows `image-engine`, whose generated assets reach MCP clients as
+`image` blocks over both stdio and HTTP.
+
+## Annotate the output contract
+
+<Steps>
+
+1. Mark the base64 property of the asset
+
+   ```ts
+   export const imageAssetSchema = z.object({
+     mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+     base64Data: boundedBase64Schema(maximumGeneratedImageBytes).meta({
+       contentEncoding: "base64",
+     }),
+   });
+   ```
+
+   An object with an enumerated `mimeType` and exactly one property annotated
+   with `contentEncoding: "base64"` is a media object. Each value becomes one
+   block whose media type is the value's own `mimeType`. `z.base64()` emits the
+   same keyword for you.
+
+2. Use the asset at the top level of the output
+
+   ```ts
+   output: z.object({ images: z.array(imageAssetSchema).min(2).max(4) }),
+   ```
+
+   Only top-level properties and the items of top-level arrays are read. The
+   handler still returns `{ images: [{ mimeType, base64Data }, ...] }`; it does
+   not know about MCP.
+
+3. Pick another form when it fits better
+
+   ```ts
+   output: z.object({
+     // A fixed media type: one image block.
+     chart: z.base64().meta({ contentMediaType: "image/png" }),
+     // A link the client can open: one resource_link block per item.
+     sources: z.array(
+       z.object({
+         uri: z.url(),
+         name: z.string().min(1),
+         mimeType: z.string().optional(),
+       }),
+     ).max(10),
+   }),
+   ```
+
+   A resource link has exactly `uri`, `name`, and an optional `mimeType`. Any
+   Standard JSON Schema library that emits the same keywords works.
+
+</Steps>
+
+Media types must be one of `image/png`, `image/jpeg`, `image/gif`,
+`image/webp`, `audio/wav`, `audio/mpeg`, `audio/ogg`, `audio/webm`,
+`audio/flac`, or `audio/aac`. Anything else, including SVG, stays an ordinary
+JSON property. Bound binary sizes in the schema, as `boundedBase64Schema` does,
+because blocks reuse the validated values.
+
+## What the MCP client receives
+
+`structuredContent` is always the complete validated output. The content array
+starts with the JSON text block, without the base64 values that the following
+blocks carry, and then lists the blocks in schema and array order. A two-image
+campaign series returns:
+
+```json
+[
+  {
+    "type": "text",
+    "text": "{\"images\":[{\"mimeType\":\"image/png\"},{\"mimeType\":\"image/png\"}]}"
+  },
+  { "type": "image", "data": "<first base64>", "mimeType": "image/png" },
+  { "type": "image", "data": "<second base64>", "mimeType": "image/png" }
+]
+```
+
+<Aside type="caution" title="The fallback is atomic">
+  When a present value is invalid, such as malformed base64 or a
+  `javascript:` link, or the result would produce more than 16 blocks, the
+  adapter returns the plain result: the complete JSON text block plus
+  `structuredContent`, exactly as before. An absent optional property or an
+  empty array only contributes no block.
+</Aside>
+
+Links must use `https://` or `http://`, have a host and no user information,
+and stay within 8,192 bytes; names must be non-empty and within 1,024 UTF-8
+bytes. The adapter does not serve linked URIs through `resources/read`.
+
+## Run it
+
+Export the three provider credentials that the
+[`image-engine` README](https://github.com/vinilana/invokta/tree/main/examples/image-engine#configure)
+lists, build the repository, and start the authenticated MCP HTTP adapter:
+
+```sh
+yarn build
+IMAGE_ENGINE_BEARER_TOKEN='development-only-token' \
+  node examples/image-engine/dist/mcp-http.js
+```
+
+From another terminal, render one poster:
+
+```sh
+curl -s http://127.0.0.1:3000/mcp \
+  -H 'authorization: Bearer development-only-token' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"image_render-text-asset","arguments":{"prompt":"A restrained launch poster.","requiredText":"SHIP THE RIGHT THING"}}}'
+```
+
+The response's `result.content` holds the text block and one `image` block, and
+`result.structuredContent` holds the complete asset. The direct and CLI
+entry points return the same JSON as before.
+
+## Verify it
+
+The image-engine tests use local provider stubs, call the tools through the
+official MCP client over stdio and HTTP, and assert the exact `image` blocks:
+
+```sh
+yarn workspace @invokta/example-image test
+```
+
+Read the [MCP reference](/reference/mcp/#rich-tool-results) for the complete
+mapping rules and the
+[`image-engine`](https://github.com/vinilana/invokta/tree/main/examples/image-engine)
+example for the annotated contract.

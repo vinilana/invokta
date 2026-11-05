@@ -7,6 +7,30 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `@invokta/mcp` returns native MCP `image`, `audio`, and `resource_link`
+  content blocks, over both stdio and HTTP, for top-level output properties
+  annotated with standard JSON Schema keywords (ADR 0044): a base64 string
+  with an allowlisted image or audio `contentMediaType`, a media object with an
+  enumerated `mimeType` and one `contentEncoding: "base64"` property, or a
+  `uri`/`name`/optional `mimeType` link object, directly or as array items.
+  `structuredContent` remains the complete validated output, and the JSON text
+  block omits the base64 values the blocks carry. At most 16 blocks are
+  generated; an invalid value or a larger result falls back atomically to the
+  unchanged JSON result. Capabilities without these annotations are presented
+  byte for byte as before, and the core, CLI, and direct results are unchanged.
+- The private `image-engine` example annotates its generated assets, so MCP
+  clients receive each image as a native `image` block. A new documentation
+  recipe shows the Zod 4 authoring pattern.
+
+### Changed
+
+- A capability whose output schema already declared one of the ADR 0044 forms
+  now receives content blocks after its MCP text block, and that text block no
+  longer repeats the mapped base64 values. MCP consumers that parsed the text
+  block for that data must read `structuredContent`.
+
 ### Fixed
 
 - Release publication waits up to 10 minutes, with checks backing off from 5 to

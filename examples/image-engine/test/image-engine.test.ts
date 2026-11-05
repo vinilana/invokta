@@ -1,5 +1,12 @@
 import type { Principal } from "@invokta/core";
-import { toMcpToolName, validateMcpToolCatalog } from "@invokta/mcp";
+import {
+  serveMcpHttp,
+  toMcpToolName,
+  validateMcpToolCatalog,
+} from "@invokta/mcp";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import type {
@@ -305,6 +312,63 @@ describe("the multi-provider image engine", () => {
       timeoutMs: 180_000,
       annotations: { idempotent: false, openWorld: true },
     });
+  });
+
+  it("returns every generated image as a native MCP image block", async () => {
+    const engine = createImageEngine(createDependencies());
+    expect(
+      engine.describe("image.generate-campaign-series").outputSchema,
+    ).toMatchObject({
+      properties: {
+        images: {
+          items: { properties: { base64Data: { contentEncoding: "base64" } } },
+        },
+      },
+    });
+    const server = await serveMcpHttp(engine, {
+      port: 0,
+      auth: { mode: "required", authenticate: () => principal },
+    });
+    const client = new Client(
+      { name: "image-engine-content-test", version: "0.0.0-test" },
+      { capabilities: {} },
+    );
+    try {
+      const { host, port } = server.address();
+      await client.connect(
+        new StreamableHTTPClientTransport(
+          new URL(`http://${host}:${String(port)}/mcp`),
+        ) as unknown as Transport,
+      );
+      const result = await client.callTool({
+        name: "image_generate-campaign-series",
+        arguments: { prompt: "A coherent launch series.", count: 3 },
+      });
+
+      expect(result).toEqual({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              images: [
+                { mimeType: "image/png" },
+                { mimeType: "image/png" },
+                { mimeType: "image/png" },
+              ],
+            }),
+          },
+          { type: "image", data: pngData, mimeType: "image/png" },
+          { type: "image", data: pngData, mimeType: "image/png" },
+          { type: "image", data: pngData, mimeType: "image/png" },
+        ],
+        structuredContent: {
+          images: [generatedImage, generatedImage, generatedImage],
+        },
+      });
+    } finally {
+      await client.close();
+      await server.close();
+    }
   });
 
   it("fails fast until every published provider has a credential", () => {

@@ -68,6 +68,23 @@ dotted domain IDs visible to clients that enforce `^[a-zA-Z0-9_-]{1,64}$`
 `McpToolNameCollisionError` when two capability IDs would publish the same tool
 name.
 
+Tool results carry the validated output as `structuredContent` and a JSON text
+block. Top-level output properties annotated with standard JSON Schema content
+keywords also become native `image`, `audio`, or `resource_link` blocks, with
+the same behavior over stdio and HTTP
+([ADR 0044](../../docs/adr/0044-rich-mcp-tool-result-content.md)):
+
+```ts
+output: z.object({
+  chart: z.base64().meta({ contentMediaType: "image/png" }),
+  report: z.object({ uri: z.url(), name: z.string() }),
+}),
+```
+
+At most 16 blocks are generated per result. An invalid value or a larger
+result falls back to the unchanged JSON result; unannotated outputs are never
+affected.
+
 ## Connecting as a client
 
 ```ts

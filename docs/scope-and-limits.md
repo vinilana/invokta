@@ -78,6 +78,9 @@ while the example owns one replaceable Authorization Server implementation.
 | Generated OpenAPI runtime URL | 8,192 UTF-8 bytes |
 | Generated OpenAPI runtime request body | 10 MiB serialized JSON |
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |
+| MCP content blocks generated per tool result | 16, after the JSON text block |
+| MCP image and audio media types | 10 allowlisted: 4 image and 6 audio, exact lowercase |
+| MCP resource-link URI and name | 8,192 bytes of `http(s)` printable ASCII without user information; 1,024 UTF-8 bytes |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,
@@ -100,7 +103,10 @@ language, relationship graph, PDP adapter, or session binding.
 
 **AE-LIMIT-05 — MCP.** Invokta does not provide MCP resources, prompts,
 sampling, elicitation, tasks, stateful sessions, resumption, or server-to-client
-requests.
+requests. Rich tool results are limited to `image`, `audio`, and
+`resource_link` blocks derived from annotated top-level output properties
+(ADR 0044); linked URIs are not served through `resources/read`, and embedded
+resources and content annotations are not produced.
 
 **AE-LIMIT-06 — Installed MCP inspection.** Devtools may initialize, list tools
 from, and manually call one explicitly configured stdio or Streamable HTTP MCP

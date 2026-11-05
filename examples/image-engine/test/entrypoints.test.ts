@@ -51,6 +51,21 @@ function providerEnvironment(): NodeJS.ProcessEnv & Record<string, string> {
   } as NodeJS.ProcessEnv & Record<string, string>;
 }
 
+/**
+ * MCP returns the generated image as a native image block. The JSON text
+ * fallback omits the base64 data that the block and `structuredContent`
+ * already carry.
+ */
+function nativeImageResult(base64Data: string) {
+  return {
+    content: [
+      { type: "text", text: '{"image":{"mimeType":"image/png"}}' },
+      { type: "image", data: base64Data, mimeType: "image/png" },
+    ],
+    structuredContent: { image: { mimeType: "image/png", base64Data } },
+  };
+}
+
 interface CommandResult {
   readonly status: number | null;
   readonly stdout: string;
@@ -152,11 +167,7 @@ describe("image engine entrypoints", () => {
             referenceImages,
           },
         }),
-      ).resolves.toMatchObject({
-        structuredContent: {
-          image: { mimeType: "image/png", base64Data: stub.generatedData },
-        },
-      });
+      ).resolves.toEqual(nativeImageResult(stub.generatedData));
     } finally {
       await client.close();
     }
@@ -218,11 +229,7 @@ describe("image engine entrypoints", () => {
             referenceImages: referenceImages.slice(0, 1),
           },
         }),
-      ).resolves.toMatchObject({
-        structuredContent: {
-          image: { mimeType: "image/png", base64Data: stub.generatedData },
-        },
-      });
+      ).resolves.toEqual(nativeImageResult(stub.generatedData));
       expect(stub.requests.at(-1)).toMatchObject({
         path: "/openai/v1/images/edits",
         authorization: "Bearer openai-stub-key",

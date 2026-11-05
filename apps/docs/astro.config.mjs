@@ -127,6 +127,7 @@ export default defineConfig({
             { slug: "recipes/domain-authorization" },
             { slug: "recipes/capability-composition" },
             { slug: "recipes/mcp-stdio-consumer" },
+            { slug: "recipes/mcp-rich-content" },
             { slug: "recipes/external-provider" },
             {
               label: "Authentication",

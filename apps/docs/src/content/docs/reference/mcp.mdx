@@ -71,8 +71,10 @@ catalog without starting stdio or HTTP. A collision throws
 `capabilityIds`.
 
 A successful call returns the validated result as `structuredContent` plus a
-JSON text fallback. Invocation failures return `isError: true` with one safe JSON
-text error and no `structuredContent`. Unsafe or unknown errors fall back to:
+JSON text fallback. An output contract can also add native image, audio, and
+resource-link blocks; see [rich tool results](#rich-tool-results). Invocation
+failures return `isError: true` with one safe JSON text error and no
+`structuredContent`. Unsafe or unknown errors fall back to:
 
 ```json
 {"code":"EXECUTION_FAILED","message":"Capability execution failed."}
@@ -88,6 +90,47 @@ request.
   with the published aliases. Direct calls, CLI commands, composition, access
   rules, and events continue to use the original dotted capability IDs.
 </Aside>
+
+## Rich tool results
+
+The adapter reads the capability's output JSON Schema and maps annotated
+top-level properties to MCP `2025-11-25` content blocks (ADR 0044). The mapping
+is derived once per tool when the catalog is built, so stdio and HTTP present
+the same result. No adapter option exists; the output contract is the only
+declaration.
+
+| Top-level property schema (or its array `items`) | Generated block |
+| --- | --- |
+| String with `contentEncoding: "base64"` and an allowlisted `contentMediaType` | `image` or `audio` with that media type |
+| Object with a `mimeType` whose `enum` or `const` lists only allowlisted types, plus exactly one base64 string property | `image` or `audio` with the value's `mimeType` |
+| Object with exactly `uri` (`format: "uri"`), `name`, and optional `mimeType` string properties | `resource_link` |
+
+Allowlisted media types are `image/png`, `image/jpeg`, `image/gif`,
+`image/webp`, `audio/wav`, `audio/mpeg`, `audio/ogg`, `audio/webm`,
+`audio/flac`, and `audio/aac`, spelled exactly in lowercase. Other annotations,
+`$ref`, unions, nested properties, and nested arrays are ignored.
+
+A presented result keeps the complete output in `structuredContent`. The text
+block comes first and omits every base64 value that a generated block carries:
+a typed media property is omitted, and a media object keeps every property
+except its data. Resource links stay in the text. Blocks follow the schema's
+property order and each array's index order.
+
+| Rule | Behavior |
+| --- | --- |
+| Base64 data | Non-empty, padded RFC 4648 standard alphabet |
+| Resource-link `uri` | `https://` or `http://`, printable ASCII, a host, no user information, at most 8,192 bytes |
+| Resource-link `name` | Non-empty, at most 1,024 UTF-8 bytes |
+| Resource-link `mimeType` | Optional `type/subtype` without parameters |
+| Generated blocks | At most 16 per result, after the text block |
+| Absent optional property or empty array | Contributes no block |
+| No block, an invalid value, or more than 16 blocks | The unchanged structured result and full JSON text fallback |
+
+The fallback is atomic and is not an error result. A capability without a
+recognized form returns exactly what earlier versions returned. The adapter
+does not serve linked URIs through `resources/read` and produces no embedded
+resources or content annotations. Follow the
+[rich content recipe](/recipes/mcp-rich-content/) for Zod 4 authoring.
 
 ## `serveMcpStdio`
 

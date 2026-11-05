@@ -16,6 +16,12 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import {
+  createMcpToolResult,
+  type McpToolCallResult,
+  type McpToolContentPlan,
+  planMcpToolContent,
+} from "./tool-content.js";
 import { toMcpToolName } from "./tool-name.js";
 
 interface McpServerOptions {
@@ -123,6 +129,10 @@ export interface McpToolCatalog<Capabilities extends CapabilityMap> {
   capabilityIdForToolName(
     toolName: string,
   ): Extract<keyof Capabilities, string> | undefined;
+  toolResult(
+    capabilityId: string,
+    output: Readonly<Record<string, unknown>>,
+  ): McpToolCallResult;
 }
 
 export class McpToolNameCollisionError extends TypeError {
@@ -149,6 +159,7 @@ export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
 ): McpToolCatalog<Capabilities> {
   type CapabilityId = Extract<keyof Capabilities, string>;
   const capabilityIdByToolName = new Map<string, CapabilityId>();
+  const contentPlanByCapabilityId = new Map<string, McpToolContentPlan>();
   const tools = engine.list().map((summary) => {
     const capabilityId = summary.id as CapabilityId;
     const toolName = toMcpToolName(capabilityId);
@@ -170,6 +181,10 @@ export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
     capabilityIdByToolName.set(toolName, capabilityId);
 
     const description = engine.describe(capabilityId);
+    contentPlanByCapabilityId.set(
+      capabilityId,
+      planMcpToolContent(description.outputSchema),
+    );
     const annotations = mapAnnotations(description.annotations);
     return Object.freeze({
       name: toolName,
@@ -186,6 +201,14 @@ export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
     tools: frozenTools,
     capabilityIdForToolName: (toolName: string) =>
       capabilityIdByToolName.get(toolName),
+    toolResult: (
+      capabilityId: string,
+      output: Readonly<Record<string, unknown>>,
+    ) =>
+      createMcpToolResult(
+        contentPlanByCapabilityId.get(capabilityId) ?? [],
+        output,
+      ),
   });
 }
 
@@ -231,16 +254,10 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
               : AbortSignal.any([extra.signal, options.requestSignal]),
         },
       );
-      const structuredContent = result as Readonly<Record<string, unknown>>;
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(structuredContent),
-          },
-        ],
-        structuredContent,
-      };
+      return catalog.toolResult(
+        capabilityId,
+        result as Readonly<Record<string, unknown>>,
+      );
     } catch (error) {
       return errorResult(error);
     }

@@ -214,6 +214,21 @@ profiles that include MCP MUST run the same catalog construction as a build-time
 preflight from their canonical check, without starting an adapter or invoking a
 capability.
 
+Rich tool result content is derived from the output contract (ADR 0044). While
+building the catalog shared by stdio and HTTP, the adapter plans each tool from
+the top-level properties of its output JSON Schema: a base64 string whose
+`contentMediaType` is an allowlisted image or audio type, a media object with an
+enumerated allowlisted `mimeType` and one base64 property, or a resource-link
+object of `uri`, `name`, and optional `mimeType`, directly or as array items.
+Each valid value becomes an `image`, `audio`, or `resource_link` block after the
+JSON text block, which then omits the base64 values those blocks carry.
+`structuredContent` MUST remain the complete validated output. Presentation is
+atomic and bounded to 16 generated blocks: when no planned value is present, a
+planned value is invalid, or the limit would be exceeded, the adapter MUST
+return the unchanged structured result and full JSON text fallback. A
+capability without a recognized form is presented byte for byte as before; the
+core and its contracts gain no MCP concept.
+
 **AE-MCP-02 — Isolated SDK.** `@invokta/mcp` encapsulates the official SDK and
 MUST NOT leak its types through the public API or copy it into the core. The
 baseline revision is `2025-11-25`; the approved version is recorded in ADR 0006
