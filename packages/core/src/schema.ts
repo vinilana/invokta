@@ -1,11 +1,10 @@
-import { types as nodeUtilTypes } from "node:util";
-
 import type {
   StandardJSONSchemaV1,
   StandardSchemaV1,
 } from "@standard-schema/spec";
 
 import { EngineError, type EngineErrorCode } from "./error.js";
+import { hostTypeIntrospection, isProxy } from "./host-types.js";
 
 export interface EngineSchema<Input = unknown, Output = Input> {
   readonly "~standard": StandardSchemaV1.Props<Input, Output> &
@@ -69,7 +68,7 @@ function assertJsonValue(
       rejectNonJsonValue();
   }
 
-  if (nodeUtilTypes.isProxy(value)) rejectNonJsonValue();
+  if (isProxy(value)) rejectNonJsonValue();
   if (ancestors.has(value)) rejectNonJsonValue();
 
   const prototype = Object.getPrototypeOf(value);
@@ -136,19 +135,46 @@ function freezeJsonValue<Value>(value: Value, visited: Set<object>): Value {
   return Object.freeze(value);
 }
 
-function assertLosslessJson(value: unknown, ignoredOwnProperty?: string): void {
+function assertLosslessJsonStructure(
+  value: unknown,
+  ignoredOwnProperty?: string,
+): void {
   assertJsonValue(value, new Set(), ignoredOwnProperty);
   if (JSON.stringify(value) === undefined) rejectNonJsonValue();
 }
 
+/**
+ * Structured-clones a value that passed the structural walk. Without host
+ * introspection a proxy is invisible to that walk, but the HTML
+ * structured-serialize algorithm throws for every proxy in the graph, so the
+ * clone also rejects proxies on any conforming host (ADR 0042). Accessors were
+ * already rejected without being invoked, so the clone reads only data
+ * properties.
+ */
+function cloneLosslessJson<Value>(value: Value): Value {
+  try {
+    return structuredClone(value);
+  } catch {
+    rejectNonJsonValue();
+  }
+}
+
+function assertLosslessJson(value: unknown): void {
+  assertLosslessJsonStructure(value);
+  if (hostTypeIntrospection === "portable") cloneLosslessJson(value);
+}
+
 export function snapshotLosslessJson<Value>(value: Value): Value {
-  assertLosslessJson(value);
-  return freezeJsonValue(structuredClone(value), new Set());
+  assertLosslessJsonStructure(value);
+  return freezeJsonValue(cloneLosslessJson(value), new Set());
 }
 
 function snapshotJsonSchemaDocument(value: unknown): EngineJsonSchema {
-  assertLosslessJson(value, "~standard");
-  return freezeJsonValue(structuredClone(value), new Set()) as EngineJsonSchema;
+  assertLosslessJsonStructure(value, "~standard");
+  return freezeJsonValue(
+    cloneLosslessJson(value),
+    new Set(),
+  ) as EngineJsonSchema;
 }
 
 function assertSafelyJsonSerializable(
@@ -174,7 +200,7 @@ function normalizePath(
   path: unknown,
 ): ReadonlyArray<string | number> | undefined {
   if (path === undefined) return undefined;
-  if (!Array.isArray(path) || nodeUtilTypes.isProxy(path)) {
+  if (!Array.isArray(path) || isProxy(path)) {
     throw new TypeError("A validation issue path must be an array.");
   }
   const normalized: Array<string | number> = [];
@@ -182,7 +208,7 @@ function normalizePath(
     const segment: unknown = path[index];
     let key: unknown = segment;
     if (typeof segment === "object" && segment !== null) {
-      if (nodeUtilTypes.isProxy(segment) || !("key" in segment)) {
+      if (isProxy(segment) || !("key" in segment)) {
         throw new TypeError("A validation path segment is malformed.");
       }
       key = (segment as StandardSchemaV1.PathSegment).key;
@@ -204,7 +230,7 @@ function normalizePath(
 function normalizeIssues(
   issues: unknown,
 ): ReadonlyArray<{ message: string; path?: ReadonlyArray<string | number> }> {
-  if (!Array.isArray(issues) || nodeUtilTypes.isProxy(issues)) {
+  if (!Array.isArray(issues) || isProxy(issues)) {
     throw new TypeError("Validation issues must be an array.");
   }
   const normalized: Array<{
@@ -213,11 +239,7 @@ function normalizeIssues(
   }> = [];
   for (let index = 0; index < issues.length; index += 1) {
     const issue: unknown = issues[index];
-    if (
-      typeof issue !== "object" ||
-      issue === null ||
-      nodeUtilTypes.isProxy(issue)
-    ) {
+    if (typeof issue !== "object" || issue === null || isProxy(issue)) {
       throw new TypeError("A validation issue is malformed.");
     }
     const message = (issue as StandardSchemaV1.Issue).message;
@@ -258,11 +280,7 @@ export async function validateSchema<Schema extends EngineSchema>(
     | undefined;
   let validatedValue: InferSchemaOutput<Schema> | undefined;
   try {
-    if (
-      typeof result !== "object" ||
-      result === null ||
-      nodeUtilTypes.isProxy(result)
-    ) {
+    if (typeof result !== "object" || result === null || isProxy(result)) {
       throw new TypeError("The schema validator returned a malformed result.");
     }
     const validatorResult = result as {
@@ -299,22 +317,18 @@ export function readJsonSchema(
   schema: EngineSchema,
   side: "input" | "output",
 ): EngineJsonSchema {
-  if (nodeUtilTypes.isProxy(schema)) {
+  if (isProxy(schema)) {
     throw new TypeError("A schema contract must not be a proxy.");
   }
   const standard = schema["~standard"];
-  if (
-    typeof standard !== "object" ||
-    standard === null ||
-    nodeUtilTypes.isProxy(standard)
-  ) {
+  if (typeof standard !== "object" || standard === null || isProxy(standard)) {
     throw new TypeError("A schema contract is malformed.");
   }
   const jsonSchema = readDataProperty(standard, "jsonSchema");
   if (
     typeof jsonSchema !== "object" ||
     jsonSchema === null ||
-    nodeUtilTypes.isProxy(jsonSchema)
+    isProxy(jsonSchema)
   ) {
     throw new TypeError("A JSON Schema contract is malformed.");
   }
@@ -331,7 +345,7 @@ export function readJsonSchema(
 function readDataProperty(value: object, key: PropertyKey): unknown {
   let current: object | null = value;
   while (current !== null) {
-    if (nodeUtilTypes.isProxy(current)) {
+    if (isProxy(current)) {
       throw new TypeError("A schema contract must not contain a proxy.");
     }
     const descriptor = Object.getOwnPropertyDescriptor(current, key);

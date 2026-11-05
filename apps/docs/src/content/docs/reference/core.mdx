@@ -19,7 +19,12 @@ yarn add @invokta/core zod
 ```
 
 Zod 4 is used by the examples, but it is not part of the core contract. The
-package is native ESM and requires Node.js 22.20.0 or later.
+package is native ESM and is verified on Node.js 22.20.0 or later. It imports no
+Node.js built-in module and uses only ECMAScript and Web platform APIs, so it
+also runs on Fetch runtimes such as Deno, Bun, and Cloudflare Workers by design.
+On Node.js it requires `process.getBuiltinModule`, which Node.js 22.3 and
+later provide, and refuses to load without it. On other hosts without it, proxy
+recognition uses the portable fallback of ADR 0042.
 
 ## API
 

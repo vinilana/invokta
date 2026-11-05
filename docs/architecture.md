@@ -36,6 +36,17 @@ authoring boundary.
 connector directly. All inbound adapters use `engine.invoke`. Authentication
 produces a `Principal`; authorization remains inside `invoke`.
 
+**AE-ARCH-04 — Runtime portability.** The core MUST NOT import a Node.js
+built-in module; it uses only ECMAScript and Web platform globals, and an
+architecture test enforces the import rule. The core reads `util.types` once
+through `process.getBuiltinModule` where the host provides it (Node.js, Deno,
+Bun) to recognize proxies and promises without running user code. A process
+that identifies as Node.js but cannot resolve it MUST fail to load the core.
+Other hosts use the documented fallback of ADR 0042: JSON values still reject
+proxies through structured cloning, while other defensive boundaries may
+invoke proxy traps. `@invokta/mcp/web` MUST NOT load a Node.js built-in module. Node.js is
+the runtime verified by tests; Fetch runtimes are supported by design.
+
 ## Outbound connectors
 
 **AE-CONNECTOR-01 — Construction.** A custom engine owns each outbound port and
@@ -131,7 +142,7 @@ runtime becomes `CANCELLED`. A thrown `EngineError` is preserved only when its
 own `code` and `message` data properties form a stable public error. A proxy,
 accessor-backed property, missing message, or code outside the first seven codes
 of the taxonomy is treated as an unknown error without invoking the unsafe
-property.
+property; proxy recognition depends on host introspection (AE-ARCH-04).
 
 **AE-ERR-02 — Declared domain errors.** Only the runtime issues `DOMAIN_ERROR`.
 When `run` rejects with a `CapabilityError` created by the core's constructor,
@@ -159,11 +170,13 @@ boundary and always produce a sanitized `UNAUTHENTICATED` error. Failures while
 reading `signal` or setting up caller-signal state always produce a sanitized
 `EXECUTION_FAILED` error. An `EngineError` thrown by either caller-controlled
 boundary cannot select its public code, message, or details. `InvokeOptions.signal`
-must be a platform-branded `AbortSignal` from the supported runtime. The runtime
-rejects proxies without invoking their traps, then checks the platform brand with
-a captured intrinsic before it invokes any signal method. Structural, polyfilled,
+must be a platform-branded `AbortSignal` from the supported runtime. Where the
+host provides trap-free introspection (AE-ARCH-04), the runtime rejects proxies
+without invoking their traps; it then checks the platform brand with a captured
+intrinsic before it invokes any signal method. Structural, polyfilled,
 or proxy substitutes fail as `EXECUTION_FAILED` without executing their accessors,
-traps, or listener methods. Captured platform intrinsics also bypass hostile
+traps, or listener methods. Without that introspection, a forwarding proxy may
+pass a brand check that reads properties through `[[Get]]`, and its traps run. Captured platform intrinsics also bypass hostile
 own-property overrides. Authorization receives a runtime-owned, no-timeout signal
 view, while execution retains the caller signal identity when no timeout is
 configured. The capability timeout still starts only after authorization
@@ -299,6 +312,21 @@ interruptible teardown for a non-reading Windows peer.
 mount path, `/mcp` by default; each request is independent. The default bind address is `127.0.0.1`. `Host` and `Origin` MUST be
 validated. Unauthenticated mode requires an explicit development option whose
 name communicates the risk.
+
+One protocol implementation enforces this boundary for two host adapters
+(ADR 0042): `serveMcpHttp` owns a `node:http` listener, and
+`createMcpHttpHandler`, also exported by the portable `@invokta/mcp/web` entry
+point, serves a Fetch `Request` and returns a `Response`. The rules below apply
+to both. A Fetch host cannot reveal repeated raw header fields or an
+unnormalized request target, so the handler requires every authority it can
+observe, the `Host` header and the URL authority, to be allowed; it defaults to
+the loopback host names; it treats any comma in `Host`, and a comma outside a
+quoted string in `Content-Type`, as a repeated field; and it routes the host's
+normalized path, still rejecting a query, a fragment, and percent encoding. A
+merged `Authorization` value reaches the authenticator as one value. The
+handler cancels the request body stream when it stops reading, including when
+`request.signal` aborts, sets no hop-by-hop header, and leaves connections and
+shutdown to the host; `request.signal` is the request cancellation signal.
 
 The protocol endpoint accepts only `POST`. Each accepted POST creates a new MCP
 server and a new transport with sessions, resumption, event storage, and

@@ -158,6 +158,10 @@ exposing the endpoint beyond loopback. It covers bearer verification,
 protected-resource metadata, Host and Origin checks, trusted proxy behavior,
 and authentication-hook limits.
 
+To serve the same endpoint from a server or runtime you already operate, mount
+`createMcpHttpHandler` from `@invokta/mcp/web` as described in the
+[Web-standard runtimes guide](/guides/web-standard-runtimes/).
+
 ## What stays consistent
 
 | Concern | Owner |

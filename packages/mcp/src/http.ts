@@ -1,72 +1,40 @@
-import { createServer } from "node:http";
+/**
+ * The Node.js listener for stateless MCP Streamable HTTP. It owns only the
+ * `node:http` server, the connection, and the raw facts Node.js exposes; every
+ * protocol decision belongs to the shared boundary in `http-protocol.ts`.
+ */
+import {
+  createServer,
+  type IncomingHttpHeaders,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import type { AddressInfo } from "node:net";
 
-import type { CapabilityMap, Engine, Principal } from "@invokta/core";
-import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
-import type { WebStandardStreamableHTTPServerTransportOptions } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { OAuthProtectedResourceMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { CapabilityMap, Engine } from "@invokta/core";
 
-import { createMcpServer, createMcpToolCatalog } from "./protocol-server.js";
-import { preserveFalsyRequestIds } from "./request-id-transport.js";
+import {
+  createMcpHttpProtocol,
+  internalFailure,
+  type McpHttpHandlerOptions,
+  type McpHttpProtocol,
+  type McpHttpProtocolResult,
+} from "./http-protocol.js";
+
+export type {
+  McpHttpAuthenticationRequest,
+  McpHttpAuthOptions,
+  McpHttpHandlerOptions,
+  McpHttpHeaderView,
+  McpHttpProtectedResourceMetadata,
+} from "./http-protocol.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
-const DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
-const MAX_CHALLENGE_SCOPE_BYTES = 4096;
-const DEFAULT_MCP_PATH = "/mcp";
-const MAX_MCP_PATH_BYTES = 256;
-const MCP_PATH_SEGMENT = /^[A-Za-z0-9._~-]+$/u;
 
-export interface McpHttpHeaderView {
-  readonly get: (name: string) => string | null;
-  readonly has: (name: string) => boolean;
-}
-
-export interface McpHttpAuthenticationRequest {
-  readonly path: string;
-  readonly method: string;
-  readonly headers: McpHttpHeaderView;
-  readonly signal: AbortSignal;
-}
-
-export interface McpHttpProtectedResourceMetadata {
-  readonly resource: string;
-  readonly authorizationServers: readonly [string, ...string[]];
-  readonly scopesSupported?: ReadonlyArray<string>;
-}
-
-interface RequiredMcpHttpAuth {
-  readonly mode: "required";
-  readonly authenticate: (
-    request: McpHttpAuthenticationRequest,
-  ) => Principal | null | Promise<Principal | null>;
-  readonly challengeScopes?: ReadonlyArray<string>;
-  readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
-}
-
-interface DangerouslyDisabledMcpHttpAuth {
-  readonly mode: "dangerously-disabled-for-development";
-}
-
-export type McpHttpAuthOptions =
-  | RequiredMcpHttpAuth
-  | DangerouslyDisabledMcpHttpAuth;
-
-export interface ServeMcpHttpOptions {
+export interface ServeMcpHttpOptions extends McpHttpHandlerOptions {
   readonly host?: string;
   readonly port?: number;
-  /**
-   * The canonical request path that reaches protocol dispatch. Defaults to
-   * `/mcp`. A configured value must be an absolute path of unreserved ASCII
-   * segments ending in `/mcp`, so several engines can share one origin while
-   * every mount keeps the canonical MCP route visible.
-   */
-  readonly path?: string;
-  readonly allowedHosts?: ReadonlyArray<string>;
-  readonly allowedOrigins?: ReadonlyArray<string>;
-  readonly maxRequestBodyBytes?: number;
-  readonly auth: McpHttpAuthOptions;
 }
 
 export interface McpHttpServerAddress {
@@ -79,451 +47,7 @@ export interface McpHttpServerHandle {
   close(): Promise<void>;
 }
 
-interface HttpResponse {
-  readonly status: number;
-  readonly headers?: Readonly<Record<string, string>>;
-  readonly body?: unknown;
-}
-
-interface RequiredMcpHttpAuthSnapshot {
-  readonly mode: "required";
-  readonly authenticate: RequiredMcpHttpAuth["authenticate"];
-  readonly challengeScopes?: ReadonlyArray<string>;
-  readonly resourceMetadata?: McpHttpProtectedResourceMetadata;
-}
-
-interface DangerouslyDisabledMcpHttpAuthSnapshot {
-  readonly mode: "dangerously-disabled-for-development";
-}
-
-type McpHttpAuthSnapshot =
-  | RequiredMcpHttpAuthSnapshot
-  | DangerouslyDisabledMcpHttpAuthSnapshot;
-
-function snapshotChallengeScopes(
-  value: ReadonlyArray<string> | undefined,
-  hasResourceMetadata: boolean,
-): ReadonlyArray<string> | undefined {
-  if (value === undefined) return undefined;
-  if (!hasResourceMetadata) {
-    throw new TypeError("auth.challengeScopes requires auth.resourceMetadata.");
-  }
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new TypeError(
-      "auth.challengeScopes must contain at least one scope token.",
-    );
-  }
-  const scopes: string[] = [];
-  const seen = new Set<string>();
-  let serializedBytes = 0;
-  for (const scope of value) {
-    if (
-      typeof scope !== "string" ||
-      !/^[\x21\x23-\x5b\x5d-\x7e]+$/u.test(scope)
-    ) {
-      throw new TypeError(
-        "auth.challengeScopes must contain only RFC 6749 scope tokens.",
-      );
-    }
-    if (seen.has(scope)) {
-      throw new TypeError("auth.challengeScopes must not contain duplicates.");
-    }
-    seen.add(scope);
-    serializedBytes += Buffer.byteLength(scope) + (scopes.length === 0 ? 0 : 1);
-    if (serializedBytes > MAX_CHALLENGE_SCOPE_BYTES) {
-      throw new TypeError(
-        `auth.challengeScopes must serialize to at most ${MAX_CHALLENGE_SCOPE_BYTES} bytes.`,
-      );
-    }
-    scopes.push(scope);
-  }
-  return Object.freeze(scopes);
-}
-
-function snapshotAuthOptions(value: McpHttpAuthOptions): McpHttpAuthSnapshot {
-  if (value === null || typeof value !== "object") {
-    throw new TypeError(
-      'auth.mode must be either "required" or "dangerously-disabled-for-development".',
-    );
-  }
-  if (value.mode === "required") {
-    if (typeof value.authenticate !== "function") {
-      throw new TypeError(
-        "auth.authenticate must be a function when auth.mode is required.",
-      );
-    }
-    const challengeScopes = snapshotChallengeScopes(
-      value.challengeScopes,
-      value.resourceMetadata !== undefined,
-    );
-    return Object.freeze({
-      mode: "required",
-      authenticate: value.authenticate,
-      ...(challengeScopes === undefined ? {} : { challengeScopes }),
-      ...(value.resourceMetadata === undefined
-        ? {}
-        : { resourceMetadata: value.resourceMetadata }),
-    });
-  }
-  if (value.mode === "dangerously-disabled-for-development") {
-    return Object.freeze({ mode: value.mode });
-  }
-  throw new TypeError(
-    'auth.mode must be either "required" or "dangerously-disabled-for-development".',
-  );
-}
-
-function bearerChallenge(
-  metadataUrl: string | undefined,
-  challengeScopes: ReadonlyArray<string> | undefined,
-): string {
-  if (metadataUrl === undefined) return "Bearer";
-  const resourceMetadata = `resource_metadata="${metadataUrl}"`;
-  return challengeScopes === undefined
-    ? `Bearer ${resourceMetadata}`
-    : `Bearer ${resourceMetadata}, scope="${challengeScopes.join(" ")}"`;
-}
-
-function normalizeHostname(authority: string): string | null {
-  if (authority.toLowerCase() === "::1") return "[::1]";
-  try {
-    const parsed = new URL(`http://${authority}`);
-    if (
-      parsed.username !== "" ||
-      parsed.password !== "" ||
-      parsed.pathname !== "/" ||
-      parsed.search !== "" ||
-      parsed.hash !== ""
-    ) {
-      return null;
-    }
-    return parsed.hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
-function normalizeRequestHostname(authority: string): string | null {
-  if (!authority.startsWith("[") && authority.split(":").length > 2) {
-    return null;
-  }
-  return normalizeHostname(authority);
-}
-
-function isLoopback(host: string): boolean {
-  const normalized = normalizeHostname(host);
-  return (
-    normalized === "127.0.0.1" ||
-    normalized === "localhost" ||
-    normalized === "[::1]"
-  );
-}
-
-/**
- * The loopback form OAuth metadata may use. The MCP client trusts only the
- * literal loopback hosts (RFC 8252 prefers them over `localhost`), so the
- * published document must not be broader than what the client will accept.
- */
-function isLiteralLoopback(host: string): boolean {
-  const normalized = normalizeHostname(host);
-  return normalized === "127.0.0.1" || normalized === "[::1]";
-}
-
-function normalizedAllowedHosts(
-  bindHost: string,
-  configured: ReadonlyArray<string> | undefined,
-): ReadonlySet<string> {
-  if (configured === undefined && !isLoopback(bindHost)) {
-    throw new TypeError(
-      "allowedHosts is required when the MCP HTTP server binds to a non-loopback host.",
-    );
-  }
-  const candidates = configured ?? [
-    "127.0.0.1",
-    "localhost",
-    "[::1]",
-    bindHost,
-  ];
-  const hosts = new Set<string>();
-  for (const candidate of candidates) {
-    const normalized = normalizeHostname(candidate);
-    if (normalized === null) {
-      throw new TypeError(`Invalid allowed host: ${candidate}`);
-    }
-    hosts.add(normalized);
-  }
-  if (hosts.size === 0) {
-    throw new TypeError("allowedHosts must contain at least one host.");
-  }
-  return hosts;
-}
-
-function normalizedAllowedOrigins(
-  configured: ReadonlyArray<string> | undefined,
-): ReadonlySet<string> | undefined {
-  if (configured === undefined) return undefined;
-  const origins = new Set<string>();
-  for (const candidate of configured) {
-    const origin = normalizeOrigin(candidate);
-    if (origin === null) {
-      throw new TypeError(`Invalid allowed origin: ${candidate}`);
-    }
-    origins.add(origin);
-  }
-  if (origins.size === 0) {
-    throw new TypeError("allowedOrigins must contain at least one origin.");
-  }
-  return origins;
-}
-
-/**
- * Validates a mount path once, before listening. The rule is deliberately
- * narrower than URL syntax: unreserved ASCII segments only, no dot segments,
- * no percent encoding, no empty segment, no trailing slash, a bounded size,
- * and a final `mcp` segment. `parseRequestPath` rejects every alias of such
- * a path at request time, so the two checks agree on the single accepted
- * spelling.
- */
-function normalizeMountPath(value: string | undefined): string {
-  if (value === undefined) return DEFAULT_MCP_PATH;
-  const invalid = (): TypeError =>
-    new TypeError(
-      `path must be an absolute path of unreserved ASCII segments ending in ${DEFAULT_MCP_PATH}, without dot segments, percent encoding, query, fragment, or trailing slash, and at most ${String(MAX_MCP_PATH_BYTES)} bytes.`,
-    );
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.length > MAX_MCP_PATH_BYTES ||
-    !value.startsWith("/")
-  ) {
-    throw invalid();
-  }
-  const segments = value.slice(1).split("/");
-  for (const segment of segments) {
-    if (
-      !MCP_PATH_SEGMENT.test(segment) ||
-      segment === "." ||
-      segment === ".."
-    ) {
-      throw invalid();
-    }
-  }
-  if (segments[segments.length - 1] !== "mcp") throw invalid();
-  return value;
-}
-
-function toMetadata(
-  metadata: McpHttpProtectedResourceMetadata,
-  mountPath: string,
-) {
-  if (metadata.authorizationServers.length === 0) {
-    throw new TypeError(
-      "Protected resource metadata requires at least one authorization server.",
-    );
-  }
-  const urls = [metadata.resource, ...metadata.authorizationServers];
-  if (urls.some(hasUnsafeUrlCharacter)) {
-    throw new TypeError("Protected resource metadata contains an unsafe URL.");
-  }
-  validateResourceUrl(metadata.resource, mountPath);
-  for (const authorizationServer of metadata.authorizationServers) {
-    validateAuthorizationServerUrl(authorizationServer, metadata.resource);
-  }
-  const value = {
-    resource: metadata.resource,
-    authorization_servers: [...metadata.authorizationServers],
-    ...(metadata.scopesSupported === undefined
-      ? {}
-      : { scopes_supported: [...metadata.scopesSupported] }),
-  };
-  return OAuthProtectedResourceMetadataSchema.parse(value);
-}
-
-function validateResourceUrl(value: string, mountPath: string): void {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new TypeError(
-      "Protected resource metadata has an invalid resource URL.",
-    );
-  }
-  const secure = url.protocol === "https:";
-  const loopbackDevelopment =
-    url.protocol === "http:" && isLiteralLoopback(url.hostname);
-  if (
-    (!secure && !loopbackDevelopment) ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.pathname !== mountPath ||
-    url.search !== "" ||
-    url.hash !== ""
-  ) {
-    throw new TypeError(
-      `Protected resource metadata requires an HTTPS resource URL whose path is exactly the configured MCP path (${mountPath}), except for literal-loopback (127.0.0.1 or [::1]) HTTP development.`,
-    );
-  }
-}
-
-function validateAuthorizationServerUrl(value: string, resource: string): void {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new TypeError(
-      "Protected resource metadata has an invalid authorization server URL.",
-    );
-  }
-  // A loopback resource may advertise any loopback authorization server, not
-  // only one sharing its origin: a local identity provider normally runs as a
-  // separate process on its own port. Both ends stay on the developer's
-  // machine, so the trust boundary does not move, and a deployed HTTPS
-  // resource still cannot advertise plain HTTP at all.
-  const resourceUrl = new URL(resource);
-  const loopbackDevelopment =
-    url.protocol === "http:" &&
-    isLiteralLoopback(url.hostname) &&
-    resourceUrl.protocol === "http:" &&
-    isLiteralLoopback(resourceUrl.hostname);
-  if (
-    (url.protocol !== "https:" && !loopbackDevelopment) ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.search !== "" ||
-    url.hash !== ""
-  ) {
-    throw new TypeError(
-      "Authorization server URLs require HTTPS, except on literal loopback behind a literal-loopback HTTP resource, and cannot contain credentials, a query, or a fragment.",
-    );
-  }
-}
-
-function hasUnsafeUrlCharacter(value: string): boolean {
-  for (const character of value) {
-    const code = character.charCodeAt(0);
-    if (
-      character === '"' ||
-      character === "\\" ||
-      code <= 0x1f ||
-      code === 0x7f
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function send(
-  response: import("node:http").ServerResponse,
-  value: HttpResponse,
-) {
-  const body =
-    value.body === undefined ? undefined : JSON.stringify(value.body);
-  response.writeHead(value.status, {
-    ...(body === undefined ? {} : { "content-type": "application/json" }),
-    ...value.headers,
-  });
-  response.end(body);
-}
-
-function sendBeforeBodyConsumption(
-  request: import("node:http").IncomingMessage,
-  response: import("node:http").ServerResponse,
-  value: HttpResponse,
-): void {
-  response.shouldKeepAlive = false;
-  request.once("error", () => undefined);
-  request.resume();
-  response.once("finish", () => {
-    if (!request.complete && !request.destroyed) request.destroy();
-  });
-  send(response, {
-    ...value,
-    headers: { ...value.headers, connection: "close" },
-  });
-}
-
-function requestUrl(hostHeader: string, path: string): string {
-  return new URL(path, `http://${hostHeader}`).href;
-}
-
-function normalizeOrigin(value: string): string | null {
-  try {
-    const url = new URL(value);
-    if (
-      (url.protocol !== "http:" && url.protocol !== "https:") ||
-      url.origin === "null" ||
-      url.username !== "" ||
-      url.password !== "" ||
-      url.pathname !== "/" ||
-      url.search !== "" ||
-      url.hash !== ""
-    ) {
-      return null;
-    }
-    return url.origin;
-  } catch {
-    return null;
-  }
-}
-
-function parseRequestPath(target: string): string | null {
-  if (
-    !target.startsWith("/") ||
-    target.startsWith("//") ||
-    target.includes("%")
-  ) {
-    return null;
-  }
-  try {
-    const parsed = new URL(target, "http://request.invalid");
-    if (
-      parsed.search !== "" ||
-      parsed.hash !== "" ||
-      target !== parsed.pathname
-    ) {
-      return null;
-    }
-    return parsed.pathname;
-  } catch {
-    return null;
-  }
-}
-
-function acceptableMediaType(
-  value: string | undefined,
-  expected: string,
-): boolean {
-  if (value === undefined) return false;
-  return value.split(",").some((range) => {
-    const [mediaType, ...parameters] = range.split(";");
-    if (mediaType?.trim().toLowerCase() !== expected) return false;
-    let quality = 1;
-    let sawQuality = false;
-    for (const parameter of parameters) {
-      const separator = parameter.indexOf("=");
-      if (separator === -1) continue;
-      const name = parameter.slice(0, separator).trim().toLowerCase();
-      if (name !== "q") continue;
-      if (sawQuality) return false;
-      sawQuality = true;
-      const rawQuality = parameter.slice(separator + 1).trim();
-      if (!/^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/u.test(rawQuality)) {
-        return false;
-      }
-      quality = Number(rawQuality);
-    }
-    return quality > 0;
-  });
-}
-
-function exactContentType(value: string | undefined): boolean {
-  return value?.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
-}
-
-function toWebHeaders(
-  headers: import("node:http").IncomingHttpHeaders,
-): Headers {
+function toWebHeaders(headers: IncomingHttpHeaders): Headers {
   const result = new Headers();
   for (const [name, value] of Object.entries(headers)) {
     if (Array.isArray(value)) {
@@ -533,16 +57,6 @@ function toWebHeaders(
     }
   }
   return result;
-}
-
-function toHeaderView(
-  headers: import("node:http").IncomingHttpHeaders,
-): McpHttpHeaderView {
-  const values = toWebHeaders(headers);
-  return Object.freeze({
-    get: (name: string) => values.get(name),
-    has: (name: string) => values.has(name),
-  });
 }
 
 function rawHeaderCount(
@@ -556,161 +70,129 @@ function rawHeaderCount(
   return count;
 }
 
-function snapshotPrincipal(value: Principal | null): Principal | null {
-  if (value === null || typeof value !== "object") return null;
-  let snapshot: unknown;
-  try {
-    snapshot = structuredClone(value);
-  } catch {
-    return null;
+/**
+ * Exposes the request body as a pull-based byte stream. Nothing is read until
+ * the boundary asks for a chunk, the request is paused after every chunk, and
+ * cancellation detaches the listeners, so at most one chunk is ever buffered
+ * here. A disconnect, including one that happened before the first read,
+ * errors the stream so body handling always settles.
+ */
+function requestBody(request: IncomingMessage): ReadableStream<Uint8Array> {
+  let listening = false;
+  let settled = false;
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const detach = (): void => {
+    request.off("data", onData);
+    request.off("end", onEnd);
+    request.off("error", onError);
+    request.off("aborted", onAborted);
+  };
+  function onData(chunk: Buffer | string): void {
+    if (settled) return;
+    request.pause();
+    controller.enqueue(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
-  if (
-    snapshot === null ||
-    typeof snapshot !== "object" ||
-    typeof (snapshot as { readonly id?: unknown }).id !== "string" ||
-    (snapshot as { readonly id: string }).id.length === 0
-  ) {
-    return null;
+  function onEnd(): void {
+    if (settled) return;
+    settled = true;
+    detach();
+    controller.close();
   }
-  const attributes = (snapshot as { readonly attributes?: unknown }).attributes;
-  if (
-    attributes !== undefined &&
-    (attributes === null ||
-      typeof attributes !== "object" ||
-      Array.isArray(attributes) ||
-      (Object.getPrototypeOf(attributes) !== Object.prototype &&
-        Object.getPrototypeOf(attributes) !== null))
-  ) {
-    return null;
+  function onError(error: Error): void {
+    if (settled) return;
+    settled = true;
+    detach();
+    controller.error(error);
   }
-  return snapshot as Principal;
-}
-
-type BodyReadResult =
-  | { readonly status: "ok"; readonly body: string }
-  | { readonly status: "payload-too-large" }
-  | { readonly status: "invalid-utf8" };
-
-async function readBody(
-  request: import("node:http").IncomingMessage,
-  maxBytes: number,
-): Promise<BodyReadResult> {
-  return new Promise((resolve, reject) => {
-    const decoder = new TextDecoder("utf-8", { fatal: true });
-    const chunks: string[] = [];
-    let total = 0;
-    let settled = false;
-    const cleanup = (): void => {
-      request.off("data", onData);
-      request.off("end", onEnd);
-      request.off("error", onError);
-      request.off("aborted", onAborted);
-    };
-    const onData = (chunk: Buffer | string): void => {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      total += buffer.byteLength;
-      if (total > maxBytes) {
-        settled = true;
-        cleanup();
-        request.once("error", () => undefined);
+  function onAborted(): void {
+    onError(new Error("Request aborted."));
+  }
+  return new ReadableStream<Uint8Array>(
+    {
+      start(streamController) {
+        controller = streamController;
+      },
+      pull() {
+        if (!listening) {
+          listening = true;
+          if (request.aborted || request.destroyed) {
+            onAborted();
+            return;
+          }
+          request.on("data", onData);
+          request.once("end", onEnd);
+          request.once("error", onError);
+          request.once("aborted", onAborted);
+          if (request.aborted || request.destroyed) {
+            onAborted();
+            return;
+          }
+          if (request.readableEnded) {
+            onEnd();
+            return;
+          }
+        }
         request.resume();
-        resolve({ status: "payload-too-large" });
-        return;
-      }
-      try {
-        const decoded = decoder.decode(buffer, { stream: true });
-        if (decoded.length > 0) chunks.push(decoded);
-      } catch {
+      },
+      cancel() {
         settled = true;
-        cleanup();
-        request.once("error", () => undefined);
-        request.resume();
-        resolve({ status: "invalid-utf8" });
-      }
-    };
-    const onEnd = (): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      try {
-        const decoded = decoder.decode();
-        if (decoded.length > 0) chunks.push(decoded);
-        resolve({ status: "ok", body: chunks.join("") });
-      } catch {
-        resolve({ status: "invalid-utf8" });
-      }
-    };
-    const onError = (error: Error): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-    const onAborted = (): void => onError(new Error("Request aborted."));
-    if (request.aborted || request.destroyed) {
-      onAborted();
-      return;
-    }
-    request.on("data", onData);
-    request.once("end", onEnd);
-    request.once("error", onError);
-    request.once("aborted", onAborted);
-    if (request.aborted || request.destroyed) {
-      onAborted();
-    } else if (request.readableEnded) {
-      onEnd();
-    }
-  });
-}
-
-function declaredBodyExceedsLimit(
-  request: import("node:http").IncomingMessage,
-  maxBytes: number,
-): boolean {
-  const value = request.headers["content-length"];
-  if (value === undefined || Array.isArray(value) || !/^\d+$/u.test(value)) {
-    return false;
-  }
-  return BigInt(value) > BigInt(maxBytes);
-}
-
-function sendPayloadTooLarge(
-  request: import("node:http").IncomingMessage,
-  response: import("node:http").ServerResponse,
-): void {
-  sendBeforeBodyConsumption(request, response, {
-    status: 413,
-    body: { error: "payload_too_large" },
-  });
-}
-
-function sendProtocolError(
-  response: import("node:http").ServerResponse,
-  status: number,
-  code: number,
-  message: string,
-): void {
-  send(response, {
-    status,
-    body: {
-      jsonrpc: "2.0",
-      error: { code, message },
-      id: null,
+        detach();
+      },
     },
-  });
+    { highWaterMark: 0 },
+  );
 }
 
-async function writeWebResponse(
-  target: import("node:http").ServerResponse,
-  source: Response,
+/**
+ * Writes the boundary's response. A response produced before the body was
+ * consumed advertises connection closure, drains what is available, and
+ * closes an incomplete request once the response is flushed.
+ */
+async function writeResponse(
+  request: IncomingMessage,
+  response: ServerResponse,
+  result: McpHttpProtocolResult,
 ): Promise<void> {
   const headers: Record<string, string> = {};
-  source.headers.forEach((value, key) => {
+  result.response.headers.forEach((value, key) => {
     headers[key] = value;
   });
-  const body = Buffer.from(await source.arrayBuffer());
-  target.writeHead(source.status, headers);
-  target.end(body);
+  const body = Buffer.from(await result.response.arrayBuffer());
+  if (response.headersSent || response.destroyed) return;
+  if (result.bodyUnconsumed) {
+    response.shouldKeepAlive = false;
+    request.once("error", () => undefined);
+    request.resume();
+    response.once("finish", () => {
+      if (!request.complete && !request.destroyed) request.destroy();
+    });
+    headers.connection = "close";
+  }
+  response.writeHead(result.response.status, headers);
+  response.end(body);
+}
+
+async function serveRequest(
+  handle: McpHttpProtocol,
+  request: IncomingMessage,
+  response: ServerResponse,
+  abortController: AbortController,
+): Promise<void> {
+  const hostHeader = request.headers.host;
+  const result = await handle({
+    method: request.method ?? "GET",
+    target: request.url ?? "/",
+    authorities:
+      rawHeaderCount(request.rawHeaders, "host") === 1 &&
+      hostHeader !== undefined
+        ? [hostHeader]
+        : null,
+    headers: toWebHeaders(request.headers),
+    repeated: (name) => rawHeaderCount(request.rawHeaders, name) > 1,
+    body: requestBody(request),
+    signal: abortController.signal,
+  });
+  await writeResponse(request, response, result);
 }
 
 export async function serveMcpHttp<Capabilities extends CapabilityMap>(
@@ -719,298 +201,26 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
 ): Promise<McpHttpServerHandle> {
   const host = options.host ?? DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
-  const maxRequestBodyBytes =
-    options.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES;
-  if (!Number.isSafeInteger(maxRequestBodyBytes) || maxRequestBodyBytes <= 0) {
-    throw new TypeError("maxRequestBodyBytes must be a positive safe integer.");
-  }
-  const mountPath = normalizeMountPath(options.path);
-  const auth = snapshotAuthOptions(options.auth);
-  const allowedHosts = normalizedAllowedHosts(host, options.allowedHosts);
-  const allowedOrigins = normalizedAllowedOrigins(options.allowedOrigins);
-  const metadata =
-    auth.mode === "required" && auth.resourceMetadata !== undefined
-      ? toMetadata(auth.resourceMetadata, mountPath)
-      : undefined;
-  const metadataUrl =
-    metadata === undefined
-      ? undefined
-      : getOAuthProtectedResourceMetadataUrl(new URL(metadata.resource));
-  const metadataPath =
-    metadataUrl === undefined ? undefined : new URL(metadataUrl).pathname;
-  const toolCatalog = createMcpToolCatalog(engine);
+  const handle = createMcpHttpProtocol(engine, options, host);
   const activeRequests = new Set<AbortController>();
 
   const httpServer = createServer((request, response) => {
-    void (async () => {
-      if (rawHeaderCount(request.rawHeaders, "host") !== 1) {
-        sendBeforeBodyConsumption(request, response, {
-          status: 403,
-          body: { error: "forbidden" },
-        });
-        return;
-      }
-      const hostHeader = request.headers.host;
-      if (hostHeader === undefined) {
-        sendBeforeBodyConsumption(request, response, {
-          status: 403,
-          body: { error: "forbidden" },
-        });
-        return;
-      }
-      const requestHost = normalizeRequestHostname(hostHeader);
-      if (requestHost === null || !allowedHosts.has(requestHost)) {
-        sendBeforeBodyConsumption(request, response, {
-          status: 403,
-          body: { error: "forbidden" },
-        });
-        return;
-      }
-      if (rawHeaderCount(request.rawHeaders, "authorization") > 1) {
-        sendBeforeBodyConsumption(request, response, {
-          status: 400,
-          body: { error: "invalid_authorization_header" },
-        });
-        return;
-      }
-
-      const originHeader = request.headers.origin;
-      if (originHeader !== undefined) {
-        const origin = normalizeOrigin(originHeader);
-        if (origin === null) {
-          sendBeforeBodyConsumption(request, response, {
-            status: 403,
-            body: { error: "forbidden" },
-          });
-          return;
-        }
-        if (allowedOrigins === undefined || !allowedOrigins.has(origin)) {
-          sendBeforeBodyConsumption(request, response, {
-            status: 403,
-            body: { error: "forbidden" },
-          });
-          return;
-        }
-      }
-
-      const requestTarget = request.url ?? "/";
-      const path = parseRequestPath(requestTarget);
-      if (path === null) {
-        sendBeforeBodyConsumption(request, response, {
-          status: 400,
-          body: { error: "invalid_request_target" },
-        });
-        return;
-      }
-      const method = request.method ?? "GET";
-      if (metadata !== undefined && path === metadataPath) {
-        if (request.method !== "GET") {
-          sendBeforeBodyConsumption(request, response, {
-            status: 405,
-            headers: { allow: "GET" },
-            body: { error: "method_not_allowed" },
-          });
-          return;
-        }
-        sendBeforeBodyConsumption(request, response, {
-          status: 200,
-          body: metadata,
-        });
-        return;
-      }
-      if (path !== mountPath) {
-        sendBeforeBodyConsumption(request, response, {
-          status: 404,
-          body: { error: "not_found" },
-        });
-        return;
-      }
-      if (method !== "POST") {
-        sendBeforeBodyConsumption(request, response, {
-          status: 405,
-          headers: { allow: "POST" },
-          body: { error: "method_not_allowed" },
-        });
-        return;
-      }
-      if (declaredBodyExceedsLimit(request, maxRequestBodyBytes)) {
-        sendPayloadTooLarge(request, response);
-        return;
-      }
-
-      const abortController = new AbortController();
-      activeRequests.add(abortController);
-      const forgetRequest = (): void => {
-        activeRequests.delete(abortController);
-      };
-      request.once("aborted", () => abortController.abort());
-      response.once("finish", forgetRequest);
-      response.once("close", () => {
-        forgetRequest();
-        if (!response.writableEnded) abortController.abort();
-      });
-
-      let principal: Principal | null = null;
-      if (auth.mode === "required") {
-        let authenticated: Principal | null;
-        try {
-          authenticated = await auth.authenticate({
-            path,
-            method,
-            headers: toHeaderView(request.headers),
-            signal: abortController.signal,
-          });
-        } catch {
-          sendBeforeBodyConsumption(request, response, {
-            status: 500,
-            body: { error: "authentication_failed" },
-          });
-          return;
-        }
-        const authenticatedSnapshot = snapshotPrincipal(authenticated);
-        if (authenticatedSnapshot === null) {
-          sendBeforeBodyConsumption(request, response, {
-            status: 401,
-            headers: {
-              "www-authenticate": bearerChallenge(
-                metadataUrl,
-                auth.challengeScopes,
-              ),
-            },
-            body: { error: "unauthorized" },
-          });
-          return;
-        }
-        principal = authenticatedSnapshot;
-      }
-
-      const accept = request.headers.accept;
-      if (
-        Array.isArray(accept) ||
-        !acceptableMediaType(accept, "application/json") ||
-        !acceptableMediaType(accept, "text/event-stream")
-      ) {
-        sendBeforeBodyConsumption(request, response, {
-          status: 406,
-          body: {
-            jsonrpc: "2.0",
-            error: {
-              code: -32000,
-              message:
-                "Not Acceptable: Client must accept both application/json and text/event-stream",
-            },
-            id: null,
-          },
-        });
-        return;
-      }
-      const contentType = request.headers["content-type"];
-      if (
-        rawHeaderCount(request.rawHeaders, "content-type") !== 1 ||
-        Array.isArray(contentType) ||
-        !exactContentType(contentType)
-      ) {
-        sendBeforeBodyConsumption(request, response, {
-          status: 415,
-          body: {
-            jsonrpc: "2.0",
-            error: {
-              code: -32000,
-              message:
-                "Unsupported Media Type: Content-Type must be application/json",
-            },
-            id: null,
-          },
-        });
-        return;
-      }
-
-      const protocolServer = createMcpServer(
-        engine,
-        {
-          principal,
-          source: "mcp-http",
-          requestSignal: abortController.signal,
-        },
-        toolCatalog,
-      );
-      const statelessTransportOptions: WebStandardStreamableHTTPServerTransportOptions =
-        {
-          enableJsonResponse: true,
-        };
-      const transport = new WebStandardStreamableHTTPServerTransport(
-        statelessTransportOptions,
-      );
-      let consumedBody = false;
-      try {
-        const bodyResult = await readBody(request, maxRequestBodyBytes);
-        if (bodyResult.status === "payload-too-large") {
-          sendPayloadTooLarge(request, response);
-          return;
-        }
-        if (bodyResult.status === "invalid-utf8") {
-          sendBeforeBodyConsumption(request, response, {
-            status: 400,
-            body: {
-              jsonrpc: "2.0",
-              error: { code: -32700, message: "Parse error: Invalid UTF-8" },
-              id: null,
-            },
-          });
-          return;
-        }
-        consumedBody = true;
-        let parsedBody: unknown;
-        try {
-          parsedBody = JSON.parse(bodyResult.body);
-        } catch {
-          sendProtocolError(response, 400, -32700, "Parse error: Invalid JSON");
-          return;
-        }
-        if (Array.isArray(parsedBody)) {
-          sendProtocolError(
-            response,
-            400,
-            -32600,
-            "Invalid Request: Exactly one JSON-RPC message is required",
-          );
-          return;
-        }
-        const webHeaders = toWebHeaders(request.headers);
-        webHeaders.set("accept", "application/json, text/event-stream");
-        webHeaders.set("content-type", "application/json");
-        const webRequest = new Request(requestUrl(hostHeader, path), {
-          method: "POST",
-          headers: webHeaders,
-          signal: abortController.signal,
-        });
-        await protocolServer.connect(preserveFalsyRequestIds(transport));
-        const webResponse = await transport.handleRequest(webRequest, {
-          parsedBody,
-        });
-        await writeWebResponse(response, webResponse);
-      } catch {
-        if (!response.headersSent && !response.destroyed) {
-          const failure = {
-            status: 500,
-            body: {
-              jsonrpc: "2.0",
-              error: { code: -32603, message: "Internal server error" },
-              id: null,
-            },
-          } as const;
-          if (consumedBody) send(response, failure);
-          else sendBeforeBodyConsumption(request, response, failure);
-        }
-      } finally {
-        await protocolServer.close().catch(() => undefined);
-      }
-    })().catch(() => {
+    const abortController = new AbortController();
+    activeRequests.add(abortController);
+    const forgetRequest = (): void => {
+      activeRequests.delete(abortController);
+    };
+    request.once("aborted", () => abortController.abort());
+    response.once("finish", forgetRequest);
+    response.once("close", () => {
+      forgetRequest();
+      if (!response.writableEnded) abortController.abort();
+    });
+    void serveRequest(handle, request, response, abortController).catch(() => {
       if (!response.headersSent && !response.destroyed) {
-        sendBeforeBodyConsumption(request, response, {
-          status: 500,
-          body: { error: "internal_error" },
-        });
+        void writeResponse(request, response, internalFailure()).catch(() =>
+          response.destroy(),
+        );
       } else if (!response.destroyed) {
         response.destroy();
       }

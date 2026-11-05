@@ -1,6 +1,5 @@
-import { types as nodeUtilTypes } from "node:util";
-
 import { EngineError, type EngineErrorCode } from "./error.js";
+import { isProxy } from "./host-types.js";
 import {
   type EngineJsonSchema,
   type EngineSchema,
@@ -142,7 +141,7 @@ function isPlainRecord(value: unknown): value is object {
     typeof value !== "object" ||
     value === null ||
     Array.isArray(value) ||
-    nodeUtilTypes.isProxy(value)
+    isProxy(value)
   ) {
     return false;
   }

@@ -168,7 +168,8 @@ turning the framework into a service container.
 - `@invokta/cli` provides `list`, `describe`, capability help, and `run` with
   JSON or schema-derived flags through `engine.invoke`.
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure,
-  stateless Streamable HTTP.
+  stateless Streamable HTTP, from its own Node.js listener or a Web-standard
+  `Request` handler for servers and Fetch runtimes you operate.
 - `@invokta/auth-jwt` optionally verifies one issuer's JWT bearer access
   tokens as the MCP HTTP authentication hook.
 - `@invokta/tooling` validates composed capabilities and final MCP tool names.

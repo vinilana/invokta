@@ -120,6 +120,12 @@ claim names.
    disallowed-algorithm, unknown-key, or bad-signature credential. The adapter
    answers 401 and never says which check failed.
 
+   It accepts exactly one `Bearer <token>` credential. `serveMcpHttp` rejects
+   repeated raw `Authorization` headers before the hook runs. A Fetch host
+   behind `createMcpHttpHandler` joins them into one value such as
+   `Bearer a, Bearer b`, which is not a single compact token and also resolves
+   `null`.
+
    A key-set timeout, an unreachable or malformed key set, or a cancelled
    request means the check never happened, so the authenticator rejects with
    `JwtVerificationUnavailableError` instead. Its message is fixed and it has
