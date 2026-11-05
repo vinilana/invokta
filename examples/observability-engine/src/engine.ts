@@ -1,4 +1,5 @@
-import { createEngine } from "@invokta/core";
+import { createEngine, type EngineEvent } from "@invokta/core";
+import { createOpenTelemetryEventHandler } from "@invokta/otel";
 
 import type { ObservabilityDependencies } from "./application/ports.js";
 import { createCollectIncidentContext } from "./capabilities/collect-incident-context.js";
@@ -6,8 +7,13 @@ import { datadogConnector } from "./infrastructure/datadog-log-store.js";
 import { newRelicConnector } from "./infrastructure/new-relic-telemetry-reader.js";
 import { sentryConnector } from "./infrastructure/sentry-issue-tracker.js";
 
+export interface ObservabilityEngineOptions {
+  readonly onEvent?: (event: EngineEvent) => void | Promise<void>;
+}
+
 export function createObservabilityEngine(
   dependencies: ObservabilityDependencies,
+  options: ObservabilityEngineOptions = {},
 ) {
   return createEngine({
     name: "observability-engine",
@@ -16,6 +22,7 @@ export function createObservabilityEngine(
       "observability.collect-incident-context":
         createCollectIncidentContext(dependencies),
     },
+    ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
   });
 }
 
@@ -91,9 +98,14 @@ export function createProviderBackedObservabilityEngine(
     transport,
   );
 
-  return createObservabilityEngine({
-    issues: sentry.ports.issues,
-    logs: datadog.ports.logs,
-    telemetry: newRelic.ports.telemetry,
-  });
+  // Spans and metrics reach the OpenTelemetry SDK the host registers; without
+  // one, the OpenTelemetry API records nothing.
+  return createObservabilityEngine(
+    {
+      issues: sentry.ports.issues,
+      logs: datadog.ports.logs,
+      telemetry: newRelic.ports.telemetry,
+    },
+    { onEvent: createOpenTelemetryEventHandler() },
+  );
 }

@@ -1,0 +1,149 @@
+# @invokta/otel
+
+OpenTelemetry instrumentation for Invokta Action Engines. The package turns the
+engine's `invocation.started`, `invocation.completed`, and `invocation.failed`
+events into one span per invocation and three invocation metrics through the
+OpenTelemetry API.
+
+It is instrumentation, not an observability platform: it bundles no SDK,
+exporter, collector, or backend. Your host registers the OpenTelemetry SDK and
+chooses where telemetry goes. The core runtime has no OpenTelemetry dependency.
+
+## Install
+
+```sh
+npm install @invokta/otel @opentelemetry/api
+```
+
+`@opentelemetry/api` is a peer dependency (`^1.9.0`) so the engine and your
+SDK share one API instance. The package is native ESM and requires Node.js
+22.20.0 or later.
+
+## Use
+
+```ts
+import { createEngine } from "@invokta/core";
+import { createOpenTelemetryEventHandler } from "@invokta/otel";
+
+export const engine = createEngine({
+  name: "support-engine",
+  version: "1.0.0",
+  capabilities,
+  onEvent: createOpenTelemetryEventHandler(),
+});
+```
+
+Without options the handler uses the global tracer and meter providers under
+the `@invokta/otel` instrumentation scope. It follows an SDK registered after
+the handler was created, so a module-scope engine works with an SDK started
+from a later `--import` module or the entry point. Pass `tracer` and `meter` to
+use explicit providers instead.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `tracer` | global tracer | OpenTelemetry `Tracer` for invocation spans |
+| `meter` | global meter | OpenTelemetry `Meter` for invocation metrics |
+| `recordPrincipalId` | `false` | Record `invokta.principal.id` on spans; principal IDs may be personal data |
+| `maxPendingSpans` | `10000` | Invocations awaiting their terminal event before the oldest span is evicted |
+| `maxMetricAttributeValues` | `256` | Distinct values per metric attribute before new values become `_OTHER` |
+
+Invalid options throw `TypeError` when the handler is created. The handler
+itself never throws into the engine and always returns `undefined`.
+
+### Keep an existing event hook
+
+Call the OpenTelemetry handler first and return the existing hook's result, so
+the engine still observes that hook's promise:
+
+```ts
+const telemetry = createOpenTelemetryEventHandler();
+
+createEngine({
+  name: "support-engine",
+  version: "1.0.0",
+  capabilities,
+  onEvent(event) {
+    telemetry(event);
+    return auditLog.record(event);
+  },
+});
+```
+
+## Spans
+
+| Property | Value |
+| --- | --- |
+| Name | `invoke {capabilityId}`; `invoke` for `CAPABILITY_NOT_FOUND` |
+| Kind | `INTERNAL` |
+| Parent | The active context when `engine.invoke` starts |
+| Start | The event's `startedAt` |
+| End | Start plus the terminal event's `durationMs` |
+| Status | Unset on completion; `ERROR` with the error code on failure |
+
+| Attribute | When |
+| --- | --- |
+| `invokta.capability.id` | Always |
+| `invokta.execution.source` | Always |
+| `invokta.request.id` | Always |
+| `invokta.principal.id` | Only with `recordPrincipalId: true` |
+| `invokta.invocation.outcome` | `completed` or `failed` |
+| `invokta.error.code`, `error.type` | Failure; the code is an opaque string |
+| `invokta.span.evicted` | `true` when the span was evicted before its terminal event |
+
+## Metrics
+
+| Instrument | Kind | Unit | Attributes |
+| --- | --- | --- | --- |
+| `invokta.invocations` | Counter | `{invocation}` | capability, source, outcome, error code on failure |
+| `invokta.invocation.duration` | Histogram | `s` | capability, source, outcome, error code on failure |
+| `invokta.invocation.failures` | Counter | `{failure}` | capability, source, error code |
+
+Failure points carry both `invokta.error.code` and `error.type`. Request and
+principal IDs never appear on metrics. A failed lookup records its
+caller-chosen capability ID as `_OTHER`; so does any value that is not a
+non-empty string of at most 256 characters, and any new value once an attribute
+holds `maxMetricAttributeValues` distinct values.
+
+## Nest capability spans
+
+The engine does not run `access` or `run` inside the invocation span, so a span a
+capability starts from the active context is a sibling of the invocation span.
+Inject `contextFor` when a capability needs nested spans:
+
+```ts
+import { context, trace } from "@opentelemetry/api";
+
+const telemetry = createOpenTelemetryEventHandler();
+const tracer = trace.getTracer("support-engine");
+
+const classifyTicket = defineCapability({
+  // ...
+  async run({ input, context: execution }) {
+    return context.with(telemetry.contextFor(execution.requestId), () =>
+      tracer.startActiveSpan("classifier.classify", async (span) => {
+        try {
+          return await classifier.classify(input, execution.signal);
+        } finally {
+          span.end();
+        }
+      }),
+    );
+  },
+});
+```
+
+`contextFor(requestId)` returns the active context with the pending invocation
+span, or the active context unchanged when the invocation has no pending span.
+
+## Limits
+
+- Event delivery is best-effort, as defined by the core.
+- Pending spans are capped by `maxPendingSpans`. The oldest pending span, or a
+  pending span whose request ID is reused, ends early with
+  `invokta.span.evicted = true`. Its terminal event still records metrics.
+- Spans carry no input, output, message, or credential.
+- Unknown event types are ignored, and new error codes are recorded unchanged.
+- No log signal, exporter, sampling policy, or automatic context propagation is
+  provided.
+
+ADR 0050 records the decision and its rationale.

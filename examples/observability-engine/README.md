@@ -40,8 +40,9 @@ direct / CLI / MCP stdio / MCP HTTP
   definition with a private configuration schema and explicit `fetch`
   dependency.
 - `src/engine.ts` is the composition root; it reads credentials and account
-  configuration from the environment, constructs the connectors, and injects
-  only their `issues`, `logs`, and `telemetry` ports.
+  configuration from the environment, constructs the connectors, injects only
+  their `issues`, `logs`, and `telemetry` ports, and attaches `@invokta/otel`
+  to the engine's `onEvent` hook.
 
 The Sentry connector uses the organization issues endpoint and maps `service` to
 a Sentry project slug. The Datadog connector searches v2 log events with a
@@ -135,6 +136,33 @@ requires an authenticated principal.
 Provider HTTP rejections become `EXECUTION_FAILED` with only `provider` and
 `status` in `publicDetails`. Response bodies and credentials remain internal.
 The tests use a local three-provider stub and never call public provider APIs.
+
+## OpenTelemetry instrumentation
+
+The provider-backed engine passes `createOpenTelemetryEventHandler()` from
+`@invokta/otel` as its `onEvent` hook. Every invocation through any entrypoint
+produces one `invoke observability.collect-incident-context` span and updates
+the `invokta.invocations`, `invokta.invocation.duration`, and
+`invokta.invocation.failures` metrics. Spans carry the capability ID,
+execution source, request ID, outcome, and error code; metrics carry the same
+fields except the request ID. Neither carries the incident request, provider
+results, credentials, or the principal ID.
+
+The engine reports to the global OpenTelemetry providers and records nothing
+until the host registers an SDK. Preload a host-owned SDK module, such as the
+console setup in the
+[OpenTelemetry recipe](https://docs.invokta.dev/recipes/opentelemetry/):
+
+```sh
+node --import ./instrumentation.mjs examples/observability-engine/dist/mcp-http.js
+```
+
+`createObservabilityEngine(dependencies, { onEvent })` accepts any other event
+hook, which the instrumentation tests use with an in-memory OpenTelemetry SDK:
+
+```sh
+yarn vitest run examples/observability-engine/test/opentelemetry-instrumentation.test.ts
+```
 
 ## Replace a provider
 

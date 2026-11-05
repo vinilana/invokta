@@ -128,6 +128,7 @@ export default defineConfig({
             { slug: "recipes/capability-composition" },
             { slug: "recipes/mcp-stdio-consumer" },
             { slug: "recipes/external-provider" },
+            { slug: "recipes/opentelemetry" },
             {
               label: "Authentication",
               items: [
@@ -155,6 +156,7 @@ export default defineConfig({
             { slug: "reference/core" },
             { slug: "reference/cli" },
             { slug: "reference/mcp" },
+            { slug: "reference/otel" },
             { slug: "reference/tooling" },
             { slug: "reference/devtools" },
             { slug: "reference/installer" },

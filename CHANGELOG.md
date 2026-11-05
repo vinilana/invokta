@@ -7,6 +7,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `@invokta/otel` instruments an engine through its existing `onEvent` hook.
+  `createOpenTelemetryEventHandler` records one `INTERNAL` span per invocation,
+  started at the event's `startedAt` in the caller's active context and ended
+  with the measured duration, plus the `invokta.invocations` and
+  `invokta.invocation.failures` counters and the `invokta.invocation.duration`
+  histogram. Attribute names are stable, principal IDs are recorded only on
+  opt-in, error codes are opaque strings, metric attributes are bounded, and
+  pending spans are capped with eviction. `contextFor(requestId)` lets a
+  capability nest its own spans under the invocation span. The package depends
+  only on the `@opentelemetry/api` peer (`^1.9.0`); the core and the other
+  packages gain no OpenTelemetry dependency (ADR 0050).
+- The `observability-engine` example's provider-backed composition root reports
+  invocation spans and metrics to the OpenTelemetry SDK its host registers.
+
 ### Fixed
 
 - Release publication waits up to 10 minutes, with checks backing off from 5 to

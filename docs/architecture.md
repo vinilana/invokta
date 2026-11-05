@@ -169,6 +169,22 @@ asynchronous diagnostic logger are contained without producing an unhandled
 rejection. After successful output validation, the runtime MUST clear its
 capability timeout before invoking the completed hook.
 
+**AE-OBS-02 — OpenTelemetry instrumentation.** `@invokta/otel` provides
+`createOpenTelemetryEventHandler`, an `onEvent` hook built only on the
+OpenTelemetry API peer. It MUST NOT add an OpenTelemetry dependency to the core
+or another package, MUST NOT throw into the engine, and MUST treat error codes
+and sources as opaque strings. It starts one `INTERNAL` span named
+`invoke {capabilityId}` at the event's `startedAt` in the active context,
+correlates the terminal event by `requestId`, and ends the span after
+`durationMs` with an error status and code on failure. It records the
+`invokta.invocations` and `invokta.invocation.failures` counters and the
+`invokta.invocation.duration` histogram with bounded attributes. Principal IDs
+are recorded only on explicit opt-in and never on metrics. Pending spans are
+capped and the oldest is evicted. The invocation span is not active inside
+`access` or `run`; a capability nests its own spans through the injected
+`contextFor(requestId)` accessor. ADR 0050 defines the attribute names,
+metric units, and limits.
+
 ## CLI
 
 **AE-CLI-01 — Commands.** `@invokta/cli` MUST implement `list`, `describe`, and

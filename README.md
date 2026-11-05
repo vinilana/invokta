@@ -169,6 +169,8 @@ turning the framework into a service container.
   `engine.invoke`.
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure,
   stateless Streamable HTTP.
+- `@invokta/otel` instruments engine events as OpenTelemetry spans and
+  invocation metrics; your host's OpenTelemetry SDK exports them.
 - `@invokta/tooling` validates composed capabilities and final MCP tool names.
 - `@invokta/devtools` provides an engine inspector plus MCP and CLI
   workbenches.

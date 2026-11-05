@@ -335,7 +335,9 @@ capability factories.
 The runtime calls started and exactly one terminal event in pipeline order.
 Event promises are observed but not awaited, and hook or diagnostic-logger
 failures do not replace the invocation result. Events are best-effort and carry
-no business payload or credential by default.
+no business payload or credential by default. Use
+[`@invokta/otel`](/reference/otel/) to export them as OpenTelemetry spans and
+metrics.
 
 ## Capability composition
 

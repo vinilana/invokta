@@ -5,7 +5,7 @@ sidebar:
   label: Overview
 ---
 
-Invokta publishes three runtime packages and six supporting packages. Each has
+Invokta publishes four runtime packages and seven supporting packages. Each has
 one bounded responsibility.
 
 ## Runtime packages
@@ -15,9 +15,11 @@ one bounded responsibility.
 | `@invokta/core` | Capability contracts, execution, composition, errors, and events | [Core reference](/reference/core/) |
 | `@invokta/cli` | Local `list`, `describe`, and `run` over `engine.invoke` | [CLI reference](/reference/cli/) |
 | `@invokta/mcp` | MCP tools over stdio and stateless Streamable HTTP | [MCP reference](/reference/mcp/) |
+| `@invokta/otel` | OpenTelemetry spans and invocation metrics from engine events | [OpenTelemetry reference](/reference/otel/) |
 
 The core has no adapter or SDK dependency. CLI and MCP import only its public
-API and never call capability handlers directly.
+API and never call capability handlers directly. `@invokta/otel` observes
+`onEvent` through the OpenTelemetry API and never invokes a capability.
 
 ## Supporting packages
 

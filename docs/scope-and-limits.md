@@ -2,13 +2,14 @@
 
 ## Public packages
 
-**AE-SCOPE-01 — Ten packages with isolated roles.** Invokta publishes:
+**AE-SCOPE-01 — Eleven packages with isolated roles.** Invokta publishes:
 
 | Package | Responsibility |
 | --- | --- |
 | `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
+| `@invokta/otel` | OpenTelemetry spans and metrics built from engine events through the OpenTelemetry API |
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
@@ -19,15 +20,17 @@
 
 All packages are native ESM. The core has no transport dependency. Runtime
 adapters depend only on the core's public API, and supporting applications do
-not create another capability execution path.
+not create another capability execution path. `@invokta/otel` depends only on
+core types and the `@opentelemetry/api` peer; no other package depends on
+OpenTelemetry (ADR 0050).
 
 ## Ownership
 
 **AE-SCOPE-02 — Framework.** Invokta provides typed capability and connector
 definitions, runtime capability validation, synchronous private connector
 configuration validation, eager composition, direct execution, minimal context,
-access enforcement, events, CLI and MCP adapters, and narrowly scoped supporting
-tools.
+access enforcement, events and their OpenTelemetry instrumentation, CLI and MCP
+adapters, and narrowly scoped supporting tools.
 
 **AE-SCOPE-03 — Custom engine.** Capabilities, prompts, models, engine-owned
 ports, outbound connectors for model, data, and tool integrations, business rules,
@@ -50,7 +53,7 @@ while the example owns one replaceable Authorization Server implementation.
 
 | Dimension | Limit |
 | --- | --- |
-| Framework runtime packages | 3: core, CLI, and MCP |
+| Framework runtime packages | 4: core, CLI, MCP, and OpenTelemetry instrumentation |
 | Supporting packages | 7: tooling, installer, deploy, devtools, and three project creators |
 | Official inbound adapters | CLI and MCP |
 | MCP transports | stdio and stateless Streamable HTTP |
@@ -59,6 +62,9 @@ while the example owns one replaceable Authorization Server implementation.
 | Invocation pipeline stages | 6 |
 | Invocation error codes | 7 |
 | Cross-cutting hooks | 1: `onEvent` |
+| OpenTelemetry signals | 1 span per invocation and 3 metric instruments |
+| Pending OpenTelemetry invocation spans | 10,000 by default, configurable; the oldest is evicted |
+| OpenTelemetry metric attribute values | 256 distinct per attribute by default, configurable; 256 characters each |
 | Auth or PDP implementations | 0 |
 | Containers or runtime plugin systems | 0 |
 | Devtools workbenches served together | 2: MCP and CLI, each idle until Connect |
@@ -137,10 +143,18 @@ multipart or binary clients, or claim that an API mirror is a qualified domain
 Action Engine. Unsupported endpoints remain visible and unselected. Generated
 adapters continue to use the one shared engine and `engine.invoke` path.
 
+**AE-LIMIT-09 — Observability.** `@invokta/otel` translates the three engine
+events into spans and metrics through the OpenTelemetry API. Invokta does not
+provide an OpenTelemetry SDK, exporter, collector, sampler, log signal,
+dashboard, alerting, telemetry storage, or automatic trace-context propagation
+into `access` or `run`. Capabilities nest their own spans only through the
+injected `contextFor` accessor defined by ADR 0050.
+
 ## Evolution triggers
 
 An extension requires evidence and an architectural decision. Examples include
 authentication support after several engines repeat the same integration, a
 PDP adapter after multiple engines repeat one provider mapping, lifecycle only
 when dependency start and stop behavior repeats, and observability or evaluation
-packages only when engine-local implementations converge.
+packages only when engine-local implementations converge. ADR 0050 records
+that extraction for OpenTelemetry instrumentation of engine events.
