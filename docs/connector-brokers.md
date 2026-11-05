@@ -58,7 +58,7 @@ they touch `Principal` and the closed set of error codes.
 Restating `AE-SCOPE-02`/`AE-SCOPE-03` for this integration:
 
 **Invokta owns** the invocation pipeline, `Principal`, `AccessRule` enforcement,
-the seven error codes, cancellation, and the adapters. None of them change.
+the framework error codes, cancellation, and the adapters. None of them change.
 
 **The engine owns** the broker client, the connector reference, the
 principal-to-subject mapping, the credential cache policy, the consent recovery

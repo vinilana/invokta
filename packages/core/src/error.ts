@@ -5,7 +5,8 @@ export type EngineErrorCode =
   | "FORBIDDEN"
   | "OUTPUT_INVALID"
   | "CANCELLED"
-  | "EXECUTION_FAILED";
+  | "EXECUTION_FAILED"
+  | "DOMAIN_ERROR";
 
 export class EngineError extends Error {
   readonly code: EngineErrorCode;

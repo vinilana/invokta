@@ -137,14 +137,22 @@ process.exitCode = exitCode;
 | Exit code | Meaning |
 | --- | --- |
 | `0` | Command and output write completed successfully |
-| `1` | Invocation, cancellation, validation, authorization, or output write failed |
+| `1` | Invocation, cancellation, validation, authorization, declared domain error, or output write failed |
 | `2` | Invalid command, arguments, JSON, principal option, or UTF-8 input |
 
 Standard output contains only the requested JSON result. Diagnostics and compact
 errors are written to standard error.
 
 An engine error contains `code`, `message`, and optional `publicDetails`. Cause,
-stack, rejected input, and principal are not serialized. Unknown failures and
+stack, rejected input, and principal are not serialized. A declared domain error
+uses code `DOMAIN_ERROR` and exit code `1`; its `publicDetails` carry the domain
+`code`, the `retryable` flag, and the validated `details`:
+
+```json
+{"error":{"code":"DOMAIN_ERROR","message":"The requested ticket does not exist.","publicDetails":{"code":"TICKET_NOT_FOUND","retryable":false,"details":{"ticketId":"T-404"}}}}
+```
+
+`describe` output includes the declared domain errors under `errors`. Unknown failures and
 standard-output write failures are sanitized as `EXECUTION_FAILED`. A failed
 diagnostic write is contained and does not replace the chosen exit code.
 
