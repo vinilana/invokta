@@ -8,6 +8,8 @@ export interface PackageManagerCommands {
   readonly direct: string;
   readonly list: string;
   readonly run: string;
+  readonly runFlags: string;
+  readonly help: string;
   readonly stdio: string;
 }
 
@@ -20,6 +22,8 @@ export const packageManagerCommands = Object.freeze({
     direct: "npm run direct -- Ada",
     list: "npm run cli -- list",
     run: 'npm run cli -- run onboarding.create-welcome-message --input \'{"name":"Ada"}\'',
+    runFlags: "npm run cli -- run onboarding.create-welcome-message --name Ada",
+    help: "npm run cli -- help onboarding.create-welcome-message",
     stdio: "npm run mcp:stdio",
   }),
   pnpm: Object.freeze({
@@ -30,6 +34,8 @@ export const packageManagerCommands = Object.freeze({
     direct: "pnpm run direct Ada",
     list: "pnpm run cli list",
     run: 'pnpm run cli run onboarding.create-welcome-message --input \'{"name":"Ada"}\'',
+    runFlags: "pnpm run cli run onboarding.create-welcome-message --name Ada",
+    help: "pnpm run cli help onboarding.create-welcome-message",
     stdio: "pnpm run mcp:stdio",
   }),
   yarn: Object.freeze({
@@ -40,6 +46,8 @@ export const packageManagerCommands = Object.freeze({
     direct: "yarn direct Ada",
     list: "yarn cli list",
     run: 'yarn cli run onboarding.create-welcome-message --input \'{"name":"Ada"}\'',
+    runFlags: "yarn cli run onboarding.create-welcome-message --name Ada",
+    help: "yarn cli help onboarding.create-welcome-message",
     stdio: "yarn mcp:stdio",
   }),
 } as const) satisfies Readonly<Record<PackageManager, PackageManagerCommands>>;

@@ -4,6 +4,8 @@ import { z } from "zod";
 import {
   type AnyCapability,
   applyMiddleware,
+  CapabilityError,
+  type CapabilityErrorMap,
   type CapabilityMiddleware,
   type CapabilityMiddlewareArgs,
   composeCapabilities,
@@ -939,7 +941,7 @@ describe("applyMiddleware capability contract", () => {
     const ownMarker = Symbol("capability.own");
     const inheritedMarker = Symbol("capability.inherited");
     const base = {
-      errors: { TICKET_NOT_FOUND: { message: "Ticket not found." } },
+      errors: { TICKET_NOT_FOUND: { description: "Ticket not found." } },
       deprecated: { since: "1.2.0" },
       inheritedHelper: "not part of the capability contract",
       [inheritedMarker]: true,
@@ -1262,5 +1264,140 @@ describe("applyMiddleware with capability composition", () => {
       "community.classify",
       "community.route",
     ]);
+  });
+});
+
+describe("applyMiddleware with declared domain errors", () => {
+  const ticketErrors = {
+    TICKET_NOT_FOUND: {
+      description: "The ticket does not exist.",
+      details: z.object({ ticketId: z.string() }),
+    },
+    QUOTA_EXHAUSTED: {
+      description: "The caller exhausted its quota.",
+      retryable: true,
+    },
+  } satisfies CapabilityErrorMap;
+  const passThrough: CapabilityMiddleware = async ({ next }) => next();
+
+  function erroringCapability(run?: TicketRun): AnyCapability {
+    return classifyCapability(run, { errors: ticketErrors });
+  }
+
+  async function failure(
+    capabilities: Readonly<Record<string, AnyCapability>>,
+  ): Promise<{ readonly error: EngineError; readonly events: EngineEvent[] }> {
+    const events: EngineEvent[] = [];
+    try {
+      await engineFor(capabilities, events).invoke("support.classify", {
+        ticketId: "T-404",
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(EngineError);
+      return { error: error as EngineError, events };
+    }
+    throw new Error("Expected the invocation to fail.");
+  }
+
+  it("keeps the errors declaration by identity and publishes it through describe", () => {
+    const original = erroringCapability();
+    const wrapped = applyMiddleware(
+      { "support.classify": original },
+      passThrough,
+    )["support.classify"] as AnyCapability;
+    const description = engineFor({ "support.classify": wrapped }).describe(
+      "support.classify",
+    );
+
+    expect(wrapped.errors).toBe(original.errors);
+    expect(description).toEqual(
+      engineFor({ "support.classify": original }).describe("support.classify"),
+    );
+    expect(description.errors?.map(({ code }) => code).sort()).toEqual([
+      "QUOTA_EXHAUSTED",
+      "TICKET_NOT_FOUND",
+    ]);
+  });
+
+  it("resolves a CapabilityError thrown by run through the chain as the declared domain error", async () => {
+    const run: TicketRun = async ({ input }) => {
+      throw new CapabilityError<typeof ticketErrors>("TICKET_NOT_FOUND", {
+        details: { ticketId: input.ticketId },
+      });
+    };
+    let observed: unknown;
+    const unwrapped = await failure({
+      "support.classify": erroringCapability(run),
+    });
+    const throughChain = await failure(
+      applyMiddleware(
+        { "support.classify": erroringCapability(run) },
+        async ({ next }) => {
+          try {
+            return await next();
+          } catch (error) {
+            observed = error;
+            throw error;
+          }
+        },
+        passThrough,
+      ),
+    );
+
+    expect(throughChain.error.code).toBe("DOMAIN_ERROR");
+    expect(throughChain.error.message).toBe(unwrapped.error.message);
+    expect(throughChain.error.publicDetails).toEqual(
+      unwrapped.error.publicDetails,
+    );
+    expect(throughChain.error.publicDetails).toEqual({
+      code: "TICKET_NOT_FOUND",
+      retryable: false,
+      details: { ticketId: "T-404" },
+    });
+    expect(throughChain.events.at(-1)).toMatchObject({
+      type: "invocation.failed",
+      code: "DOMAIN_ERROR",
+      domainCode: "TICKET_NOT_FOUND",
+    });
+    expect(observed).toBeInstanceOf(CapabilityError);
+  });
+
+  it("treats a CapabilityError thrown by middleware like one rejected by run", async () => {
+    const run = vi.fn<TicketRun>(async () => ({ category: "never" }));
+    const throwing =
+      (code: string): CapabilityMiddleware =>
+      async () => {
+        throw new CapabilityError(code);
+      };
+
+    const declared = await failure(
+      applyMiddleware(
+        { "support.classify": erroringCapability(run) },
+        throwing("QUOTA_EXHAUSTED"),
+      ),
+    );
+    expect(declared.error.code).toBe("DOMAIN_ERROR");
+    expect(declared.error.publicDetails).toEqual({
+      code: "QUOTA_EXHAUSTED",
+      retryable: true,
+    });
+
+    const undeclared = await failure(
+      applyMiddleware(
+        { "support.classify": erroringCapability(run) },
+        throwing("RATE_LIMITED"),
+      ),
+    );
+    expect(undeclared.error.code).toBe("EXECUTION_FAILED");
+    expect(undeclared.error.publicDetails).toBeUndefined();
+
+    const withoutDeclarations = await failure(
+      applyMiddleware(
+        { "support.classify": classifyCapability(run) },
+        throwing("QUOTA_EXHAUSTED"),
+      ),
+    );
+    expect(withoutDeclarations.error.code).toBe("EXECUTION_FAILED");
+    expect(run).not.toHaveBeenCalled();
   });
 });

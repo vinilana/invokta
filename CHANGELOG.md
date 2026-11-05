@@ -9,6 +9,35 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- `@invokta/cli` derives `run` flags from the top-level properties of a
+  capability's published input schema, so
+  `engine run onboarding.create-welcome-message --name Ada` builds
+  `{"name":"Ada"}` and still goes through `engine.invoke` validation. Strings,
+  numbers, integers, booleans (`--flag`, `--no-flag`, `--flag=false`),
+  single-type enums and constants, and arrays through repeated flags are
+  supported in `--name value` and `--name=value` forms. Property names map to
+  kebab-case; reserved (`input`, `stdin`, `help`, `format`) and colliding
+  spellings fail closed, and nested objects, unions, and other schemas still use
+  `--input` or `--stdin`. Flags cannot be combined with `--input` or `--stdin`
+  (ADR 0047).
+- `help` and `--help` print the CLI usage, and `help <capability-id>` or
+  `run <capability-id> --help` prints a deterministic, bounded capability page
+  with its title, description, annotations, flags, types, required markers,
+  allowed values, declared defaults, and the `--input` alternative. Help is
+  written to stdout with exit code `0`. Shell completion is not provided.
+- Generated `complete` and `cli` engine READMEs show the flag and help commands
+  next to the JSON `--input` example.
+- Capabilities can declare stable domain errors in an optional `errors` field,
+  keyed by UPPER_SNAKE_CASE codes with a public `description`, an optional
+  `retryable` hint, and an optional object-rooted `details` schema, and raise
+  them from `run` with the new standalone `CapabilityError` class. Its optional
+  type argument checks codes and details against the declaration. The engine
+  validates the code and details and publishes the outcome as `DOMAIN_ERROR`;
+  undeclared codes, invalid details, and forged errors fail closed as
+  `EXECUTION_FAILED`. `describe` lists the declarations with their details
+  JSON Schema, `invocation.failed` events carry the `domainCode`, and the CLI
+  (exit code `1`) and MCP tool errors include the domain code, retry hint, and
+  details (ADR 0045).
 - `@invokta/core` exports `applyMiddleware(capabilities, ...middleware)` with
   the `CapabilityMiddleware` and `CapabilityMiddlewareArgs` types. It returns a
   new frozen capability map whose `run` functions execute the middleware, first
@@ -16,15 +45,33 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   property and contract field is kept by identity. Input validation and
   `access` still run before the chain, the timeout and cancellation signal
   cover it, its final result is validated against the output schema, and
-  middleware errors are normalized like `run` errors. `next()` takes no
-  arguments and starts the next layer at most once. A started layer always
-  settles before the invocation does, so no part of the chain outlives it.
+  middleware errors, including `CapabilityError` domain errors, are normalized
+  like `run` errors. `next()` takes no arguments and starts the next layer at
+  most once. A started layer always settles before the invocation does, so no
+  part of the chain outlives it.
   Middleware reads a lazily taken, deep-frozen input snapshot, and must not
   mutate `context.principal`, which it shares with `run`. Composed maps keep
   their composition provenance, so `invokta check-capabilities` accepts wrapped
   compositions. The engine, its six stages, and its single `onEvent` hook are
   unchanged; a new recipe shows audit logging, rate limiting, and caching
   middleware with their limits (ADR 0051).
+
+### Changed
+
+- The usage text embedded in CLI `INVALID_USAGE` messages lists the flag and
+  help forms. `run` arguments other than exactly `--input <json>` or `--stdin`
+  are parsed as schema-derived flags, so a flag run against an unknown
+  capability now reports `CAPABILITY_NOT_FOUND` with exit code `1` before
+  `engine.invoke`, without an invocation event, instead of invalid usage.
+  Existing `--input` and `--stdin` invocations, output, and exit codes are
+  unchanged.
+- `EngineErrorCode` gains `DOMAIN_ERROR`, the only framework code for declared
+  domain errors. Exhaustive `switch` statements that assert `never` and
+  exhaustive `Record<EngineErrorCode, ...>` maps, including `satisfies` checks,
+  must handle it; engines that declare no domain errors never produce it.
+- The `support-engine` example reports a missing ticket as the declared
+  `TICKET_NOT_FOUND` domain error instead of `EXECUTION_FAILED`, and its local
+  operator may access the missing ticket `T-404` to demonstrate it.
 
 ### Fixed
 

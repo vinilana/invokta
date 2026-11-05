@@ -228,7 +228,7 @@ carries the framework's composition provenance.
 
 An invalid composition throws a `CapabilityCompositionError`, which extends
 `TypeError`. It is a construction error, not an invocation `EngineError`, and it
-does not extend the seven-code invocation taxonomy: a composition failure has no
+does not extend the invocation error taxonomy: a composition failure has no
 request ID, no event, and no transport mapping.
 
 ```ts

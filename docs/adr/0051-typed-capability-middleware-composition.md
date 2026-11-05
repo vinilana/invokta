@@ -66,7 +66,12 @@ of the unchanged pipeline:
   output schema, whether it came from `run` or was produced by a middleware;
 - an error thrown or rejected by a middleware is normalized exactly like an
   error from `run`, so a stable `EngineError` is preserved and any other value
-  becomes `EXECUTION_FAILED` with an internal cause; and
+  becomes `EXECUTION_FAILED` with an internal cause;
+- a `CapabilityError` that `run` raises keeps its identity through the chain
+  and resolves against the capability's declared `errors` (ADR 0045), and one
+  that a middleware raises is treated the same way. It is published as
+  `DOMAIN_ERROR` only when the wrapped capability declares its code and its
+  details are valid; otherwise it fails as `EXECUTION_FAILED`; and
 - events, CLI, MCP, and every other adapter observe one ordinary invocation.
 
 `capabilityId` is the capability's key in the map passed to `applyMiddleware`.
@@ -143,8 +148,8 @@ recipes and states their single-process and memory limits.
 
 This decision adds no engine option, middleware registry, global or implicit
 middleware, priority ordering, discovery, lifecycle, or asynchronous
-construction. `createEngine` semantics, the six pipeline stages, the seven
-error codes, `ExecutionContext`, and the single `onEvent` hook are unchanged.
+construction. `createEngine` semantics, the six pipeline stages, the error
+taxonomy, `ExecutionContext`, and the single `onEvent` hook are unchanged.
 
 ## Consequences
 

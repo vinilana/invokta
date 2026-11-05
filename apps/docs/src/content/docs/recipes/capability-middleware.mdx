@@ -32,8 +32,9 @@ Middleware executes where `run` executes, inside the normal
 - the outermost result is validated against the output schema, even when a
   middleware produced it instead of `run`; and
 - an error thrown by middleware is normalized exactly like an error thrown by
-  `run`: a stable `EngineError` is preserved and anything else becomes
-  `EXECUTION_FAILED`.
+  `run`: a stable `EngineError` is preserved, a `CapabilityError` becomes
+  `DOMAIN_ERROR` only when the capability declares its code, and anything else
+  becomes `EXECUTION_FAILED`.
 
 The wrapped capabilities keep their schemas, access rule, title, description,
 annotations, `timeoutMs`, and every other field, so `list`, `describe`, CLI, and
@@ -237,7 +238,11 @@ export function createRateLimit(
 
 The thrown `EngineError` is preserved by the engine, so CLI and MCP clients see
 the fixed message and `publicDetails`, and never the principal or input. All
-anonymous callers share one window.
+anonymous callers share one window. A capability can instead declare a
+`RATE_LIMITED` domain error in its `errors` field and have the middleware throw
+`new CapabilityError("RATE_LIMITED")`. It is published as `DOMAIN_ERROR` only
+for capabilities that declare that code; any other capability fails as
+`EXECUTION_FAILED`.
 
 Production limits:
 
