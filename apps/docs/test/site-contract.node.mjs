@@ -57,6 +57,7 @@ const requiredRoutes = [
   "/guides/http-authentication/",
   "/guides/capability-authorization/",
   "/guides/deployment/",
+  "/guides/web-standard-runtimes/",
   "/examples/",
   "/recipes/",
   ...requiredRecipeRoutes,

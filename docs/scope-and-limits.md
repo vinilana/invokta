@@ -8,7 +8,7 @@
 | --- | --- |
 | `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
-| `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
+| `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP, including a portable Web-standard HTTP handler |
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
@@ -54,6 +54,8 @@ while the example owns one replaceable Authorization Server implementation.
 | Supporting packages | 7: tooling, installer, deploy, devtools, and three project creators |
 | Official inbound adapters | CLI and MCP |
 | MCP transports | stdio and stateless Streamable HTTP |
+| MCP HTTP host adapters | 2: a Node.js listener and a Web-standard `Request` handler over one protocol implementation |
+| Runtimes verified by tests | Node.js; the core and `@invokta/mcp/web` are portable to Fetch runtimes by design (ADR 0042) |
 | Core primitives | Capability, Connector Definition, Engine, Context, and Principal |
 | Required capability fields | 5 |
 | Invocation pipeline stages | 6 |

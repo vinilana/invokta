@@ -12,7 +12,12 @@
   {
     "directory": "mcp",
     "name": "@invokta/mcp",
-    "requiredFiles": ["dist/index.js", "dist/index.d.ts"]
+    "requiredFiles": [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/web.js",
+      "dist/web.d.ts"
+    ]
   },
   {
     "directory": "tooling",

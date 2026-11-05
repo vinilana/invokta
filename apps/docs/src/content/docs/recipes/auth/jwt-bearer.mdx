@@ -158,10 +158,11 @@ the same.
    }
    ```
 
-   The adapter rejects a request carrying more than one raw `Authorization`
-   header before the hook runs, so exactly one value is possible here. Anything
-   that is not a single non-whitespace token after the scheme is treated as no
-   credential at all.
+   `serveMcpHttp` rejects a request carrying more than one raw
+   `Authorization` header before the hook runs. A Fetch host joins repeated
+   fields, so through `createMcpHttpHandler` they arrive as one value such as
+   `Bearer a, Bearer b`. Anything that is not a single non-whitespace token
+   after the scheme is treated as no credential at all, which covers both.
 
 6. Wire the hook
 
