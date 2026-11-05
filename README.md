@@ -167,8 +167,8 @@ turning the framework into a service container.
 
 - `@invokta/core` defines capabilities, typed connector factories, engines,
   validation, access, cancellation, errors, and events.
-- `@invokta/cli` provides `list`, `describe`, and `run` through
-  `engine.invoke`.
+- `@invokta/cli` provides `list`, `describe`, capability help, and `run` with
+  JSON or schema-derived flags through `engine.invoke`.
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure,
   stateless Streamable HTTP.
 - `@invokta/http` publishes capabilities as plain HTTP JSON routes from a
@@ -219,8 +219,8 @@ for profile contents, automation flags, GitHub imports, and OpenAPI limits.
 
 - [`hello-engine`](./examples/hello-engine/) is the shortest complete path.
 - [`support-engine`](./examples/support-engine/) demonstrates dependency
-  injection, authorization, safe errors, and five execution channels,
-  including plain HTTP JSON.
+  injection, authorization, a declared domain error, and five execution
+  channels, including plain HTTP JSON.
 - [`crawl-engine`](./examples/crawl-engine/) puts Firecrawl behind an
   engine-owned `WebCrawler` port.
 - [`composed-engine`](./examples/composed-engine/) combines local, atomic, and

@@ -27,7 +27,8 @@ direct / CLI / MCP stdio / MCP HTTP / HTTP JSON
 - `src/application/ports.ts` owns the repository, classifier, and permission
   interfaces.
 - `src/capabilities/classify-ticket.ts` owns the stable Zod 4 input/output
-  contract, domain access rule, timeout, and handler.
+  contract, the declared `TICKET_NOT_FOUND` domain error, domain access rule,
+  timeout, and handler.
 - `src/infrastructure/` contains deterministic adapters for local use.
 - `src/engine.ts` is the composition root. Dependencies enter through an
   explicit factory; there is no container or service locator.
@@ -39,6 +40,19 @@ The permission checker is intentionally a domain port. The access rule receives
 the validated ticket ID and the trusted `Principal`, then asks for the
 `ticket:classify` decision. A denied decision prevents the repository and
 classifier from running.
+
+A missing ticket is a declared domain error rather than a generic failure. The
+capability declares `TICKET_NOT_FOUND` with a `{ ticketId }` details schema and
+raises it with `CapabilityError`; the engine validates the code and details
+against that declaration and every channel reports the same `DOMAIN_ERROR`:
+
+```json
+{"code":"DOMAIN_ERROR","message":"The requested ticket does not exist.","publicDetails":{"code":"TICKET_NOT_FOUND","retryable":false,"details":{"ticketId":"T-404"}}}
+```
+
+The local operator may access `T-404`, which the in-memory repository does not
+contain, so it demonstrates this outcome. `describe` publishes the declaration
+under `errors`.
 
 ## Run the example
 
@@ -60,7 +74,11 @@ Use the CLI:
 node examples/support-engine/dist/cli.js list
 node examples/support-engine/dist/cli.js describe support.classify-ticket
 node examples/support-engine/dist/cli.js run support.classify-ticket --input '{"ticketId":"T-123"}'
+node examples/support-engine/dist/cli.js run support.classify-ticket --input '{"ticketId":"T-404"}'
 ```
+
+The last command exits with code `1` and writes the `TICKET_NOT_FOUND` domain
+error to standard error inside `{"error": ...}`.
 
 Start the MCP stdio adapter from an MCP host configuration:
 
