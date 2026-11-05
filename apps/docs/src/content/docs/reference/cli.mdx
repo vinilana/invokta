@@ -32,7 +32,8 @@ engine help [<capability-id>]
 
 ### `list`
 
-Writes the frozen summaries returned by `engine.list()`.
+Writes the frozen summaries returned by `engine.list()`. A deprecated
+capability includes its `deprecated` notice.
 
 ```sh
 node dist/cli.js list
@@ -40,7 +41,9 @@ node dist/cli.js list
 
 ### `describe`
 
-Writes the selected capability contract returned by `engine.describe()`.
+Writes the selected capability contract returned by `engine.describe()`,
+including its `access` kind and any `deprecated` notice. `run` does not change
+for a deprecated capability.
 
 ```sh
 node dist/cli.js describe support.classify-ticket
@@ -166,6 +169,9 @@ Flags:
 Flags build one JSON input object that the capability's input schema
 validates. Use --input or --stdin for values that flags cannot express.
 ```
+
+A deprecated capability adds a `Deprecated[ since <version>]: <reason>` line,
+and a `Replacement:` line when one is declared, after its description.
 
 Each flag shows its type, `required` and `repeatable` markers, description,
 allowed values, and declared default. Input-only properties are listed with the

@@ -2,8 +2,9 @@
 
 Development-time command line tooling for Invokta. This package contributes no
 runtime capability, adapter, or transport. It delegates composition validation
-to `@invokta/core` and MCP catalog validation to `@invokta/mcp`; no runtime
-package depends on it.
+to `@invokta/core` and MCP catalog validation to `@invokta/mcp`, and captures
+contracts only through `engine.list` and `engine.describe`; no runtime package
+depends on it.
 
 ## invokta check-capabilities
 
@@ -92,6 +93,76 @@ invokta check-mcp dist/engine.js
 invokta check-mcp dist/application.js --export supportEngine
 ```
 
+## invokta contract
+
+```text
+invokta contract snapshot <esm-module> [--export <name>] [--output <file>]
+invokta contract diff <previous-snapshot> <next-snapshot> [--fail-on-potentially-breaking]
+```
+
+The capability contract release gate
+([ADR 0046](../../docs/adr/0046-stability-policy-capability-deprecation-and-contract-diff.md)).
+`snapshot` imports a built ESM module, selects the `engine` export by default,
+and writes a deterministic JSON snapshot of its public contract to stdout or to
+`--output`: `formatVersion` `1`, the engine name and version, and each
+capability's title, description, access kind, timeout, annotations, deprecation
+notice, input and output JSON Schemas, and declared domain errors keyed by code. Object keys are sorted by code unit
+(JSON serialization still writes integer-like keys such as `"9"` and `"10"`
+first, in numeric order), and the set-valued `required`, `type`, and `enum`
+arrays are sorted, so reordering properties, keywords, required names, or enum
+members never changes the bytes. No capability is invoked.
+
+`diff` compares two snapshots and writes a report to stdout:
+
+```text
+invokta: contract diff
+previous: engine="support-engine" version="1.0.0" capabilities=2
+next: engine="support-engine" version="2.0.0" capabilities=2
+
+breaking changes: 2
+  REQUIRED_CHANGED capability="support.classify" at="input#/properties/priority": The property is now required.
+  CAPABILITY_REMOVED capability="support.close": The capability was removed.
+
+potentially breaking changes: 1
+  TIMEOUT_CHANGED capability="support.classify": A timeout of 1000 ms was added.
+
+compatible changes: 1
+  CAPABILITY_ADDED capability="support.reopen": The capability was added.
+
+result: breaking changes found
+```
+
+Narrowing an input or widening an output is breaking; the opposite is
+compatible. Adding an output property to a closed object
+(`additionalProperties: false`, which Zod emits for every output object) is
+potentially breaking (`CLOSED_OUTPUT_PROPERTY_ADDED`): MCP SDK clients validate
+results against their cached `tools/list` schema and reject the new property
+until they list tools again. A property added where an `additionalProperties`
+schema or `patternProperties` previously applied is potentially breaking unless
+its schema is identical. Nullable values (`anyOf: [S, { type: "null" }]`) are
+compared through `S`. A change the comparison cannot decide, such as `$ref`,
+other `anyOf` or `oneOf` unions, `allOf`, `not`, `format`, `default`, or a
+replaced `pattern`, is potentially breaking; engines that rely on them should
+pass `--fail-on-potentially-breaking`. The
+[stability policy](../../docs/stability-policy.md#guidance-for-engine-authors)
+lists every rule.
+
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | The snapshot was written, or no breaking change was found |
+| `1`  | A breaking change was found, or a potentially breaking change with `--fail-on-potentially-breaking` |
+| `2`  | Invalid usage, a module or export failure, or an unreadable or invalid snapshot |
+
+Snapshot files are limited to 16 MiB and 256 levels of schema nesting. Unknown
+snapshot fields are rejected, JSON parser messages are never echoed, echoed
+keys and capability IDs are truncated to 64 characters, and control and format
+characters are escaped in every diagnostic and report.
+
+```bash
+invokta contract snapshot dist/engine.js --output contract.next.json
+invokta contract diff contract.json contract.next.json
+```
+
 ## Programmatic API
 
 ```ts
@@ -106,7 +177,8 @@ const exitCode = await checkCapabilities({
 `checkCapabilities` resolves with the exit code and writes diagnostics through
 the injectable `io.writeStderr` sink. It never terminates the process.
 
-The package also exports `checkMcp`, `CheckMcpIo`, and `CheckMcpOptions` with the
+The package also exports `checkMcp`, `CheckMcpIo`, `CheckMcpOptions`,
+`runContractCommand`, `ContractCommandIo`, and `ContractCommandOptions` with the
 same process-free calling convention:
 
 ```ts
@@ -116,4 +188,17 @@ const exitCode = await checkMcp({
   argv: ["check-mcp", "dist/engine.js"],
   cwd: process.cwd(),
 });
+```
+
+`createContractSnapshot(engine)`, `serializeContractSnapshot(snapshot)`, and
+`diffContractSnapshots(previous, next)` expose the same contract gate to tests:
+
+```ts
+import {
+  createContractSnapshot,
+  diffContractSnapshots,
+} from "@invokta/tooling";
+
+const diff = diffContractSnapshots(baseline, createContractSnapshot(engine));
+if (diff.breaking > 0) throw new Error("The capability contract broke.");
 ```

@@ -1,5 +1,6 @@
 import {
   type CapabilityAnnotations,
+  type CapabilityDeprecation,
   type CapabilityMap,
   type Engine,
   EngineError,
@@ -82,6 +83,27 @@ function mapAnnotations(annotations: CapabilityAnnotations | undefined):
   };
 }
 
+/** Reverse-DNS `_meta` key carrying a capability's deprecation notice. */
+const DEPRECATED_META_KEY = "dev.invokta/deprecated";
+
+/**
+ * Leads the tool description with the notice so every MCP client, including
+ * one that ignores `_meta`, shows the deprecation to the model and the user.
+ */
+function describeTool(
+  description: string,
+  deprecated: CapabilityDeprecation | undefined,
+): string {
+  if (deprecated === undefined) return description;
+  const since =
+    deprecated.since === undefined ? "" : ` since ${deprecated.since}`;
+  const replacement =
+    deprecated.replacement === undefined
+      ? ""
+      : `\nReplacement: ${deprecated.replacement}`;
+  return `Deprecated${since}: ${deprecated.reason}${replacement}\n\n${description}`;
+}
+
 function serializeEngineError(error: unknown): string {
   try {
     if (!(error instanceof EngineError)) return EXECUTION_FAILED_TEXT;
@@ -126,6 +148,7 @@ interface McpToolDefinition {
   readonly outputSchema: McpObjectSchema;
   readonly title?: string;
   readonly annotations?: ReturnType<typeof mapAnnotations>;
+  readonly _meta?: Readonly<Record<string, CapabilityDeprecation>>;
 }
 
 export interface McpToolCatalog<Capabilities extends CapabilityMap> {
@@ -193,11 +216,17 @@ export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
     const annotations = mapAnnotations(description.annotations);
     return Object.freeze({
       name: toolName,
-      description: description.description,
+      description: describeTool(
+        description.description,
+        description.deprecated,
+      ),
       inputSchema: asObjectSchema(description.inputSchema),
       outputSchema: asObjectSchema(description.outputSchema),
       ...(description.title === undefined ? {} : { title: description.title }),
       ...(annotations === undefined ? {} : { annotations }),
+      ...(description.deprecated === undefined
+        ? {}
+        : { _meta: { [DEPRECATED_META_KEY]: description.deprecated } }),
     });
   });
   const frozenTools = Object.freeze(tools);

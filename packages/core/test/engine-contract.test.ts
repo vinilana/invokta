@@ -216,6 +216,7 @@ describe("the core public contract", () => {
       access: 0,
       timeoutMs: 0,
       annotations: 0,
+      deprecated: 0,
       errors: 0,
       run: 0,
     };
@@ -232,6 +233,7 @@ describe("the core public contract", () => {
       access: "public",
       timeoutMs: 25,
       annotations: { readOnly: true },
+      deprecated: { reason: "Use the stable replacement." },
       errors: { STALE_VALUE: { description: "The value is stale." } },
       run,
     } as const;
@@ -269,6 +271,7 @@ describe("the core public contract", () => {
       description: "Use one coherent capability snapshot.",
       timeoutMs: 25,
       annotations: { readOnly: true },
+      deprecated: { reason: "Use the stable replacement." },
       errors: [
         {
           code: "STALE_VALUE",
@@ -285,6 +288,7 @@ describe("the core public contract", () => {
       access: 1,
       timeoutMs: 1,
       annotations: 1,
+      deprecated: 1,
       errors: 1,
       run: 1,
     });
@@ -397,6 +401,7 @@ describe("the core public contract", () => {
         idempotent: true,
         openWorld: false,
       },
+      access: "public",
       inputSchema: {
         type: "object",
         properties: {

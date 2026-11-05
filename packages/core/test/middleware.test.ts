@@ -913,7 +913,7 @@ describe("applyMiddleware capability contract", () => {
       ...classifyCapability(undefined, {
         access: access as unknown as AnyCapability["access"],
       }),
-      deprecated: { since: "1.2.0" },
+      deprecated: { reason: "Use support.triage.", since: "1.2.0" },
     } as AnyCapability & { readonly deprecated: { since: string } };
     const capabilities = applyMiddleware(
       { "support.classify": original },
@@ -942,7 +942,7 @@ describe("applyMiddleware capability contract", () => {
     const inheritedMarker = Symbol("capability.inherited");
     const base = {
       errors: { TICKET_NOT_FOUND: { description: "Ticket not found." } },
-      deprecated: { since: "1.2.0" },
+      deprecated: { reason: "Use support.triage.", since: "1.2.0" },
       inheritedHelper: "not part of the capability contract",
       [inheritedMarker]: true,
     };

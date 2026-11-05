@@ -54,6 +54,22 @@ export interface CapabilityAnnotations {
   readonly openWorld?: boolean;
 }
 
+/**
+ * Optional public deprecation notice for one capability. Invocation behavior
+ * does not change; adapters surface the notice to consumers.
+ */
+export interface CapabilityDeprecation {
+  /** Why consumers should stop using the capability (1-1,024 characters). */
+  readonly reason: string;
+  /** The engine version that deprecated the capability (1-64 characters). */
+  readonly since?: string;
+  /** What consumers should use instead, usually a capability ID (1-256 characters). */
+  readonly replacement?: string;
+}
+
+/** The published kind of a capability access rule. A function rule is opaque. */
+export type CapabilityAccessKind = "public" | "authenticated" | "function";
+
 export interface CapabilityDefinition<
   InputSchema extends EngineSchema,
   OutputSchema extends EngineSchema,
@@ -65,6 +81,7 @@ export interface CapabilityDefinition<
   readonly access: AccessRule<InferSchemaOutput<InputSchema>>;
   readonly timeoutMs?: number;
   readonly annotations?: CapabilityAnnotations;
+  readonly deprecated?: CapabilityDeprecation;
   readonly errors?: CapabilityErrorMap;
   readonly run: (args: {
     readonly input: InferSchemaOutput<InputSchema>;
@@ -80,6 +97,7 @@ export interface AnyCapability {
   readonly access: AccessRule<never>;
   readonly timeoutMs?: number;
   readonly annotations?: CapabilityAnnotations;
+  readonly deprecated?: CapabilityDeprecation;
   readonly errors?: CapabilityErrorMap;
   readonly run: (args: {
     readonly input: never;
@@ -118,9 +136,11 @@ export interface CapabilitySummary {
   readonly title?: string;
   readonly description: string;
   readonly annotations?: CapabilityAnnotations;
+  readonly deprecated?: CapabilityDeprecation;
 }
 
 export interface CapabilityDescription extends CapabilitySummary {
+  readonly access: CapabilityAccessKind;
   readonly inputSchema: EngineJsonSchema;
   readonly outputSchema: EngineJsonSchema;
   readonly timeoutMs?: number;

@@ -32,7 +32,7 @@ The package root exposes these public groups:
 
 | Group | Exports |
 | --- | --- |
-| Capability | `defineCapability`, `CapabilityDefinition`, `AnyCapability`, `CapabilityMap`, `CapabilityAnnotations`, `AccessRule` |
+| Capability | `defineCapability`, `CapabilityDefinition`, `AnyCapability`, `CapabilityMap`, `CapabilityAnnotations`, `CapabilityDeprecation`, `AccessRule`, `CapabilityAccessKind` |
 | Connector | `defineConnector`, `ConnectorConfigSchema`, `ConnectorDefinition`, `ConnectorFactory`, `ConnectorInstance`, `ConnectorPorts`, `InferConnectorConfigInput`, `InferConnectorConfigOutput` |
 | Engine | `createEngine`, `Engine`, `EngineDefinition`, `InvokeOptions`, `CapabilitySummary`, `CapabilityDescription` |
 | Schema | `EngineSchema`, `EngineJsonSchema`, `InferSchemaInput`, `InferSchemaOutput` |
@@ -71,6 +71,7 @@ interface CapabilityDefinition<InputSchema, OutputSchema> {
   readonly access: AccessRule<InferSchemaOutput<InputSchema>>;
   readonly timeoutMs?: number;
   readonly annotations?: CapabilityAnnotations;
+  readonly deprecated?: CapabilityDeprecation;
   readonly errors?: CapabilityErrorMap;
   readonly run: (args: {
     readonly input: InferSchemaOutput<InputSchema>;
@@ -160,6 +161,59 @@ deduplicated to one version. With the optional type arguments,
 `CapabilityError<typeof errors>` types `code` as the union of declared codes and
 `CapabilityError<typeof errors, "TICKET_NOT_FOUND">` as that one code; both stay
 assignable to `CapabilityError`.
+
+### Deprecation
+
+```ts
+interface CapabilityDeprecation {
+  readonly reason: string;
+  readonly since?: string;
+  readonly replacement?: string;
+}
+```
+
+```ts
+const classifyTicket = defineCapability({
+  description: "Classify a support ticket.",
+  input,
+  output,
+  access: "authenticated",
+  deprecated: {
+    reason: "Superseded by the triage flow.",
+    since: "2.0.0",
+    replacement: "support.triage-ticket",
+  },
+  run,
+});
+```
+
+`deprecated` marks a capability that consumers should stop using. `reason` is
+required. `since` usually names the engine version that deprecated the
+capability, and `replacement` usually names the capability to use instead; the
+core does not check that it exists, because composition may remap IDs.
+
+`createEngine` validates the notice synchronously. It must be a plain object of
+enumerable data properties named `reason`, `since`, or `replacement`, and each
+present value must be a non-blank string of at most 1,024, 64, and 256
+characters respectively. An `undefined` optional value counts as absent.
+Anything else, including accessors, proxies, and unknown fields, throws a
+`TypeError` without running caller code.
+
+Deprecation does not change invocation: the same pipeline, events, errors, and
+results apply. The first time each deprecated capability is invoked in an
+engine, after the capability is resolved and before input validation, the
+engine logs one warning:
+
+```ts
+logger.warn("Deprecated capability invoked.", {
+  capabilityId,
+  requestId,
+  since,       // when declared
+  replacement, // when declared
+});
+```
+
+A throwing or rejecting logger does not affect the invocation.
 
 ## `defineConnector`
 
@@ -290,8 +344,9 @@ function createEngine<Capabilities extends CapabilityMap>(
 ```
 
 Construction captures every capability's top-level contract once. It validates
-timeouts, domain error declarations, and JSON Schema documents synchronously,
-and copies annotations, declarations, and schemas away from producer-owned
+timeouts, domain error declarations, deprecation notices, and JSON Schema
+documents synchronously, and copies annotations, declarations, deprecation
+notices, and schemas away from producer-owned
 objects. Later mutation of the original map or
 definition cannot alter the registered contract.
 
@@ -340,7 +395,7 @@ list(): ReadonlyArray<CapabilitySummary>;
 ```
 
 Returns fresh, deeply frozen summaries containing `id`, `description`, optional
-`title`, and optional annotations.
+`title`, optional annotations, and the optional `deprecated` notice.
 
 ### `engine.describe`
 
@@ -348,10 +403,13 @@ Returns fresh, deeply frozen summaries containing `id`, `description`, optional
 describe(capabilityId): CapabilityDescription;
 ```
 
-Adds frozen `inputSchema`, `outputSchema`, optional `timeoutMs`, and optional
-`errors` to the summary. A missing ID throws `CAPABILITY_NOT_FOUND`.
+Adds frozen `inputSchema`, `outputSchema`, optional `timeoutMs`, the access
+kind, and optional `errors` to the summary. A missing ID throws
+`CAPABILITY_NOT_FOUND`.
 
 ```ts
+type CapabilityAccessKind = "public" | "authenticated" | "function";
+
 interface CapabilityErrorDescription {
   readonly code: string;
   readonly description: string;
@@ -360,6 +418,7 @@ interface CapabilityErrorDescription {
 }
 ```
 
+`access` is `function` for a function rule; the rule itself is never exposed.
 `errors` lists the declared domain errors in declaration order and is omitted
 when none is declared. `detailsSchema` is the output-side JSON Schema of the
 declared details schema.

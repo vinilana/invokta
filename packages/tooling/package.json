@@ -1,7 +1,7 @@
 {
   "name": "@invokta/tooling",
   "version": "0.9.1",
-  "description": "Development-time capability composition and MCP catalog checks for Invokta.",
+  "description": "Development-time capability composition checks, MCP catalog checks, and contract snapshot diffs for Invokta.",
   "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",
   "repository": {

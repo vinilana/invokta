@@ -109,16 +109,18 @@ nor authorization mutation changes the data that execution observes.
 `createEngine` is also the capability-contract boundary. It MUST capture every
 top-level capability field exactly once at construction so later replacement or
 changing accessors for `input`, `output`, `access`, `run`, metadata, annotations,
-declared domain errors, or timeout configuration cannot create a split registered
-contract. The same
-captured `timeoutMs` value is validated, described, and used for execution.
+declared domain errors, deprecation, or timeout configuration cannot create a
+split registered contract. The same captured `timeoutMs` value is validated,
+described, and used for execution.
 Standard JSON Schema converters run synchronously during construction. Their
 documents MUST be object-rooted lossless JSON, copied away from converter-owned
 objects, and deeply frozen internally. Cyclic, proxy-backed, accessor-backed, or
 otherwise non-JSON documents fail construction synchronously. `list` and
 `describe` return
 fresh, deeply frozen snapshots, preventing a caller or adapter request from
-changing later runtime or MCP contracts. Standard Schema validation itself
+changing later runtime or MCP contracts. `describe` also publishes the kind of
+the access rule as `access`: `public`, `authenticated`, or `function`; a
+function rule itself is never exposed. Standard Schema validation itself
 continues to run only at invocation through the captured input and output schema
 objects.
 
@@ -318,7 +320,10 @@ provided.
 annotations map directly to the tool. The capability key maps deterministically
 to a portable tool name matching `^[a-zA-Z0-9_-]{1,64}$`, and `tools/call`
 resolves that name back to the original key before `engine.invoke`. The adapter
-MUST fail closed if two keys map to the same tool name. Success returns
+MUST fail closed if two keys map to the same tool name. A deprecated capability
+keeps its tool; its description starts with the deprecation notice and the same
+notice is published as `_meta["dev.invokta/deprecated"]` (AE-EVOLVE-01).
+Success returns
 `structuredContent` and a JSON text fallback. A nonexistent tool is a protocol
 error; all other capability errors return `isError: true`. Error serialization
 is atomic: if the adapter cannot safely read or serialize the structured
@@ -540,6 +545,27 @@ request is cancelled; not refetch a failing remote key set within a bounded
 window; and never pass the raw token to the principal mapper. It depends
 only on `jose`; the core and adapters do not depend on it, and claim mapping
 beyond its default remains host code.
+
+## Contract evolution
+
+**AE-EVOLVE-01 — Deprecation notice.** A capability MAY declare
+`deprecated: { reason, since?, replacement? }` within the bounds of AE-CAP-01.
+`createEngine` validates and freezes it, and `list`, `describe`, the CLI, and
+the MCP tool listing publish it. A deprecated capability is invoked exactly like
+any other: no stage, event, error, or result changes. On the first invocation of
+each deprecated capability, after resolution and before input validation, the
+engine calls `logger.warn` once per engine instance with the capability ID,
+request ID, and the optional `since` and `replacement`; a failing logger is
+contained. ADR 0046 defines the exact rules.
+
+**AE-EVOLVE-02 — Contract snapshot and diff.** `@invokta/tooling` MAY capture
+an engine's public contract through `list` and `describe` as a deterministic
+JSON snapshot and compare two snapshots. The comparison classifies each change
+as breaking, potentially breaking, or compatible, classifies every JSON Schema
+change it cannot decide as potentially breaking, and exits non-zero when a
+breaking change is found. It never invokes a capability or starts an adapter.
+The [stability policy](./stability-policy.md) defines the classification for
+engine authors.
 
 ## MCP client installation
 

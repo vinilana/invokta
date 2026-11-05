@@ -26,6 +26,7 @@ contracts below define one implementation of that concept.
 | Install an engine in agent clients | [Installer reference](../apps/docs/src/content/docs/reference/installer.mdx) |
 | Contribute to Invokta | [Contributor guide](../CONTRIBUTING.md) |
 | Change a public contract | Follow the maintainer reading order below before editing |
+| Judge compatibility, deprecation, and upgrade risk | [Stability policy](./stability-policy.md) |
 
 ## Framework maintainer reading order
 
@@ -39,7 +40,9 @@ contracts below define one implementation of that concept.
 
 The [ADR index](./adr/README.md) is the canonical inventory of accepted
 decisions. The [changelog](../CHANGELOG.md) records release-level delivery and
-known limitations; this index does not duplicate either chronology.
+known limitations; this index does not duplicate either chronology. The
+[stability policy](./stability-policy.md) defines the public API, versioning,
+deprecation, platform support, security releases, and the criteria for 1.0.
 
 ## Design notes
 

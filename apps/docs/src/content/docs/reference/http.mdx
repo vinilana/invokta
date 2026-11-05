@@ -305,7 +305,8 @@ the relative base path, so no host is named.
 | --- | --- |
 | `GET /capabilities` | `listCapabilities` |
 | `GET /capabilities/{id}` | `describe.<id>` |
-| `POST /capabilities/{id}` | `invoke.<id>`, with the title as summary and the description |
+| `POST /capabilities/{id}` | `invoke.<id>`, with the title as summary and the description; `deprecated: true` for a capability with a `deprecated` notice |
+| `CapabilitySummary`, `CapabilityDescription` | The `list()` and `describe()` shapes, including the optional `deprecated` notice and the required `access` kind of a description |
 | Request body | `#/components/schemas/<name>.Input`, the input JSON Schema |
 | `200` response | `#/components/schemas/<name>.Output`, the output JSON Schema |
 | Error responses | The shared `Error` schema; 401 also documents `WWW-Authenticate` |

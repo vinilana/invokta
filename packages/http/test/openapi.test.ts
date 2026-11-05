@@ -241,7 +241,81 @@ describe("createHttpOpenApiDocument", () => {
       ).toMatchObject({ type: "object" });
     }
 
-    expect(JSON.stringify(document)).not.toMatch(/"(?:access|run)"/u);
+    expect(JSON.stringify(document)).not.toMatch(/"run"/u);
+    expect(JSON.stringify(document)).not.toContain("() => true");
+  });
+
+  it("documents the access kind and deprecation notices of describe()", () => {
+    const engine = createEngine({
+      name: "deprecation-engine",
+      version: "2.0.0",
+      capabilities: {
+        "support.classify": defineCapability({
+          description: "Classifies a support ticket.",
+          input: z.object({ ticketId: z.string() }),
+          output: z.object({ category: z.string() }),
+          access: () => true,
+          deprecated: {
+            reason: "Superseded by the triage flow.",
+            replacement: "support.triage",
+          },
+          async run() {
+            return { category: "billing" };
+          },
+        }),
+        "support.triage": defineCapability({
+          description: "Triages a support ticket.",
+          input: z.object({ ticketId: z.string() }),
+          output: z.object({ queue: z.string() }),
+          access: "public",
+          async run() {
+            return { queue: "tier-1" };
+          },
+        }),
+      },
+    });
+    const document = createHttpOpenApiDocument(engine);
+    const schemas = document.components.schemas as Readonly<
+      Record<
+        string,
+        { readonly required: string[]; readonly properties: JsonObject }
+      >
+    >;
+
+    expect(schemas.CapabilityDescription?.required).toContain("access");
+    expect(schemas.CapabilityDescription?.properties.access).toEqual({
+      enum: ["public", "authenticated", "function"],
+    });
+    for (const name of ["CapabilitySummary", "CapabilityDescription"]) {
+      expect(schemas[name]?.properties.deprecated).toEqual({
+        type: "object",
+        required: ["reason"],
+        properties: {
+          reason: { type: "string" },
+          since: { type: "string" },
+          replacement: { type: "string" },
+        },
+      });
+    }
+    const deprecatedInvoke = operation(
+      document,
+      "/capabilities/support.classify",
+      "post",
+    ) as Operation & { readonly deprecated?: boolean };
+    const currentInvoke = operation(
+      document,
+      "/capabilities/support.triage",
+      "post",
+    ) as Operation & { readonly deprecated?: boolean };
+    const deprecatedDescribe = operation(
+      document,
+      "/capabilities/support.classify",
+      "get",
+    ) as Operation & { readonly deprecated?: boolean };
+
+    expect(deprecatedInvoke.deprecated).toBe(true);
+    expect(Object.hasOwn(currentInvoke, "deprecated")).toBe(false);
+    expect(Object.hasOwn(deprecatedDescribe, "deprecated")).toBe(false);
   });
 
   it("documents declared domain errors as a 422 response", () => {

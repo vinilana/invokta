@@ -10,6 +10,7 @@ function describeInput(
   return {
     id: "example.table",
     description: "Plain JSON Schema shapes.",
+    access: "public",
     inputSchema: { type: "object", properties, required },
     outputSchema: { type: "object" },
   };
@@ -138,6 +139,7 @@ describe("deriveCapabilityFlags", () => {
     const table = deriveCapabilityFlags({
       id: "example.table",
       description: "Malformed root.",
+      access: "public",
       inputSchema: { type: "object", properties: [], required: "name" },
       outputSchema: { type: "object" },
     });

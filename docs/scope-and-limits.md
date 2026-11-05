@@ -12,7 +12,7 @@
 | `@invokta/http` | Web-standard plain HTTP JSON adapter over `engine.invoke`, OpenAPI 3.1 export, and a Node server entry point |
 | `@invokta/auth-jwt` | Optional JWT bearer authenticator for one configured issuer, usable as the HTTP `authenticate` hook |
 | `@invokta/otel` | Optional OpenTelemetry spans and metrics built from engine events through the OpenTelemetry API |
-| `@invokta/tooling` | Development-time validation of capability composition |
+| `@invokta/tooling` | Development-time validation of capability composition and MCP catalogs, and capability contract snapshots and diffs |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
 | `@invokta/devtools` | Development-time engine dev server with per-adapter capability emulation, doctor diagnostics, installed MCP inspection and homologation, and installed CLI inspection and homologation |
@@ -96,6 +96,8 @@ while the example owns one replaceable Authorization Server implementation.
 | Generated OpenAPI runtime URL | 8,192 UTF-8 bytes |
 | Generated OpenAPI runtime request body | 10 MiB serialized JSON |
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |
+| Capability deprecation `reason`, `since`, `replacement` | 1,024, 64, and 256 characters |
+| Contract snapshot file | 16 MiB; 256 JSON nesting levels per schema document |
 | MCP planned content values per tool result | 16, after the JSON text block; more fall back to the plain JSON result |
 | MCP image and audio media types | 10 allowlisted: 4 image and 6 audio, exact lowercase |
 | MCP resource-link URI, name, and media type | 8,192 `http(s)` characters without user information, normalized to RFC 3986; 1,024 UTF-8 bytes; 255 characters |
@@ -121,7 +123,13 @@ register, discover, or order it.
 context compiler, memory, RAG abstraction, prompt registry, official provider
 connectors or connector catalog, connector lifecycle, semantic cache, economics
 engine, eval runner, automated judge,
-release gate, or canary platform.
+release gate, or canary platform. The tooling contract diff (AE-EVOLVE-02) is a
+structural compatibility check between two contract snapshots: it does not
+inspect handler behavior, function access rule logic, prompts, models, or
+quality, does not choose or bump a version, and does not publish or block a
+release by itself. JSON Schema changes it cannot decide are reported as
+potentially breaking for human review. A deprecated capability is not removed,
+hidden, or rerouted by the framework.
 
 **AE-LIMIT-04 — Security.** Invokta does not provide an identity provider,
 token issuer, token introspection client, OpenID Connect discovery, DPoP, mTLS,

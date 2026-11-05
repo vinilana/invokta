@@ -59,8 +59,10 @@ export type {
 export type {
   AccessRule,
   AnyCapability,
+  CapabilityAccessKind,
   CapabilityAnnotations,
   CapabilityDefinition,
+  CapabilityDeprecation,
   CapabilityDescription,
   CapabilityMap,
   CapabilitySummary,

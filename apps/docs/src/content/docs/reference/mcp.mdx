@@ -58,6 +58,7 @@ The portable `@invokta/mcp/web` subpath exports only `createMcpHttpHandler`,
 | `destructive` | `destructiveHint` |
 | `idempotent` | `idempotentHint` |
 | `openWorld` | `openWorldHint` |
+| `deprecated` | Description prefix and `_meta["dev.invokta/deprecated"]` |
 
 Engine name and version become the MCP server identity. Omitted tool arguments
 default to `{}` before input validation.
@@ -68,6 +69,20 @@ the capability ID becomes `_`. A name longer than 64 characters uses its first
 of the original ID's SHA-256 digest. An empty ID becomes `_`; an already
 compatible ID remains unchanged. For example,
 `support.classify-ticket` is published as `support_classify-ticket`.
+
+A deprecated capability keeps its tool. Its description starts with the notice
+so clients that ignore metadata still show it to the model and the user:
+
+```text
+Deprecated since 2.0.0: Superseded by the triage flow.
+Replacement: support.triage-ticket
+
+Classify a support ticket.
+```
+
+`since` and the `Replacement` line appear only when declared. The same
+`{ reason, since?, replacement? }` object is published under the
+`dev.invokta/deprecated` key of the tool's `_meta`. Calls are unchanged.
 
 `tools/call` resolves the published alias back to the original capability ID
 before calling `engine.invoke`. If two capability IDs derive the same alias,

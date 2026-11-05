@@ -277,12 +277,23 @@ const annotationsSchema = {
   },
 };
 
+const deprecationSchema = {
+  type: "object",
+  required: ["reason"],
+  properties: {
+    reason: { type: "string" },
+    since: { type: "string" },
+    replacement: { type: "string" },
+  },
+};
+
 function summaryProperties() {
   return {
     id: { type: "string" },
     title: { type: "string" },
     description: { type: "string" },
     annotations: structuredClone(annotationsSchema),
+    deprecated: structuredClone(deprecationSchema),
   };
 }
 
@@ -295,9 +306,10 @@ function fixedSchemas() {
     },
     CapabilityDescription: {
       type: "object",
-      required: ["id", "description", "inputSchema", "outputSchema"],
+      required: ["id", "description", "access", "inputSchema", "outputSchema"],
       properties: {
         ...summaryProperties(),
+        access: { enum: ["public", "authenticated", "function"] },
         inputSchema: { type: "object" },
         outputSchema: { type: "object" },
         timeoutMs: { type: "integer", minimum: 1, maximum: 2_147_483_647 },
@@ -503,6 +515,9 @@ export function createHttpOpenApiDocument<Capabilities extends CapabilityMap>(
         operationId: `invoke.${description.id}`,
         summary: description.title ?? `Invoke ${description.id}`,
         description: description.description,
+        // A deprecated capability keeps working, so only its invocation is
+        // flagged; its describe route still serves the notice.
+        ...(description.deprecated === undefined ? {} : { deprecated: true }),
         requestBody: {
           required: true,
           content: jsonContent(inputName),
