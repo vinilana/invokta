@@ -46,12 +46,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   path. Capability IDs are resolved against the catalog first, so an unknown ID
   is a 404 that never reaches `engine.invoke` or its events; every invocation
   runs through `engine.invoke` with source `http` and the request signal.
-  Errors keep the sanitized `code`, `message`, and optional
-  `publicDetails` and map to HTTP statuses, with a declared `DOMAIN_ERROR` as
-  422 (documented per capability in the OpenAPI document) and `CANCELLED` as
-  503. Required
-  or explicitly disabled authentication uses the same structural request as
-  MCP HTTP; the loopback host allowlist, Origin rejection without an explicit
+  Errors keep the sanitized `code`, `message`, and optional `publicDetails`
+  and map to HTTP statuses, with a declared `DOMAIN_ERROR` as 422 (documented
+  per capability in the OpenAPI document) and `CANCELLED` as 503. Required or
+  explicitly disabled authentication uses the same structural request as MCP
+  HTTP, so `createJwtBearerAuthenticator` from `@invokta/auth-jwt` plugs in
+  directly; the loopback host allowlist, Origin rejection without an explicit
   CORS allowlist, and a 1,048,576-byte default body limit match the MCP HTTP
   defaults. `createHttpOpenApiDocument` generates the OpenAPI 3.1 document from
   `list` and `describe` only and fails closed on a JSON Schema identifier that
@@ -61,6 +61,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   tag.
 - The `support-engine` example adds a plain HTTP JSON entrypoint that shares one
   development authenticator with its MCP HTTP entrypoint.
+- `@invokta/auth-jwt` provides `createJwtBearerAuthenticator`, an optional JWT
+  bearer authenticator usable directly as the `serveMcpHttp` `authenticate`
+  hook or with any adapter exposing `headers.get` and an optional `signal`
+  (ADR 0049). It verifies one configured issuer's signed access tokens with
+  `jose` 6.2.12, its only runtime dependency, against a remote HTTPS JWKS URL
+  or a local key set. It requires an exact issuer, an audience, an explicit
+  asymmetric algorithm allowlist, `sub`, and `exp`, and supports a clock
+  tolerance of at most 300 seconds, required scopes, a token length bound of
+  8,192 characters by default and 16,384 at most, and a claims-to-principal
+  mapper that never receives the raw token. Invalid, expired, not-yet-valid,
+  wrongly issued or addressed, unknown-key, disallowed-algorithm, and
+  insufficient-scope credentials resolve `null`. A token without `kid` that
+  fits several published keys is tried against at most eight of them and
+  resolves `null` when none verifies it. Key-set outages and cancellation
+  reject with a fixed, causeless `JwtVerificationUnavailableError`, which the
+  MCP adapter answers with its sanitized 500. A remote key set is cached for 10
+  minutes, refetched for an unknown key at most every 30 seconds, and not
+  refetched for 5 monotonic seconds after a failed fetch; meanwhile a fresh
+  cache keeps answering and a `kid` missing from it resolves `null`.
 
 ### Changed
 
@@ -80,6 +99,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   operator may access the missing ticket `T-404` to demonstrate it.
 - `ExecutionSource` adds `"http"`. Code that switches exhaustively over
   invocation sources must handle the new member.
+- AE-LIMIT-04 is amended for the optional JWT bearer helper. Invokta still
+  provides no identity provider, token issuer, introspection client, OpenID
+  Connect discovery, DPoP, mTLS, policy language, PDP adapter, or session
+  binding.
+- The private `auth-jwt-bearer-engine` and `auth-auth0-engine` examples use
+  `@invokta/auth-jwt` instead of their own `jose` verifiers. Their exported
+  helpers change accordingly: `startAuthJwtBearerMcpHttp` takes an
+  `authenticate` function instead of a `verifier`, and `startAuth0McpHttp` a
+  `keySource` instead of a `verifier`; `createAuth0Authenticator` replaces
+  `createAuth0AccessTokenVerifier` and `createAuth0Authenticate`. Bearer
+  parsing now requires exactly one space and a compact JWS, the JWT bearer
+  example's `AUTH_JWT_ALGORITHMS` accepts only asymmetric algorithms, and its
+  new optional `AUTH_JWT_REQUIRED_SCOPES` names scopes every token must grant.
 
 ### Fixed
 

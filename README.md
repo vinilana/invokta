@@ -173,6 +173,8 @@ turning the framework into a service container.
   stateless Streamable HTTP.
 - `@invokta/http` publishes capabilities as plain HTTP JSON routes from a
   Web-standard handler and generates their OpenAPI 3.1 description.
+- `@invokta/auth-jwt` optionally verifies one issuer's JWT bearer access
+  tokens as the MCP HTTP or plain HTTP authentication hook.
 - `@invokta/tooling` validates composed capabilities and final MCP tool names.
 - `@invokta/devtools` provides an engine inspector plus MCP and CLI
   workbenches.

@@ -35,6 +35,7 @@ const packageReferences = [
   ["cli", "@invokta/cli"],
   ["mcp", "@invokta/mcp"],
   ["http", "@invokta/http"],
+  ["auth-jwt", "@invokta/auth-jwt"],
   ["tooling", "@invokta/tooling"],
   ["devtools", "@invokta/devtools"],
   ["installer", "@invokta/installer"],

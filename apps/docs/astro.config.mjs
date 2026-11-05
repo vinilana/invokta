@@ -156,6 +156,7 @@ export default defineConfig({
             { slug: "reference/cli" },
             { slug: "reference/mcp" },
             { slug: "reference/http" },
+            { slug: "reference/auth-jwt" },
             { slug: "reference/tooling" },
             { slug: "reference/devtools" },
             { slug: "reference/installer" },

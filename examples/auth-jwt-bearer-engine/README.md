@@ -3,9 +3,11 @@
 Provider-neutral OIDC/JWT bearer authentication at the MCP HTTP boundary.
 
 This is the base authentication example. It verifies an OAuth 2.0 JWT access
-token with [`jose`](https://github.com/panva/jose), maps the verified claims to
-Invokta's minimal `Principal`, and exposes a single `identity.whoami`
-capability that echoes that principal back. Any OIDC provider that publishes a
+token with the optional
+[`@invokta/auth-jwt`](../../packages/auth-jwt/) authenticator, which wraps
+[`jose`](https://github.com/panva/jose), maps the verified claims to Invokta's
+minimal `Principal`, and exposes a single `identity.whoami` capability that
+echoes that principal back. Any OIDC provider that publishes a
 JWKS works with it: point `AUTH_JWT_ISSUER` and `AUTH_JWT_AUDIENCE` at your
 project and nothing else changes.
 
@@ -14,14 +16,16 @@ project and nothing else changes.
 - The `serveMcpHttp` `auth.authenticate` hook: `Principal` for a valid
   credential, `null` for an invalid one (HTTP 401), a thrown error only when the
   check could not complete (sanitized HTTP 500).
-- A verifier whose key resolution is injectable, so production uses
-  `createRemoteJWKSet` and the tests use `createLocalJWKSet` with a locally
-  generated key pair. Signature verification is real; no test touches the
-  network.
-- Claims mapped to `Principal` by an explicit allowlist: `sub` becomes the
-  principal id, the space-delimited `scope` claim becomes `attributes.scopes`,
-  and `iss` plus `client_id` are the only other claims carried. The raw token
-  never reaches the engine.
+- `createJwtBearerAuthenticator` as that hook. Production passes the issuer's
+  `jwksUrl`; the tests pass a local `jwks` built from a locally generated key
+  pair, plus one loopback key-set endpoint that refuses requests. Signature
+  verification is real; no test leaves the machine.
+- The default claim mapping: `sub` becomes the principal id, the
+  space-delimited `scope` claim becomes `attributes.scopes`, and `iss` plus
+  `client_id` are the only other claims carried. The raw token never reaches
+  the engine.
+- Optional required scopes: a token without them is answered with HTTP 401,
+  and the challenge scopes tell an OAuth client what to request.
 - Authentication separated from authorization: `identity.whoami` declares
   `access: "authenticated"` and derives its result from `context.principal`
   only, never from input.
@@ -35,11 +39,10 @@ src/
   engine.ts                # engine with the identity.whoami capability
   capabilities/whoami.ts   # access: "authenticated"; echoes safe principal data
   identity/
-    verifier.ts            # jose jwtVerify, issuer/audience/algorithm policy
-    principal.ts           # verified claims -> Principal
-  mcp-http.ts              # serveMcpHttp entrypoint, mode "required"
+    jwks-location.ts       # issuer -> conventional JWKS URL, or an override
+  mcp-http.ts              # @invokta/auth-jwt policy and serveMcpHttp entrypoint
 test/
-  identity.test.ts         # verifier matrix, claim mapping, authenticate hook
+  identity.test.ts         # JWKS location, credential matrix, authenticate hook
   mcp-http.test.ts         # well-known metadata, 401 challenge, authorized call
 ```
 
@@ -50,7 +53,8 @@ test/
 | `AUTH_JWT_ISSUER` | yes | Exact `iss` value to accept, for example `https://tenant.example.auth0.com/` |
 | `AUTH_JWT_AUDIENCE` | yes | Resource identifier expected in `aud`; normally this engine's public `/mcp` URL |
 | `AUTH_JWT_JWKS_URI` | no | Explicit key-set URL. Defaults to `<issuer>/.well-known/jwks.json` |
-| `AUTH_JWT_ALGORITHMS` | no | Comma-separated signature allowlist. Defaults to `RS256,ES256` |
+| `AUTH_JWT_ALGORITHMS` | no | Comma-separated asymmetric signature allowlist. Defaults to `RS256,ES256` |
+| `AUTH_JWT_REQUIRED_SCOPES` | no | Comma-separated scopes every token must grant; list them in `AUTH_JWT_CHALLENGE_SCOPES` too |
 | `AUTH_JWT_RESOURCE` | no | Public `/mcp` URL. Setting it publishes Protected Resource Metadata |
 | `AUTH_JWT_AUTHORIZATION_SERVERS` | no | Comma-separated AS issuers for that document. Defaults to `AUTH_JWT_ISSUER` |
 | `AUTH_JWT_SCOPES_SUPPORTED` | no | Comma-separated scopes advertised in that document |
@@ -98,11 +102,12 @@ yarn workspace @invokta/example-auth-jwt-bearer test
 ```
 
 The suite mints tokens from a key pair generated in the test process and covers
-the valid credential plus every invalid class (missing header, wrong scheme,
-malformed, expired, wrong issuer, wrong audience, unknown key, bad signature,
-algorithm outside the allowlist, missing subject), the infrastructure-failure
-path, cancellation, and the assertion that no token material reaches the
-principal.
+the valid credential plus the invalid classes this configuration must reject
+(missing header, wrong scheme, malformed, expired, wrong issuer, wrong audience,
+unknown key, bad signature, algorithm outside the allowlist, missing subject,
+missing required scope), the key-set outage path, and the assertion that no
+token material reaches the principal. The complete matrix, including
+cancellation and the remote key-set cache, lives in `@invokta/auth-jwt`.
 
 ## Related documentation
 
