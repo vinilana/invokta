@@ -1170,10 +1170,15 @@ istanbul-reports@^3.2.0:
     html-escaper "^2.0.0"
     istanbul-lib-report "^3.0.0"
 
-jose@6.2.12, jose@^6.1.3, jose@^6.2.10, jose@^6.2.12:
+jose@6.2.12:
   version "6.2.12"
   resolved "https://registry.yarnpkg.com/jose/-/jose-6.2.12.tgz#65663e146edd010b98ece83f81737d3aa95fd0d7"
   integrity sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==
+
+jose@^6.1.3, jose@^6.2.12, jose@^6.2.13:
+  version "6.2.15"
+  resolved "https://registry.yarnpkg.com/jose/-/jose-6.2.15.tgz#b1016c7e0a33d711bffc25598526b62d57730a27"
+  integrity sha512-qdF6ewcZARtef63fJ9AKKZPgxw+t7USH6HLXYcD4CrdmSvDp79rpJSPFEKc90QBeGS63u1KQtN2MZQHC0yDIzA==
 
 js-tokens@^10.0.0:
   version "10.0.0"
@@ -1409,13 +1414,13 @@ obug@^2.1.1:
   resolved "https://registry.yarnpkg.com/obug/-/obug-2.1.4.tgz#9090d8a548a522517915d2aa6aae907197ac6cf8"
   integrity sha512-4a+OsYv9UktOJKE+l1A4OufDgdRF9PifWj+tJnHURo/P+WOxpG4GzUFL9qCalmWauao6ogiG+QvnCovwPoyAWA==
 
-oidc-provider@~9.12.2:
-  version "9.12.2"
-  resolved "https://registry.yarnpkg.com/oidc-provider/-/oidc-provider-9.12.2.tgz#24137fc1c45e975ebff8bcfac70608703fc4d077"
-  integrity sha512-UaqeVpeijTocxVbDowPqPKloGjb49bxRSzHfChyI86teR+6xxoiI1V5jv8CHL2AIUmA2rg0xTZcYaC9GguympA==
+oidc-provider@~9.13.3:
+  version "9.13.3"
+  resolved "https://registry.yarnpkg.com/oidc-provider/-/oidc-provider-9.13.3.tgz#ed3ab01776bccc06a4896c0ae33aa4e49726443e"
+  integrity sha512-WmNDX9dLeItBmIqGqspmX5u6Cc7VVMrKUw2InX2T16+bwUJ8m/N5rJ3Ed+YKxE5aZqLp4YqwEi6kMJx4Ui5ffw==
   dependencies:
     debug "^4.4.3"
-    jose "^6.2.10"
+    jose "^6.2.13"
     koa "^3.2.1"
 
 on-finished@^2.4.1:

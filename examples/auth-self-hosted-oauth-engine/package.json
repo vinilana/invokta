@@ -42,7 +42,7 @@
     "@invokta/installer": "0.10.0",
     "@invokta/mcp": "0.10.0",
     "jose": "^6.2.12",
-    "oidc-provider": "~9.12.2",
+    "oidc-provider": "~9.13.3",
     "pg": "^8.16.3",
     "zod": "4.6.7"
   },
