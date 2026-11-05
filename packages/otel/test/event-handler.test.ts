@@ -63,6 +63,7 @@ function failed(
   code: string,
   durationMs = 7.25,
   capabilityId = "support.classify-ticket",
+  domainCode?: string,
 ): EngineEvent {
   return {
     type: "invocation.failed",
@@ -70,6 +71,7 @@ function failed(
     capabilityId,
     durationMs,
     code,
+    ...(domainCode === undefined ? {} : { domainCode }),
   } as EngineEvent;
 }
 
@@ -146,6 +148,35 @@ describe("invocation spans", () => {
     });
     expect(domain?.attributes["invokta.error.code"]).toBe(
       "TICKET_ALREADY_CLOSED",
+    );
+  });
+
+  it("records the declared domain code of a domain error", () => {
+    const handler = createHandler();
+
+    handler(started("request-1"));
+    handler(
+      failed("request-1", "DOMAIN_ERROR", 2, undefined, "TICKET_NOT_FOUND"),
+    );
+    handler(started("request-2"));
+    handler(failed("request-2", "DOMAIN_ERROR", 2, undefined, "D".repeat(257)));
+    handler(started("request-3"));
+    handler(failed("request-3", "EXECUTION_FAILED"));
+
+    const [domain, overLong, execution] = telemetry.spans();
+    expect(domain?.status).toEqual({
+      code: SpanStatusCode.ERROR,
+      message: "DOMAIN_ERROR",
+    });
+    expect(domain?.attributes).toMatchObject({
+      "invokta.invocation.outcome": "failed",
+      "invokta.error.code": "DOMAIN_ERROR",
+      "error.type": "DOMAIN_ERROR",
+      "invokta.error.domain_code": "TICKET_NOT_FOUND",
+    });
+    expect(overLong?.attributes["invokta.error.domain_code"]).toBe("_OTHER");
+    expect(execution?.attributes).not.toHaveProperty(
+      "invokta.error.domain_code",
     );
   });
 
@@ -382,6 +413,64 @@ describe("reused request IDs", () => {
     },
   );
 
+  it("ends every span of a three-way overlap without an outcome", async () => {
+    const handler = createHandler();
+
+    handler(started("reused", { capabilityId: "a" }));
+    handler(started("reused", { capabilityId: "b" }));
+    handler(started("reused", { capabilityId: "c" }));
+    handler(completed("reused", 1, "b"));
+    expect(trace.getSpan(handler.contextFor("reused"))).toBeUndefined();
+    handler(failed("reused", "CANCELLED", 1, "c"));
+    expect(trace.getSpan(handler.contextFor("reused"))).toBeUndefined();
+    handler(completed("reused", 1, "a"));
+    handler(started("reused", { capabilityId: "d" }));
+    handler(completed("reused", 1, "d"));
+
+    const spans = telemetry.spans();
+    expect(spans.map((span) => span.name)).toEqual([
+      "invoke a",
+      "invoke b",
+      "invoke c",
+      "invoke d",
+    ]);
+    for (const span of spans.slice(0, 3)) {
+      expect(span.attributes["invokta.span.evicted"]).toBe(true);
+      expect(span.attributes).not.toHaveProperty("invokta.invocation.outcome");
+    }
+    expect(spans[3]?.attributes).not.toHaveProperty("invokta.span.evicted");
+    expect(spans[3]?.attributes["invokta.invocation.outcome"]).toBe(
+      "completed",
+    );
+
+    const metrics = await telemetry.metrics();
+    const total = (metrics.get("invokta.invocations")?.points ?? []).reduce(
+      (sum, point) => sum + (point.value as number),
+      0,
+    );
+    expect(total).toBe(4);
+  });
+
+  it("omits the source from metrics of overlapping calls with different sources", async () => {
+    const handler = createHandler();
+
+    handler(started("reused", { capabilityId: "a", source: "cli" }));
+    handler(started("reused", { capabilityId: "b", source: "mcp-http" }));
+    handler(completed("reused", 1, "a"));
+    handler(completed("reused", 1, "b"));
+
+    const metrics = await telemetry.metrics();
+    const points = metrics.get("invokta.invocations")?.points ?? [];
+    expect(points).toHaveLength(2);
+    for (const point of points) {
+      expect(point.attributes).not.toHaveProperty("invokta.execution.source");
+    }
+    const spans = telemetry.spans();
+    expect(
+      spans.map((span) => span.attributes["invokta.execution.source"]),
+    ).toEqual(["cli", "mcp-http"]);
+  });
+
   it("resolves no invocation span for a reused request ID while the calls overlap", () => {
     const handler = createHandler();
 
@@ -516,6 +605,48 @@ describe("invocation metrics", () => {
     expect(failures?.unit).toBe("{failure}");
     expect(failures?.points).toHaveLength(1);
     expect(pointWith<number>(failures, failure)?.value).toBe(2);
+  });
+
+  it("records domain codes on the failures counter only, with bounded values", async () => {
+    const handler = createHandler({ maxMetricAttributeValues: 2 });
+    const domainCodes = [
+      "TICKET_NOT_FOUND",
+      "TICKET_CLOSED",
+      "TICKET_LOCKED",
+      "TICKET_NOT_FOUND",
+    ];
+
+    domainCodes.forEach((domainCode, index) => {
+      const requestId = `request-${String(index)}`;
+      handler(started(requestId));
+      handler(failed(requestId, "DOMAIN_ERROR", 1, undefined, domainCode));
+    });
+    handler(started("request-execution"));
+    handler(failed("request-execution", "EXECUTION_FAILED"));
+
+    const metrics = await telemetry.metrics();
+    const failures = metrics.get("invokta.invocation.failures");
+    const recorded = failures?.points.map((point) => [
+      point.attributes["invokta.error.code"],
+      point.attributes["invokta.error.domain_code"],
+      point.value,
+    ]);
+    expect(recorded).toEqual(
+      expect.arrayContaining([
+        ["DOMAIN_ERROR", "TICKET_NOT_FOUND", 2],
+        ["DOMAIN_ERROR", "TICKET_CLOSED", 1],
+        ["DOMAIN_ERROR", "_OTHER", 1],
+        ["EXECUTION_FAILED", undefined, 1],
+      ]),
+    );
+    expect(recorded).toHaveLength(4);
+    for (const name of ["invokta.invocations", "invokta.invocation.duration"]) {
+      for (const point of metrics.get(name)?.points ?? []) {
+        expect(point.attributes, name).not.toHaveProperty(
+          "invokta.error.domain_code",
+        );
+      }
+    }
   });
 
   it("records terminal metrics even when the start was not observed", async () => {

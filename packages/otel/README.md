@@ -88,6 +88,7 @@ createEngine({
 | `invokta.principal.id` | Only with `recordPrincipalId: true` |
 | `invokta.invocation.outcome` | `completed` or `failed` |
 | `invokta.error.code`, `error.type` | Failure; the code is an opaque string |
+| `invokta.error.domain_code` | `DOMAIN_ERROR` failure; the capability's declared domain code |
 | `invokta.span.evicted` | `true` when the span ended early: evicted, or its request ID was reused |
 
 A span attribute value longer than 256 characters is recorded as `_OTHER`.
@@ -98,9 +99,11 @@ A span attribute value longer than 256 characters is recorded as `_OTHER`.
 | --- | --- | --- | --- |
 | `invokta.invocations` | Counter | `{invocation}` | capability, source, outcome, error code on failure |
 | `invokta.invocation.duration` | Histogram | `s` | capability, source, outcome, error code on failure |
-| `invokta.invocation.failures` | Counter | `{failure}` | capability, source, error code |
+| `invokta.invocation.failures` | Counter | `{failure}` | capability, source, error code, domain code of a `DOMAIN_ERROR` |
 
-Failure points carry both `invokta.error.code` and `error.type`. Request and
+Failure points carry both `invokta.error.code` and `error.type`. Only the
+failures counter carries `invokta.error.domain_code`, so the count and duration
+series stay split by framework code alone. Request and
 principal IDs never appear on metrics. A failed lookup records its
 caller-chosen capability ID as `_OTHER`; so does any value that is not a
 non-empty string of at most 256 characters, and any new value once an attribute

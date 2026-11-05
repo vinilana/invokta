@@ -44,7 +44,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   with the measured duration, plus the `invokta.invocations` and
   `invokta.invocation.failures` counters and the `invokta.invocation.duration`
   histogram. Attribute names are stable, principal IDs are recorded only on
-  opt-in, error codes are opaque strings, metric attributes are bounded, and
+  opt-in, error codes are opaque strings, a `DOMAIN_ERROR` records its
+  declared domain code on the span and the failures counter, metric attributes
+  are bounded, and
   pending spans are capped with eviction. Invocations that reuse a running
   invocation's request ID end their spans early without an outcome instead of
   receiving another invocation's result. `contextFor(requestId)` lets a

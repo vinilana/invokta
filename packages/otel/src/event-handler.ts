@@ -38,6 +38,7 @@ const ATTR_PRINCIPAL_ID = "invokta.principal.id";
 const ATTR_OUTCOME = "invokta.invocation.outcome";
 const ATTR_ERROR_CODE = "invokta.error.code";
 const ATTR_ERROR_TYPE = "error.type";
+const ATTR_ERROR_DOMAIN_CODE = "invokta.error.domain_code";
 const ATTR_SPAN_EVICTED = "invokta.span.evicted";
 
 /**
@@ -267,6 +268,7 @@ export function createOpenTelemetryEventHandler(
   const capabilityIds = new BoundedValues(maxMetricAttributeValues);
   const sources = new BoundedValues(maxMetricAttributeValues);
   const errorCodes = new BoundedValues(maxMetricAttributeValues);
+  const domainCodes = new BoundedValues(maxMetricAttributeValues);
 
   /** Ends a span without an outcome that may belong to another invocation. */
   const endEarly = (span: Span): void => {
@@ -372,6 +374,7 @@ export function createOpenTelemetryEventHandler(
     event: Record<string, unknown>,
     source: string | undefined,
     code: string | undefined,
+    domainCode: string | undefined,
   ): void => {
     const instruments = currentInstruments();
     const attributes: Attributes = {
@@ -395,13 +398,26 @@ export function createOpenTelemetryEventHandler(
     if (durationMs !== undefined) {
       instruments.duration.record(durationMs / 1_000, outcome);
     }
-    if (code !== undefined) instruments.failures.add(1, attributes);
+    if (code !== undefined) {
+      // Domain codes are engine-declared, so only the failures counter splits
+      // by them; the count and duration series keep the framework taxonomy.
+      instruments.failures.add(
+        1,
+        domainCode === undefined
+          ? attributes
+          : {
+              ...attributes,
+              [ATTR_ERROR_DOMAIN_CODE]: domainCodes.normalize(domainCode),
+            },
+      );
+    }
   };
 
   const endSpan = (
     event: Record<string, unknown>,
     entry: PendingInvocation,
     code: string | undefined,
+    domainCode: string | undefined,
   ): void => {
     const { span } = entry;
     if (code === undefined) {
@@ -413,6 +429,12 @@ export function createOpenTelemetryEventHandler(
         [ATTR_ERROR_CODE]: spanCode,
         [ATTR_ERROR_TYPE]: spanCode,
       });
+      if (domainCode !== undefined) {
+        span.setAttribute(
+          ATTR_ERROR_DOMAIN_CODE,
+          boundSpanValue(domainCode) ?? OTHER,
+        );
+      }
       span.setStatus({ code: SpanStatusCode.ERROR, message: spanCode });
       // The ID of a failed lookup is caller-chosen; keep the name bounded.
       if (code === CAPABILITY_NOT_FOUND) span.updateName(OPERATION);
@@ -457,19 +479,22 @@ export function createOpenTelemetryEventHandler(
       }
     }
     let code: string | undefined;
+    let domainCode: string | undefined;
     if (failed) {
       // The code is opaque: new codes are recorded without a release here.
       const candidate = readString(event.code);
       code = candidate === undefined || candidate === "" ? OTHER : candidate;
+      const declared = readString(event.domainCode);
+      domainCode = declared === "" ? undefined : declared;
     }
     try {
-      recordMetrics(event, source, code);
+      recordMetrics(event, source, code, domainCode);
     } catch {
       reportFailure();
     }
     if (owned !== undefined) {
       try {
-        endSpan(event, owned, code);
+        endSpan(event, owned, code, domainCode);
       } catch {
         reportFailure();
       }

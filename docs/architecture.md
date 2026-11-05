@@ -196,14 +196,15 @@ or another package, MUST NOT throw into the engine, and MUST treat error codes
 and sources as opaque strings. It starts one `INTERNAL` span named
 `invoke {capabilityId}` at the event's `startedAt` in the active context,
 correlates the terminal event by `requestId`, and ends the span after
-`durationMs` with an error status and code on failure. It records the
+`durationMs` with an error status and code on failure, plus the declared
+`domainCode` of a `DOMAIN_ERROR`. It records the
 `invokta.invocations` and `invokta.invocation.failures` counters and the
 `invokta.invocation.duration` histogram with bounded attributes. Principal IDs
 are recorded only on explicit opt-in and never on metrics. Pending spans are
 capped and the oldest is evicted. Spans and `contextFor` are accurate only while
 request IDs are unique among concurrent invocations; when a running
 invocation's request ID is reused, the handler MUST NOT assign an outcome
-across the overlapping invocations. The invocation span is not active inside
+across the overlapping invocations within the `maxPendingSpans` bound. The invocation span is not active inside
 `access` or `run`; a capability nests its own spans through the injected
 `contextFor(requestId)` accessor. ADR 0050 defines the attribute names,
 metric units, and limits.

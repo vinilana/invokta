@@ -123,6 +123,7 @@ event with the same `requestId`.
 | `invokta.invocation.outcome` | End | `completed` or `failed` |
 | `invokta.error.code` | Failure | Opaque error code |
 | `error.type` | Failure | Same value, for OpenTelemetry error conventions |
+| `invokta.error.domain_code` | `DOMAIN_ERROR` failure | Declared domain code |
 | `invokta.span.evicted` | Early end: eviction or a reused request ID | `true` |
 
 A string attribute value longer than 256 characters is recorded as `_OTHER`
@@ -136,7 +137,7 @@ exception event, or credential, because the events carry none.
 | --- | --- | --- | --- |
 | `invokta.invocations` | Counter | `{invocation}` | capability, source, outcome, and on failure error code and `error.type` |
 | `invokta.invocation.duration` | Histogram | `s` | Same as `invokta.invocations` |
-| `invokta.invocation.failures` | Counter | `{failure}` | capability, source, error code, and `error.type` |
+| `invokta.invocation.failures` | Counter | `{failure}` | capability, source, error code, `error.type`, and the domain code of a `DOMAIN_ERROR` |
 
 Metrics are recorded from terminal events, so a started invocation that never
 terminates adds no data point. The failures counter equals the failed
@@ -155,6 +156,16 @@ Metric attributes are bounded:
 - request and principal IDs never appear on metrics; and
 - the source is omitted when the start of the invocation was not observed, or
   when invocations sharing a request ID started from different sources.
+
+A `DOMAIN_ERROR` failure (ADR 0045) carries the capability's declared
+`domainCode`. The span records it as `invokta.error.domain_code`, and
+`invokta.error.code` and `error.type` stay `DOMAIN_ERROR`. Of the metrics, only
+`invokta.invocation.failures` splits by the domain code, so alerts can target
+one declared failure. The count and duration series keep the framework code
+taxonomy, which avoids multiplying their series by every declared code. Domain
+codes are engine-declared (at most 64 per capability), and the attribute has its
+own `maxMetricAttributeValues` bound, so a value beyond the bound, or one that is
+not a non-empty string of at most 256 characters, becomes `_OTHER`.
 
 ### Robustness
 
@@ -183,7 +194,8 @@ them:
 
 Once every overlapping invocation has terminated, the request ID is traced
 normally again. The bookkeeping for overlapping and evicted invocations is
-bounded by `maxPendingSpans`; beyond that bound the oldest counts are dropped.
+bounded by `maxPendingSpans`; beyond that bound the oldest counts are dropped,
+so a reused request ID can again receive an earlier invocation's outcome.
 
 The error code is an opaque string, so codes added by later decisions are
 recorded without a release of this package. Unknown event types are ignored.

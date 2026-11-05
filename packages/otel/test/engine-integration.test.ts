@@ -1,4 +1,5 @@
 import {
+  CapabilityError,
   createEngine,
   defineCapability,
   type EngineEvent,
@@ -52,6 +53,9 @@ function createTicketEngine(
         input: z.object({ ticketId: z.string().min(1) }),
         output: z.object({ category: z.string() }),
         access: "authenticated",
+        errors: {
+          TICKET_CLOSED: { description: "The ticket is already closed." },
+        },
         async run({ input, context: execution }) {
           // Without the workaround this span follows the ambient context.
           tracing.tracer.startSpan("ambient.lookup").end();
@@ -65,6 +69,9 @@ function createTicketEngine(
               },
             ),
           );
+          if (input.ticketId === "T-410") {
+            throw new CapabilityError("TICKET_CLOSED");
+          }
           if (input.ticketId === "T-404") {
             throw new EngineError({
               code: "EXECUTION_FAILED",
@@ -192,6 +199,42 @@ describe("engine instrumentation through onEvent", () => {
         "invokta.execution.source": "direct",
         "invokta.error.code": "CAPABILITY_NOT_FOUND",
         "error.type": "CAPABILITY_NOT_FOUND",
+      })?.value,
+    ).toBe(1);
+  });
+
+  it("records a declared domain error with its domain code", async () => {
+    const { engine } = instrumentedEngine();
+
+    await expect(
+      engine.invoke(
+        "support.classify-ticket",
+        { ticketId: "T-410" },
+        { principal, requestId: "request-closed" },
+      ),
+    ).rejects.toMatchObject({ code: "DOMAIN_ERROR" });
+
+    const invocation = telemetry
+      .spans()
+      .find(
+        (span) => span.attributes["invokta.request.id"] === "request-closed",
+      );
+    expect(invocation?.status).toEqual({
+      code: SpanStatusCode.ERROR,
+      message: "DOMAIN_ERROR",
+    });
+    expect(invocation?.attributes).toMatchObject({
+      "invokta.error.code": "DOMAIN_ERROR",
+      "invokta.error.domain_code": "TICKET_CLOSED",
+    });
+    const metrics = await telemetry.metrics();
+    expect(
+      pointWith<number>(metrics.get("invokta.invocation.failures"), {
+        "invokta.capability.id": "support.classify-ticket",
+        "invokta.execution.source": "direct",
+        "invokta.error.code": "DOMAIN_ERROR",
+        "error.type": "DOMAIN_ERROR",
+        "invokta.error.domain_code": "TICKET_CLOSED",
       })?.value,
     ).toBe(1);
   });
