@@ -19,7 +19,7 @@ import {
 
 /** Instrumentation scope; the version tracks the package release. */
 const INSTRUMENTATION_NAME = "@invokta/otel";
-const INSTRUMENTATION_VERSION = "0.9.1";
+const INSTRUMENTATION_VERSION = "0.10.0";
 
 const DEFAULT_MAX_PENDING_SPANS = 10_000;
 const DEFAULT_MAX_METRIC_ATTRIBUTE_VALUES = 256;

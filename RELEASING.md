@@ -21,6 +21,9 @@ an npm trusted publisher with these exact values:
 - environment: `npm`; and
 - allowed action: `npm publish`.
 
+A package name that has never been published must first be bootstrapped as
+described in [First publication of a new package](#first-publication-of-a-new-package).
+
 Trusted publishing requires npm 11.5.1 or newer. The workflow installs npm
 11.19.0 before publication and grants only `contents: read` and `id-token:
 write` to the publish job. npm uses the short-lived GitHub OIDC identity and
@@ -32,10 +35,63 @@ directly so package-manager environment overrides cannot redirect publication.
 For tag runs, the Verify job executes the same script in read-only `--check`
 mode before the protected publish job can start.
 
+## First publication of a new package
+
+npm configures a trusted publisher only for a package that already exists on
+the registry. The npm CLI documentation for `npm trust` states that "the
+package you're configuring must already exist on the npm registry", and the
+trusted publishing guide starts from the package's settings page on
+npmjs.com. A package name added to `scripts/release/release-packages.json`
+therefore needs a one-time bootstrap before the first release tag that
+includes it.
+
+The preflight refuses a name that was never published: `--check` stops with
+`<package> has no readable latest dist-tag`, so the tag's Verify job fails and
+the protected publish job never starts. After the release preparation merges,
+complete these steps for each new package before creating the tag:
+
+1. Confirm the name has never been published:
+   `npm view <package> --registry=https://registry.npmjs.org/` must report
+   `E404`.
+2. Sign in with an npm account that has account-level two-factor
+   authentication and publish rights for the scope. In a new empty directory
+   outside the repository, create a `package.json` containing only `name`,
+   `version: "0.0.0"`, a `description` that marks it as a trusted publishing
+   placeholder, `license: "MIT"`, and the repository URL, plus a README with
+   the same statement. Run
+   `npm publish --access public --registry=https://registry.npmjs.org/` there.
+   This placeholder is the only publication made outside the workflow. It is
+   not a release, has no code or `gitHead`, and must not reuse a real release
+   version. Version `0.0.0` is the stable version that the preflight accepts
+   as an older `latest`.
+3. On the package's npmjs.com settings page, configure the trusted publisher
+   with the values in [One-time repository setup](#one-time-repository-setup).
+   npm does not verify the configuration when it is saved, so compare the
+   repository, workflow filename, and environment exactly. npm 11.15.0 or newer
+   can configure the same relationship with `npm trust`.
+4. Under the package's publishing access, select **Require two-factor
+   authentication and disallow tokens**, matching the token-free workflow.
+5. Confirm `npm view <package> dist-tags.latest` prints `0.0.0`.
+6. Create and push the release tag promptly. npm documents that a newly
+   created trusted publisher configuration expires if its first successful
+   publish does not happen within 2 days. An expired configuration must be
+   deleted and created again.
+
+The release workflow then publishes the new package in manifest order, moves
+its `latest` dist-tag from `0.0.0` to the release, and verifies its `gitHead`
+like every other package. A missing or mismatched trusted publisher makes npm
+reject that package after the packages before it in the manifest were
+published; correct the configuration and rerun the failed workflow as
+described in [Recovering a partial release](#recovering-a-partial-release).
+After the release, deprecate the placeholder with
+`npm deprecate <package>@0.0.0 "Placeholder for trusted publishing setup; install a released version."`.
+
 ## Release flow
 
 1. Prepare and merge the cohesive `chore/release-X.Y.Z` change through the
-   documented release preparation workflow.
+   documented release preparation workflow. If the release adds a package,
+   complete [First publication of a new package](#first-publication-of-a-new-package)
+   for it before the next step.
 2. On a clean checkout whose `HEAD` matches `origin/main`, run:
 
    ```bash
@@ -68,10 +124,12 @@ dry-runs. It does not require npm authentication and makes no registry change.
 npm can accept a package and report that it is still being processed for
 several minutes. After each publication, the script waits up to 10 minutes for
 the version and `gitHead` to become readable, backing off from 5 to 30 seconds
-between checks, so the publish job allows 60 minutes for all thirteen packages. If
-that wait still expires, wait until the version and `gitHead` are readable
-before rerunning the workflow: a version npm is still processing reads as
-missing, and publishing it again fails.
+between checks. The publish job allows 150 minutes: a full 10-minute wait for
+each of the thirteen packages plus 20 minutes for checkout, installation,
+build, and package checks. If a wait still expires, or the job reaches its
+timeout, wait until the version and `gitHead` are readable before rerunning the
+workflow: a version npm is still processing reads as missing, and publishing it
+again fails.
 
 npm package publication is irreversible and a multi-package release is not an
 atomic registry operation. If a publish job stops after creating a partial

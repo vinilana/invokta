@@ -1,6 +1,6 @@
 {
   "name": "@invokta/auth-jwt",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Bounded JWT bearer authentication for Invokta HTTP adapters.",
   "author": "Vini Lana <vini@aicoders.academy>",
   "license": "MIT",
