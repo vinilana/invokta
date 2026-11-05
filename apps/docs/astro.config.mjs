@@ -115,6 +115,7 @@ export default defineConfig({
             { slug: "guides/http-authentication" },
             { slug: "guides/capability-authorization" },
             { slug: "guides/deployment" },
+            { slug: "guides/web-standard-runtimes" },
           ],
         },
         {

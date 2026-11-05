@@ -251,6 +251,17 @@ More than one raw `Authorization` header is an invalid request and is rejected
 before the authentication hook runs; authenticators never need to choose among
 ambiguous credentials.
 
+`createMcpHttpHandler` applies the same boundary to a Fetch `Request` in a
+host-owned server or a Fetch runtime (ADR 0042). Without `allowedHosts` it
+accepts only the loopback host names, and it requires the `Host` header, when
+present, and the request URL's authority to be allowed. The Fetch API joins
+repeated header fields with `, ` before the handler sees them, so a repeated
+`Authorization` header reaches the hook as one value such as
+`Bearer a, Bearer b`. Accept exactly one credential of the expected form, as
+the `readBearerToken` pattern above and the
+[`@invokta/auth-jwt`](#jwt-bearer-helper) authenticator do, and treat anything
+else as missing.
+
 The request target must be the exact canonical mount path, `/mcp` by default.
 Dot-segment or percent-encoded aliases, queries, fragments, and absolute-form
 targets are not routed to MCP or authentication. IPv6 `Host` values must use bracketed authority

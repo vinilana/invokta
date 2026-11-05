@@ -8,7 +8,7 @@
 | --- | --- |
 | `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, `help`, and `run` with JSON or schema-derived flags over `engine.invoke` |
-| `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
+| `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP, including a portable Web-standard HTTP handler |
 | `@invokta/http` | Web-standard plain HTTP JSON adapter over `engine.invoke`, OpenAPI 3.1 export, and a Node server entry point |
 | `@invokta/auth-jwt` | Optional JWT bearer authenticator for one configured issuer, usable as the HTTP `authenticate` hook |
 | `@invokta/tooling` | Development-time validation of capability composition |
@@ -63,6 +63,8 @@ while the example owns one replaceable Authorization Server implementation.
 | Plain HTTP JSON routes | 4: list, describe, invoke, and OpenAPI document |
 | Plain HTTP JSON request body | 1,048,576 bytes by default, configurable |
 | MCP transports | stdio and stateless Streamable HTTP |
+| MCP HTTP host adapters | 2: a Node.js listener and a Web-standard `Request` handler over one protocol implementation |
+| Runtimes verified by tests | Node.js; the core and `@invokta/mcp/web` are portable to Fetch runtimes by design (ADR 0042) |
 | Core primitives | Capability, Connector Definition, Engine, Context, and Principal |
 | Required capability fields | 5 |
 | Invocation pipeline stages | 6 |

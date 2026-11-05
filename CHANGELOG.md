@@ -9,6 +9,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- `@invokta/mcp/web` is a portable entry point whose
+  `createMcpHttpHandler(engine, options)` returns a Web-standard
+  `(request: Request) => Promise<Response>` handler for the stateless MCP
+  Streamable HTTP endpoint, so an engine can be mounted in Hono, a Next.js route
+  handler, or a Node.js server that accepts a Fetch handler, and deployed to
+  Cloudflare Workers, Deno, Bun, or Vercel Edge. It enforces the same
+  authentication, Host and Origin allowlists, body limit, mount path,
+  protected resource metadata, and JSON-RPC rules as `serveMcpHttp` and calls
+  every capability through `engine.invoke`; without `allowedHosts` it accepts
+  only loopback host names. The package root also exports the function, and
+  `McpHttpHandler` and `McpHttpHandlerOptions` describe it (ADR 0042).
 - `@invokta/cli` derives `run` flags from the top-level properties of a
   capability's published input schema, so
   `engine run onboarding.create-welcome-message --name Ada` builds
@@ -99,6 +110,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   operator may access the missing ticket `T-404` to demonstrate it.
 - `ExecutionSource` adds `"http"`. Code that switches exhaustively over
   invocation sources must handle the new member.
+- `@invokta/core` no longer imports Node.js built-in modules. It uses
+  `globalThis.crypto.randomUUID()` and `globalThis.performance.now()`, and reads
+  `util.types` through `process.getBuiltinModule` where the host provides it,
+  which keeps proxy and promise detection unchanged on Node.js, Deno, and Bun.
+  A Node.js process without it refuses to load the core instead of weakening
+  those checks; other hosts without it use a documented fallback that still
+  rejects proxied JSON values (ADR 0042).
+- `serveMcpHttp` is now a Node.js adapter over the same protocol implementation
+  as `createMcpHttpHandler`; its options, status codes, and connection handling
+  are unchanged, and `ServeMcpHttpOptions` extends `McpHttpHandlerOptions`.
+  Portable MCP tool names use a bundled SHA-256 implementation instead of
+  `node:crypto`, with identical results.
 - AE-LIMIT-04 is amended for the optional JWT bearer helper. Invokta still
   provides no identity provider, token issuer, introspection client, OpenID
   Connect discovery, DPoP, mTLS, policy language, PDP adapter, or session
