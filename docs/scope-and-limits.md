@@ -7,7 +7,7 @@
 | Package | Responsibility |
 | --- | --- |
 | `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
-| `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
+| `@invokta/cli` | `list`, `describe`, `help`, and `run` with JSON or schema-derived flags over `engine.invoke` |
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
 | `@invokta/tooling` | Development-time validation of capability composition and MCP catalogs, and capability contract snapshots and diffs |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
@@ -57,7 +57,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Core primitives | Capability, Connector Definition, Engine, Context, and Principal |
 | Required capability fields | 5 |
 | Invocation pipeline stages | 6 |
-| Invocation error codes | 7 |
+| Invocation error codes | 8 framework codes; up to 64 declared domain codes per capability, published inside `DOMAIN_ERROR` |
 | Cross-cutting hooks | 1: `onEvent` |
 | Auth or PDP implementations | 0 |
 | Containers or runtime plugin systems | 0 |
@@ -80,6 +80,8 @@ while the example owns one replaceable Authorization Server implementation.
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |
 | Capability deprecation `reason`, `since`, `replacement` | 1,024, 64, and 256 characters |
 | Contract snapshot file | 16 MiB; 256 JSON nesting levels per schema document |
+| CLI flag spelling | 64 characters; reserved `input`, `stdin`, `help`, and `format` |
+| CLI capability help page | 100 flag or input-only entries, 20 allowed values per flag, and 500 characters per text field |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,

@@ -56,9 +56,12 @@ trusted-code boundary.
 | `access` | Declare public, authenticated, or domain-specific authorization |
 | `run` | Execute the capability with validated input and an execution context |
 
-`title`, `timeoutMs`, MCP-compatible `annotations`, and a `deprecated` notice
-are optional. Read [Evolving capability contracts](/guides/contract-evolution/)
-before removing or changing a published capability.
+`title`, `timeoutMs`, MCP-compatible `annotations`, declared domain `errors`,
+and a `deprecated` notice are optional. Declared errors publish stable failure
+outcomes, such as `SLOT_CONFLICT`, that `run` raises with `CapabilityError`; see
+[declared domain errors](/reference/errors/#declared-domain-errors). Read
+[Evolving capability contracts](/guides/contract-evolution/) before removing or
+changing a published capability.
 
 ## Schemas
 

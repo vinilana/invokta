@@ -37,6 +37,7 @@ const ENGINE_ERROR_CODES = new Set<EngineErrorCode>([
   "OUTPUT_INVALID",
   "CANCELLED",
   "EXECUTION_FAILED",
+  "DOMAIN_ERROR",
 ]);
 
 const EXECUTION_FAILED_TEXT = JSON.stringify({

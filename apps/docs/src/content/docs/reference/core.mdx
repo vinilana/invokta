@@ -33,7 +33,8 @@ The package root exposes these public groups:
 | Schema | `EngineSchema`, `EngineJsonSchema`, `InferSchemaInput`, `InferSchemaOutput` |
 | Identity and context | `Principal`, `ExecutionContext`, `ExecutionSource`, `EngineLogger` |
 | Events | `EngineEvent` |
-| Invocation errors | `EngineError`, `EngineErrorCode` |
+| Invocation errors | `EngineError`, `EngineErrorCode`, `DomainErrorPublicDetails` |
+| Domain errors | `CapabilityError`, `CapabilityErrorArguments`, `CapabilityErrorDeclaration`, `CapabilityErrorDescription`, `CapabilityErrorMap` |
 | Composition values | `ExportedCapability`, `CapabilityLibrary`, `CapabilityImport`, `AnyCapabilityImport`, `ComposedCapabilities`, `CapabilitySource` |
 | Composition functions | `defineExportedCapability`, `defineCapabilityLibrary`, `importCapability`, `importCapabilities`, `composeCapabilities`, `isComposedCapabilities` |
 | Composition diagnostics | `CapabilityCompositionError`, `CapabilityCompositionIssue`, `CapabilityDeclarationProvenance`, `isCapabilityCompositionError` |
@@ -65,6 +66,7 @@ interface CapabilityDefinition<InputSchema, OutputSchema> {
   readonly timeoutMs?: number;
   readonly annotations?: CapabilityAnnotations;
   readonly deprecated?: CapabilityDeprecation;
+  readonly errors?: CapabilityErrorMap;
   readonly run: (args: {
     readonly input: InferSchemaOutput<InputSchema>;
     readonly context: ExecutionContext;
@@ -91,6 +93,68 @@ interface CapabilityAnnotations {
 Annotations are copied metadata and map to MCP tool hints. The core does not
 enforce side effects, retries, rollback, idempotency, or network access from
 these values.
+
+### Domain errors
+
+```ts
+interface CapabilityErrorDeclaration {
+  readonly description: string;
+  readonly details?: EngineSchema;
+  readonly retryable?: boolean;
+}
+
+type CapabilityErrorMap = Readonly<Record<string, CapabilityErrorDeclaration>>;
+
+class CapabilityError<
+  Errors extends CapabilityErrorMap = CapabilityErrorMap,
+  Code extends Extract<keyof Errors, string> = Extract<keyof Errors, string>,
+> extends Error {
+  readonly code: Code;
+  readonly details?: unknown;
+  readonly cause?: unknown;
+  constructor(...args: CapabilityErrorArguments<Errors, Code>);
+}
+```
+
+`errors` declares the stable failure outcomes of a capability, keyed by an
+UPPER_SNAKE_CASE domain code of at most 64 characters that differs from every
+framework code. A capability declares at most 64. `description` is a non-empty
+string of at most 1,024 characters and becomes the public message. `details` is
+an optional object-rooted schema with Standard JSON Schema support, and
+`retryable` defaults to `false`. `createEngine` validates and snapshots the map
+and rejects proxies, accessors, and unknown fields with `TypeError`.
+
+```ts
+const errors = {
+  TICKET_NOT_FOUND: {
+    description: "The requested ticket does not exist.",
+    details: z.object({ ticketId: z.string() }),
+  },
+} satisfies CapabilityErrorMap;
+
+// Inside run:
+throw new CapabilityError<typeof errors>("TICKET_NOT_FOUND", {
+  details: { ticketId: input.ticketId },
+});
+```
+
+`CapabilityError` is a standalone export because the execution context carries
+no error factory. With the optional type argument, `CapabilityErrorArguments`
+restricts the code to the declared keys and the details to the input type of the
+matching schema; without it, any code and details compile. The engine checks
+the raised error against the snapshotted declaration and publishes a
+`DOMAIN_ERROR`, or fails closed with `EXECUTION_FAILED`. Only errors raised by
+`run` and created by the constructor qualify; the engine uses the
+constructor-time code and details. See [declared domain errors](/reference/errors/#declared-domain-errors).
+
+The error must come from the same installed copy of `@invokta/core` as
+`createEngine`. A capability package that resolves its own copy keeps its
+declarations in `describe`, but its domain errors become `EXECUTION_FAILED`;
+capability packages should declare the core as a peer dependency or be
+deduplicated to one version. With the optional type arguments,
+`CapabilityError<typeof errors>` types `code` as the union of declared codes and
+`CapabilityError<typeof errors, "TICKET_NOT_FOUND">` as that one code; both stay
+assignable to `CapabilityError`.
 
 ### Deprecation
 
@@ -274,8 +338,9 @@ function createEngine<Capabilities extends CapabilityMap>(
 ```
 
 Construction captures every capability's top-level contract once. It validates
-timeouts, deprecation notices, and JSON Schema documents synchronously, and
-copies annotations, deprecation notices, and schemas away from producer-owned
+timeouts, domain error declarations, deprecation notices, and JSON Schema
+documents synchronously, and copies annotations, declarations, deprecation
+notices, and schemas away from producer-owned
 objects. Later mutation of the original map or
 definition cannot alter the registered contract.
 
@@ -332,14 +397,25 @@ Returns fresh, deeply frozen summaries containing `id`, `description`, optional
 describe(capabilityId): CapabilityDescription;
 ```
 
-Adds frozen `inputSchema`, `outputSchema`, optional `timeoutMs`, and the
-access kind to the summary. A missing ID throws `CAPABILITY_NOT_FOUND`.
+Adds frozen `inputSchema`, `outputSchema`, optional `timeoutMs`, the access
+kind, and optional `errors` to the summary. A missing ID throws
+`CAPABILITY_NOT_FOUND`.
 
 ```ts
 type CapabilityAccessKind = "public" | "authenticated" | "function";
+
+interface CapabilityErrorDescription {
+  readonly code: string;
+  readonly description: string;
+  readonly retryable: boolean;
+  readonly detailsSchema?: EngineJsonSchema;
+}
 ```
 
 `access` is `function` for a function rule; the rule itself is never exposed.
+`errors` lists the declared domain errors in declaration order and is omitted
+when none is declared. `detailsSchema` is the output-side JSON Schema of the
+declared details schema.
 
 ## Identity and access
 
@@ -390,8 +466,8 @@ capability factories.
 - `invocation.started`: request ID, capability ID, source, optional principal
   ID, and ISO start time;
 - `invocation.completed`: request ID, capability ID, and duration; and
-- `invocation.failed`: request ID, capability ID, duration, and normalized error
-  code.
+- `invocation.failed`: request ID, capability ID, duration, normalized error
+  code, and, for `DOMAIN_ERROR`, the declared `domainCode`.
 
 The runtime calls started and exactly one terminal event in pipeline order.
 Event promises are observed but not awaited, and hook or diagnostic-logger
@@ -448,7 +524,18 @@ provenance.
 ## Invocation errors
 
 `EngineError` contains `code`, `message`, optional `publicDetails`, and optional
-internal `cause`. See the complete [error taxonomy](/reference/errors/).
+internal `cause`. A `DOMAIN_ERROR` has the declared description as its message
+and `publicDetails` typed by `DomainErrorPublicDetails`:
+
+```ts
+interface DomainErrorPublicDetails {
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly details?: Readonly<Record<string, unknown>>;
+}
+```
+
+See the complete [error taxonomy](/reference/errors/).
 
 Construction `TypeError`s and `CapabilityCompositionError` happen before an
 invocation and emit no invocation event. Invokta has no automatic retry or

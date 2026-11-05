@@ -217,6 +217,7 @@ describe("the core public contract", () => {
       timeoutMs: 0,
       annotations: 0,
       deprecated: 0,
+      errors: 0,
       run: 0,
     };
     const run = vi.fn(
@@ -233,6 +234,7 @@ describe("the core public contract", () => {
       timeoutMs: 25,
       annotations: { readOnly: true },
       deprecated: { reason: "Use the stable replacement." },
+      errors: { STALE_VALUE: { description: "The value is stale." } },
       run,
     } as const;
     const descriptors = Object.fromEntries(
@@ -270,6 +272,13 @@ describe("the core public contract", () => {
       timeoutMs: 25,
       annotations: { readOnly: true },
       deprecated: { reason: "Use the stable replacement." },
+      errors: [
+        {
+          code: "STALE_VALUE",
+          description: "The value is stale.",
+          retryable: false,
+        },
+      ],
     });
     expect(reads).toEqual({
       description: 1,
@@ -280,6 +289,7 @@ describe("the core public contract", () => {
       timeoutMs: 1,
       annotations: 1,
       deprecated: 1,
+      errors: 1,
       run: 1,
     });
     expect(run).toHaveBeenCalledOnce();

@@ -412,3 +412,32 @@ each wait; all 11 release-script tests pass. The publish job timeout rises to
 60 minutes so ten sequential publications fit those waits. The tagged 0.9.1
 workflow still runs the previous script and is recovered by rerunning it as
 `RELEASING.md` describes.
+
+## Declared domain errors (ADR 0045)
+
+Before the implementation, 49 of the 55 new tests in
+`packages/core/test/domain-errors.test.ts` failed; the 6 that passed assert
+outcomes the previous runtime already produced, such as `EXECUTION_FAILED` for
+look-alike errors and no `errors` entry in a description. The new MCP stdio test
+received the generic `EXECUTION_FAILED` text until the adapter allowed
+`DOMAIN_ERROR`, and the support example's direct, CLI, MCP stdio, and MCP HTTP
+tests failed until it declared `TICKET_NOT_FOUND`. The CLI needed no change: its
+new test passed once the core published the error, because the adapter already
+serializes `publicDetails`.
+
+The core tests cover publication with transformed and frozen details, retry
+hints, every fail-closed path (undeclared code, missing, unexpected, or invalid
+details, a throwing validator, a non-object result, look-alike, prototype-forged,
+proxied, and mutated errors, a forged `DOMAIN_ERROR`, a nested invocation's
+domain error, and an access-rule `CapabilityError`), cancellation precedence,
+the capability timeout during details validation, `describe` snapshots, and the
+construction limits. Two tests added in review pin that a `CapabilityError`
+thrown by the input or output validator is normalized as `INPUT_INVALID` or
+`OUTPUT_INVALID`. Public type tests prove that typed `CapabilityError`
+arguments reject undeclared codes and missing or mistyped details, that a second
+type argument narrows `code`, and that typed errors stay assignable to the plain
+`CapabilityError` type, which review found failing before the `Code` parameter.
+On the development container (Node.js 22.23), `yarn run check` passed 3,267
+tests with two skipped and all 19 example gates, and `yarn validate` in
+`apps/docs` passed its 15 contract tests, zero Astro diagnostics, and the
+49-page build.

@@ -76,13 +76,17 @@ omit adapters, but MUST NOT claim that an omitted channel is supported.
 
 **AE-CAP-01 — Minimal capability.** Every capability MUST declare exactly five
 required elements: `description`, `input`, `output`, `access`, and `run`. `title`,
-`timeoutMs`, `annotations`, and `deprecated` are optional. The ID is not part of
-the definition; it is the key used in `createEngine`. When provided, `timeoutMs`
-MUST be a positive integer no greater than `2_147_483_647`. When provided,
-`deprecated` MUST contain a non-blank `reason` of at most 1,024 characters and
-MAY contain a non-blank `since` of at most 64 characters and a non-blank
-`replacement` of at most 256 characters (ADR 0046). Deprecation is published
-metadata; it does not change invocation.
+`timeoutMs`, `annotations`, `errors`, and `deprecated` are optional. The ID is not
+part of the definition; it is the key used in `createEngine`. When provided,
+`timeoutMs` MUST be a positive integer no greater than `2_147_483_647`. When
+provided, `errors` declares at most 64 domain errors keyed by UPPER_SNAKE_CASE
+codes that differ from every framework code; each declares a `description`, an
+optional `retryable` flag, and an optional object-rooted `details` schema (ADR
+0045). A handler raises one with the standalone `CapabilityError`, not through
+the context. When provided, `deprecated` MUST contain a non-blank `reason` of at
+most 1,024 characters and MAY contain a non-blank `since` of at most 64
+characters and a non-blank `replacement` of at most 256 characters (ADR 0046).
+Deprecation is published metadata; it does not change invocation.
 
 **AE-ENG-01 — Minimal engine.** Every engine MUST declare `name`, `version`, and
 `capabilities`. `logger` and `onEvent` are optional. The resulting public API
