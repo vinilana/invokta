@@ -7,6 +7,37 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `@invokta/cli` derives `run` flags from the top-level properties of a
+  capability's published input schema, so
+  `engine run onboarding.create-welcome-message --name Ada` builds
+  `{"name":"Ada"}` and still goes through `engine.invoke` validation. Strings,
+  numbers, integers, booleans (`--flag`, `--no-flag`, `--flag=false`),
+  single-type enums and constants, and arrays through repeated flags are
+  supported in `--name value` and `--name=value` forms. Property names map to
+  kebab-case; reserved (`input`, `stdin`, `help`, `format`) and colliding
+  spellings fail closed, and nested objects, unions, and other schemas still use
+  `--input` or `--stdin`. Flags cannot be combined with `--input` or `--stdin`
+  (ADR 0047).
+- `help` and `--help` print the CLI usage, and `help <capability-id>` or
+  `run <capability-id> --help` prints a deterministic, bounded capability page
+  with its title, description, annotations, flags, types, required markers,
+  allowed values, declared defaults, and the `--input` alternative. Help is
+  written to stdout with exit code `0`. Shell completion is not provided.
+- Generated `complete` and `cli` engine READMEs show the flag and help commands
+  next to the JSON `--input` example.
+
+### Changed
+
+- The usage text embedded in CLI `INVALID_USAGE` messages lists the flag and
+  help forms. `run` arguments other than exactly `--input <json>` or `--stdin`
+  are parsed as schema-derived flags, so a flag run against an unknown
+  capability now reports `CAPABILITY_NOT_FOUND` with exit code `1` before
+  `engine.invoke`, without an invocation event, instead of invalid usage.
+  Existing `--input` and `--stdin` invocations, output, and exit codes are
+  unchanged.
+
 ### Fixed
 
 - Release publication waits up to 10 minutes, with checks backing off from 5 to

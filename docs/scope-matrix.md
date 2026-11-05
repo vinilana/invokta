@@ -12,7 +12,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Schemas | Accept Standard Schema and Standard JSON Schema; validate input and output | Choose a compatible schema library and domain constraints | A new schema language or universal converter |
 | Dependencies | Define typed connector factories and accept explicit closures | Define ports and wire model, data, and tool connectors | Container, service locator, connector registry, or lifecycle framework |
 | Direct execution | Run the common `engine.invoke` pipeline | Supply trusted principal, signal, and dependencies | Distributed executor or background jobs |
-| CLI | `list`, `describe`, `run`, JSON I/O, and stable exit codes | Own the executable, local principal, and untrusted-input bounds | Login, actor flags, or plugin discovery |
+| CLI | `list`, `describe`, `run`, JSON I/O, schema-derived run flags, capability help, and stable exit codes | Own the executable, local principal, and untrusted-input bounds | Login, actor flags, shell completion, or plugin discovery |
 | MCP | Map capabilities to tools over stdio and stateless HTTP | Own process composition and deployment | Resources, prompts, tasks, sessions, or resumption |
 | HTTP authentication | Run a required hook, issue a configured 401 Bearer challenge, and publish configured resource metadata | Verify credentials and return a minimal Principal | Identity provider, login, token lifecycle, or universal token verifier |
 | Authorization | Enforce each capability's `access` rule before `run` | Encode domain policy or call a PDP | Policy language, role model, PDP adapter, or relationship graph |
