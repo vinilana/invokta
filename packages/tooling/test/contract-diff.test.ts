@@ -733,6 +733,76 @@ describe("nullable values", () => {
     ]);
   });
 
+  it("decides null acceptance from type, enum, and const together", () => {
+    const nullableEnum = nullable({ type: "string", enum: ["a", "b"] });
+    const typeArrayEnum = { type: ["string", "null"], enum: ["a", "b"] };
+
+    expect(
+      diffInput(propertySchema(nullableEnum), propertySchema(typeArrayEnum)),
+    ).toEqual(["breaking TYPE_CHANGED c input#/properties/value"]);
+    expect(
+      diffOutput(propertySchema(typeArrayEnum), propertySchema(nullableEnum)),
+    ).toEqual(["breaking TYPE_CHANGED c output#/properties/value"]);
+    expect(
+      diffOutput(
+        propertySchema({ type: ["string", "null"], const: "a" }),
+        propertySchema(nullable({ type: "string", const: "a" })),
+      ),
+    ).toEqual(["breaking TYPE_CHANGED c output#/properties/value"]);
+    expect(
+      diffOutput(
+        propertySchema({ type: ["string", "null"], enum: ["a", null] }),
+        propertySchema(nullable({ type: "string", enum: ["a"] })),
+      ),
+    ).toEqual([]);
+  });
+
+  it("treats a schema without a type as accepting null", () => {
+    const nullableObject = nullable(object({ x: { type: "string" } }));
+
+    expect(
+      diffInput(propertySchema(nullableObject), propertySchema({})),
+    ).not.toContainEqual(expect.stringMatching(/^breaking /u));
+    expect(
+      diffInput(propertySchema(nullableObject), propertySchema({})),
+    ).toContain("compatible TYPE_CHANGED c input#/properties/value");
+    expect(
+      diffOutput(propertySchema({}), propertySchema(nullableObject)),
+    ).not.toContainEqual(expect.stringMatching(/^(breaking|potentially)/u));
+    expect(
+      diffOutput(
+        propertySchema(nullable({ type: "string" })),
+        propertySchema({}),
+      ),
+    ).toEqual(["breaking TYPE_CHANGED c output#/properties/value"]);
+  });
+
+  it("treats a schema that only allows null as rejecting every other value", () => {
+    expect(
+      diffOutput(
+        propertySchema({ const: null }),
+        propertySchema(nullable({ type: "string" })),
+      ),
+    ).toEqual(["breaking TYPE_CHANGED c output#/properties/value/anyOf/0"]);
+    expect(
+      diffOutput(
+        propertySchema(nullable(false)),
+        propertySchema(nullable({ type: "string" })),
+      ),
+    ).toEqual(["breaking TYPE_CHANGED c output#/properties/value/anyOf/0"]);
+  });
+
+  it("falls back to the generic comparison when composition can reject null", () => {
+    expect(
+      diffOutput(
+        propertySchema({ type: ["string", "null"], not: { type: "null" } }),
+        propertySchema(nullable({ type: "string" })),
+      ),
+    ).toContainEqual(
+      "potentially-breaking KEYWORD_CHANGED c output#/properties/value",
+    );
+  });
+
   it("keeps other unions undecidable", () => {
     expect(
       diffOutput(

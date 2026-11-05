@@ -139,12 +139,11 @@ Capabilities published by an engine are deprecated with the capability-level
 - CI audits the workspace, documentation, and standalone OAuth example
   dependencies on every pull request.
 - Report a suspected vulnerability privately through GitHub private
-  vulnerability reporting: the **Report a vulnerability** button on the
-  repository's
-  [Security tab](https://github.com/vinilana/invokta/security). Never put
-  vulnerability details in a public issue, discussion, or pull request. If
-  private reporting is unavailable, a public issue may be used only to ask the
-  maintainer for a private contact channel, without any details.
+  vulnerability reporting (**Report a vulnerability** on the repository's
+  [Security tab](https://github.com/vinilana/invokta/security)) when it is
+  available. Otherwise, open a public issue that only asks the maintainer for a
+  private contact channel and contains no vulnerability details. Never put
+  vulnerability details in a public issue, discussion, or pull request.
 
 ## Criteria for 1.0
 

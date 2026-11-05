@@ -894,7 +894,10 @@ function nullableAnyOf(
   if (nullIndex === -1) return undefined;
   const innerIndex = nullIndex === 0 ? 1 : 0;
   const inner: unknown = branches[innerIndex];
-  if (jsonEqual(inner, nullSchema) || !(inner === true || isRecord(inner))) {
+  if (
+    jsonEqual(inner, nullSchema) ||
+    !(typeof inner === "boolean" || isRecord(inner))
+  ) {
     return undefined;
   }
   const siblings = Object.fromEntries(
@@ -911,27 +914,61 @@ function nullableAnyOf(
   };
 }
 
-function plainView(schema: UnknownRecord, path: string): NullableView {
-  const types = readTypes(schema);
-  if (types instanceof Set && types.has("null") && types.size > 1) {
-    const remaining = [...types]
-      .filter((type) => type !== "null")
-      .sort(compareCodeUnits);
-    const values = own(schema, "enum");
-    return {
-      inner: {
-        ...schema,
-        type: remaining.length === 1 ? remaining[0] : remaining,
-        ...(Array.isArray(values)
-          ? { enum: values.filter((value) => value !== null) }
-          : {}),
-      },
-      innerPath: path,
-      siblings: {},
-      nullable: true,
-    };
+/** Keywords whose effect on null cannot be read off the schema node itself. */
+const nullOpaqueKeywords = ["$ref", "allOf", "anyOf", "if", "not", "oneOf"];
+
+/**
+ * Splits a schema that is not in the nullable `anyOf` form into its non-null
+ * part and whether it accepts null. It accepts null only when `type` is absent
+ * or includes `"null"`, `enum` is absent or contains `null`, and `const` is
+ * absent or `null`. A composition keyword could also reject null, so such a
+ * schema is not split and the caller falls back to the generic comparison.
+ */
+function plainView(
+  schema: UnknownRecord,
+  path: string,
+): NullableView | undefined {
+  if (nullOpaqueKeywords.some((keyword) => Object.hasOwn(schema, keyword))) {
+    return undefined;
   }
-  return { inner: schema, innerPath: path, siblings: {}, nullable: false };
+  const types = readTypes(schema);
+  const values = own(schema, "enum");
+  if (types === "invalid" || (values !== undefined && !Array.isArray(values))) {
+    return undefined;
+  }
+  const hasConst = Object.hasOwn(schema, "const");
+  const nullable =
+    (types === undefined || types.has("null")) &&
+    (values === undefined || values.includes(null)) &&
+    (!hasConst || schema.const === null);
+  const remainingTypes =
+    types === undefined
+      ? undefined
+      : [...types].filter((type) => type !== "null").sort(compareCodeUnits);
+  const remainingValues = values?.filter((value) => value !== null);
+  // Without null, a schema that only allowed null rejects every value.
+  if (
+    remainingTypes?.length === 0 ||
+    remainingValues?.length === 0 ||
+    (hasConst && schema.const === null)
+  ) {
+    return { inner: false, innerPath: path, siblings: {}, nullable };
+  }
+  return {
+    inner: {
+      ...schema,
+      ...(remainingTypes === undefined
+        ? {}
+        : {
+            type:
+              remainingTypes.length === 1 ? remainingTypes[0] : remainingTypes,
+          }),
+      ...(remainingValues === undefined ? {} : { enum: remainingValues }),
+    },
+    innerPath: path,
+    siblings: {},
+    nullable,
+  };
 }
 
 function compareNullable(
@@ -1000,13 +1037,12 @@ function compareSchema(
   const beforeNullable = nullableAnyOf(before, path);
   const afterNullable = nullableAnyOf(after, path);
   if (beforeNullable !== undefined || afterNullable !== undefined) {
-    compareNullable(
-      scope,
-      beforeNullable ?? plainView(before, path),
-      afterNullable ?? plainView(after, path),
-      path,
-    );
-    return;
+    const beforeView = beforeNullable ?? plainView(before, path);
+    const afterView = afterNullable ?? plainView(after, path);
+    if (beforeView !== undefined && afterView !== undefined) {
+      compareNullable(scope, beforeView, afterView, path);
+      return;
+    }
   }
   compareDocumentation(scope, before, after, path);
   compareType(scope, before, after, path);
