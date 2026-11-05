@@ -56,7 +56,8 @@ Configuration:
   Because `jose` starts its cooldown only after a successful fetch, the helper
   adds a 5-second window after a failed fetch in which nothing is fetched: a
   fresh cached key set keeps answering, and without one the lookup fails at
-  once. The response body is read whole and is bounded only by the fetch
+  once. The window uses the monotonic clock, so stepping the wall clock back
+  cannot extend it. The response body is read whole and is bounded only by the fetch
   timeout, so the host must configure a trusted endpoint.
 - `clockToleranceSeconds` is an integer from 0 to 300 and defaults to 0.
 - `maxTokenLength` is an integer from 1 to 16,384 and defaults to 8,192
@@ -93,9 +94,16 @@ normal while an issuer rotates keys. The caller, not the issuer, creates that
 ambiguity by omitting `kid`, so it is never reported as an unavailable key set.
 The helper tries at most eight matching keys in key-set order. The key that
 signed a legitimate token verifies it, and a token that none of them verifies
-resolves `null`. A forged token therefore cannot force a 500.
+resolves `null`. A forged token therefore cannot force a 500. The worst case is
+eight signature checks against the issuer's keys per token, about 21 ms of CPU
+with eight ES512 keys and about 3 ms with RS256 or EdDSA keys.
 
-An unreachable key set is therefore not reported as an invalid credential.
+Without a usable cached key set, an unreachable key set is not reported as an
+invalid credential. With a fresh cache, a `kid` that is missing from it
+resolves `null` while a refetch fails or the failure window is open. That
+includes a legitimate token signed with a key the issuer has just rotated in,
+which verifies once a refetch succeeds. This trade-off fails closed: a forged
+unknown `kid` cannot turn an issuer outage into a 500 for every caller.
 The MCP HTTP adapter answers the rejection with its existing sanitized 500, so
 neither the response nor the error can expose the token, the key-set URL, or
 the provider's response. An error thrown by a host-supplied mapper propagates

@@ -174,12 +174,18 @@ describe("remote JWKS tokens without a key identifier", () => {
 });
 
 describe("remote JWKS failure cooldown", () => {
-  /** Fakes only the clock, so loopback HTTP and jose's timeout stay real. */
+  /**
+   * Fakes only the wall and monotonic clocks, so loopback HTTP and jose's
+   * timeout stay real. The returned function moves both clocks forward to the
+   * given offset from the start.
+   */
   function freezeClock(): (milliseconds: number) => void {
-    const start = Date.now();
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(start);
-    return (milliseconds) => vi.setSystemTime(start + milliseconds);
+    vi.useFakeTimers({ toFake: ["Date", "performance"] });
+    let elapsed = 0;
+    return (milliseconds) => {
+      vi.advanceTimersByTime(milliseconds - elapsed);
+      elapsed = milliseconds;
+    };
   }
 
   async function longLivedToken(
@@ -265,6 +271,27 @@ describe("remote JWKS failure cooldown", () => {
         authenticate(bearerRequest(`Bearer ${token}`)),
       ).rejects.toBeInstanceOf(JwtVerificationUnavailableError);
     }
+    expect(server.requests()).toBe(2);
+  });
+
+  it("measures the window on a monotonic clock, not the wall clock", async () => {
+    const server = await jwksServer({ kind: "status", status: 503 });
+    const authenticate = remoteAuthenticator(server);
+    const token = await longLivedToken();
+    const advanceTo = freezeClock();
+
+    await expect(
+      authenticate(bearerRequest(`Bearer ${token}`)),
+    ).rejects.toBeInstanceOf(JwtVerificationUnavailableError);
+    // The host clock was an hour fast and is stepped back once the issuer
+    // recovers; the window still ends five seconds after the failure.
+    vi.setSystemTime(Date.now() - 3_600_000);
+    server.setBehavior({ kind: "serve", jwks: keys.jwks });
+    advanceTo(5_000);
+
+    await expect(
+      authenticate(bearerRequest(`Bearer ${token}`)),
+    ).resolves.toMatchObject({ id: "user-42" });
     expect(server.requests()).toBe(2);
   });
 });

@@ -118,7 +118,7 @@ credential arrives. Each fetch has a 5-second timeout and follows no redirect.
 | Key-set state | Fetch behavior |
 | --- | --- |
 | After a successful fetch | Cached for 10 minutes; a token with an unknown key identifier triggers a refetch at most once every 30 seconds |
-| After a failed fetch | Nothing is fetched for 5 seconds; a fresh cached key set keeps answering, otherwise requests reject at once |
+| After a failed fetch | Nothing is fetched for 5 seconds on the monotonic clock; a fresh cached key set keeps answering, otherwise requests reject at once |
 | Concurrent lookups that need a fetch | Share one in-flight fetch |
 
 Random key identifiers therefore cause at most one refetch every 30 seconds
@@ -145,12 +145,22 @@ compact JWS of three non-empty base64url segments within `maxTokenLength`.
 | Missing, malformed, or oversized credential | `null` | 401 with the Bearer challenge |
 | Expired or not yet valid, wrong issuer or audience, algorithm outside the allowlist, unknown key, bad signature, or missing `sub` or `exp` | `null` | 401 |
 | Missing required scope, or a mapper result of `null` or a malformed principal | `null` | 401 |
+| A `kid` missing from a fresh cached key set while a refetch fails or within the 5-second failure window, including a key the issuer has just rotated in | `null` | 401 until a refetch succeeds |
 | Key set times out, is unreachable, answers anything but 200, or is malformed, including during the 5-second failure window without a fresh cache; the request is aborted | Rejects with `JwtVerificationUnavailableError` | Sanitized 500 |
 
 A token without a `kid` header that fits several published keys, as during an
 issuer's key rotation, is tried against at most eight of them in key-set order.
 It verifies if one of them signed it; otherwise it resolves `null`, so a forged
-token without `kid` is a 401, never a 500.
+token without `kid` is a 401, never a 500. Each candidate costs one signature
+check against an issuer key, so the worst case for one token is eight checks:
+roughly 3 ms of CPU with RS256 or EdDSA keys and about 21 ms with ES512 keys
+on a shared 4-CPU machine. The caller controls only the header and signature;
+the number and size of keys come from the issuer.
+
+During an issuer outage with a fresh cache, an unknown `kid` fails closed as
+`null` rather than as an unavailable key set. A token signed with a newly
+rotated key is therefore rejected until a refetch succeeds, and a forged
+unknown `kid` cannot turn the outage into a 500 for every caller.
 
 A `null` result never states which check failed.
 `JwtVerificationUnavailableError` always has the message

@@ -26,7 +26,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   reject with a fixed, causeless `JwtVerificationUnavailableError`, which the
   MCP adapter answers with its sanitized 500. A remote key set is cached for 10
   minutes, refetched for an unknown key at most every 30 seconds, and not
-  refetched for 5 seconds after a failed fetch.
+  refetched for 5 monotonic seconds after a failed fetch; meanwhile a fresh
+  cache keeps answering and a `kid` missing from it resolves `null`.
 
 ### Changed
 

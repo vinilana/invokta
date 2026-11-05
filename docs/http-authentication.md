@@ -159,7 +159,9 @@ contract above:
 - a `JwtVerificationUnavailableError` rejection with a fixed message and no
   cause when the key set times out, is unreachable, answers anything but 200,
   or is malformed, or the request is cancelled. After a failed fetch nothing is
-  fetched for 5 seconds; a fresh cached key set keeps answering meanwhile.
+  fetched for 5 seconds; a fresh cached key set keeps answering meanwhile, and
+  a `kid` missing from it, even a newly rotated one, resolves `null` until a
+  refetch succeeds.
 
 A token without a required scope therefore receives 401, not an RFC 6750
 `insufficient_scope` 403, because the hook can return only a principal or

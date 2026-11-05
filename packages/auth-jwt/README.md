@@ -58,7 +58,11 @@ reach a response or a log through it.
 A token without a `kid` header that fits several published keys, as during an
 issuer's key rotation, is tried against at most eight of them in key-set order.
 It verifies if one of them signed it and is otherwise an invalid credential, so
-a forged token cannot turn into a 500.
+a forged token cannot turn into a 500. Each candidate costs one signature check against an issuer key, so the worst
+case for one token is eight checks: roughly 3 ms of CPU with RS256 or EdDSA
+keys and about 21 ms with ES512 keys, measured on a shared 4-CPU machine. The
+caller controls only the header and signature; the number and size of keys
+come from the issuer.
 
 ## Options
 
@@ -78,10 +82,16 @@ a forged token cannot turn into a 500.
 key set is fetched on first use, with a 5-second timeout, and cached for 10
 minutes. After a successful fetch, an unknown key identifier triggers a refetch
 at most once every 30 seconds. After a failed fetch, nothing is fetched for 5
-seconds: a fresh cached key set keeps answering, and without one requests are
-rejected at once. Redirects are not followed. Configuration is validated and snapshotted when the
-authenticator is created, and configuration errors never echo a configured
-value.
+seconds, measured on the monotonic clock: a fresh cached key set keeps
+answering, and without one requests are rejected at once. Redirects are not
+followed. Configuration is validated and snapshotted when the authenticator is
+created, and configuration errors never echo a configured value.
+
+While a refetch fails or that window is open, a token whose `kid` is missing
+from a fresh cached key set resolves `null` (401), including a token signed
+with a key the issuer has just rotated in. It verifies once a refetch succeeds.
+This fails closed on purpose: a forged unknown `kid` cannot turn an issuer
+outage into a 500 for every caller.
 
 The credential must be `Authorization: Bearer <compact JWS>`: the scheme is
 case-insensitive, exactly one space follows it, and the token consists of three

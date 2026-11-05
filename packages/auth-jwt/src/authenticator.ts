@@ -344,7 +344,14 @@ function isKeySelectionError(error: unknown): boolean {
  * Wraps jose's remote key set, whose cache and unknown-key cooldown start only
  * after a successful fetch, so that a failed fetch is not retried for a fixed
  * window. Inside that window nothing is fetched: a fresh cached key set still
- * answers lookups, and without one the lookup fails at once.
+ * answers lookups, and without one the lookup fails at once. The window is
+ * measured on the monotonic clock, so stepping the wall clock back cannot
+ * extend it.
+ *
+ * With a fresh cache, a key identifier missing from it resolves as no matching
+ * key while a refetch fails or the window is open, even when the issuer has
+ * just rotated that key in. This fails closed and keeps a forged unknown `kid`
+ * from turning an issuer outage into server errors for every caller.
  */
 function createRemoteKeySet(url: URL): JWTVerifyGetKey {
   const remote = createRemoteJWKSet(url, {
@@ -364,13 +371,15 @@ function createRemoteKeySet(url: URL): JWTVerifyGetKey {
   };
 
   return async (protectedHeader, token) => {
-    if (Date.now() < retryAfter) return fromCache(protectedHeader, token);
+    if (performance.now() < retryAfter) {
+      return fromCache(protectedHeader, token);
+    }
     cached = undefined;
     try {
       return await remote(protectedHeader, token);
     } catch (error) {
       if (isKeySelectionError(error)) throw error;
-      retryAfter = Date.now() + JWKS_FAILURE_COOLDOWN_MS;
+      retryAfter = performance.now() + JWKS_FAILURE_COOLDOWN_MS;
       // A fetch that fails while the cache is fresh was a refetch for an
       // unknown key, which the cached set answers.
       return fromCache(protectedHeader, token);
