@@ -72,6 +72,7 @@ function createFlagsEngine() {
           "first name": z.string().optional(),
           _private: z.string().optional(),
           help: z.boolean().optional(),
+          noHelp: z.boolean().optional(),
           stdin: z.string().optional(),
           plain: z.string().optional(),
         }),
@@ -329,6 +330,23 @@ describe("schema-derived run flags", () => {
     expect(result.stderr.join("")).not.toContain("hunter2");
   });
 
+  it("rejects the -- end-of-options marker with a specific message", async () => {
+    const result = await run([
+      "run",
+      "example.flags",
+      "--",
+      "--ticket-id",
+      "T-1",
+    ]);
+
+    expect(result.code).toBe(2);
+    expect(result.invoke).not.toHaveBeenCalled();
+    const error = usageError(result.stderr);
+    expect(error.code).toBe("INVALID_USAGE");
+    expect(error.message).toContain("end-of-options marker");
+    expect(error.message).toContain("Usage:");
+  });
+
   it("rejects positional arguments without echoing them", async () => {
     const result = await run([
       "run",
@@ -374,6 +392,8 @@ describe("schema-derived run flags", () => {
     [["--no-cache"], "noCache"],
     [["--first-name", "x"], "first name"],
     [["--no-help"], "help"],
+    [["--no-help"], "noHelp"],
+    [["--no-no-help"], "noHelp"],
   ])(
     "fails closed for colliding, reserved, or unmappable flag %j",
     async (flags, property) => {

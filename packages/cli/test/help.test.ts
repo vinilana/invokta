@@ -154,7 +154,7 @@ async function cli(
 }
 
 describe("CLI help", () => {
-  it.each([[["help"]], [["--help"]]])(
+  it.each([[["help"]], [["--help"]], [["help", "--help"]]])(
     "prints general usage for %j on stdout with exit code 0",
     async (argv) => {
       const result = await cli(argv);
@@ -314,7 +314,7 @@ ${footer}`,
       version: "0.1.0-test",
       capabilities: {
         "example.empty": defineCapability({
-          description: "Takes \u202eno\u2066 input.\u200f",
+          description: "Takes \u061c\u202eno\u2066 \u200binput.\u200f\u{e0041}",
           input: z.object({}),
           output: z.object({ ok: z.boolean() }),
           access: "public",

@@ -68,9 +68,10 @@ for host-selected output formatting, so a later CLI option cannot change the
 meaning of an existing capability flag.
 
 A boolean property claims its spelling and `no-<spelling>`; every other
-mappable property claims its spelling. When two or more properties claim the
-same spelling, every one of them becomes input-only. A collision never selects
-a winner by order or case.
+mappable property claims its spelling. Reserved properties claim their
+spellings too, so a boolean `help` and a property `noHelp` both claim
+`no-help`. When two or more properties claim the same spelling, every one of
+them becomes input-only. A collision never selects a winner by order or case.
 
 ### Values
 
@@ -97,10 +98,10 @@ and transforms remain authoritative and an invalid object fails with
 
 ### Errors
 
-An unknown flag, a positional argument, a reserved option in a flag run, a
-value that does not decode as the declared type, a missing value, a duplicate,
-and a flag for an input-only property are `INVALID_USAGE` with exit code `2`
-and do not call `engine.invoke`. A diagnostic for an input-only property names
+An unknown flag, a positional argument, the `--` end-of-options marker, a
+reserved option in a flag run, a value that does not decode as the declared
+type, a missing value, a duplicate, and a flag for an input-only property are
+`INVALID_USAGE` with exit code `2` and do not call `engine.invoke`. A diagnostic for an input-only property names
 the property and the reason, and says to use `--input` or `--stdin`. Argument
 structure errors include the usage text; value errors do not. Diagnostics never
 echo flag values or positional arguments. An unknown flag name is echoed only
@@ -118,7 +119,8 @@ login option.
 
 ### Help
 
-`help` and `--help` print the general usage. `help <capability-id>` and
+`help`, `--help`, and `help --help` print the general usage.
+`help <capability-id>` and
 `run <capability-id> --help` print one capability page. `--help` in a run must
 be the only argument after the capability ID. Help is written to stdout as
 plain text with exit code `0`, is not affected by the trusted `format` option,
@@ -132,8 +134,10 @@ the run forms including `--input` and `--stdin`, each flag with its type,
 values, and declared default, followed by the input-only properties and their
 reasons. The page is deterministic for a given description. It lists at most
 100 flag and input-only entries, at most 20 allowed values per flag, and at
-most 500 characters per text field. Whitespace, C0 and C1 control characters,
-and bidirectional formatting characters in author text collapse to one space.
+most 500 characters per text field. Whitespace, control characters (`Cc`),
+Unicode format characters (`Cf`, which include bidirectional, zero-width, and
+tag characters), lone surrogates, and line or paragraph separators in author
+text collapse to one space.
 
 ### Out of scope
 

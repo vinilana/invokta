@@ -22,20 +22,14 @@ const annotationNames = [
   "openWorld",
 ] as const;
 
-// Whitespace, C0 and C1 controls, and bidirectional formatting characters
-// collapse to one space so author text cannot inject terminal sequences or
-// break the line structure.
+// Whitespace, control characters (C0, DEL, C1), Unicode format characters
+// (bidirectional, zero-width, and tag characters), lone surrogates, and line
+// or paragraph separators collapse to one space so author text cannot inject
+// terminal sequences, reorder the display, or break the line structure.
+const separatorPattern = /^[\s\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]$/u;
+
 function isSeparator(character: string): boolean {
-  const code = character.codePointAt(0) ?? 0;
-  return (
-    code < 0x20 ||
-    (code >= 0x7f && code <= 0x9f) ||
-    code === 0x200e ||
-    code === 0x200f ||
-    (code >= 0x202a && code <= 0x202e) ||
-    (code >= 0x2066 && code <= 0x2069) ||
-    /\s/u.test(character)
-  );
+  return separatorPattern.test(character);
 }
 
 /** Sanitizes author text to one trimmed line of bounded length. */

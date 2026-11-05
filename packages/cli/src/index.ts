@@ -55,7 +55,10 @@ function optionName(token: unknown): string | undefined {
 
 function parseCommand(argv: readonly string[]): CliCommand {
   const [command, ...args] = argv;
-  if ((command === "help" || command === "--help") && args.length === 0) {
+  if (
+    ((command === "help" || command === "--help") && args.length === 0) ||
+    (command === "help" && args.length === 1 && args[0] === "--help")
+  ) {
     return { name: "help" };
   }
   if (command === "help" && args.length === 1 && args[0] !== "") {

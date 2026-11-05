@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-27
+- Amended by: [ADR 0047](./0047-schema-derived-cli-flags-and-capability-help.md)
 
 ## Context
 
@@ -37,7 +38,8 @@ message, and optional `publicDetails`. The adapter never adds a stack, cause, ra
 input, or principal. Engine authors remain responsible for ensuring that the
 explicitly public `message` and `publicDetails` fields contain no secrets.
 
-`run` accepts exactly one input source: `--input <json>` or `--stdin`. Missing,
+`run` accepts exactly one input source: `--input <json>` or `--stdin`; ADR 0047
+adds schema-derived flags as a third, mutually exclusive source. Missing,
 duplicate, combined, trailing, and unknown arguments produce exit code `2`
 without invoking the engine. The CLI reads stdin without a framework-owned
 size limit; hosts may inject a bounded reader when local input is not trusted.

@@ -122,12 +122,14 @@ Some properties cannot be set with flags and require `--input` or `--stdin`:
   `format`;
 - properties whose spellings collide, such as `ticketId` and `ticket_id`, or a
   boolean `cache` and a property `noCache` that both claim `--no-cache`; every
-  property in a collision loses its flag; and
+  property in a collision loses its flag, including a reserved boolean such as
+  `help` next to `noHelp`; and
 - property names without a spelling, such as `"first name"`.
 
 A flag for one of these properties fails with a diagnostic that names the
 property and says to use `--input` or `--stdin`. Unknown flags, positional
-arguments, missing or undecodable values, and duplicates are also invalid usage.
+arguments, the `--` end-of-options marker, missing or undecodable values, and
+duplicates are also invalid usage.
 Diagnostics never repeat flag values. Prefer `z.enum(["fast", "slow"])` over a
 union of literals when a property should be settable with a flag.
 
@@ -143,8 +145,9 @@ node dist/cli.js help onboarding.create-welcome-message
 node dist/cli.js run onboarding.create-welcome-message --help
 ```
 
-`help` and `--help` print the general usage. `help <capability-id>` and
-`run <capability-id> --help` print one capability page:
+`help`, `--help`, and `help --help` print the general usage.
+`help <capability-id>` and `run <capability-id> --help` print one capability
+page:
 
 ```text
 Capability: onboarding.create-welcome-message
@@ -170,8 +173,9 @@ reason they need `--input` or `--stdin`. Help is plain text on standard output
 with exit code `0`; it ignores the `format` option and never invokes the
 capability. The page is deterministic and bounded: it lists at most 100 flag or
 input-only entries, 20 allowed values per flag, and 500 characters per text
-field, and control and bidirectional formatting characters in author text
-become spaces.
+field. Whitespace, control characters, Unicode format characters (including
+bidirectional, zero-width, and tag characters), and line separators in author
+text become spaces.
 
 Shell completion is not provided.
 

@@ -220,14 +220,10 @@ export function deriveCapabilityFlags(
     };
   });
 
+  // Reserved properties still claim their spellings, so a property that
+  // spells a reserved boolean's negation (`noHelp` for `help`) fails closed.
   const claimants = new Map<string, number>();
   for (const candidate of candidates) {
-    if (
-      candidate.name === undefined ||
-      reservedOptionNames.has(candidate.name)
-    ) {
-      continue;
-    }
     for (const spelling of candidateSpellings(candidate)) {
       claimants.set(spelling, (claimants.get(spelling) ?? 0) + 1);
     }
@@ -385,6 +381,11 @@ export function parseFlagInput(
   const values = new Map<CapabilityFlag, FlagScalar | FlagScalar[]>();
   for (let index = 0; index < argumentsList.length; index += 1) {
     const token = argumentsList[index];
+    if (token === "--") {
+      throw new CliUsageError(
+        "The -- end-of-options marker is not supported; pass flags directly after the capability ID.",
+      );
+    }
     if (typeof token !== "string" || !token.startsWith("--")) {
       throw new CliUsageError(
         "Unexpected argument. Each run argument must be a flag that starts with --.",
