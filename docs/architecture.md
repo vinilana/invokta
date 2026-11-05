@@ -180,7 +180,10 @@ correlates the terminal event by `requestId`, and ends the span after
 `invokta.invocations` and `invokta.invocation.failures` counters and the
 `invokta.invocation.duration` histogram with bounded attributes. Principal IDs
 are recorded only on explicit opt-in and never on metrics. Pending spans are
-capped and the oldest is evicted. The invocation span is not active inside
+capped and the oldest is evicted. Spans and `contextFor` are accurate only while
+request IDs are unique among concurrent invocations; when a running
+invocation's request ID is reused, the handler MUST NOT assign an outcome
+across the overlapping invocations. The invocation span is not active inside
 `access` or `run`; a capability nests its own spans through the injected
 `contextFor(requestId)` accessor. ADR 0050 defines the attribute names,
 metric units, and limits.

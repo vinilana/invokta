@@ -23,7 +23,8 @@ const INSTRUMENTATION_VERSION = "0.9.1";
 
 const DEFAULT_MAX_PENDING_SPANS = 10_000;
 const DEFAULT_MAX_METRIC_ATTRIBUTE_VALUES = 256;
-const MAX_METRIC_ATTRIBUTE_VALUE_LENGTH = 256;
+/** Longer attribute values are caller-chosen noise and become `_OTHER`. */
+const MAX_ATTRIBUTE_VALUE_LENGTH = 256;
 
 /** OpenTelemetry's conventional value for a value outside the recorded set. */
 const OTHER = "_OTHER";
@@ -61,7 +62,11 @@ export interface OpenTelemetryEventHandlerOptions {
   readonly meter?: Meter;
   /** Records the principal ID as `invokta.principal.id` on spans. Defaults to `false`. */
   readonly recordPrincipalId?: boolean;
-  /** Invocations awaiting their terminal event before the oldest span is evicted. Defaults to 10,000. */
+  /**
+   * Invocations awaiting their terminal event before the oldest span is
+   * evicted. Also bounds the bookkeeping kept for evicted invocations.
+   * Defaults to 10,000.
+   */
   readonly maxPendingSpans?: number;
   /** Distinct values recorded per metric attribute before `_OTHER` is used. Defaults to 256. */
   readonly maxMetricAttributeValues?: number;
@@ -76,16 +81,29 @@ export interface OpenTelemetryEventHandler {
   /**
    * Returns the active context with the pending invocation span of
    * `requestId` as its span, or the active context unchanged when that
-   * invocation has no pending span. Capabilities use it with
-   * `context.with` so their own spans become children of the invocation.
+   * invocation has no pending span or shares its request ID with another
+   * running invocation. Capabilities use it with `context.with` so their own
+   * spans become children of the invocation.
    */
   readonly contextFor: (requestId: string) => Context;
 }
 
+/** Started invocations of one request ID whose span is still open. */
 interface PendingInvocation {
   readonly span: Span;
   readonly startTime: number | undefined;
+  /** Normalized metric source shared by every outstanding start, if known. */
   readonly source: string | undefined;
+  /** Started invocations with this request ID that have not terminated. */
+  readonly outstanding: number;
+  /** Several invocations share the request ID, so terminals cannot be matched. */
+  readonly ambiguous: boolean;
+}
+
+/** Started invocations of one request ID whose span already ended early. */
+interface DetachedInvocations {
+  readonly source: string | undefined;
+  readonly outstanding: number;
 }
 
 interface Instruments {
@@ -107,7 +125,7 @@ class BoundedValues {
     if (
       typeof value !== "string" ||
       value === "" ||
-      value.length > MAX_METRIC_ATTRIBUTE_VALUE_LENGTH
+      value.length > MAX_ATTRIBUTE_VALUE_LENGTH
     ) {
       return OTHER;
     }
@@ -130,6 +148,12 @@ function hasMethods(value: unknown, names: readonly string[]): boolean {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function boundSpanValue(value: string | undefined): string | undefined {
+  return value !== undefined && value.length > MAX_ATTRIBUTE_VALUE_LENGTH
+    ? OTHER
+    : value;
 }
 
 function readTimestamp(value: unknown): number | undefined {
@@ -213,7 +237,8 @@ export function createOpenTelemetryEventHandler(
     );
   }
 
-  const tracer =
+  // Resolving the default tracer per span follows a replaced global provider.
+  const currentTracer = (): Tracer =>
     configuredTracer ??
     trace.getTracer(INSTRUMENTATION_NAME, INSTRUMENTATION_VERSION);
   const configuredInstruments =
@@ -236,37 +261,76 @@ export function createOpenTelemetryEventHandler(
     return globalInstruments;
   };
 
+  // Both maps are insertion-ordered and capped at `maxPendingSpans` entries.
   const pending = new Map<string, PendingInvocation>();
+  const detached = new Map<string, DetachedInvocations>();
   const capabilityIds = new BoundedValues(maxMetricAttributeValues);
   const sources = new BoundedValues(maxMetricAttributeValues);
   const errorCodes = new BoundedValues(maxMetricAttributeValues);
 
-  const evict = (requestId: string): void => {
-    const entry = pending.get(requestId);
-    if (entry === undefined) return;
-    pending.delete(requestId);
+  /** Ends a span without an outcome that may belong to another invocation. */
+  const endEarly = (span: Span): void => {
     try {
-      entry.span.setAttribute(ATTR_SPAN_EVICTED, true);
-      entry.span.end();
+      span.setAttribute(ATTR_SPAN_EVICTED, true);
+      span.end();
     } catch {
       reportFailure();
     }
   };
 
+  /** Remembers running invocations whose span ended early. */
+  const detach = (
+    requestId: string,
+    source: string | undefined,
+    outstanding: number,
+  ): void => {
+    if (outstanding <= 0) return;
+    for (const oldest of detached.keys()) {
+      if (detached.size < maxPendingSpans) break;
+      detached.delete(oldest);
+    }
+    detached.set(requestId, { source, outstanding });
+  };
+
   const onStarted = (event: Record<string, unknown>): void => {
     const requestId = readString(event.requestId);
     if (requestId === undefined) return;
-    evict(requestId);
-    for (const oldest of pending.keys()) {
+    const rawSource = readString(event.source);
+    const metricSource =
+      rawSource === undefined ? undefined : sources.normalize(rawSource);
+
+    // Terminal events carry no start identity, so a request ID shared with a
+    // running invocation makes every span for that ID unattributable.
+    let outstanding = 0;
+    let sharedSource = metricSource;
+    const previous = pending.get(requestId);
+    if (previous !== undefined) {
+      pending.delete(requestId);
+      endEarly(previous.span);
+      outstanding += previous.outstanding;
+      if (previous.source !== sharedSource) sharedSource = undefined;
+    }
+    const earlier = detached.get(requestId);
+    if (earlier !== undefined) {
+      detached.delete(requestId);
+      outstanding += earlier.outstanding;
+      if (earlier.source !== sharedSource) sharedSource = undefined;
+    }
+    for (const [oldestId, oldest] of pending) {
       if (pending.size < maxPendingSpans) break;
-      evict(oldest);
+      pending.delete(oldestId);
+      endEarly(oldest.span);
+      detach(oldestId, oldest.source, oldest.outstanding);
     }
 
-    const capabilityId = readString(event.capabilityId);
-    const source = readString(event.source);
-    const principalId = readString(event.principalId);
+    const rawCapabilityId = readString(event.capabilityId);
+    const capabilityId = boundSpanValue(rawCapabilityId);
+    const source = boundSpanValue(rawSource);
+    const principalId = boundSpanValue(readString(event.principalId));
     const startTime = readTimestamp(event.startedAt);
-    const attributes: Attributes = { [ATTR_REQUEST_ID]: requestId };
+    const attributes: Attributes = {
+      [ATTR_REQUEST_ID]: boundSpanValue(requestId),
+    };
     if (capabilityId !== undefined) {
       attributes[ATTR_CAPABILITY_ID] = capabilityId;
     }
@@ -274,25 +338,39 @@ export function createOpenTelemetryEventHandler(
     if (recordPrincipalId && principalId !== undefined) {
       attributes[ATTR_PRINCIPAL_ID] = principalId;
     }
-    const span = tracer.startSpan(
-      capabilityId === undefined ? OPERATION : `${OPERATION} ${capabilityId}`,
-      {
-        kind: SpanKind.INTERNAL,
-        attributes,
-        ...(startTime === undefined ? {} : { startTime }),
-      },
-      contextApi.active(),
-    );
+    const named =
+      rawCapabilityId !== undefined &&
+      rawCapabilityId !== "" &&
+      rawCapabilityId === capabilityId;
+    let span: Span;
+    try {
+      span = currentTracer().startSpan(
+        named ? `${OPERATION} ${capabilityId}` : OPERATION,
+        {
+          kind: SpanKind.INTERNAL,
+          attributes,
+          ...(startTime === undefined ? {} : { startTime }),
+        },
+        contextApi.active(),
+      );
+    } catch {
+      // Keep counting the invocation so a reused request ID stays ambiguous.
+      reportFailure();
+      detach(requestId, sharedSource, outstanding + 1);
+      return;
+    }
     pending.set(requestId, {
       span,
       startTime,
-      source: source === undefined ? undefined : sources.normalize(source),
+      source: sharedSource,
+      outstanding: outstanding + 1,
+      ambiguous: outstanding > 0,
     });
   };
 
   const recordMetrics = (
     event: Record<string, unknown>,
-    entry: PendingInvocation | undefined,
+    source: string | undefined,
     code: string | undefined,
   ): void => {
     const instruments = currentInstruments();
@@ -302,9 +380,7 @@ export function createOpenTelemetryEventHandler(
           ? OTHER
           : capabilityIds.normalize(event.capabilityId),
     };
-    if (entry?.source !== undefined) {
-      attributes[ATTR_EXECUTION_SOURCE] = entry.source;
-    }
+    if (source !== undefined) attributes[ATTR_EXECUTION_SOURCE] = source;
     if (code !== undefined) {
       const errorCode = errorCodes.normalize(code);
       attributes[ATTR_ERROR_CODE] = errorCode;
@@ -331,12 +407,13 @@ export function createOpenTelemetryEventHandler(
     if (code === undefined) {
       span.setAttribute(ATTR_OUTCOME, "completed");
     } else {
+      const spanCode = boundSpanValue(code) ?? OTHER;
       span.setAttributes({
         [ATTR_OUTCOME]: "failed",
-        [ATTR_ERROR_CODE]: code,
-        [ATTR_ERROR_TYPE]: code,
+        [ATTR_ERROR_CODE]: spanCode,
+        [ATTR_ERROR_TYPE]: spanCode,
       });
-      span.setStatus({ code: SpanStatusCode.ERROR, message: code });
+      span.setStatus({ code: SpanStatusCode.ERROR, message: spanCode });
       // The ID of a failed lookup is caller-chosen; keep the name bounded.
       if (code === CAPABILITY_NOT_FOUND) span.updateName(OPERATION);
     }
@@ -353,9 +430,31 @@ export function createOpenTelemetryEventHandler(
     failed: boolean,
   ): void => {
     const requestId = readString(event.requestId);
-    const entry = requestId === undefined ? undefined : pending.get(requestId);
-    if (requestId !== undefined && entry !== undefined) {
-      pending.delete(requestId);
+    let source: string | undefined;
+    let owned: PendingInvocation | undefined;
+    if (requestId !== undefined) {
+      const entry = pending.get(requestId);
+      const earlier = detached.get(requestId);
+      if (entry !== undefined) {
+        pending.delete(requestId);
+        source = entry.source;
+        if (entry.ambiguous) {
+          endEarly(entry.span);
+          detach(requestId, entry.source, entry.outstanding - 1);
+        } else {
+          owned = entry;
+        }
+      } else if (earlier !== undefined) {
+        source = earlier.source;
+        if (earlier.outstanding > 1) {
+          detached.set(requestId, {
+            source: earlier.source,
+            outstanding: earlier.outstanding - 1,
+          });
+        } else {
+          detached.delete(requestId);
+        }
+      }
     }
     let code: string | undefined;
     if (failed) {
@@ -364,13 +463,13 @@ export function createOpenTelemetryEventHandler(
       code = candidate === undefined || candidate === "" ? OTHER : candidate;
     }
     try {
-      recordMetrics(event, entry, code);
+      recordMetrics(event, source, code);
     } catch {
       reportFailure();
     }
-    if (entry !== undefined) {
+    if (owned !== undefined) {
       try {
-        endSpan(event, entry, code);
+        endSpan(event, owned, code);
       } catch {
         reportFailure();
       }
@@ -405,7 +504,9 @@ export function createOpenTelemetryEventHandler(
       const active = contextApi.active();
       const entry =
         typeof requestId === "string" ? pending.get(requestId) : undefined;
-      return entry === undefined ? active : trace.setSpan(active, entry.span);
+      return entry === undefined || entry.ambiguous
+        ? active
+        : trace.setSpan(active, entry.span);
     } catch {
       reportFailure();
       return ROOT_CONTEXT;

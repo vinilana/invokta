@@ -63,8 +63,8 @@ while the example owns one replaceable Authorization Server implementation.
 | Invocation error codes | 7 |
 | Cross-cutting hooks | 1: `onEvent` |
 | OpenTelemetry signals | 1 span per invocation and 3 metric instruments |
-| Pending OpenTelemetry invocation spans | 10,000 by default, configurable; the oldest is evicted |
-| OpenTelemetry metric attribute values | 256 distinct per attribute by default, configurable; 256 characters each |
+| Pending OpenTelemetry invocation spans | 10,000 by default, configurable; the oldest is evicted, and the same cap bounds evicted-invocation bookkeeping |
+| OpenTelemetry attribute values | 256 characters on spans and metrics; 256 distinct per metric attribute by default, configurable |
 | Auth or PDP implementations | 0 |
 | Containers or runtime plugin systems | 0 |
 | Devtools workbenches served together | 2: MCP and CLI, each idle until Connect |

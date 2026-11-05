@@ -34,10 +34,10 @@ export const engine = createEngine({
 ```
 
 Without options the handler uses the global tracer and meter providers under
-the `@invokta/otel` instrumentation scope. It follows an SDK registered after
-the handler was created, so a module-scope engine works with an SDK started
-from a later `--import` module or the entry point. Pass `tracer` and `meter` to
-use explicit providers instead.
+the `@invokta/otel` instrumentation scope. It resolves them as it records, so a
+module-scope engine reports to an SDK started later from an `--import` module or
+the entry point, and to a provider that replaced an earlier one. Pass `tracer`
+and `meter` to use explicit providers instead.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ createEngine({
 
 | Property | Value |
 | --- | --- |
-| Name | `invoke {capabilityId}`; `invoke` for `CAPABILITY_NOT_FOUND` |
+| Name | `invoke {capabilityId}`; `invoke` for `CAPABILITY_NOT_FOUND` or a capability ID over 256 characters |
 | Kind | `INTERNAL` |
 | Parent | The active context when `engine.invoke` starts |
 | Start | The event's `startedAt` |
@@ -88,7 +88,9 @@ createEngine({
 | `invokta.principal.id` | Only with `recordPrincipalId: true` |
 | `invokta.invocation.outcome` | `completed` or `failed` |
 | `invokta.error.code`, `error.type` | Failure; the code is an opaque string |
-| `invokta.span.evicted` | `true` when the span was evicted before its terminal event |
+| `invokta.span.evicted` | `true` when the span ended early: evicted, or its request ID was reused |
+
+A span attribute value longer than 256 characters is recorded as `_OTHER`.
 
 ## Metrics
 
@@ -133,14 +135,21 @@ const classifyTicket = defineCapability({
 ```
 
 `contextFor(requestId)` returns the active context with the pending invocation
-span, or the active context unchanged when the invocation has no pending span.
+span, or the active context unchanged when the invocation has no pending span
+or another running invocation uses the same request ID.
 
 ## Limits
 
 - Event delivery is best-effort, as defined by the core.
-- Pending spans are capped by `maxPendingSpans`. The oldest pending span, or a
-  pending span whose request ID is reused, ends early with
-  `invokta.span.evicted = true`. Its terminal event still records metrics.
+- Pending spans are capped by `maxPendingSpans`. The oldest pending span ends
+  early with `invokta.span.evicted = true`; its terminal event still records
+  metrics, with the source.
+- Spans and `contextFor` are accurate only while request IDs are unique among
+  concurrent invocations. Terminal events carry only the request ID, so when a
+  running invocation's ID is reused, every span for those overlapping
+  invocations ends early as evicted with no outcome, `contextFor` resolves no
+  invocation span, and metrics still count every terminal event. The ID is
+  traced normally again once all of them finish.
 - Spans carry no input, output, message, or credential.
 - Unknown event types are ignored, and new error codes are recorded unchanged.
 - No log signal, exporter, sampling policy, or automatic context propagation is

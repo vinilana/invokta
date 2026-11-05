@@ -53,6 +53,7 @@ contract change requires an explicit decision before implementation.
 | `packages/core` | Capability, connector, engine, validation, and invocation contracts |
 | `packages/cli` | CLI adapter over `engine.invoke` |
 | `packages/mcp` | MCP stdio and stateless HTTP adapters over `engine.invoke` |
+| `packages/otel` | OpenTelemetry instrumentation of engine events through the `onEvent` hook |
 | `packages/create-*` | Deterministic standalone project creators |
 | `packages/tooling`, `packages/installer`, `packages/deploy`, `packages/devtools` | Development and delivery applications |
 | `examples/` | Runnable contract and integration examples |

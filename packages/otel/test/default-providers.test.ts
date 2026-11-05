@@ -71,4 +71,25 @@ describe("global OpenTelemetry providers", () => {
     const collected = await telemetry.metrics();
     expect(collected.get("invokta.invocations")?.points[0]?.value).toBe(1);
   });
+
+  it("follows a global provider replaced after earlier invocations", async () => {
+    const handler = createOpenTelemetryEventHandler();
+    const first = createInMemoryTelemetry();
+    trace.setGlobalTracerProvider(first.tracerProvider);
+    metrics.setGlobalMeterProvider(first.meterProvider);
+    for (const event of events) handler(event);
+
+    trace.disable();
+    metrics.disable();
+    telemetry = createInMemoryTelemetry();
+    trace.setGlobalTracerProvider(telemetry.tracerProvider);
+    metrics.setGlobalMeterProvider(telemetry.meterProvider);
+    for (const event of events) handler(event);
+
+    expect(first.spans()).toHaveLength(1);
+    expect(telemetry.spans()).toHaveLength(1);
+    const collected = await telemetry.metrics();
+    expect(collected.get("invokta.invocations")?.points[0]?.value).toBe(1);
+    await first.shutdown();
+  });
 });

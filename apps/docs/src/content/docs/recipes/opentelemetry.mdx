@@ -142,7 +142,9 @@ provider-backed composition root is instrumented this way.
    ```
 
    Pass the same `telemetry` value to `onEvent` so `contextFor` sees its
-   pending spans.
+   pending spans. Keep request IDs unique among concurrent invocations: while
+   two running invocations share one, `contextFor` resolves no span and their
+   spans end without an outcome.
 
 </Steps>
 
@@ -197,7 +199,8 @@ yarn workspace @invokta/example-observability build
 ```
 
 The package tests cover span timing and parentage, `contextFor` nesting,
-eviction, bounded metric attributes, and contained instrumentation failures:
+eviction, reused request IDs, bounded attributes, and contained
+instrumentation failures:
 
 ```sh
 yarn vitest run packages/otel

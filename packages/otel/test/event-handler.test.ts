@@ -1,9 +1,13 @@
 import type { EngineEvent } from "@invokta/core";
 import {
+  type DiagLogger,
+  DiagLogLevel,
+  diag,
   type Meter,
   SpanKind,
   SpanStatusCode,
   type Tracer,
+  trace,
 } from "@opentelemetry/api";
 import type { Histogram } from "@opentelemetry/sdk-metrics";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -177,6 +181,46 @@ describe("invocation spans", () => {
     );
   });
 
+  it("records over-long caller-chosen strings as _OTHER from the start", () => {
+    const names: string[] = [];
+    const tracer: Tracer = {
+      startSpan(name, options, context) {
+        names.push(name);
+        return telemetry.tracer.startSpan(name, options, context);
+      },
+      startActiveSpan: telemetry.tracer.startActiveSpan.bind(telemetry.tracer),
+    };
+    const handler = createOpenTelemetryEventHandler({
+      tracer,
+      meter: telemetry.meter,
+      recordPrincipalId: true,
+    });
+    const capabilityId = "x".repeat(1_000_000);
+    const requestId = "r".repeat(257);
+
+    handler(
+      started(requestId, {
+        capabilityId,
+        principalId: "p".repeat(257),
+      }),
+    );
+    handler(failed(requestId, "CAPABILITY_NOT_FOUND", 1, capabilityId));
+    handler(started("request-2", { capabilityId: "c".repeat(256) }));
+    handler(completed("request-2", 1, "c".repeat(256)));
+
+    expect(names).toEqual(["invoke", `invoke ${"c".repeat(256)}`]);
+    const [overLong, limit] = telemetry.spans();
+    expect(overLong?.name).toBe("invoke");
+    expect(overLong?.attributes).toMatchObject({
+      "invokta.capability.id": "_OTHER",
+      "invokta.request.id": "_OTHER",
+      "invokta.principal.id": "_OTHER",
+      "invokta.error.code": "CAPABILITY_NOT_FOUND",
+    });
+    expect(limit?.attributes["invokta.capability.id"]).toBe("c".repeat(256));
+    expect(limit?.attributes["invokta.invocation.outcome"]).toBe("completed");
+  });
+
   it("correlates interleaved invocations by request ID", () => {
     const handler = createHandler();
 
@@ -259,18 +303,160 @@ describe("pending span bounds", () => {
     );
   });
 
-  it("ends a pending span superseded by a duplicate request ID", () => {
+  it("keeps the source of an evicted invocation for its terminal metrics", async () => {
+    const handler = createHandler({ maxPendingSpans: 1 });
+
+    handler(started("request-1"));
+    handler(started("request-2"));
+    handler(failed("request-1", "CANCELLED"));
+    handler(failed("request-2", "CANCELLED"));
+
+    const metrics = await telemetry.metrics();
+    const failures = metrics.get("invokta.invocation.failures");
+    expect(failures?.points).toHaveLength(1);
+    expect(failures?.points[0]?.attributes).toMatchObject({
+      "invokta.execution.source": "mcp-http",
+    });
+    expect(failures?.points[0]?.value).toBe(2);
+  });
+});
+
+describe("reused request IDs", () => {
+  const overlapping: [string, readonly EngineEvent[]][] = [
+    [
+      "the first invocation finishes first",
+      [
+        failed("reused", "FORBIDDEN", 1_500, "a.fast"),
+        completed("reused", 5_000, "b.slow"),
+      ],
+    ],
+    [
+      "the second invocation finishes first",
+      [
+        completed("reused", 5_000, "b.slow"),
+        failed("reused", "FORBIDDEN", 1_500, "a.fast"),
+      ],
+    ],
+  ];
+
+  it.each(overlapping)(
+    "never assigns one invocation's outcome to another when %s",
+    async (_, terminals) => {
+      const handler = createHandler();
+
+      handler(started("reused", { capabilityId: "a.fast" }));
+      handler(started("reused", { capabilityId: "b.slow" }));
+      for (const event of terminals) handler(event);
+
+      const spans = telemetry.spans();
+      expect(spans.map((span) => span.name)).toEqual([
+        "invoke a.fast",
+        "invoke b.slow",
+      ]);
+      for (const span of spans) {
+        expect(span.attributes["invokta.span.evicted"]).toBe(true);
+        expect(span.attributes).not.toHaveProperty(
+          "invokta.invocation.outcome",
+        );
+        expect(span.attributes).not.toHaveProperty("invokta.error.code");
+        expect(span.status).toEqual({ code: SpanStatusCode.UNSET });
+      }
+
+      const metrics = await telemetry.metrics();
+      const invocations = metrics.get("invokta.invocations");
+      expect(
+        pointWith<number>(invocations, {
+          "invokta.capability.id": "b.slow",
+          "invokta.execution.source": "mcp-http",
+          "invokta.invocation.outcome": "completed",
+        })?.value,
+      ).toBe(1);
+      expect(
+        pointWith<number>(metrics.get("invokta.invocation.failures"), {
+          "invokta.capability.id": "a.fast",
+          "invokta.execution.source": "mcp-http",
+          "invokta.error.code": "FORBIDDEN",
+          "error.type": "FORBIDDEN",
+        })?.value,
+      ).toBe(1);
+    },
+  );
+
+  it("resolves no invocation span for a reused request ID while the calls overlap", () => {
     const handler = createHandler();
 
-    handler(started("duplicate", { capabilityId: "first" }));
-    handler(started("duplicate", { capabilityId: "second" }));
-    handler(completed("duplicate", 5, "second"));
+    handler(started("reused", { capabilityId: "a" }));
+    expect(trace.getSpan(handler.contextFor("reused"))).toBeDefined();
+    handler(started("reused", { capabilityId: "b" }));
+    expect(trace.getSpan(handler.contextFor("reused"))).toBeUndefined();
+    handler(completed("reused", 1, "a"));
+    expect(trace.getSpan(handler.contextFor("reused"))).toBeUndefined();
+    handler(completed("reused", 1, "b"));
+    expect(trace.getSpan(handler.contextFor("reused"))).toBeUndefined();
+  });
 
-    const [superseded, current] = telemetry.spans();
-    expect(superseded?.name).toBe("invoke first");
-    expect(superseded?.attributes["invokta.span.evicted"]).toBe(true);
-    expect(current?.name).toBe("invoke second");
-    expect(current?.attributes["invokta.invocation.outcome"]).toBe("completed");
+  it("traces a request ID normally again once every earlier call finished", () => {
+    const handler = createHandler();
+
+    handler(started("reused", { capabilityId: "a" }));
+    handler(started("reused", { capabilityId: "b" }));
+    handler(completed("reused", 1, "a"));
+    handler(completed("reused", 1, "b"));
+    handler(started("reused", { capabilityId: "c" }));
+    expect(trace.getSpan(handler.contextFor("reused"))).toBeDefined();
+    handler(failed("reused", "INPUT_INVALID", 1, "c"));
+
+    const last = telemetry.spans().at(-1);
+    expect(last?.name).toBe("invoke c");
+    expect(last?.attributes).not.toHaveProperty("invokta.span.evicted");
+    expect(last?.attributes["invokta.error.code"]).toBe("INPUT_INVALID");
+  });
+
+  it("treats a request ID as reused when the earlier call's span failed to start", () => {
+    let failNext = true;
+    const tracer: Tracer = {
+      startSpan(name, options, context) {
+        if (failNext) {
+          failNext = false;
+          throw new Error("tracer failure");
+        }
+        return telemetry.tracer.startSpan(name, options, context);
+      },
+      startActiveSpan: telemetry.tracer.startActiveSpan.bind(telemetry.tracer),
+    };
+    const handler = createOpenTelemetryEventHandler({
+      tracer,
+      meter: telemetry.meter,
+    });
+
+    handler(started("reused", { capabilityId: "a" }));
+    handler(started("reused", { capabilityId: "b" }));
+    handler(failed("reused", "FORBIDDEN", 1, "a"));
+
+    const [span, ...others] = telemetry.spans();
+    expect(others).toEqual([]);
+    expect(span?.name).toBe("invoke b");
+    expect(span?.attributes["invokta.span.evicted"]).toBe(true);
+    expect(span?.status).toEqual({ code: SpanStatusCode.UNSET });
+  });
+
+  it("treats a request ID as reused while an evicted call is still running", () => {
+    const handler = createHandler({ maxPendingSpans: 1 });
+
+    handler(started("reused", { capabilityId: "a" }));
+    handler(started("other", { capabilityId: "b" }));
+    handler(started("reused", { capabilityId: "c" }));
+    handler(failed("reused", "FORBIDDEN", 1, "a"));
+
+    const spans = telemetry.spans();
+    expect(spans.map((span) => span.name)).toEqual([
+      "invoke a",
+      "invoke b",
+      "invoke c",
+    ]);
+    expect(spans.every((span) => span.attributes["invokta.span.evicted"])).toBe(
+      true,
+    );
   });
 });
 
@@ -495,6 +681,49 @@ describe("robustness", () => {
 
     expect(handler(started("request-1"))).toBeUndefined();
     expect(handler(completed("request-1"))).toBeUndefined();
+  });
+
+  it("reports each contained failure as one fixed, payload-free diag warning", () => {
+    const warnings: unknown[][] = [];
+    const ignore = () => undefined;
+    const logger: DiagLogger = {
+      error: ignore,
+      warn: (...args: unknown[]) => {
+        warnings.push(args);
+      },
+      info: ignore,
+      debug: ignore,
+      verbose: ignore,
+    };
+    diag.setLogger(logger, DiagLogLevel.WARN);
+    try {
+      const hostileMeter = {
+        createCounter: () => ({
+          add() {
+            throw new Error("meter failure sk-canary");
+          },
+        }),
+        createHistogram: () => ({ record: () => undefined }),
+      } as unknown as Meter;
+      const handler = createOpenTelemetryEventHandler({
+        tracer: telemetry.tracer,
+        meter: hostileMeter,
+      });
+
+      for (let index = 0; index < 3; index += 1) {
+        handler(started(`request-${String(index)}`));
+        handler(completed(`request-${String(index)}`));
+      }
+    } finally {
+      diag.disable();
+    }
+
+    expect(warnings).toEqual(
+      Array.from({ length: 3 }, () => [
+        "@invokta/otel could not record an engine event.",
+      ]),
+    );
+    expect(telemetry.spans()).toHaveLength(3);
   });
 
   it("is frozen", () => {

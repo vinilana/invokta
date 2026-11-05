@@ -39,9 +39,14 @@ checked for version compatibility. A private copy can fail that check against
 the host's registered SDK and silently become no-op, or read a different
 context manager and lose the caller's trace. The OpenTelemetry JavaScript
 instrumentation guidelines therefore direct instrumentation to declare the API
-as a peer with its minimum supported version as a caret range. An exact peer pin would force a
-duplicate API or an install conflict for hosts on another 1.x release,
-including API 1.10 required by SDK 3.x.
+as a peer with its minimum supported version as a caret range. An exact peer
+pin would force a duplicate API or an install conflict for hosts on another 1.x
+release, including API 1.10 required by SDK 3.x.
+
+This range is a deliberate exception to the repository convention of pinning
+every dependency exactly. It applies only to this peer, because the host and
+not the package owns the API instance. Every dependency the package installs,
+`@invokta/core` included, stays exactly pinned.
 
 The repository still pins what it builds and tests against: the API at `1.9.1`,
 and the reference SDK packages `@opentelemetry/sdk-trace`,
@@ -78,10 +83,11 @@ interface OpenTelemetryEventHandler {
 | `maxMetricAttributeValues` | `256` | Positive safe integer |
 
 Options are read once and validated synchronously; an invalid value throws
-`TypeError`. The default tracer comes from the API's proxy provider and follows
-an SDK registered later. The metrics API has no proxy, so the default meter is
-re-resolved whenever the global meter provider changes; a handler created at
-module scope before the SDK starts still records metrics afterwards.
+`TypeError`. Without a configured tracer, the global tracer is resolved for each
+span. The metrics API has no proxy, so the default meter is re-resolved whenever
+the global meter provider changes. A handler created at module scope before the
+SDK starts, or kept while a test suite replaces the global providers, therefore
+reports to the current providers.
 
 The handler is a frozen function that never throws and returns `undefined`. No
 composition helper is added: an engine with an existing hook writes
@@ -102,7 +108,8 @@ event with the same `requestId`.
 - **Kind:** `INTERNAL`. The hook runs inside the process and has no transport or
   peer data; transport instrumentation owns `SERVER` and `CLIENT` spans.
 - **Name:** `invoke {capabilityId}`. A `CAPABILITY_NOT_FOUND` failure renames the
-  span to `invoke` because that ID is chosen by the caller.
+  span to `invoke` because that ID is chosen by the caller. A capability ID
+  longer than 256 characters names the span `invoke` from the start.
 - **Status:** unset on completion, following OpenTelemetry guidance for
   instrumentation libraries; `ERROR` with the error code as its description on
   failure.
@@ -116,10 +123,12 @@ event with the same `requestId`.
 | `invokta.invocation.outcome` | End | `completed` or `failed` |
 | `invokta.error.code` | Failure | Opaque error code |
 | `error.type` | Failure | Same value, for OpenTelemetry error conventions |
-| `invokta.span.evicted` | Eviction | `true` |
+| `invokta.span.evicted` | Early end: eviction or a reused request ID | `true` |
 
-Spans carry no input, output, message, exception event, or credential, because
-the events carry none.
+A string attribute value longer than 256 characters is recorded as `_OTHER`
+when the span starts, because capability, request, and principal IDs and the
+source can be chosen by a caller. Spans carry no input, output, message,
+exception event, or credential, because the events carry none.
 
 ### Metrics
 
@@ -144,16 +153,37 @@ Metric attributes are bounded:
   first-seen order, and later new values become `_OTHER`;
 - a non-string, empty, or longer-than-256-character value becomes `_OTHER`;
 - request and principal IDs never appear on metrics; and
-- the source is omitted when the start of the invocation was not observed.
+- the source is omitted when the start of the invocation was not observed, or
+  when invocations sharing a request ID started from different sources.
 
 ### Robustness
 
 Pending spans live in an insertion-ordered map capped by `maxPendingSpans`.
 Reaching the cap evicts the oldest pending span: it ends immediately with
-`invokta.span.evicted = true`, unset status, and no outcome. A started event
-that reuses a pending request ID evicts the earlier span the same way. A
-terminal event without a pending span records metrics but no span. The handler
-uses no timer.
+`invokta.span.evicted = true`, unset status, and no outcome. The handler keeps
+the evicted invocation's metric source in a second map with the same cap, so its
+terminal metrics stay in the same series. A terminal event without a pending
+span records metrics but no span. The handler uses no timer.
+
+Spans and `contextFor` are accurate only while request IDs are unique among
+concurrent invocations. The core accepts a caller-supplied `requestId`, and a
+host may forward an inbound correlation ID, such as a gateway retry with the
+same `x-request-id` while the first attempt still runs. Terminal events carry
+only the request ID, so the handler cannot tell which of the overlapping
+invocations an event belongs to. It therefore never assigns an outcome across
+them:
+
+- a started event whose request ID belongs to a running invocation ends the
+  earlier span early as evicted and starts the new span marked ambiguous;
+- the first terminal event for that ID ends the ambiguous span early as
+  evicted, with no outcome, status, or error code;
+- every terminal event for that ID records metrics, with the source only when
+  all overlapping starts shared it, and ends no other span; and
+- `contextFor` returns the active context unchanged while the ID is ambiguous.
+
+Once every overlapping invocation has terminated, the request ID is traced
+normally again. The bookkeeping for overlapping and evicted invocations is
+bounded by `maxPendingSpans`; beyond that bound the oldest counts are dropped.
 
 The error code is an opaque string, so codes added by later decisions are
 recorded without a release of this package. Unknown event types are ignored.
@@ -196,6 +226,9 @@ Revisit it only when several engines need nesting that an injected
 - Memory for pending spans and metric attribute values is bounded by explicit,
   configurable limits; extreme concurrency above the cap shortens evicted spans
   instead of growing memory.
+- Hosts that reuse request IDs across concurrent invocations get evicted spans
+  without outcomes for those invocations rather than misattributed outcomes;
+  their metrics remain complete.
 
 ## Decision evidence
 
