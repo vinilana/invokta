@@ -1,6 +1,7 @@
 import process from "node:process";
 
 import {
+  CapabilityError,
   createEngine,
   defineCapability,
   EngineError,
@@ -318,6 +319,59 @@ describe("MCP stdio protocol adapter", () => {
     expect(JSON.stringify(result)).not.toContain("top-secret");
     expect(JSON.stringify(result)).not.toContain("stack");
     expect(JSON.stringify(result)).not.toContain("cause");
+  });
+
+  it("maps a declared domain error to a structured tool execution error", async () => {
+    const engine = createEngine({
+      name: "scheduling-engine",
+      version: "0.1.0",
+      capabilities: {
+        "appointments.schedule": defineCapability({
+          description: "Schedule an appointment in a free slot.",
+          input: z.object({ slotId: z.string() }),
+          output: z.object({ confirmed: z.boolean() }),
+          access: "public",
+          errors: {
+            SLOT_CONFLICT: {
+              description: "The requested slot is no longer available.",
+              details: z.object({ slotId: z.string() }),
+              retryable: false,
+            },
+          },
+          async run({ input }) {
+            throw new CapabilityError("SLOT_CONFLICT", {
+              details: { slotId: input.slotId },
+              cause: new Error("secret calendar token: top-secret"),
+            });
+          },
+        }),
+      },
+    });
+    const { client } = await connect(engine);
+
+    const result = await client.callTool({
+      name: "appointments_schedule",
+      arguments: { slotId: "S-1" },
+    });
+
+    expect(result).toEqual({
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            code: "DOMAIN_ERROR",
+            message: "The requested slot is no longer available.",
+            publicDetails: {
+              code: "SLOT_CONFLICT",
+              retryable: false,
+              details: { slotId: "S-1" },
+            },
+          }),
+        },
+      ],
+    });
+    expect(JSON.stringify(result)).not.toContain("top-secret");
   });
 
   it.each([

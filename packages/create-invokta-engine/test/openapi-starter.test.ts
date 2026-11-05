@@ -381,6 +381,11 @@ describe("createOpenApiStarterFiles", () => {
 
     expect(readme).toContain("npm run direct -- '{}'");
     expect(readme).not.toContain("npm run direct -- Ada");
+    expect(readme).toContain(
+      "npm run cli -- run openapi.root-server --input '{}'",
+    );
+    expect(readme).toContain("npm run cli -- help openapi.root-server");
+    expect(readme).not.toContain("--name Ada");
     expect(readme).toContain("## Review the generated capabilities");
     expect(readme).not.toContain("## Replace the example capability");
   });

@@ -11,6 +11,17 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 const exampleRoot = fileURLToPath(new URL("..", import.meta.url));
 const capabilityId = "support.classify-ticket";
 const toolName = "support_classify-ticket";
+// Allowed for the local operator but absent from the in-memory repository.
+const missingTicketId = "T-404";
+const ticketNotFound = {
+  code: "DOMAIN_ERROR",
+  message: "The requested ticket does not exist.",
+  publicDetails: {
+    code: "TICKET_NOT_FOUND",
+    retryable: false,
+    details: { ticketId: missingTicketId },
+  },
+};
 
 beforeAll(() => {
   const build = spawnSync(
@@ -103,6 +114,17 @@ describe("support engine entrypoints", () => {
       error: { code: "FORBIDDEN" },
     });
     expect(spoofed.stderr).not.toContain("attacker");
+
+    const missing = run("cli", [
+      "run",
+      capabilityId,
+      "--input",
+      JSON.stringify({ ticketId: missingTicketId }),
+    ]);
+
+    expect(missing.status).toBe(1);
+    expect(missing.stdout).toBe("");
+    expect(JSON.parse(missing.stderr)).toEqual({ error: ticketNotFound });
   });
 
   it("serves the same capability over protocol-only stdio", async () => {
@@ -137,6 +159,13 @@ describe("support engine entrypoints", () => {
           confidence: 0.9,
         },
       });
+
+      const missing = await client.callTool({
+        name: toolName,
+        arguments: { ticketId: missingTicketId },
+      });
+      expect(missing.isError).toBe(true);
+      expect(toolErrorPayload(missing)).toEqual(ticketNotFound);
     } finally {
       await client.close();
     }
@@ -237,6 +266,13 @@ describe("support engine entrypoints", () => {
       });
       expect(forbidden.isError).toBe(true);
       expect(toolErrorPayload(forbidden)).toMatchObject({ code: "FORBIDDEN" });
+
+      const notFound = await client.callTool({
+        name: toolName,
+        arguments: { ticketId: missingTicketId },
+      });
+      expect(notFound.isError).toBe(true);
+      expect(toolErrorPayload(notFound)).toEqual(ticketNotFound);
     } finally {
       await client?.close().catch(() => undefined);
       await stopProcess(child);

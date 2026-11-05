@@ -1,16 +1,17 @@
 ---
 title: Errors
-description: Handle the seven public errors produced by the Invokta invocation pipeline.
+description: Handle the eight public error codes and the declared domain errors produced by the Invokta invocation pipeline.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
 Invokta normalizes every invocation failure to `EngineError`. Consumers can make
-decisions from a seven-code taxonomy without learning provider or transport
-exceptions.
+decisions from an eight-code taxonomy without learning provider or transport
+exceptions. Stable domain outcomes that a capability declares in its contract,
+such as `SLOT_CONFLICT`, arrive under the single `DOMAIN_ERROR` code.
 
 ```ts
-import { EngineError } from "@invokta/core";
+import { type DomainErrorPublicDetails, EngineError } from "@invokta/core";
 
 try {
   await engine.invoke(capabilityId, input, options);
@@ -23,6 +24,15 @@ try {
       case "FORBIDDEN":
         // Preserve the denial without exposing policy internals.
         break;
+      case "DOMAIN_ERROR": {
+        const domain = error.publicDetails as DomainErrorPublicDetails;
+        if (domain.code === "SLOT_CONFLICT") {
+          // Offer another slot from domain.details.
+        } else if (domain.retryable) {
+          // Retry later with the caller's own backoff policy.
+        }
+        break;
+      }
     }
   }
 }
@@ -39,6 +49,108 @@ try {
 | `OUTPUT_INVALID` | The capability result failed its output contract |
 | `CANCELLED` | Caller cancellation or a capability timeout stopped execution |
 | `EXECUTION_FAILED` | An unknown internal failure was normalized at the boundary |
+| `DOMAIN_ERROR` | `run` raised a domain error declared in the capability contract |
+
+Adding `DOMAIN_ERROR` in 0.10.0 extends the union. An exhaustive `switch` that
+asserts `never`, and an exhaustive `Record<EngineErrorCode, ...>` map such as an
+HTTP status table, must add the case; engines that declare no domain errors
+never produce it.
+
+## Declared domain errors
+
+A capability declares its stable failure outcomes in the optional `errors`
+field and raises one from `run` with the standalone `CapabilityError` class:
+
+```ts
+import {
+  CapabilityError,
+  type CapabilityErrorMap,
+  defineCapability,
+} from "@invokta/core";
+import { z } from "zod";
+
+const errors = {
+  SLOT_CONFLICT: {
+    description: "The requested slot is no longer available.",
+    details: z.object({ slotId: z.string(), alternatives: z.array(z.string()) }),
+  },
+  CALENDAR_UNAVAILABLE: {
+    description: "The calendar provider is temporarily unavailable.",
+    retryable: true,
+  },
+} satisfies CapabilityErrorMap;
+
+export const schedule = defineCapability({
+  description: "Schedule an appointment in a free slot.",
+  input,
+  output,
+  access: "authenticated",
+  errors,
+  async run({ input, context }) {
+    const booking = await calendar.book(input.slotId, { signal: context.signal });
+    if (booking.status === "conflict") {
+      throw new CapabilityError<typeof errors>("SLOT_CONFLICT", {
+        details: { slotId: input.slotId, alternatives: booking.alternatives },
+      });
+    }
+    return { appointmentId: booking.id };
+  },
+});
+```
+
+The optional type argument checks the code and the details against the map:
+undeclared codes, missing or mistyped details, and details for a declaration
+without a schema are compile errors. The runtime check is authoritative.
+
+| Declaration field | Rule |
+| --- | --- |
+| Code (key) | UPPER_SNAKE_CASE, at most 64 characters, different from every framework code |
+| `description` | Required non-empty string of at most 1,024 characters; becomes the public message |
+| `details` | Optional Standard Schema with Standard JSON Schema and an object root |
+| `retryable` | Optional boolean hint for consumers; defaults to `false` |
+
+A capability declares at most 64 domain errors. `createEngine` rejects invalid
+declarations, accessors, proxies, and unknown fields with `TypeError` and
+snapshots the map.
+
+When `run` throws a `CapabilityError`, the engine checks the code against the
+declaration and validates the details with the declared schema inside the
+capability timeout. A valid outcome becomes:
+
+```ts
+new EngineError({
+  code: "DOMAIN_ERROR",
+  message: "The requested slot is no longer available.",
+  publicDetails: {
+    code: "SLOT_CONFLICT",
+    retryable: false,
+    details: { slotId: "S-1", alternatives: ["S-2"] },
+  },
+  cause: capabilityError, // internal only
+});
+```
+
+`DomainErrorPublicDetails` types this `publicDetails` shape. The check fails
+closed: an undeclared code, missing or invalid details, details for a
+declaration without a schema, or an object that only resembles a
+`CapabilityError` becomes `EXECUTION_FAILED`, with the original kept as the
+internal `cause`. Cancellation observed by the runtime still produces
+`CANCELLED`. A `CapabilityError` raised by an access rule or schema validator,
+and an `EngineError` constructed with `DOMAIN_ERROR` by application code or
+received from another invocation, are never published as domain errors.
+
+`engine.describe` lists the declarations under `errors` with their `code`,
+`description`, `retryable` flag, and `detailsSchema`, so consumers and agents
+can discover them before calling. `retryable` is a hint: Invokta performs no
+automatic retry.
+
+<Aside type="caution" title="One installed copy of @invokta/core">
+  The engine recognizes only `CapabilityError` instances created by its own copy
+  of `@invokta/core`. A capability package that resolves a second copy still has
+  its declarations listed by `describe`, but its domain errors fail closed as
+  `EXECUTION_FAILED`. Capability packages should declare `@invokta/core` as a
+  peer dependency, or the engine's install must deduplicate it to one version.
+</Aside>
 
 ## Public and internal details
 
@@ -63,9 +175,19 @@ serialize. `cause` and the stack stay inside the process.
 
 - Direct callers receive the `EngineError`.
 - The CLI writes a compact JSON error to standard error and chooses exit code
-  `1` or `2`.
+  `1` or `2`. A domain error exits with `1`, like every invocation failure.
 - MCP returns capability errors as tool results with `isError: true`.
 - A missing MCP tool is a protocol-level error rather than a capability error.
+- `invocation.failed` events carry the framework `code` and, for a domain
+  error, the declared `domainCode`; domain error details are never included.
+
+Both adapters serialize a domain error with its `publicDetails`:
+
+```json
+{"code":"DOMAIN_ERROR","message":"The requested slot is no longer available.","publicDetails":{"code":"SLOT_CONFLICT","retryable":false,"details":{"slotId":"S-1","alternatives":["S-2"]}}}
+```
+
+The CLI wraps the same object in `{"error": ...}`.
 
 Errors thrown by hostile or malformed caller-controlled objects cannot select
 their own public code or message. Invokta replaces them with a sanitized boundary
@@ -73,9 +195,10 @@ error and retains the original failure only as an internal cause.
 
 ## Construction and composition failures
 
-The seven codes above describe invocation and introspection failures. Engine
-construction validates capability timeouts and JSON Schema documents
-synchronously and can throw `TypeError` before an engine exists.
+The eight codes above describe invocation and introspection failures. Engine
+construction validates capability timeouts, domain error declarations, and JSON
+Schema documents synchronously and can throw `TypeError` before an engine
+exists.
 
 Capability composition has its own construction-time error:
 

@@ -7,7 +7,7 @@
 | Package | Responsibility |
 | --- | --- |
 | `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
-| `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
+| `@invokta/cli` | `list`, `describe`, `help`, and `run` with JSON or schema-derived flags over `engine.invoke` |
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
 | `@invokta/auth-jwt` | Optional JWT bearer authenticator for one configured issuer, usable as the HTTP `authenticate` hook |
 | `@invokta/tooling` | Development-time validation of capability composition |
@@ -63,7 +63,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Core primitives | Capability, Connector Definition, Engine, Context, and Principal |
 | Required capability fields | 5 |
 | Invocation pipeline stages | 6 |
-| Invocation error codes | 7 |
+| Invocation error codes | 8 framework codes; up to 64 declared domain codes per capability, published inside `DOMAIN_ERROR` |
 | Cross-cutting hooks | 1: `onEvent` |
 | Auth or PDP implementations | 1: the opt-in `@invokta/auth-jwt` JWT bearer authenticator; no PDP |
 | Containers or runtime plugin systems | 0 |
@@ -84,6 +84,8 @@ while the example owns one replaceable Authorization Server implementation.
 | Generated OpenAPI runtime URL | 8,192 UTF-8 bytes |
 | Generated OpenAPI runtime request body | 10 MiB serialized JSON |
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |
+| CLI flag spelling | 64 characters; reserved `input`, `stdin`, `help`, and `format` |
+| CLI capability help page | 100 flag or input-only entries, 20 allowed values per flag, and 500 characters per text field |
 | JWT bearer token length | 8,192 characters by default; at most 16,384 |
 | JWT bearer clock tolerance | 0 seconds by default; at most 300 |
 | JWT bearer remote JWKS | 5-second fetch timeout, 10-minute cache, 30-second unknown-key refetch cooldown after a successful fetch, 5-second no-fetch window on the monotonic clock after a failed fetch, no redirects, response size bounded only by the timeout |

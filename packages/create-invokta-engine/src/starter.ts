@@ -99,7 +99,14 @@ function renderReadme(
 \`\`\`sh
 ${commands.list}
 ${commands.run}
+${commands.runFlags}
+${commands.help}
 \`\`\`
+
+Flags derived from a capability's input schema can replace the JSON object for
+simple top-level properties. \`help\` lists a capability's flags; use
+\`--input\` or \`--stdin\` for nested objects and other values that flags
+cannot express.
 `
     : "";
   const stdioSection = features.mcpStdio

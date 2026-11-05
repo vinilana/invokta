@@ -9,6 +9,35 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- `@invokta/cli` derives `run` flags from the top-level properties of a
+  capability's published input schema, so
+  `engine run onboarding.create-welcome-message --name Ada` builds
+  `{"name":"Ada"}` and still goes through `engine.invoke` validation. Strings,
+  numbers, integers, booleans (`--flag`, `--no-flag`, `--flag=false`),
+  single-type enums and constants, and arrays through repeated flags are
+  supported in `--name value` and `--name=value` forms. Property names map to
+  kebab-case; reserved (`input`, `stdin`, `help`, `format`) and colliding
+  spellings fail closed, and nested objects, unions, and other schemas still use
+  `--input` or `--stdin`. Flags cannot be combined with `--input` or `--stdin`
+  (ADR 0047).
+- `help` and `--help` print the CLI usage, and `help <capability-id>` or
+  `run <capability-id> --help` prints a deterministic, bounded capability page
+  with its title, description, annotations, flags, types, required markers,
+  allowed values, declared defaults, and the `--input` alternative. Help is
+  written to stdout with exit code `0`. Shell completion is not provided.
+- Generated `complete` and `cli` engine READMEs show the flag and help commands
+  next to the JSON `--input` example.
+- Capabilities can declare stable domain errors in an optional `errors` field,
+  keyed by UPPER_SNAKE_CASE codes with a public `description`, an optional
+  `retryable` hint, and an optional object-rooted `details` schema, and raise
+  them from `run` with the new standalone `CapabilityError` class. Its optional
+  type argument checks codes and details against the declaration. The engine
+  validates the code and details and publishes the outcome as `DOMAIN_ERROR`;
+  undeclared codes, invalid details, and forged errors fail closed as
+  `EXECUTION_FAILED`. `describe` lists the declarations with their details
+  JSON Schema, `invocation.failed` events carry the `domainCode`, and the CLI
+  (exit code `1`) and MCP tool errors include the domain code, retry hint, and
+  details (ADR 0045).
 - `@invokta/auth-jwt` provides `createJwtBearerAuthenticator`, an optional JWT
   bearer authenticator usable directly as the `serveMcpHttp` `authenticate`
   hook or with any adapter exposing `headers.get` and an optional `signal`
@@ -31,6 +60,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- The usage text embedded in CLI `INVALID_USAGE` messages lists the flag and
+  help forms. `run` arguments other than exactly `--input <json>` or `--stdin`
+  are parsed as schema-derived flags, so a flag run against an unknown
+  capability now reports `CAPABILITY_NOT_FOUND` with exit code `1` before
+  `engine.invoke`, without an invocation event, instead of invalid usage.
+  Existing `--input` and `--stdin` invocations, output, and exit codes are
+  unchanged.
+- `EngineErrorCode` gains `DOMAIN_ERROR`, the only framework code for declared
+  domain errors. Exhaustive `switch` statements that assert `never` and
+  exhaustive `Record<EngineErrorCode, ...>` maps, including `satisfies` checks,
+  must handle it; engines that declare no domain errors never produce it.
+- The `support-engine` example reports a missing ticket as the declared
+  `TICKET_NOT_FOUND` domain error instead of `EXECUTION_FAILED`, and its local
+  operator may access the missing ticket `T-404` to demonstrate it.
 - AE-LIMIT-04 is amended for the optional JWT bearer helper. Invokta still
   provides no identity provider, token issuer, introspection client, OpenID
   Connect discovery, DPoP, mTLS, policy language, PDP adapter, or session
