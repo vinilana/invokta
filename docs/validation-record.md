@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-10-30
+- Last reviewed: 2026-11-05
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
@@ -25,7 +25,16 @@
   capability import accepted in ADR 0038; and the configurable MCP HTTP
   mount path accepted in ADR 0039; installer support for those mounted URLs
   accepted in ADR 0040; multiple managed installation removal accepted in
-  ADR 0041.
+  ADR 0041; Web-standard runtime portability for the core and MCP HTTP
+  accepted in ADR 0042; capability progress reporting and MCP progress
+  notifications accepted in ADR 0043; rich MCP tool result content accepted in
+  ADR 0044; declared domain errors accepted in ADR 0045; the stability policy,
+  capability deprecation, and contract diff accepted in ADR 0046;
+  schema-derived CLI flags and capability help accepted in ADR 0047; the plain
+  HTTP JSON adapter with OpenAPI export accepted in ADR 0048; the JWT bearer
+  authentication helper accepted in ADR 0049; OpenTelemetry instrumentation
+  from engine events accepted in ADR 0050; and typed capability middleware
+  composition accepted in ADR 0051.
 - Architectural conventions: ADR 0036 defines engine-owned outbound connectors;
   ADR 0037 adds their optional typed core authoring definition without changing
   capability contracts, the error-code taxonomy, or the execution path.
@@ -38,10 +47,10 @@ execution channels:
 | Evidence | Domain behavior | Channels or consumers |
 | --- | --- | --- |
 | `examples/hello-engine` | Minimal onboarding action | Direct, CLI, MCP stdio, MCP HTTP |
-| `examples/support-engine` | Ticket classification with domain authorization | Direct, CLI, MCP stdio, MCP HTTP, independent MCP harness |
+| `examples/support-engine` | Ticket classification with domain authorization and a declared domain error | Direct, CLI, MCP stdio, MCP HTTP, plain HTTP JSON, independent MCP harness |
 | `examples/crawl-engine` | Firecrawl outbound connector behind `WebCrawler` | Direct, CLI, MCP stdio, MCP HTTP |
 | `examples/image-engine` | Replaceable multi-provider image connectors | Direct, CLI, MCP stdio, MCP HTTP |
-| `examples/observability-engine` | Bounded Sentry, Datadog, and New Relic connectors | Direct, CLI, MCP stdio, MCP HTTP |
+| `examples/observability-engine` | Bounded Sentry, Datadog, and New Relic connectors with OpenTelemetry instrumentation | Direct, CLI, MCP stdio, MCP HTTP |
 | `examples/obsidian-context-engine` | Bounded read-only filesystem connector | Direct, CLI, MCP stdio, MCP HTTP |
 | `examples/composed-engine` | Local, atomic, and library capability composition | Direct, CLI, MCP stdio, MCP HTTP, tooling build gate |
 | `examples/agent-session-engine` | Durable task and handoff state through a filesystem connector | Direct, CLI, MCP stdio, MCP HTTP, harness hooks |
@@ -52,22 +61,23 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` on Node.js 24.20.0 and Yarn 1.22.22 passes typecheck, lint,
-  formatting, 3,206 tests, V8 coverage, and the full TypeScript build, followed
-  by 19 example gates. A root container skips two tests: the intentional
-  container test and a privilege-dependent deploy test. Coverage is 79.02%
-  statements, 74.47% branches, 83.52% functions, and 80.73% lines.
-- `yarn release:verify` passes for 0.9.1: metadata alignment and
-  clean tarball inspection for all 10 public packages, isolated ESM imports,
+- `yarn run check` on Node.js 22.23.4 and Yarn 1.22.22 passes typecheck, lint,
+  formatting, 4,033 of 4,035 tests in 245 files, V8 coverage, and the full
+  TypeScript build, followed by 19 example gates. A root container skips two
+  tests: the intentional container test and a privilege-dependent deploy test.
+  Coverage is 81.15% statements, 77.35% branches, 84.35% functions, and 82.38%
+  lines. CI runs the same gate on Node.js 24.20.0.
+- `yarn release:verify` passes for 0.10.0: metadata alignment and
+  clean tarball inspection for all 13 public packages, isolated ESM imports,
   all four packed engine profiles, authenticated MCP HTTP exchange, DevTools
   doctor checks, and the
-  atomic and capability-library creator smoke tests.
-- `yarn validate` in `apps/docs` passes 15 route and link contract tests, zero
-  Astro diagnostics, and the 49-page production site build.
-- The 2026-10-30 dependency refresh audits report zero vulnerabilities across
-  300 audited root packages and 569 documentation packages. The standalone OAuth
-  example's independent npm lockfile is audited separately; see the refresh
-  record below.
+  atomic and capability-library creator smoke tests. See the release record
+  below for the npm version it needs.
+- `yarn validate` in `apps/docs` passes 16 route and link contract tests, zero
+  Astro diagnostics, and the 59-page production site build.
+- The 2026-11-05 release audits report zero vulnerabilities across 305 audited
+  root packages and 569 documentation packages. The standalone OAuth example's
+  independent npm lockfile also reports zero; see the release record below.
 
 ## Boundaries exercised
 
@@ -441,3 +451,82 @@ On the development container (Node.js 22.23), `yarn run check` passed 3,267
 tests with two skipped and all 19 example gates, and `yarn validate` in
 `apps/docs` passed its 15 contract tests, zero Astro diagnostics, and the
 49-page build.
+
+## Release 0.10.0 preparation
+
+The release follows the repository's pre-1.0 minor-version policy in the
+[stability policy](./stability-policy.md): it carries the ten changes accepted
+in ADRs 0042 through 0051, and the changelog lists their breaking changes under
+`Changed`. It synchronizes all 13 public versions, including the first versions
+of `@invokta/http`, `@invokta/auth-jwt`, and `@invokta/otel`, every exact
+internal package and example pin, release assertions, MCP client
+identification, and the OpenTelemetry instrumentation scope version, which the
+existing default-provider test compares with the package manifest. The
+preparation changes metadata, documentation, and workflow configuration only,
+so it uses the documentation/tooling exception to a new RED test; each
+feature's RED/GREEN evidence remains with its pull request and, for ADR 0045,
+above.
+
+All gates ran in a fresh worktree of `f8789da` with the release changes staged,
+on the development container's Node.js 22.23.4, npm 10.9.9, and Yarn 1.22.22.
+Both frozen-lockfile installs passed. `yarn run check` passed 4,033 of 4,035
+tests in 245 files with the two root-container skips, the coverage above, and
+19 example gates. The root audit reports zero vulnerabilities across 305
+packages and the documentation audit zero across 569. `yarn validate` passed 16
+tests, zero Astro diagnostics, and 59 built pages. `git diff --cached --check`
+is clean and `yarn release:pack` passes all 13 package dry-runs.
+
+`yarn release:verify` failed with npm 10.9.9 when a generated engine profile
+installed its local tarballs: npm reported `Cannot read properties of null
+(reading 'edgesOut')` from Arborist's peer-set resolution. The verifier fails
+identically, on its 0.9.1 tarballs, in an unchanged worktree of `f8789da`,
+whose CI Verify job passed it on Node.js 24.20.0 with npm 11.19.0. With npm
+11.19.0 first on `PATH`, the verifier passes for the staged 0.10.0 tree:
+clean tarballs for all 13 packages, isolated ESM imports of every public entry
+point, the four generated engine profiles with their DevTools doctor checks,
+authenticated MCP HTTP, and the atomic and capability-library consumers. No
+packed consumer resolved an `@invokta/*` package from the registry.
+
+The self-hosted OAuth example imports only the core, CLI, MCP, and installer
+engine entry points, so it needs none of the new packages. A clean throwaway
+worktree of `f8789da` with only the version synchronization applied was
+installed with the frozen lockfile, then built, and packed all 13 tarballs with
+regular file modes. The same procedure applied to the `v0.9.1` tag reproduced
+the registry's `dist.integrity` for `@invokta/core` and `@invokta/cli` and the
+example's seven locked 0.9.1 values. The example's lockfile now uses the 0.10.0
+artifacts' SHA-512 values for its seven Invokta entries, whose dependency pins
+moved with them; its other 246 entries are unchanged. Tarballs packed from the
+gate worktree after the full gate differed only for `@invokta/tooling` and
+`@invokta/devtools`, by an executable mode on `dist/cli.js` with identical
+contents, so the lockfile uses the clean-checkout values, which follow the
+publish job's install-then-build order.
+
+Isolated `npm ci --ignore-scripts --no-audit --no-fund` with an empty npm cache
+cannot resolve the unpublished 0.10.0 tarballs from the registry and fails with
+`E404`. With the seven entries resolved to the local tarballs and an empty
+cache, it verified every integrity value and installed 209 packages; a copy
+with one altered value failed with `EINTEGRITY`. A first run with the default
+cache had succeeded only because `npm pack` stores packed tarballs under their
+integrity, so it is not registry evidence. The example's `npm audit` reports
+zero vulnerabilities.
+
+Before tagging, the registry serves 0.9.1 only for `@invokta/core` and
+`@invokta/cli`. The second attempt of the `v0.9.1` publish job also stopped,
+after `@invokta/cli`, so the other eight existing packages keep 0.9.0 as
+`latest` and no `v0.9.1` GitHub Release exists. `@invokta/http`,
+`@invokta/auth-jwt`, and `@invokta/otel` return `E404`, and the preflight
+stops at a name without a readable `latest` dist-tag. The npm CLI
+documentation for `npm trust` requires a package to exist before a trusted
+publisher can be configured, and npm's trusted publishing guide, read from its
+source repository because `docs.npmjs.com` was not reachable from this
+environment, starts from the package settings page. One of the two page
+variants that source currently contains also lets an unvalidated configuration
+expire after 2 days. `RELEASING.md` therefore documents a `0.0.0` placeholder
+bootstrap for each new package and asks for the tag promptly after it. The publish job timeout rises from
+60 to 150 minutes so each of the 13 publications can use its full 10-minute
+registry wait.
+
+Publication remains subject to the release PR CI, the new packages' bootstrap
+and trusted publishers, the annotated tag's Verify job, and the protected npm
+environment. Registry integrity and a clean example `npm ci` must be checked
+again after publication.

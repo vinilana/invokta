@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-05
+
 ### Added
 
 - `@invokta/mcp/web` is a portable entry point whose
@@ -68,8 +70,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `list` and `describe` only and fails closed on a JSON Schema identifier that
   would occur twice. `@invokta/http/node` adds `serveHttp` for Node, rejecting
   dot-segment targets and duplicated `Host` or `Authorization` headers.
-  Configure an npm trusted publisher for the package before the next release
-  tag.
 - The `support-engine` example adds a plain HTTP JSON entrypoint that shares one
   development authenticator with its MCP HTTP entrypoint.
 - `@invokta/auth-jwt` provides `createJwtBearerAuthenticator`, an optional JWT
@@ -122,10 +122,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   part of the chain outlives it. Middleware reads a lazily taken, deep-frozen
   input snapshot, and must not mutate `context.principal`, which it shares with
   `run`. Composed maps keep their composition provenance, so
-  `invokta check-capabilities` accepts wrapped compositions. The engine, its
-  six stages, and its single `onEvent` hook are unchanged; a new recipe shows
-  audit logging, rate limiting, and caching middleware with their limits
-  (ADR 0051).
+  `invokta check-capabilities` accepts wrapped compositions.
+  `applyMiddleware` leaves the engine, its six stages, and its single `onEvent`
+  hook unchanged; a new recipe shows audit logging, rate limiting, and caching
+  middleware with their limits (ADR 0051).
 - `@invokta/mcp` returns native MCP `image`, `audio`, and `resource_link`
   content blocks, over both stdio and HTTP, for top-level output properties
   that declare standard JSON Schema content keywords (ADR 0044). The forms are:
@@ -277,7 +277,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   30 seconds, for npm to make each published version readable. It previously
   failed after about one minute while npm was still processing the first
   package, which stopped the 0.9.1 workflow after publishing `@invokta/core`.
-  The publish job timeout increases from 20 to 60 minutes accordingly.
+  The publish job timeout increases from 20 to 150 minutes, so each of the
+  thirteen packages can use its full 10-minute wait.
 
 ## [0.9.1] - 2026-10-30
 
@@ -803,7 +804,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The deploy toolkit generates reviewable artifacts but does not build images or
   deploy them to a hosting provider.
 
-[Unreleased]: https://github.com/vinilana/invokta/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/vinilana/invokta/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/vinilana/invokta/releases/tag/v0.10.0
 [0.9.1]: https://github.com/vinilana/invokta/releases/tag/v0.9.1
 [0.9.0]: https://github.com/vinilana/invokta/releases/tag/v0.9.0
 [0.8.2]: https://github.com/vinilana/invokta/releases/tag/v0.8.2

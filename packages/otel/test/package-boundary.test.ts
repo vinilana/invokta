@@ -31,7 +31,7 @@ describe("@invokta/otel package boundary", () => {
         ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
       },
     });
-    expect(manifest.dependencies).toEqual({ "@invokta/core": "0.9.1" });
+    expect(manifest.dependencies).toEqual({ "@invokta/core": "0.10.0" });
     expect(manifest.peerDependencies).toEqual({
       "@opentelemetry/api": "^1.9.0",
     });
