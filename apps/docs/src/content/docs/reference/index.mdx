@@ -5,8 +5,8 @@ sidebar:
   label: Overview
 ---
 
-Invokta publishes three runtime packages and six supporting packages. Each has
-one bounded responsibility.
+Invokta publishes three runtime packages, one optional runtime helper, and
+seven supporting packages. Each has one bounded responsibility.
 
 ## Runtime packages
 
@@ -18,6 +18,15 @@ one bounded responsibility.
 
 The core has no adapter or SDK dependency. CLI and MCP import only its public
 API and never call capability handlers directly.
+
+## Optional runtime helper
+
+| Package | Public role | Start here |
+| --- | --- | --- |
+| `@invokta/auth-jwt` | Verify one issuer's JWT bearer access tokens as the MCP HTTP `authenticate` hook | [JWT bearer reference](/reference/auth-jwt/) |
+
+The helper depends only on `jose`. No runtime package depends on it, and a
+host-written authentication hook remains equally supported.
 
 ## Supporting packages
 

@@ -694,6 +694,7 @@ try {
     const cli = await import("@invokta/cli");
     const mcp = await import("@invokta/mcp");
     const mcpWeb = await import("@invokta/mcp/web");
+    const authJwt = await import("@invokta/auth-jwt");
     const tooling = await import("@invokta/tooling");
     const deploy = await import("@invokta/deploy");
     const deployScaffold = await import("@invokta/deploy/scaffold");
@@ -702,6 +703,7 @@ try {
     if (typeof cli.runCli !== "function") throw new Error("cli import failed");
     if (typeof mcp.serveMcpStdio !== "function") throw new Error("mcp import failed");
     if (typeof mcpWeb.createMcpHttpHandler !== "function") throw new Error("mcp web import failed");
+    if (typeof authJwt.createJwtBearerAuthenticator !== "function") throw new Error("auth-jwt import failed");
     if (typeof tooling.checkCapabilities !== "function") throw new Error("tooling import failed");
     if (typeof deploy.runDeployCli !== "function") throw new Error("deploy import failed");
     if (typeof deployScaffold.createMcpHttpScaffoldFiles !== "function") throw new Error("deploy scaffold import failed");

@@ -1,9 +1,11 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+
 import {
-  createLocalJWKSet,
   exportJWK,
   generateKeyPair,
+  type JSONWebKeySet,
   type JWTPayload,
-  type JWTVerifyGetKey,
   SignJWT,
 } from "jose";
 
@@ -11,7 +13,7 @@ import {
  * Offline Auth0 token factory.
  *
  * Every test signs its own RS256 tokens with a locally generated key pair and
- * resolves them through `createLocalJWKSet`, so signature verification is real
+ * publishes the public half as a local JWKS, so signature verification is real
  * and no test ever reaches an Auth0 tenant.
  */
 
@@ -20,10 +22,8 @@ export const testIssuer = `https://${testDomain}/`;
 export const testAudience = "https://orders.example.com/api";
 
 export interface Auth0TokenFactory {
-  /** Key resolution injected into the verifier under test. */
-  readonly keySource: JWTVerifyGetKey;
-  /** A key source that always fails, standing in for a JWKS outage. */
-  readonly failingKeySource: JWTVerifyGetKey;
+  /** The tenant's published signing keys, injected as a local key set. */
+  readonly jwks: JSONWebKeySet;
   sign(claims: JWTPayload, options?: SignOptions): Promise<string>;
   /** Signs with a key that is absent from the published JWKS. */
   signWithForeignKey(claims: JWTPayload): Promise<string>;
@@ -43,15 +43,14 @@ export async function createAuth0TokenFactory(): Promise<Auth0TokenFactory> {
   const published = await generateKeyPair("RS256", { extractable: true });
   const foreign = await generateKeyPair("RS256", { extractable: true });
   const publishedJwk = await exportJWK(published.publicKey);
-  const keySource = createLocalJWKSet({
+  const jwks: JSONWebKeySet = {
     keys: [{ ...publishedJwk, alg: "RS256", use: "sig", kid: publishedKeyId }],
-  });
+  };
 
   const now = () => Math.floor(Date.now() / 1000);
 
   return {
-    keySource,
-    failingKeySource: () => Promise.reject(new Error("JWKS endpoint refused.")),
+    jwks,
     async sign(claims, options = {}) {
       const issuedAt = options.issuedAt ?? now();
       const jwt = new SignJWT(claims)
@@ -84,6 +83,34 @@ export function validClaims(overrides: JWTPayload = {}): JWTPayload {
     azp: "0oaTestClientIdentifier",
     scope: "openid profile orders:read orders:write",
     ...overrides,
+  };
+}
+
+export interface JwksOutage {
+  /** A loopback key-set URL that always answers HTTP 503. */
+  readonly url: URL;
+  close(): Promise<void>;
+}
+
+/**
+ * Stands in for an unreachable tenant: a loopback JWKS endpoint that refuses
+ * every request, so the remote key-set path fails over real HTTP.
+ */
+export async function startJwksOutage(): Promise<JwksOutage> {
+  const server = createServer((request, response) => {
+    request.resume();
+    response.writeHead(503, { "content-type": "text/plain" });
+    response.end("JWKS endpoint refused.");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: new URL(`http://127.0.0.1:${port}/.well-known/jwks.json`),
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
   };
 }
 

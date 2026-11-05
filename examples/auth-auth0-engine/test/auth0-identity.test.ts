@@ -1,43 +1,50 @@
 import {
-  createLocalJWKSet,
-  exportJWK,
-  generateKeyPair,
-  generateSecret,
-  SignJWT,
-} from "jose";
-import { beforeAll, describe, expect, it } from "vitest";
+  type JwtKeySource,
+  JwtVerificationUnavailableError,
+} from "@invokta/auth-jwt";
+import { exportJWK, generateKeyPair, generateSecret, SignJWT } from "jose";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { engine } from "../src/engine.js";
-import { toAuth0Principal } from "../src/identity/principal.js";
 import {
-  Auth0VerificationUnavailableError,
   auth0Issuer,
   auth0JwksUri,
-  createAuth0AccessTokenVerifier,
-} from "../src/identity/verifier.js";
-import { createAuth0Authenticate } from "../src/mcp-http.js";
+  createAuth0Authenticator,
+} from "../src/identity/authenticator.js";
+import { toAuth0Principal } from "../src/identity/principal.js";
 import {
   type Auth0TokenFactory,
   createAuth0TokenFactory,
   foreignKeyId,
+  type JwksOutage,
+  startJwksOutage,
   testAudience,
   testDomain,
-  testIssuer,
   validClaims,
 } from "./support/auth0-tokens.js";
 
 let tokens: Auth0TokenFactory;
+let outage: JwksOutage;
 
 beforeAll(async () => {
   tokens = await createAuth0TokenFactory();
+  outage = await startJwksOutage();
 });
 
-function verifier(keySource = tokens.keySource) {
-  return createAuth0AccessTokenVerifier({
+afterAll(async () => {
+  await outage?.close();
+});
+
+function authenticator(keySource: JwtKeySource = { jwks: tokens.jwks }) {
+  return createAuth0Authenticator({
     domain: testDomain,
     audience: testAudience,
     keySource,
   });
+}
+
+function unreachableTenant(): JwtKeySource {
+  return { jwksUrl: outage.url };
 }
 
 function headerView(authorization?: string) {
@@ -50,13 +57,20 @@ function headerView(authorization?: string) {
   };
 }
 
-function authenticationRequest(authorization?: string) {
+function authenticationRequest(
+  authorization?: string,
+  signal: AbortSignal = new AbortController().signal,
+) {
   return {
     path: "/mcp",
     method: "POST",
     headers: headerView(authorization),
-    signal: new AbortController().signal,
+    signal,
   };
+}
+
+function bearer(token: string, signal?: AbortSignal) {
+  return authenticationRequest(`Bearer ${token}`, signal);
 }
 
 describe("auth0 issuer derivation", () => {
@@ -88,12 +102,15 @@ describe("auth0 access token verification", () => {
   it("accepts a token signed for the registered API", async () => {
     const token = await tokens.sign(validClaims());
 
-    const claims = await verifier().verify(token, {
-      signal: new AbortController().signal,
+    await expect(authenticator()(bearer(token))).resolves.toMatchObject({
+      id: "auth0|64f0c0ffee0000000000abcd",
     });
+  });
 
-    expect(claims?.sub).toBe("auth0|64f0c0ffee0000000000abcd");
-    expect(claims?.iss).toBe(testIssuer);
+  it("rejects an empty audience before serving any request", () => {
+    expect(() =>
+      createAuth0Authenticator({ domain: testDomain, audience: "  " }),
+    ).toThrow(TypeError);
   });
 
   it.each([
@@ -145,9 +162,7 @@ describe("auth0 access token verification", () => {
   ])("rejects %s with null", async (_label, build) => {
     const token = await build();
 
-    await expect(
-      verifier().verify(token, { signal: new AbortController().signal }),
-    ).resolves.toBeNull();
+    await expect(authenticator()(bearer(token))).resolves.toBeNull();
   });
 
   it("rejects a token signed outside the algorithm allowlist", async () => {
@@ -161,45 +176,47 @@ describe("auth0 access token verification", () => {
       .setExpirationTime(now + 3600)
       .sign(secret);
 
+    await expect(authenticator()(bearer(token))).resolves.toBeNull();
+  });
+
+  it("tries both rotation keys for a token without a key identifier", async () => {
+    // During key rotation the tenant publishes two RS256 keys. A token without
+    // a kid header is tried against each: the one it was signed with verifies
+    // it, and a forged token is an invalid credential, not a tenant outage.
+    const current = await generateKeyPair("RS256", { extractable: true });
+    const next = await generateKeyPair("RS256", { extractable: true });
+    const rotation: JwtKeySource = {
+      jwks: {
+        keys: [
+          { ...(await exportJWK(current.publicKey)), alg: "RS256", use: "sig" },
+          { ...(await exportJWK(next.publicKey)), alg: "RS256", use: "sig" },
+        ],
+      },
+    };
+    const now = Math.floor(Date.now() / 1000);
+    const signedWith = (key: CryptoKey) =>
+      new SignJWT(validClaims())
+        .setProtectedHeader({ alg: "RS256" })
+        .setIssuedAt(now)
+        .setExpirationTime(now + 3600)
+        .sign(key);
+
     await expect(
-      verifier().verify(token, { signal: new AbortController().signal }),
+      authenticator(rotation)(bearer(await signedWith(next.privateKey))),
+    ).resolves.toMatchObject({ id: "auth0|64f0c0ffee0000000000abcd" });
+    await expect(
+      authenticator(rotation)(
+        bearer(await signedWith((await generateKeyPair("RS256")).privateKey)),
+      ),
     ).resolves.toBeNull();
   });
 
-  it("throws when the key set is ambiguous for the token", async () => {
-    // Two same-algorithm keys without kid headers: jose cannot pick a
-    // candidate, which is the tenant's key-publication problem, not proof
-    // against the credential — so it surfaces as unavailable, not null.
-    const first = await generateKeyPair("RS256", { extractable: true });
-    const second = await generateKeyPair("RS256", { extractable: true });
-    const ambiguous = createLocalJWKSet({
-      keys: [
-        { ...(await exportJWK(first.publicKey)), alg: "RS256", use: "sig" },
-        { ...(await exportJWK(second.publicKey)), alg: "RS256", use: "sig" },
-      ],
-    });
-    const now = Math.floor(Date.now() / 1000);
-    const token = await new SignJWT(validClaims())
-      .setProtectedHeader({ alg: "RS256" })
-      .setIssuedAt(now)
-      .setExpirationTime(now + 3600)
-      .sign(first.privateKey);
-
-    await expect(
-      verifier(ambiguous).verify(token, {
-        signal: new AbortController().signal,
-      }),
-    ).rejects.toBeInstanceOf(Auth0VerificationUnavailableError);
-  });
-
-  it("throws when key resolution itself fails", async () => {
+  it("throws when the tenant JWKS cannot be fetched", async () => {
     const token = await tokens.sign(validClaims());
 
     await expect(
-      verifier(tokens.failingKeySource).verify(token, {
-        signal: new AbortController().signal,
-      }),
-    ).rejects.toBeInstanceOf(Auth0VerificationUnavailableError);
+      authenticator(unreachableTenant())(bearer(token)),
+    ).rejects.toBeInstanceOf(JwtVerificationUnavailableError);
   });
 
   it("stops when the request is already aborted", async () => {
@@ -208,19 +225,20 @@ describe("auth0 access token verification", () => {
     controller.abort();
 
     await expect(
-      verifier().verify(token, { signal: controller.signal }),
-    ).rejects.toBeInstanceOf(Auth0VerificationUnavailableError);
+      authenticator()(bearer(token, controller.signal)),
+    ).rejects.toBeInstanceOf(JwtVerificationUnavailableError);
   });
 
   it("keeps token material out of the failure message", async () => {
     const token = await tokens.sign(validClaims());
 
-    const failure = await verifier(tokens.failingKeySource)
-      .verify(token, { signal: new AbortController().signal })
-      .catch((error: unknown) => error);
+    const failure = await authenticator(unreachableTenant())(
+      bearer(token),
+    ).catch((error: unknown) => error);
 
     expect(String(failure)).not.toContain(token);
     expect(String(failure)).not.toContain("JWKS endpoint refused.");
+    expect(String(failure)).not.toContain(outage.url.host);
   });
 });
 
@@ -274,11 +292,7 @@ describe("auth0 authentication hook", () => {
     const token = await tokens.sign(
       validClaims({ permissions: ["orders:read"] }),
     );
-    const authenticate = createAuth0Authenticate(verifier());
-
-    const principal = await authenticate(
-      authenticationRequest(`Bearer ${token}`),
-    );
+    const principal = await authenticator()(bearer(token));
 
     expect(principal).toEqual({
       id: "auth0|64f0c0ffee0000000000abcd",
@@ -292,20 +306,16 @@ describe("auth0 authentication hook", () => {
   it("accepts the authentication scheme case-insensitively", async () => {
     // RFC 9110 makes the scheme token case-insensitive.
     const token = await tokens.sign(validClaims());
-    const authenticate = createAuth0Authenticate(verifier());
 
     await expect(
-      authenticate(authenticationRequest(`bearer ${token}`)),
+      authenticator()(authenticationRequest(`bearer ${token}`)),
     ).resolves.toMatchObject({ id: "auth0|64f0c0ffee0000000000abcd" });
   });
 
   it("never carries credential material into the principal", async () => {
     const token = await tokens.sign(validClaims());
-    const authenticate = createAuth0Authenticate(verifier());
 
-    const principal = await authenticate(
-      authenticationRequest(`Bearer ${token}`),
-    );
+    const principal = await authenticator()(bearer(token));
 
     const serialized = JSON.stringify(principal);
     expect(serialized).not.toContain(token);
@@ -322,22 +332,9 @@ describe("auth0 authentication hook", () => {
     ["a bearer scheme without a token", "Bearer"],
     ["a malformed bearer token", "Bearer not-a-json-web-token"],
   ])("answers null for %s", async (_label, authorization) => {
-    const authenticate = createAuth0Authenticate(verifier());
-
     await expect(
-      authenticate(authenticationRequest(authorization)),
+      authenticator()(authenticationRequest(authorization)),
     ).resolves.toBeNull();
-  });
-
-  it("propagates an infrastructure failure so the adapter answers 500", async () => {
-    const token = await tokens.sign(validClaims());
-    const authenticate = createAuth0Authenticate(
-      verifier(tokens.failingKeySource),
-    );
-
-    await expect(
-      authenticate(authenticationRequest(`Bearer ${token}`)),
-    ).rejects.toBeInstanceOf(Auth0VerificationUnavailableError);
   });
 });
 
@@ -346,10 +343,7 @@ describe("identity.whoami", () => {
     const token = await tokens.sign(
       validClaims({ permissions: ["orders:read"] }),
     );
-    const authenticate = createAuth0Authenticate(verifier());
-    const principal = await authenticate(
-      authenticationRequest(`Bearer ${token}`),
-    );
+    const principal = await authenticator()(bearer(token));
 
     await expect(
       engine.invoke("identity.whoami", {}, { source: "mcp-http", principal }),
