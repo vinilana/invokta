@@ -118,20 +118,28 @@ construction with `TypeError`; they never reach the host timer implementation.
 **AE-MIDDLEWARE-01 — Composition, not a pipeline stage.**
 `applyMiddleware(capabilities, ...middleware)` MAY wrap the `run` of every
 capability in an explicit map before `createEngine`. It is pure, eager, and
-synchronous: it returns a new frozen map with the same keys and copies of the
-capabilities that keep every other field by identity, registers nothing, and
-invokes no middleware, access rule, or handler. The chain therefore executes
+synchronous. It returns a new frozen map with the same keys. Each capability
+is copied with every property that property access reaches kept by identity,
+and only `run` is replaced. It registers nothing and invokes no middleware,
+access rule, or handler. The chain therefore executes
 inside stage 5: input validation and `access` complete before the first
 middleware, the capability timeout and caller cancellation cover the whole
 chain through `context.signal`, the outermost result is validated against the
 output schema, and middleware failures are normalized exactly like `run`
-failures. A middleware receives the map key as `capabilityId`, a deep-frozen
-input snapshot, the unchanged `ExecutionContext`, and an argument-free
-`next()`. The first listed middleware is outermost. `next()` may start the next
-layer at most once, only while its middleware is pending and the signal is not
-aborted; other calls reject with `TypeError` or the abort reason. A composed
-map keeps its composition provenance; a plain map never gains it. ADR 0051
-defines the complete boundary.
+failures. A middleware receives:
+
+- the map key as `capabilityId`;
+- a lazily taken, deep-frozen input snapshot shared by the invocation's
+  middleware;
+- the unchanged `ExecutionContext`, whose principal it MUST NOT mutate; and
+- an argument-free `next()`.
+
+The first listed middleware is outermost. `next()` may start the next layer at
+most once, only while its middleware is pending and the signal is not aborted;
+other calls reject with `TypeError` or the abort reason. A started layer
+settles before its caller's result is returned, so no layer outlives the
+invocation. A composed map keeps its composition provenance; a plain map never
+gains it. ADR 0051 defines the complete boundary.
 
 ## Errors
 

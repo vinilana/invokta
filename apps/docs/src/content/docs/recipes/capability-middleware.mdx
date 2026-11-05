@@ -36,8 +36,8 @@ Middleware executes where `run` executes, inside the normal
   `EXECUTION_FAILED`.
 
 The wrapped capabilities keep their schemas, access rule, title, description,
-annotations, and `timeoutMs`, so `list`, `describe`, CLI, and MCP publish the
-same contract.
+annotations, `timeoutMs`, and every other field, so `list`, `describe`, CLI, and
+MCP publish the same contract.
 
 ## Write and apply middleware
 
@@ -65,10 +65,13 @@ same contract.
    };
    ```
 
-   A middleware also receives `input`, a deep-frozen snapshot of the validated
-   input; `run` still receives its own copy. `capabilityId` is the
-   capability's key in the map you wrap. `context` is the engine's
-   `ExecutionContext`, passed through unchanged.
+   A middleware receives `capabilityId`, the capability's key in the map you
+   wrap, and `context`, the engine's `ExecutionContext`, passed through
+   unchanged. It also receives `input`, a deep-frozen snapshot of the
+   validated input, taken the first time a middleware reads it and shared by
+   every middleware of the invocation. `run` keeps its own copy and may change
+   it, so read `input` before calling `next()` when you need the value as
+   validated.
 
 2. Call `next()` at most once, and await it
 
@@ -78,10 +81,27 @@ same contract.
    call after the invocation signal aborted rejects without running the next
    layer, so middleware cannot retry the handler.
 
+   Middleware cannot detach work from the invocation either. If a middleware
+   returns without awaiting a `next()` it started, the invocation still waits
+   for that layer to settle, within the same timeout and signal, and ignores
+   its outcome. Bound latency with `timeoutMs`, not with a race against
+   `next()`.
+
 3. Apply the chain at the composition root
 
    ```ts
    import { applyMiddleware, composeCapabilities } from "@invokta/core";
+
+   const rateLimit = createRateLimit({
+     limit: 60,
+     windowMs: 60_000,
+     maxTrackedKeys: 10_000,
+   });
+   const cache = createResultCache({
+     capabilityIds: new Set(["kb.lookup"]),
+     ttlMs: 30_000,
+     maxEntries: 1_000,
+   });
 
    export const capabilities = applyMiddleware(
      composeCapabilities({ local, imports }),
@@ -91,10 +111,12 @@ same contract.
    );
    ```
 
-   The first listed middleware is outermost. Here `auditLog` records every
-   execution, including rate-limit rejections and cache hits, and `rateLimit`
-   counts cache hits. Put `cache` before `rateLimit` if hits should not count.
-   Applied to a composed map, the result keeps its composition provenance, so
+   `local` and `imports` are your composition inputs, and `auditLog`,
+   `createRateLimit`, and `createResultCache` are defined below. The first
+   listed middleware is outermost. Here `auditLog` records every execution,
+   including rate-limit rejections and cache hits, and `rateLimit` counts cache
+   hits. Put `cache` before `rateLimit` if hits should not count. Applied to a
+   composed map, the result keeps its composition provenance, so
    [`invokta check-capabilities`](/reference/tooling/) still accepts it, and
    middleware observes the effective engine IDs.
 
@@ -102,8 +124,10 @@ same contract.
 
 <Aside type="caution" title="Middleware is trusted code">
   Middleware runs with the same authority as `run`. It can short-circuit
-  execution and replace results, so review it like a handler. Keep payloads,
-  tokens, and credentials out of logs and public errors.
+  execution and replace results, so review it like a handler. The engine
+  freezes the context, but `context.principal` is the same object `run`
+  receives: never mutate it, and keep identity decisions in `access`. Keep
+  payloads, tokens, and credentials out of logs and public errors.
 </Aside>
 
 ## Audit log
@@ -232,7 +256,6 @@ Serve repeated reads of read-only capabilities from memory for a short time:
 
 ```ts
 import { createHash } from "node:crypto";
-
 import type { CapabilityMiddleware } from "@invokta/core";
 
 export interface ResultCacheOptions {
@@ -283,7 +306,8 @@ export function createResultCache(
 
 `assertPositiveInteger` is the helper from the rate-limit example. List only
 capabilities whose result is safe to reuse, typically those annotated
-`readOnly`. If a result depends on principal attributes such as a tenant,
+`readOnly`. The key includes the principal ID and reads `input` before
+`next()`; if a result depends on principal attributes such as a tenant,
 include them in the key.
 
 Production limits:
@@ -304,9 +328,10 @@ an atomic insert.
 
 ## Verify it
 
-The repository runs every middleware on this page against a real engine,
+The repository runs every code block on this page against a real engine,
 including principal isolation, window and TTL expiry, memory bounds, and
-payload-free audit records:
+payload-free audit records, and the documentation tests keep each block
+identical to its executable copy:
 
 ```sh
 yarn vitest run packages/core/test/middleware-recipes.test.ts

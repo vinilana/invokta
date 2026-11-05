@@ -36,10 +36,14 @@ type CapabilityMiddleware = (args: {
 and each capability's top-level fields exactly once, validates that every
 middleware is a function and every capability is a non-proxy object with a
 `run` function, and returns a new frozen map with the same keys in the same
-order. Each wrapped capability is a frozen shallow copy that keeps every other
-field by identity, including schemas, `access`, `title`, `description`,
-`annotations`, `timeoutMs`, and fields it does not recognize, and replaces only
-`run`. It performs no I/O and calls no middleware, access rule, or handler.
+order. Each wrapped capability is a frozen copy that replaces only `run`. It
+keeps by identity every other property that plain property access reaches on
+the source: own and inherited, enumerable or not, and string or symbol keyed,
+except what every object inherits from `Object.prototype`. That covers schemas,
+`access`, `title`, `description`, `annotations`, `timeoutMs`, and fields other
+contracts add later, however the capability object was built. Inherited fields
+become own fields of the copy, and each keeps its enumerability. It performs no
+I/O and calls no middleware, access rule, or handler.
 Undefined map entries are skipped, as `createEngine` skips them. With no
 middleware, the result is a frozen copy holding the original capabilities.
 Invalid arguments throw `TypeError` before any engine exists.
@@ -53,7 +57,8 @@ of the unchanged pipeline:
   bypass authorization;
 - the chain receives the execution context created by the engine and passes it
   to `run` unchanged, including its cancellation `signal`;
-- the capability timeout and caller cancellation cover the whole chain;
+- the capability timeout and caller cancellation cover the whole chain, and no
+  layer can outlive the invocation (see `next()` below);
 - the outermost middleware's result is validated and transformed against the
   output schema, whether it came from `run` or was produced by a middleware;
 - an error thrown or rejected by a middleware is normalized exactly like an
@@ -71,12 +76,12 @@ Order is deterministic: the first listed middleware is outermost and the
 handler is innermost. Applying middleware to a map that already contains
 wrapped capabilities places the new chain outside the earlier one.
 
-`next()` takes no arguments, so a middleware cannot replace the validated input
-or the context. It resolves to the next layer's unvalidated result and may be
-called at most once while its middleware is pending. A repeated call, or a call
-after the middleware settled, rejects with `TypeError` without starting the
-next layer; if that rejection propagates, the invocation fails as
-`EXECUTION_FAILED`. A call after the invocation signal aborted rejects with the
+`next()` takes no arguments, so a middleware cannot pass a different input or
+context object to the next layer. It resolves to the next layer's unvalidated
+result and may be called at most once while its middleware is pending. A
+repeated call, or a call after the middleware settled, rejects with `TypeError`
+without starting the next layer; if that rejection propagates, the invocation
+fails as `EXECUTION_FAILED`. A call after the invocation signal aborted rejects with the
 signal reason without starting the next layer, matching the engine's check
 before `run`. Like the engine, the chain reads the signal through the platform
 accessors, so a wrapped `run` called outside the engine requires a platform
@@ -84,10 +89,40 @@ accessors, so a wrapped `run` called outside the engine requires a platform
 are contained. Retries therefore remain outside the framework, as AE-LIMIT-01
 requires.
 
-Each middleware layer of one application receives the same deep-frozen
-snapshot of the validated input. `run` still receives the unmodified execution
-snapshot, so neither middleware nor caller mutation crosses into execution, in
-the same way AE-SCHEMA-02 isolates `access`.
+A started layer cannot detach from the invocation. When a middleware settles,
+its result or error is held until the layer it started with `next()` has
+settled, and the outcome of a layer it did not await is ignored. Every
+middleware, and `run` itself, therefore settles before the outermost layer
+returns. The invocation cannot complete while part of the chain is still
+running, so a handler cannot start after completion with a signal that never
+aborts. A middleware that starts `next()` and returns early, races it against a
+timer, or revalidates in the background still holds the invocation until that
+work settles. The capability timeout and caller cancellation then bound it like
+any other part of the chain. When they fire, the engine settles the invocation
+as `CANCELLED` and no further layer starts, but a handler that is already
+running stops only when it observes the signal, as without middleware.
+
+Middleware receives the input as a deep-frozen snapshot that `run` never sees,
+so middleware cannot mutate what execution observes, in the same way
+AE-SCHEMA-02 isolates `access`. `run` still receives the unmodified execution
+snapshot. The snapshot is taken lazily, with `structuredClone` and a deep
+freeze, the first time any middleware of the invocation reads `input`. Every
+layer and every nested application of the same invocation share it, and the
+lossless JSON check the engine already performed is not repeated. A middleware
+that never reads `input` costs no copy. Because `run` owns its copy, a snapshot
+first read after `next()` reflects any change `run` made to its input, so a
+middleware that needs the value as validated reads it before calling `next()`.
+A wrapped `run` called directly outside the engine accepts the same inputs as
+the original until a middleware reads `input`, which then requires a
+structured-cloneable value.
+
+The context object is the engine's frozen `ExecutionContext`, shared by
+identity with `run` so that fields other contracts add keep working. Its
+`principal` is the same identity snapshot `run` receives and is not frozen.
+Middleware must not mutate it: the access decision has already been made, and
+identity decisions belong in `access`. The framework documents this obligation
+for trusted middleware rather than freezing the principal, which would change
+what `run` may do, or cloning it, which would break context identity.
 
 When the source map carries composition provenance, the result keeps it,
 because wrapping preserves keys one-to-one and cannot introduce a collision.
@@ -118,8 +153,14 @@ error codes, `ExecutionContext`, and the single `onEvent` hook are unchanged.
 - A cache or idempotency middleware sees only the request context, so it must
   key results by capability, principal, and input itself; serving one caller's
   result to another remains the author's responsibility.
-- Each wrapped invocation snapshots and freezes the input once more, adding
-  bounded work proportional to the payload.
+- An invocation whose middleware reads `input` performs one more clone and
+  freeze of the payload, however many layers and nested applications read it;
+  middleware that never reads `input` adds no payload-proportional work.
+- Middleware cannot hide latency by detaching the rest of the chain;
+  stale-while-revalidate and background refresh need an engine-owned queue or
+  port outside the invocation.
+- `context.principal` is mutable shared state between middleware and `run`;
+  safety relies on middleware honoring the documented obligation.
 - `capabilityId` depends on where middleware is applied, so a library that
   wraps its own capabilities sees default IDs after a consumer remaps them.
 - In-memory recipes are single-process; distributed rate limits, durable

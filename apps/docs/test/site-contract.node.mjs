@@ -427,34 +427,94 @@ test("recipes provide runnable commands, verification, and full examples", async
   }
 });
 
-test("the middleware recipe matches its executable copies", async () => {
-  const recipe = await readFile(
-    join(contentRoot, "recipes", "capability-middleware.mdx"),
-    "utf8",
-  );
-  const executable = await readFile(
-    join(
-      repositoryRoot,
-      "packages",
-      "core",
-      "test",
-      "middleware-recipes.test.ts",
-    ),
-    "utf8",
-  );
-  const documented = [...recipe.matchAll(/^```ts\n(.*?)^```$/gmsu)]
-    .map((match) => match[1])
-    .join("\n");
-  const blocks = [
-    ...executable.matchAll(
-      /^\/\/ --- recipe: ([^\n]*?) -+\n(.*?)^\/\/ --- end recipe/gmsu,
-    ),
-  ];
+function normalizeLineEndings(text) {
+  return text.replace(/\r\n?/gu, "\n");
+}
 
-  assert.ok(blocks.length >= 4);
-  for (const [, name, code] of blocks) {
-    assert.ok(documented.includes(code.trim()), name);
+/**
+ * Returns every fenced block in the given language, including fences indented
+ * inside lists or components, with the fence indentation removed.
+ */
+function fencedBlocks(source, language) {
+  return [...source.matchAll(/^([ \t]*)```(\S*)\n(.*?)^\1```$/gmsu)]
+    .filter(([, , fenceLanguage]) => fenceLanguage === language)
+    .map(([, indent, , body]) =>
+      body
+        .split("\n")
+        .map((line) =>
+          line.startsWith(indent) ? line.slice(indent.length) : line,
+        )
+        .join("\n")
+        .trimEnd(),
+    );
+}
+
+test("the middleware recipe matches its executable copies", async () => {
+  const recipe = normalizeLineEndings(
+    await readFile(
+      join(contentRoot, "recipes", "capability-middleware.mdx"),
+      "utf8",
+    ),
+  );
+  const executable = normalizeLineEndings(
+    await readFile(
+      join(
+        repositoryRoot,
+        "packages",
+        "core",
+        "test",
+        "middleware-recipes.test.ts",
+      ),
+      "utf8",
+    ),
+  );
+  const coreIndex = normalizeLineEndings(
+    await readFile(
+      join(repositoryRoot, "packages", "core", "src", "index.ts"),
+      "utf8",
+    ),
+  );
+
+  const documented = fencedBlocks(recipe, "ts");
+  // Each marked block restores its commented imports, so imports are compared too.
+  const executableBlocks = [
+    ...executable.matchAll(
+      /^\/\/ --- recipe: .+? -+\n(.*?)^\/\/ --- end recipe -+$/gmsu,
+    ),
+  ].map(([, body]) => body.replace(/^\/\/ (import .*)$/gmu, "$1").trimEnd());
+
+  assert.ok(executableBlocks.length >= 5);
+  assert.deepEqual([...documented].sort(), [...executableBlocks].sort());
+
+  const importLine = /^import (?:type )?\{ ([^}]+) \} from "([^"]+)";$/u;
+  for (const block of documented) {
+    for (const line of block
+      .split("\n")
+      .filter((text) => /^import\b/u.test(text))) {
+      const match = importLine.exec(line);
+      assert.ok(match, `unsupported import form: ${line}`);
+      const [, names, specifier] = match;
+      for (const name of names
+        .split(",")
+        .map((entry) => entry.trim().replace(/^type /u, ""))) {
+        if (specifier === "@invokta/core") {
+          assert.match(
+            coreIndex,
+            new RegExp(`(?:^|[\\s{,])${name}(?:[\\s},]|$)`, "mu"),
+            `@invokta/core does not export ${name}`,
+          );
+        } else if (specifier.startsWith("node:")) {
+          assert.ok(
+            name in (await import(specifier)),
+            `${specifier} does not export ${name}`,
+          );
+        } else {
+          assert.fail(`unexpected import specifier ${specifier}`);
+        }
+      }
+    }
   }
+
   assert.match(recipe, /^## Verify it$/mu);
   assert.match(recipe, /packages\/core\/test\/middleware-recipes\.test\.ts/u);
   assert.match(recipe, /not a framework export/u);

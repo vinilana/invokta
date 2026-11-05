@@ -96,6 +96,31 @@ function trace(steps: string[], name: string): CapabilityMiddleware {
   };
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Runs the work and then waits long enough for Node to report any promise
+ * rejection that nothing handled.
+ */
+async function unhandledRejectionsDuring(
+  work: () => Promise<void>,
+): Promise<unknown[]> {
+  const reasons: unknown[] = [];
+  const record = (reason: unknown): void => {
+    reasons.push(reason);
+  };
+  process.on("unhandledRejection", record);
+  try {
+    await work();
+    await delay(20);
+  } finally {
+    process.off("unhandledRejection", record);
+  }
+  return reasons;
+}
+
 describe("applyMiddleware execution order", () => {
   it("runs the first listed middleware outermost and the handler innermost", async () => {
     const steps: string[] = [];
@@ -247,6 +272,90 @@ describe("applyMiddleware arguments", () => {
     expect(middlewareInput).not.toBe(runInput);
     expect(runInput).toEqual({ ticketId: "T-1", tags: [] });
     expect(Object.isFrozen(runInput)).toBe(false);
+  });
+  it("snapshots the input lazily, once per invocation, across layers and nested applications", async () => {
+    const clone = vi.spyOn(globalThis, "structuredClone");
+    const clonesPerInvocation = async (
+      capabilities: Readonly<Record<string, AnyCapability>>,
+    ): Promise<number> => {
+      const engine = engineFor(capabilities);
+      clone.mockClear();
+      await engine.invoke("support.classify", { ticketId: "T-1" });
+      return clone.mock.calls.length;
+    };
+    const passThrough: CapabilityMiddleware = async ({ next }) => next();
+    const seen: unknown[] = [];
+    const reading: CapabilityMiddleware = async ({ input, next }) => {
+      seen.push(input);
+      return next();
+    };
+
+    try {
+      const unwrapped = await clonesPerInvocation({
+        "support.classify": classifyCapability(),
+      });
+      await expect(
+        clonesPerInvocation(
+          applyMiddleware(
+            applyMiddleware(
+              { "support.classify": classifyCapability() },
+              passThrough,
+            ),
+            passThrough,
+            passThrough,
+          ),
+        ),
+      ).resolves.toBe(unwrapped);
+      await expect(
+        clonesPerInvocation(
+          applyMiddleware(
+            applyMiddleware(
+              { "support.classify": classifyCapability() },
+              reading,
+              reading,
+            ),
+            reading,
+          ),
+        ),
+      ).resolves.toBe(unwrapped + 1);
+    } finally {
+      clone.mockRestore();
+    }
+
+    expect(seen).toHaveLength(3);
+    expect(seen[1]).toBe(seen[0]);
+    expect(seen[2]).toBe(seen[0]);
+    expect(Object.isFrozen(seen[0])).toBe(true);
+  });
+
+  it("accepts the same direct-call input as the unwrapped run until middleware reads it", async () => {
+    const at = new Date(0);
+    let received: unknown;
+    const capabilities = applyMiddleware(
+      {
+        "support.classify": classifyCapability(async ({ input }) => {
+          received = input;
+          return { category: "direct" };
+        }),
+      },
+      async ({ next }) => next(),
+    );
+    const wrapped = capabilities["support.classify"] as AnyCapability;
+    const input = { ticketId: "T-1", tags: [], at };
+
+    await expect(
+      (wrapped.run as unknown as TicketRun)({
+        input,
+        context: {
+          requestId: "request-1",
+          source: "direct",
+          principal: null,
+          signal: new AbortController().signal,
+          logger: console,
+        },
+      }),
+    ).resolves.toEqual({ category: "direct" });
+    expect(received).toBe(input);
   });
 });
 
@@ -601,6 +710,150 @@ describe("applyMiddleware next()", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it("keeps a started layer inside the timeout when a middleware returns without awaiting next()", async () => {
+    const steps: string[] = [];
+    const run = vi.fn<TicketRun>(async () => {
+      steps.push("run");
+      return { category: "detached" };
+    });
+    let innerSignal: AbortSignal | undefined;
+    let innerNext: Promise<unknown> | undefined;
+    const capabilities = applyMiddleware(
+      { "support.classify": classifyCapability(run, { timeoutMs: 10 }) },
+      async ({ next }) => {
+        void next();
+        return { category: "outer" };
+      },
+      async ({ context, next }) => {
+        innerSignal = context.signal;
+        await delay(50);
+        innerNext = next();
+        return innerNext;
+      },
+    );
+    const engine = engineFor(capabilities);
+
+    await expectEngineError(
+      engine.invoke("support.classify", { ticketId: "T-1" }),
+      "CANCELLED",
+    );
+    await delay(80);
+    expect(innerSignal?.aborted).toBe(true);
+    await expect(innerNext).rejects.toBeInstanceOf(Error);
+    expect(run).not.toHaveBeenCalled();
+    expect(steps).toEqual([]);
+  });
+
+  it("settles the invocation only after every started layer settles", async () => {
+    const steps: string[] = [];
+    let releaseRun: (() => void) | undefined;
+    const runReleased = new Promise<void>((resolve) => {
+      releaseRun = resolve;
+    });
+    const capabilities = applyMiddleware(
+      {
+        "support.classify": classifyCapability(async () => {
+          steps.push("run:started");
+          await runReleased;
+          steps.push("run:settled");
+          return { category: "from-run" };
+        }),
+      },
+      async ({ next }) => {
+        void next();
+        steps.push("outer:returned");
+        return { category: "outer" };
+      },
+    );
+
+    const invocation = engineFor(capabilities)
+      .invoke("support.classify", { ticketId: "T-1" })
+      .then((output) => {
+        steps.push("invocation:settled");
+        return output;
+      });
+    await delay(10);
+    expect(steps).toEqual(["run:started", "outer:returned"]);
+
+    releaseRun?.();
+    await expect(invocation).resolves.toEqual({
+      category: "outer",
+      priority: 3,
+    });
+    expect(steps).toEqual([
+      "run:started",
+      "outer:returned",
+      "run:settled",
+      "invocation:settled",
+    ]);
+  });
+
+  it("ignores and contains the failure of a layer the middleware did not await", async () => {
+    const privateFailure = new Error("detached handler failure");
+    const reasons = await unhandledRejectionsDuring(async () => {
+      const capabilities = applyMiddleware(
+        {
+          "support.classify": classifyCapability(async () => {
+            throw privateFailure;
+          }),
+        },
+        async ({ next }) => {
+          void next();
+          return { category: "outer" };
+        },
+      );
+
+      await expect(
+        engineFor(capabilities).invoke("support.classify", {
+          ticketId: "T-1",
+        }),
+      ).resolves.toEqual({ category: "outer", priority: 3 });
+    });
+
+    expect(reasons).toEqual([]);
+  });
+
+  it("contains rejected next() promises that a middleware never awaits", async () => {
+    const run = vi.fn<TicketRun>(async ({ input }) => ({
+      category: input.ticketId,
+    }));
+    const controller = new AbortController();
+    const reasons = await unhandledRejectionsDuring(async () => {
+      const repeated = applyMiddleware(
+        { "support.classify": classifyCapability(run) },
+        async ({ next }) => {
+          const output = await next();
+          void next();
+          return output;
+        },
+      );
+      await expect(
+        engineFor(repeated).invoke("support.classify", { ticketId: "T-1" }),
+      ).resolves.toEqual({ category: "T-1", priority: 3 });
+
+      const afterAbort = applyMiddleware(
+        { "support.classify": classifyCapability(run) },
+        async ({ next }) => {
+          controller.abort(new Error("caller stopped"));
+          void next();
+          await delay(5);
+          return { category: "aborted" };
+        },
+      );
+      await expectEngineError(
+        engineFor(afterAbort).invoke(
+          "support.classify",
+          { ticketId: "T-1" },
+          { signal: controller.signal },
+        ),
+        "CANCELLED",
+      );
+    });
+
+    expect(reasons).toEqual([]);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
   it("requires a platform AbortSignal when run is called outside the engine", async () => {
     const run = vi.fn<TicketRun>(async () => ({ category: "never" }));
     const capabilities = applyMiddleware(
@@ -655,6 +908,55 @@ describe("applyMiddleware capability contract", () => {
     expect(Object.isFrozen(wrapped)).toBe(true);
     expect(Object.isFrozen(capabilities)).toBe(true);
     expect(access).not.toHaveBeenCalled();
+  });
+
+  it("keeps every property that plain property access reaches, including inherited and non-enumerable ones", () => {
+    const marker = Symbol("capability.marker");
+    const base = {
+      errors: { TICKET_NOT_FOUND: { message: "Ticket not found." } },
+      deprecated: { since: "1.2.0" },
+    };
+    const original = Object.create(base, {
+      ...Object.getOwnPropertyDescriptors(classifyCapability()),
+      stability: { value: "experimental", enumerable: false },
+      [marker]: { value: "symbol-field", enumerable: true },
+    }) as AnyCapability;
+    const wrapped = applyMiddleware(
+      { "support.classify": original },
+      async ({ next }) => next(),
+    )["support.classify"] as AnyCapability;
+    const reachableKeys = (value: object): PropertyKey[] => {
+      const keys = new Set<PropertyKey>();
+      for (
+        let current: object | null = value;
+        current !== null && current !== Object.prototype;
+        current = Object.getPrototypeOf(current)
+      ) {
+        for (const key of Reflect.ownKeys(current)) keys.add(key);
+      }
+      return [...keys];
+    };
+    const enumerableKeys = (value: object): string[] => {
+      const keys: string[] = [];
+      for (const key in value) keys.push(key);
+      return keys.sort();
+    };
+    const read = (value: object, key: PropertyKey): unknown =>
+      Reflect.get(value, key);
+
+    for (const key of reachableKeys(original)) {
+      if (key === "run") continue;
+      expect(read(wrapped, key), String(key)).toBe(read(original, key));
+    }
+    expect(enumerableKeys(wrapped)).toEqual(enumerableKeys(original));
+    expect(Object.getOwnPropertyDescriptor(wrapped, "stability")).toMatchObject(
+      { value: "experimental", enumerable: false },
+    );
+    expect(
+      engineFor({ "support.classify": wrapped }).describe("support.classify"),
+    ).toEqual(
+      engineFor({ "support.classify": original }).describe("support.classify"),
+    );
   });
 
   it("publishes the same list and describe contracts as the unwrapped map", () => {

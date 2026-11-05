@@ -322,6 +322,8 @@ order. Applied to the composed map, it keeps the composition provenance and
 middleware observes effective IDs:
 
 ```ts
+// auditLog and rateLimit are engine-owned middleware, for example the ones in
+// the "Wrap capabilities with middleware" recipe.
 export const capabilities = applyMiddleware(
   composeCapabilities({ local, imports }),
   auditLog,

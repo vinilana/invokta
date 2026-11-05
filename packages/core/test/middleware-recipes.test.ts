@@ -1,10 +1,11 @@
 /**
- * Executable copies of the middleware in the "Wrap capabilities with
+ * Executable copies of every code block in the "Wrap capabilities with
  * middleware" recipe (apps/docs/src/content/docs/recipes/capability-middleware.mdx).
  *
  * These are documentation examples, not framework exports. The docs site
- * contract (apps/docs/test/site-contract.node.mjs) requires the code between
- * the recipe markers to appear verbatim on the recipe page.
+ * contract (apps/docs/test/site-contract.node.mjs) requires each block between
+ * recipe markers, with its commented `// import` lines restored, to equal one
+ * code block on the recipe page, and every page block to have such a copy.
  */
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
@@ -16,13 +17,39 @@ import {
   type AnyCapability,
   applyMiddleware,
   type CapabilityMiddleware,
+  composeCapabilities,
   createEngine,
   defineCapability,
+  defineExportedCapability,
   EngineError,
   type EngineLogger,
+  importCapability,
+  isComposedCapabilities,
 } from "../src/index.js";
 
+// --- recipe: timing ------------------------------------------------------
+// import type { CapabilityMiddleware } from "@invokta/core";
+
+const timing: CapabilityMiddleware = async ({
+  capabilityId,
+  context,
+  next,
+}) => {
+  const startedAt = performance.now();
+  try {
+    return await next();
+  } finally {
+    context.logger.debug("capability.timing", {
+      capabilityId,
+      durationMs: performance.now() - startedAt,
+    });
+  }
+};
+// --- end recipe ----------------------------------------------------------
+
 // --- recipe: audit log ---------------------------------------------------
+// import { type CapabilityMiddleware, EngineError } from "@invokta/core";
+
 export const auditLog: CapabilityMiddleware = async ({
   capabilityId,
   context,
@@ -52,15 +79,15 @@ export const auditLog: CapabilityMiddleware = async ({
 };
 // --- end recipe ----------------------------------------------------------
 
-// --- recipe: option validation -------------------------------------------
+// --- recipe: rate limit --------------------------------------------------
+// import { type CapabilityMiddleware, EngineError } from "@invokta/core";
+
 function assertPositiveInteger(name: string, value: number): void {
   if (!Number.isSafeInteger(value) || value < 1) {
     throw new TypeError(`${name} must be a positive safe integer.`);
   }
 }
-// --- end recipe ----------------------------------------------------------
 
-// --- recipe: rate limit --------------------------------------------------
 export interface RateLimitOptions {
   /** Invocations allowed per principal and capability in one window. */
   readonly limit: number;
@@ -110,6 +137,9 @@ export function createRateLimit(
 // --- end recipe ----------------------------------------------------------
 
 // --- recipe: result cache ------------------------------------------------
+// import { createHash } from "node:crypto";
+// import type { CapabilityMiddleware } from "@invokta/core";
+
 export interface ResultCacheOptions {
   /** Only these read-only capabilities are cached. */
   readonly capabilityIds: ReadonlySet<string>;
@@ -177,6 +207,41 @@ function lookupCapability(
   };
 }
 
+const kbLookup = lookupCapability();
+const kbSearch = lookupCapability();
+const local = { "kb.lookup": kbLookup.capability };
+const imports = [
+  importCapability(
+    defineExportedCapability({
+      source: { name: "@community/knowledge-base", version: "1.0.0" },
+      defaultId: "kb.search",
+      capability: kbSearch.capability,
+    }),
+  ),
+] as const;
+
+// --- recipe: composition root --------------------------------------------
+// import { applyMiddleware, composeCapabilities } from "@invokta/core";
+
+const rateLimit = createRateLimit({
+  limit: 60,
+  windowMs: 60_000,
+  maxTrackedKeys: 10_000,
+});
+const cache = createResultCache({
+  capabilityIds: new Set(["kb.lookup"]),
+  ttlMs: 30_000,
+  maxEntries: 1_000,
+});
+
+export const capabilities = applyMiddleware(
+  composeCapabilities({ local, imports }),
+  auditLog,
+  rateLimit,
+  cache,
+);
+// --- end recipe ----------------------------------------------------------
+
 function recordingLogger(): EngineLogger & {
   readonly entries: Array<{ message: string; details: unknown }>;
 } {
@@ -186,6 +251,60 @@ function recordingLogger(): EngineLogger & {
   };
   return { entries, debug: record, info: record, warn: record, error: record };
 }
+
+describe("timing recipe", () => {
+  it("logs the capability and duration without payloads", async () => {
+    const logger = recordingLogger();
+    const engine = createEngine({
+      name: "timing-engine",
+      version: "1.0.0",
+      logger,
+      capabilities: applyMiddleware(
+        { "kb.lookup": lookupCapability().capability },
+        timing,
+      ),
+    });
+
+    await engine.invoke("kb.lookup", { query: secretMarker });
+
+    expect(logger.entries).toEqual([
+      {
+        message: "capability.timing",
+        details: { capabilityId: "kb.lookup", durationMs: expect.any(Number) },
+      },
+    ]);
+    expect(JSON.stringify(logger.entries)).not.toContain(secretMarker);
+  });
+});
+
+describe("composition root recipe", () => {
+  it("audits every execution, rate-limits it, and serves cached reads in that order", async () => {
+    const logger = recordingLogger();
+    const engine = createEngine({
+      name: "composition-root-engine",
+      version: "1.0.0",
+      logger,
+      capabilities,
+    });
+    const alice = { principal: { id: "user:alice" } };
+
+    expect(isComposedCapabilities(capabilities)).toBe(true);
+    const first = await engine.invoke("kb.lookup", { query: "a" }, alice);
+    await expect(
+      engine.invoke("kb.lookup", { query: "a" }, alice),
+    ).resolves.toEqual(first);
+    await engine.invoke("kb.search", { query: "a" }, alice);
+    await engine.invoke("kb.search", { query: "a" }, alice);
+
+    expect(kbLookup.run).toHaveBeenCalledOnce();
+    expect(kbSearch.run).toHaveBeenCalledTimes(2);
+    expect(
+      logger.entries.map(
+        ({ details }) => (details as { capabilityId: string }).capabilityId,
+      ),
+    ).toEqual(["kb.lookup", "kb.lookup", "kb.search", "kb.search"]);
+  });
+});
 
 describe("audit log recipe", () => {
   it("records one payload-free entry per executed invocation", async () => {

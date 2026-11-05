@@ -406,19 +406,31 @@ function applyMiddleware<Capabilities extends CapabilityMap>(
 ```
 
 `applyMiddleware` returns a new frozen map with the same keys, in the same
-order, and the same static type. Each capability is a frozen copy that keeps
-every other field by identity, including schemas, `access`, `title`,
-`description`, `annotations`, and `timeoutMs`, and replaces only `run` with the
-middleware chain. The function is eager and synchronous: it reads each field
-once, registers nothing, performs no I/O, and calls no middleware, access rule,
-or handler. With no middleware it returns a frozen copy holding the original
-capabilities.
+order, and the same static type. Each capability is a frozen copy that replaces
+only `run` with the middleware chain. It keeps by identity every other property
+that property access reaches, whether own, inherited, or non-enumerable. That
+includes schemas, `access`, `title`, `description`, `annotations`, `timeoutMs`,
+and fields added by other contracts. The function is eager and synchronous: it
+reads each field once, registers nothing, performs no I/O, and calls no
+middleware, access rule, or handler. With no middleware it returns a frozen copy
+holding the original capabilities.
 
 ```ts
+const timing: CapabilityMiddleware = async ({ capabilityId, context, next }) => {
+  const startedAt = performance.now();
+  try {
+    return await next();
+  } finally {
+    context.logger.debug("capability.timing", {
+      capabilityId,
+      durationMs: performance.now() - startedAt,
+    });
+  }
+};
+
 const capabilities = applyMiddleware(
   composeCapabilities({ local, imports }),
-  auditLog,
-  rateLimit,
+  timing,
 );
 
 const engine = createEngine({ name, version, capabilities });
@@ -435,15 +447,25 @@ exactly like a `run` error.
 | Argument | Value |
 | --- | --- |
 | `capabilityId` | The capability's key in the map passed to `applyMiddleware` |
-| `input` | A deep-frozen snapshot of the validated input; `run` receives its own unmodified copy |
-| `context` | The engine's `ExecutionContext`, passed through unchanged |
+| `input` | A deep-frozen snapshot of the validated input, taken on first read and shared by the invocation's middleware; `run` receives its own unmodified copy |
+| `context` | The engine's frozen `ExecutionContext`, passed through unchanged; `context.principal` is the same object `run` receives and must not be mutated |
 | `next` | Runs the rest of the chain and `run`, resolving to the unvalidated result |
 
 `next()` accepts no replacement input or context. A middleware may call it at
 most once while it is pending. A repeated call or a call after the middleware
 settled rejects with `TypeError` without running the next layer, and becomes
 `EXECUTION_FAILED` if it propagates. A call after the invocation signal aborted
-rejects with the abort reason without running the next layer.
+rejects with the abort reason without running the next layer. A layer started
+with `next()` always settles before the calling middleware's result is
+returned. When the middleware did not await it, its outcome is ignored. No part
+of the chain outlives the invocation.
+
+Read `input` before calling `next()` when the value as validated matters: `run`
+owns its copy and may change it before a later first read. Identity decisions
+belong in `access`, not in middleware. A middleware that never reads `input`
+adds no copy of the payload. A wrapped `run` called directly outside the engine
+needs a platform `AbortSignal` in its context and accepts the same inputs as the
+original until a middleware reads `input`.
 
 When the source map is a composed map, the result keeps its composition
 provenance and `isComposedCapabilities` returns `true`; a plain map never gains

@@ -13,11 +13,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   the `CapabilityMiddleware` and `CapabilityMiddlewareArgs` types. It returns a
   new frozen capability map whose `run` functions execute the middleware, first
   listed outermost, around the original handler, while every other capability
-  field is kept by identity. Input validation and `access` still run before the
-  chain, the timeout and cancellation signal cover it, its final result is
+  property is kept by identity. Input validation and `access` still run before
+  the chain, the timeout and cancellation signal cover it, its final result is
   validated against the output schema, and middleware errors are normalized
   like `run` errors. `next()` takes no arguments and starts the next layer at
-  most once. Composed maps keep their composition provenance, so
+  most once. A started layer always settles before the invocation does, so no
+  part of the chain outlives it. Middleware reads a lazily taken, deep-frozen
+  input snapshot, and must not mutate `context.principal`, which it shares with
+  `run`. Composed maps keep their composition provenance, so
   `invokta check-capabilities` accepts wrapped compositions. The engine, its
   six stages, and its single `onEvent` hook are unchanged; a new recipe shows
   audit logging, rate limiting, and caching middleware with their limits

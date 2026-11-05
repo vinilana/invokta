@@ -4,7 +4,6 @@ import {
   isComposedCapabilities,
   markComposedCapabilities,
 } from "./composition.js";
-import { snapshotLosslessJson } from "./schema.js";
 import type {
   AnyCapability,
   CapabilityMap,
@@ -17,15 +16,24 @@ import type {
 export interface CapabilityMiddlewareArgs {
   /** The capability's key in the map passed to `applyMiddleware`. */
   readonly capabilityId: string;
-  /** A deep-frozen snapshot of the validated and transformed input. */
+  /**
+   * A deep-frozen snapshot of the validated and transformed input, taken on
+   * first read and shared by every middleware of the invocation. `run` keeps
+   * its own copy, so read the input before `next()` when the value as
+   * validated matters.
+   */
   readonly input: unknown;
-  /** The engine's execution context, passed through unchanged. */
+  /**
+   * The engine's execution context, passed through unchanged. Its principal is
+   * the same object `run` receives and must not be mutated.
+   */
   readonly context: ExecutionContext;
   /**
    * Runs the rest of the chain and then the capability's `run`, resolving to
    * that layer's unvalidated result. It may be called at most once, only while
    * this middleware is still pending, and never starts the next layer after the
-   * invocation signal has aborted.
+   * invocation signal has aborted. A started layer always settles before the
+   * middleware's own result is returned.
    */
   readonly next: () => Promise<unknown>;
 }
@@ -43,21 +51,6 @@ type CapabilityRun = (args: {
   readonly context: ExecutionContext;
 }) => Promise<unknown>;
 
-/**
- * Contract fields are also read from the prototype chain, matching how
- * `createEngine` reads a capability; every other own enumerable field is
- * carried over unchanged.
- */
-const contractFields = [
-  "title",
-  "description",
-  "input",
-  "output",
-  "access",
-  "timeoutMs",
-  "annotations",
-] as const;
-
 const abortSignalAbortedGetter = Object.getOwnPropertyDescriptor(
   AbortSignal.prototype,
   "aborted",
@@ -68,6 +61,38 @@ const abortSignalReasonGetter = Object.getOwnPropertyDescriptor(
 )?.get;
 
 const ignoreRejection = (): void => undefined;
+
+/**
+ * Input snapshots keyed by the engine's per-invocation `run` arguments. Nested
+ * applications receive the same arguments object, so they share one snapshot.
+ */
+const inputSnapshots = new WeakMap<
+  object,
+  { readonly source: unknown; readonly snapshot: unknown }
+>();
+
+function freezeSnapshot(value: unknown): void {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return;
+  }
+  Object.freeze(value);
+  for (const key of Object.keys(value)) {
+    freezeSnapshot((value as Record<string, unknown>)[key]);
+  }
+}
+
+/**
+ * The engine has already validated the input as lossless JSON, so a clone and
+ * a freeze are enough. The work happens only when a middleware reads `input`.
+ */
+function readInputSnapshot(args: object, source: unknown): unknown {
+  const cached = inputSnapshots.get(args);
+  if (cached !== undefined && cached.source === source) return cached.snapshot;
+  const snapshot: unknown = structuredClone(source);
+  freezeSnapshot(snapshot);
+  inputSnapshots.set(args, { source, snapshot });
+  return snapshot;
+}
 
 /**
  * Reads the signal through the platform accessors, as the engine does, so an
@@ -97,10 +122,15 @@ function readCapabilityMap(value: unknown): object {
 }
 
 /**
- * Reads one property exactly once. A getter re-invoked later could return a
- * different value than the one this helper validated and wrapped.
+ * Reads one property exactly once, through the prototype chain like ordinary
+ * property access. A getter re-invoked later could return a different value
+ * than the one this helper validated and wrapped.
  */
-function readOnce(target: object, key: string, description: string): unknown {
+function readProperty(
+  target: object,
+  key: PropertyKey,
+  description: string,
+): { readonly value: unknown; readonly enumerable: boolean } {
   let current: object | null = target;
   while (current !== null) {
     if (nodeUtilTypes.isProxy(current)) {
@@ -108,21 +138,51 @@ function readOnce(target: object, key: string, description: string): unknown {
     }
     const descriptor = Object.getOwnPropertyDescriptor(current, key);
     if (descriptor !== undefined) {
-      if ("value" in descriptor) return descriptor.value;
+      const enumerable = descriptor.enumerable === true;
+      if ("value" in descriptor) return { value: descriptor.value, enumerable };
       const getter = descriptor.get;
-      return getter === undefined
-        ? undefined
-        : Reflect.apply(getter, target, []);
+      return {
+        value:
+          getter === undefined ? undefined : Reflect.apply(getter, target, []),
+        enumerable,
+      };
     }
     current = Object.getPrototypeOf(current);
   }
-  return undefined;
+  return { value: undefined, enumerable: false };
 }
 
-function defineField(target: object, key: string, value: unknown): void {
+/**
+ * Every key that plain property access can reach on a capability, except the
+ * keys every object inherits from `Object.prototype`. Copying all of them keeps
+ * fields the engine or a later contract reads, whether own, inherited, or
+ * non-enumerable.
+ */
+function reachableKeys(
+  capability: object,
+  description: string,
+): readonly PropertyKey[] {
+  const keys = new Set<PropertyKey>();
+  let current: object | null = capability;
+  while (current !== null && current !== Object.prototype) {
+    if (nodeUtilTypes.isProxy(current)) {
+      throw new TypeError(`${description} must not be a proxy.`);
+    }
+    for (const key of Reflect.ownKeys(current)) keys.add(key);
+    current = Object.getPrototypeOf(current);
+  }
+  return [...keys];
+}
+
+function defineField(
+  target: object,
+  key: PropertyKey,
+  value: unknown,
+  enumerable = true,
+): void {
   Object.defineProperty(target, key, {
     value,
-    enumerable: true,
+    enumerable,
     writable: true,
     configurable: true,
   });
@@ -135,14 +195,14 @@ function createChain(
 ): CapabilityRun {
   return async function runWithMiddleware(args) {
     const context = args.context;
-    const input = snapshotLosslessJson(args.input);
+    const source = args.input;
 
     const dispatch = async (index: number): Promise<unknown> => {
       const layer = middleware[index];
       // The innermost call receives the engine's own arguments by identity.
       if (layer === undefined) return run(args);
 
-      let nextCalled = false;
+      let started: Promise<unknown> | undefined;
       let settled = false;
       const next = (): Promise<unknown> => {
         let pending: Promise<unknown>;
@@ -152,14 +212,13 @@ function createChain(
               "Capability middleware called next() after it settled.",
             ),
           );
-        } else if (nextCalled) {
+        } else if (started !== undefined) {
           pending = Promise.reject(
             new TypeError(
               "Capability middleware called next() more than once.",
             ),
           );
         } else {
-          nextCalled = true;
           try {
             const aborted = abortReason(context.signal);
             pending =
@@ -169,6 +228,7 @@ function createChain(
           } catch (error) {
             pending = Promise.reject(error);
           }
+          started = pending;
         }
         // A forgotten next() promise must not become an unhandled rejection;
         // a middleware that awaits it still observes the failure.
@@ -178,10 +238,23 @@ function createChain(
 
       try {
         return await layer(
-          Object.freeze({ capabilityId, input, context, next }),
+          Object.freeze({
+            capabilityId,
+            get input() {
+              return readInputSnapshot(args, source);
+            },
+            context,
+            next,
+          }),
         );
       } finally {
         settled = true;
+        // A layer the middleware started but did not await still belongs to
+        // this invocation: it settles, within the same timeout and signal,
+        // before this layer's result is returned. Its outcome is ignored.
+        if (started !== undefined) {
+          await started.then(ignoreRejection, ignoreRejection);
+        }
       }
     };
 
@@ -202,17 +275,17 @@ function wrapCapability(
     throw new TypeError(`${description} must not be a proxy.`);
   }
 
-  const keys = new Set<string>([...Object.keys(capability), ...contractFields]);
-  keys.add("run");
-  const wrapped: Record<string, unknown> = {};
+  const wrapped: Record<PropertyKey, unknown> = {};
   let run: unknown;
-  for (const key of keys) {
-    const value = readOnce(capability, key, description);
+  let runEnumerable = true;
+  for (const key of reachableKeys(capability, description)) {
+    const { value, enumerable } = readProperty(capability, key, description);
     if (key === "run") {
       run = value;
+      runEnumerable = enumerable;
       continue;
     }
-    if (value !== undefined) defineField(wrapped, key, value);
+    defineField(wrapped, key, value, enumerable);
   }
   if (typeof run !== "function") {
     throw new TypeError(`${description} run must be a function.`);
@@ -221,6 +294,7 @@ function wrapCapability(
     wrapped,
     "run",
     createChain(capabilityId, run as CapabilityRun, middleware),
+    runEnumerable,
   );
   return Object.freeze(wrapped) as unknown as AnyCapability;
 }
@@ -252,7 +326,11 @@ export function applyMiddleware<const Capabilities extends CapabilityMap>(
   const source = readCapabilityMap(capabilities);
   const wrapped: Record<string, AnyCapability> = {};
   for (const capabilityId of Object.keys(source)) {
-    const capability = readOnce(source, capabilityId, "A capability map");
+    const capability = readProperty(
+      source,
+      capabilityId,
+      "A capability map",
+    ).value;
     if (capability === undefined) continue;
     defineField(
       wrapped,
