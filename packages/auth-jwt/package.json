@@ -36,6 +36,6 @@
     "prepack": "npm run --silent build"
   },
   "dependencies": {
-    "jose": "6.2.12"
+    "jose": "6.2.15"
   }
 }
