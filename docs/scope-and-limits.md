@@ -7,7 +7,7 @@
 | Package | Responsibility |
 | --- | --- |
 | `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
-| `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
+| `@invokta/cli` | `list`, `describe`, `help`, and `run` with JSON or schema-derived flags over `engine.invoke` |
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
 | `@invokta/otel` | OpenTelemetry spans and metrics built from engine events through the OpenTelemetry API |
 | `@invokta/tooling` | Development-time validation of capability composition |
@@ -60,7 +60,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Core primitives | Capability, Connector Definition, Engine, Context, and Principal |
 | Required capability fields | 5 |
 | Invocation pipeline stages | 6 |
-| Invocation error codes | 7 |
+| Invocation error codes | 8 framework codes; up to 64 declared domain codes per capability, published inside `DOMAIN_ERROR` |
 | Cross-cutting hooks | 1: `onEvent` |
 | OpenTelemetry signals | 1 span per invocation and 3 metric instruments |
 | Pending OpenTelemetry invocation spans | 10,000 by default, configurable; the oldest is evicted, and the same cap bounds evicted-invocation bookkeeping |
@@ -84,6 +84,8 @@ while the example owns one replaceable Authorization Server implementation.
 | Generated OpenAPI runtime URL | 8,192 UTF-8 bytes |
 | Generated OpenAPI runtime request body | 10 MiB serialized JSON |
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |
+| CLI flag spelling | 64 characters; reserved `input`, `stdin`, `help`, and `format` |
+| CLI capability help page | 100 flag or input-only entries, 20 allowed values per flag, and 500 characters per text field |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,

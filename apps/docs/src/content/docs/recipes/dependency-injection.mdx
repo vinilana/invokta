@@ -58,10 +58,22 @@ support ticket with a repository, classifier, and permission checker.
 2. Capture dependencies in the capability factory
 
    ```ts
-   import { defineCapability, EngineError } from "@invokta/core";
+   import {
+     CapabilityError,
+     type CapabilityErrorMap,
+     defineCapability,
+   } from "@invokta/core";
    import { z } from "zod";
 
    import type { SupportDependencies } from "../application/ports.js";
+
+   const errors = {
+     TICKET_NOT_FOUND: {
+       description: "The requested ticket does not exist.",
+       details: z.object({ ticketId: z.string() }),
+       retryable: false,
+     },
+   } satisfies CapabilityErrorMap;
 
    export function createClassifyTicket({
      tickets,
@@ -80,13 +92,12 @@ support ticket with a repository, classifier, and permission checker.
          principal !== null &&
          permissions.can(principal, "ticket:classify", input.ticketId),
        timeoutMs: 30_000,
+       errors,
        async run({ input, context }) {
          const ticket = await tickets.findById(input.ticketId);
          if (ticket === null) {
-           throw new EngineError({
-             code: "EXECUTION_FAILED",
-             message: "Ticket not found.",
-             publicDetails: { ticketId: input.ticketId },
+           throw new CapabilityError<typeof errors>("TICKET_NOT_FOUND", {
+             details: { ticketId: input.ticketId },
            });
          }
          return classifier.classify(ticket, { signal: context.signal });
@@ -96,7 +107,10 @@ support ticket with a repository, classifier, and permission checker.
    ```
 
    The closure makes the dependencies available to `access` and `run`. The
-   execution context stays limited to request state.
+   execution context stays limited to request state. A missing ticket is a
+   declared domain error: callers receive `DOMAIN_ERROR` with the
+   `TICKET_NOT_FOUND` code and the validated `ticketId` instead of a generic
+   execution failure.
 
 3. Wire implementations at the composition root
 

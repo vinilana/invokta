@@ -12,12 +12,12 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Schemas | Accept Standard Schema and Standard JSON Schema; validate input and output | Choose a compatible schema library and domain constraints | A new schema language or universal converter |
 | Dependencies | Define typed connector factories and accept explicit closures | Define ports and wire model, data, and tool connectors | Container, service locator, connector registry, or lifecycle framework |
 | Direct execution | Run the common `engine.invoke` pipeline | Supply trusted principal, signal, and dependencies | Distributed executor or background jobs |
-| CLI | `list`, `describe`, `run`, JSON I/O, and stable exit codes | Own the executable, local principal, and untrusted-input bounds | Login, actor flags, or plugin discovery |
+| CLI | `list`, `describe`, `run`, JSON I/O, schema-derived run flags, capability help, and stable exit codes | Own the executable, local principal, and untrusted-input bounds | Login, actor flags, shell completion, or plugin discovery |
 | MCP | Map capabilities to tools over stdio and stateless HTTP | Own process composition and deployment | Resources, prompts, tasks, sessions, or resumption |
 | HTTP authentication | Run a required hook, issue a configured 401 Bearer challenge, and publish configured resource metadata | Verify credentials and return a minimal Principal | Identity provider, login, token lifecycle, or universal token verifier |
 | Authorization | Enforce each capability's `access` rule before `run` | Encode domain policy or call a PDP | Policy language, role model, PDP adapter, or relationship graph |
 | HTTP security | Default to loopback; validate exact Host, Origin, route, media types, and body bounds | Configure TLS, proxy trust, allowlists, exposure, and secrets | API gateway, WAF, or certificate management |
-| Errors | Seven `EngineError` codes and safe adapter mappings | Keep public messages and details safe | Stack or cause disclosure and automatic recovery policy |
+| Errors | Eight `EngineError` codes, contract-checked declared domain errors, and safe adapter mappings | Declare domain outcomes and keep public messages and details safe | Stack or cause disclosure and automatic recovery policy |
 | Cancellation | Propagate signals and optional capability timeout | Make downstream I/O observe signals | Scheduler or durable execution |
 | Retry, fallback, cache, routing | No automatic behavior | Implement domain-specific policies behind a capability or port | Framework-wide retry, model router, or semantic cache |
 | Observability | Minimal payload-free `onEvent` hook and `@invokta/otel` spans and invocation metrics through the OpenTelemetry API | Register the OpenTelemetry SDK and exporter; connect logging and domain measurements | Observability platform, OpenTelemetry SDK or exporter, or economics envelope |
@@ -37,7 +37,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Core primitives | 5: Capability, Connector Definition, Engine, Context, Principal |
 | Required capability fields | 5 |
 | Runtime pipeline stages | 6 |
-| Invocation error codes | 7 |
+| Invocation error codes | 8 |
 | Cross-cutting hooks | 1: `onEvent` |
 | Authentication implementations | 0 |
 | Directly supported policy engines | 0 |

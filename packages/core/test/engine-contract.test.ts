@@ -216,6 +216,7 @@ describe("the core public contract", () => {
       access: 0,
       timeoutMs: 0,
       annotations: 0,
+      errors: 0,
       run: 0,
     };
     const run = vi.fn(
@@ -231,6 +232,7 @@ describe("the core public contract", () => {
       access: "public",
       timeoutMs: 25,
       annotations: { readOnly: true },
+      errors: { STALE_VALUE: { description: "The value is stale." } },
       run,
     } as const;
     const descriptors = Object.fromEntries(
@@ -267,6 +269,13 @@ describe("the core public contract", () => {
       description: "Use one coherent capability snapshot.",
       timeoutMs: 25,
       annotations: { readOnly: true },
+      errors: [
+        {
+          code: "STALE_VALUE",
+          description: "The value is stale.",
+          retryable: false,
+        },
+      ],
     });
     expect(reads).toEqual({
       description: 1,
@@ -276,6 +285,7 @@ describe("the core public contract", () => {
       access: 1,
       timeoutMs: 1,
       annotations: 1,
+      errors: 1,
       run: 1,
     });
     expect(run).toHaveBeenCalledOnce();
