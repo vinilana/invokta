@@ -39,7 +39,7 @@ persistence, configuration field, or operational limit:
 | `AE-OBS-01` | Three minimal events preserve order and contain no payloads or credentials |
 | `AE-CLI-01..02` | Integration covers commands, input channels, UTF-8 failure, writers, and exit codes |
 | `AE-MCP-01..04` | An official client lists and calls tools over stdio and HTTP; generated MCP engines preflight the published catalog; tests cover schemas, naming collisions, errors, cancellation boundaries, statelessness, boundary security, and the configured mount path with its path-suffix resource metadata |
-| `AE-HTTP-01..03` | Plain `Request` tests cover every route, base path, status mapping, sanitized bodies, both auth modes, the structural authentication request, host and CORS boundaries with preflight, declared and streamed body limits, strict UTF-8, client cancellation, and the `http` source; OpenAPI tests prove structure, resolvable references, and schemas equal to `describe()`; a Node server test and an example engine entrypoint invoke through `engine.invoke`; a source test keeps package-root modules free of Node-only imports |
+| `AE-HTTP-01..03` | Plain `Request` tests cover every route, base path, status mapping, sanitized bodies, both auth modes, the structural authentication request, host and CORS boundaries with preflight, declared and streamed body limits, strict UTF-8, client cancellation, and the `http` source, and unknown capability IDs that never reach `invoke`, events, or body reading; OpenAPI tests prove structure, resolvable references, schemas equal to `describe()` including `__proto__` properties, fail-closed duplicate identifiers, and rejected dot-segment keys; a Node server test covers request-target aliases and duplicate headers, and an example engine entrypoint invokes through `engine.invoke`; a cross-package type test proves the authentication request equals MCP HTTP's; a source test keeps package-root modules free of Node-only imports |
 | `AE-MCP-CLIENT-01..03` | Public type tests prove SDK isolation; stdio and HTTP fixtures cover exact descriptors, initialization, pagination, manual calls, cancellation, closure, secure URLs, authentication, and byte limits |
 | `AE-SEC-01..02` | Authentication occurs before `invoke`; authorization occurs before `run`; insecure authentication requires explicit opt-in |
 | `AE-INSTALL-01..05` | Packed creator smoke tests install a built local engine; target transactions cover confirmation, idempotency, drift, locks, rollback, management, remote descriptors, and secret-free diagnostics without process or network access; multiple-removal sessions cover one confirmation, empty and cancelled selection, unknown choices, deterministic deduplication, preserved unselected entries, and partial failures under locked revalidation |
@@ -67,8 +67,10 @@ tarball passes an isolated consumer smoke test.
 - Documentation distinguishes prompts, rules, skills, loops, graphs, harnesses,
   the Invokta framework, and the shared Action Engine category.
 - The core public API remains small, with required schemas and access rules.
-- The same capability works directly, through CLI, MCP stdio, and MCP HTTP.
-- CLI and MCP call only `engine.invoke`; the official MCP SDK remains isolated.
+- The same capability works directly, through CLI, MCP stdio, MCP HTTP, and
+  plain HTTP JSON.
+- CLI, MCP, and plain HTTP call only `engine.invoke`; the official MCP SDK
+  remains isolated.
 - Protected HTTP authenticates before `invoke`; authorization occurs before
   `run`; credentials never appear in logs or events.
 - Typecheck, lint, formatting, unit and integration tests, build, dependency

@@ -14,16 +14,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `(request: Request) => Promise<Response>` handler with no Node-only imports
   that serves `GET /capabilities`, `GET /capabilities/{id}`,
   `POST /capabilities/{id}`, and `GET /openapi.json` below a validated base
-  path. Every invocation runs through `engine.invoke` with source `http` and the
-  request signal. Errors keep the sanitized `code`, `message`, and optional
+  path. Capability IDs are resolved against the catalog first, so an unknown ID
+  is a 404 that never reaches `engine.invoke` or its events; every invocation
+  runs through `engine.invoke` with source `http` and the request signal.
+  Errors keep the sanitized `code`, `message`, and optional
   `publicDetails` and map to HTTP statuses, with `CANCELLED` as 503. Required
   or explicitly disabled authentication uses the same structural request as
   MCP HTTP; the loopback host allowlist, Origin rejection without an explicit
   CORS allowlist, and a 1,048,576-byte default body limit match the MCP HTTP
   defaults. `createHttpOpenApiDocument` generates the OpenAPI 3.1 document from
-  `list` and `describe` only, and `@invokta/http/node` adds `serveHttp` for
-  Node. Configure an npm trusted publisher for the package before the next
-  release tag.
+  `list` and `describe` only and fails closed on a JSON Schema identifier that
+  would occur twice. `@invokta/http/node` adds `serveHttp` for Node, rejecting
+  dot-segment targets and duplicated `Host` or `Authorization` headers.
+  Configure an npm trusted publisher for the package before the next release
+  tag.
 - The `support-engine` example adds a plain HTTP JSON entrypoint that shares one
   development authenticator with its MCP HTTP entrypoint.
 

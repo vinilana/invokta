@@ -44,8 +44,11 @@ function rawHeaderCount(rawHeaders: ReadonlyArray<string>, name: string) {
 
 /**
  * Translates one Node request into a Web `Request`. Only an origin-form target
- * and exactly one `Host` header are accepted, so the URL the handler validates
- * is the one the client addressed. Returns `undefined` for anything else.
+ * whose path URL parsing leaves unchanged, exactly one `Host` header, and at
+ * most one `Authorization` header are accepted, so the URL and credential the
+ * handler validates are exactly the ones the client sent. Dot segments,
+ * including percent-encoded ones, and other aliases that a path-routing proxy
+ * would see differently are rejected. Returns `undefined` for anything else.
  */
 function toWebRequest(
   request: IncomingMessage,
@@ -55,10 +58,12 @@ function toWebRequest(
   const target = request.url;
   if (
     rawHeaderCount(request.rawHeaders, "host") !== 1 ||
+    rawHeaderCount(request.rawHeaders, "authorization") > 1 ||
     host === undefined ||
     target === undefined ||
     !target.startsWith("/") ||
-    target.startsWith("//")
+    target.startsWith("//") ||
+    target.includes("#")
   ) {
     return undefined;
   }
@@ -74,7 +79,11 @@ function toWebRequest(
       return undefined;
     }
     const url = new URL(target, authority.origin);
-    if (url.origin !== authority.origin) return undefined;
+    const queryStart = target.indexOf("?");
+    const rawPath = queryStart === -1 ? target : target.slice(0, queryStart);
+    if (url.origin !== authority.origin || url.pathname !== rawPath) {
+      return undefined;
+    }
     const headers = new Headers();
     for (let index = 0; index + 1 < request.rawHeaders.length; index += 2) {
       headers.append(

@@ -54,12 +54,24 @@ segments, percent encoding, a query, a fragment, or a trailing slash, at most
 | `{basePath}/openapi.json` | `GET` | The generated OpenAPI 3.1 document |
 
 `{id}` is exactly one percent-encoded path segment, decoded once, so any
-capability key is addressable except keys that consist only of `.` or `..`,
-which URL parsing removes as dot segments. Matching is exact and
-case-sensitive on the parsed pathname; a trailing slash or extra segment is a
-404, and the query string is ignored. Invocation uses source `http`, the
-authenticated principal, and `request.signal`, so a client disconnect that the
-runtime reports through that signal cancels the invocation.
+capability key is addressable except `.` and `..`, which URL parsing removes as
+dot segments. Handler and document construction reject an engine that has
+either key with a `TypeError` rather than publish unreachable routes. Matching
+is exact and case-sensitive on the parsed pathname; a trailing slash or extra
+segment is a 404, and the query string is ignored.
+
+The handler captures the capability IDs from `engine.list()` at construction;
+the catalog is fixed by `createEngine`. After authentication, so the catalog is
+not revealed to unauthenticated callers, and before the content type or body is
+examined, an ID outside that set is answered with the same 404
+`CAPABILITY_NOT_FOUND` body the engine reports. A caller-chosen string
+therefore never reaches `engine.invoke`, so it never appears as the
+`capabilityId` of an invocation event (AE-OBS-01) or in a bounded set that an
+event consumer keeps, and no body is read for it. This matches the MCP adapter,
+which resolves tool names against its catalog before invoking. Invocation of a
+known ID uses source `http`, the authenticated principal, and `request.signal`,
+so a client disconnect that the runtime reports through that signal cancels the
+invocation.
 
 The request body must use the `application/json` media type and is the
 capability input. It is read incrementally as strict UTF-8 under a body limit
@@ -72,8 +84,8 @@ as `INPUT_INVALID`; the adapter adds no second validation rule.
 ### Boundary order and statuses
 
 Each request is checked in this order: allowed host, allowed origin, route,
-CORS preflight, method, declared body size, authentication, content type,
-streamed body, JSON parsing, and then `engine.invoke`. Successful responses are
+CORS preflight, method, declared body size, authentication, capability ID,
+content type, streamed body, JSON parsing, and then `engine.invoke`. Successful responses are
 `200` with the JSON result. Every error response has one shape:
 
 ```json
@@ -142,10 +154,15 @@ before authentication, listing the route's methods, `authorization`,
 `content-type`, and any configured `cors.allowedHeaders`, plus
 `Access-Control-Max-Age` only when `cors.maxAgeSeconds` is configured.
 
-The Web `Headers` interface joins repeated header lines into one value, so the
-handler cannot see raw duplicates. The Node entry point described below rejects
-a duplicated `Host` header; a joined `Authorization` value reaches the
-authenticator, which must reject a credential it cannot parse.
+A Web `Request` exposes neither raw header lines nor the raw request target:
+`Headers` joins repeated lines into one value, and `request.url` is already
+normalized, so dot segments and percent-encoded dots have been resolved. The
+Web handler therefore cannot detect those aliases. The Node entry point
+described below rejects them, as MCP HTTP does. A host that mounts the handler
+on another runtime behind a proxy that routes or denies by raw path must
+normalize or reject such targets before the handler. On other runtimes, a
+joined `Authorization` value reaches the authenticator, which must reject a
+credential it cannot parse.
 
 ### OpenAPI export
 
@@ -161,12 +178,26 @@ capability title as its summary and the description as its description.
 Input and output schemas become `#/components/schemas/<name>.Input` and
 `<name>.Output`. `<name>` replaces each character outside `A-Z`, `a-z`, `0-9`,
 `.`, `_`, and `-` with `_` (an empty key becomes `_`) and appends `-2`, `-3`,
-and so on to later collisions in catalog order. A schema is copied verbatim
-except for local `$ref` and `$dynamicRef` values in schema positions: `#` and
-`#/...` resolve against the enclosing resource, which becomes the OpenAPI
-document once the schema is embedded, so they are rebased onto the component.
-Data keywords, every other reference form, and subschemas with their own `$id`
-are not changed. Errors reference one shared `Error` schema; 401 also documents
+and so on to later collisions in catalog order. A schema is copied verbatim,
+with every member created as an own data property so a keyword or property
+named `__proto__` survives, except for local `$ref` and `$dynamicRef` values
+in schema positions. `#` and `#/...` resolve against the enclosing resource,
+which becomes the OpenAPI document once the schema is embedded, so they are
+rebased onto the component. Data keywords, every other reference form, and
+subschemas whose non-fragment `$id` starts their own resource are not changed;
+a fragment-only `$id` such as draft-07 `#plain` is an anchor and does not stop
+rebasing.
+
+Every component lives in the one OpenAPI document resource, so an identifier
+that occurs twice there would be ambiguous. That happens when one schema with a
+`$anchor`, `$dynamicAnchor`, fragment-only `$id`, or non-fragment `$id` is
+published as both input and output, or by two capabilities. Generation, and
+therefore handler construction, fails with a `TypeError` naming the capability,
+the side, and the identifier, rather than publishing an ambiguous document.
+Anchors scoped inside a subschema with its own `$id` are checked through that
+`$id`. Engines whose schemas carry no such identifiers, which is the default
+output of common converters, are unaffected. The MCP adapter embeds each schema
+in its own tool definition and is not subject to this rule. Errors reference one shared `Error` schema; 401 also documents
 `WWW-Authenticate`. When authentication is required, the document declares an
 HTTP Bearer security scheme matching the challenge; with authentication
 disabled it declares none. Each call returns a new plain object that a host may
@@ -180,9 +211,11 @@ The `@invokta/http/node` subpath exports
 Web-standard handler from the same options and adds only Node translation: it
 binds `127.0.0.1:3000` by default and requires `allowedHosts` for a
 non-loopback bind (defaulting otherwise to the loopback names and the bind
-host); it accepts only an origin-form request target and exactly one `Host`
-header, rejects user information or a target that changes the origin, and
-otherwise answers 400 `INVALID_REQUEST`; it aborts the request signal when the
+host); it accepts only an origin-form request target whose path URL parsing
+leaves unchanged, exactly one `Host` header without user information, and at
+most one `Authorization` header, and answers anything else, including
+`/x/../capabilities` and `/capabilities/%2e%2e/capabilities`, with 400
+`INVALID_REQUEST`, so the path it serves is exactly the one a proxy saw; it aborts the request signal when the
 client disconnects; it closes a connection whose body the handler did not
 consume; and its `close()` is idempotent and aborts active requests. It adds no
 route, limit, or status of its own and no web framework dependency.

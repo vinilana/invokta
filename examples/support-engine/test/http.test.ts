@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import type { HttpAuthenticationRequest } from "@invokta/http";
+import type { McpHttpAuthenticationRequest } from "@invokta/mcp";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { engine } from "../src/engine.js";
 import { createSupportHttpHandler } from "../src/http.js";
@@ -30,6 +32,12 @@ function classify(input: unknown, bearer: string | null = token) {
 }
 
 describe("support engine plain HTTP handler", () => {
+  it("shares one authentication request shape with MCP HTTP", () => {
+    expectTypeOf<HttpAuthenticationRequest>().toEqualTypeOf<McpHttpAuthenticationRequest>();
+    expectTypeOf<McpHttpAuthenticationRequest>().toExtend<HttpAuthenticationRequest>();
+    expectTypeOf<HttpAuthenticationRequest>().toExtend<McpHttpAuthenticationRequest>();
+  });
+
   it("requires the bearer token on every route", async () => {
     for (const unauthenticated of [
       request("/capabilities"),

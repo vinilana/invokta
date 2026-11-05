@@ -516,6 +516,11 @@ export function createHttpHandler<Capabilities extends CapabilityMap>(
       security: auth.mode === "required" ? "bearer" : "none",
     }),
   );
+  // The catalog is fixed by createEngine, so a caller-chosen ID that is not in
+  // it never reaches engine.invoke or its events.
+  const capabilityIds: ReadonlySet<string> = new Set(
+    engine.list().map((summary) => summary.id),
+  );
   type CapabilityId = Extract<keyof Capabilities, string>;
 
   async function handle(request: Request): Promise<Response> {
@@ -612,6 +617,16 @@ export function createHttpHandler<Capabilities extends CapabilityMap>(
         route.kind === "list"
           ? JSON.stringify({ capabilities: engine.list() })
           : openApiBody,
+        headers,
+      );
+    }
+    if (!capabilityIds.has(route.capabilityId)) {
+      return engineErrorResponse(
+        new EngineError({
+          code: "CAPABILITY_NOT_FOUND",
+          message: "Capability not found.",
+          publicDetails: { capabilityId: route.capabilityId },
+        }),
         headers,
       );
     }

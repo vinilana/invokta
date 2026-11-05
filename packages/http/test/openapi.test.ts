@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  createHttpHandler,
   createHttpOpenApiDocument,
   type HttpOpenApiDocumentOptions,
 } from "../src/index.js";
@@ -436,6 +437,178 @@ describe("createHttpOpenApiDocument", () => {
     expect(engine.describe("support.classify-ticket").inputSchema.type).toBe(
       "object",
     );
+  });
+
+  it("preserves a property named __proto__", () => {
+    const input = JSON.parse(
+      '{"type":"object","properties":{"__proto__":{"type":"string"},"ok":{"type":"number"}},"required":["__proto__"]}',
+    ) as JsonObject;
+    const output = { type: "object" };
+    const engine = createEngine({
+      name: "proto-engine",
+      version: "1.0.0",
+      capabilities: {
+        "proto.check": defineCapability({
+          description: "Accepts a property named __proto__.",
+          input: jsonSchemaContract(input, output),
+          output: jsonSchemaContract(output, output),
+          access: "public",
+          async run() {
+            return {};
+          },
+        }),
+      },
+    });
+
+    const component = (
+      createHttpOpenApiDocument(engine).components.schemas as Readonly<
+        Record<string, { readonly properties: object }>
+      >
+    )["proto.check.Input"];
+
+    expect(Object.hasOwn(component?.properties ?? {}, "__proto__")).toBe(true);
+    expect(JSON.stringify(component)).toBe(
+      JSON.stringify(engine.describe("proto.check").inputSchema),
+    );
+  });
+
+  it("keeps rebasing below a fragment-only draft-07 $id", () => {
+    const input = {
+      type: "object",
+      definitions: { leaf: { type: "string" } },
+      properties: {
+        a: {
+          $id: "#plain",
+          type: "object",
+          properties: { b: { $ref: "#/definitions/leaf" } },
+        },
+      },
+    };
+    const output = { type: "object" };
+    const engine = createEngine({
+      name: "draft7-engine",
+      version: "1.0.0",
+      capabilities: {
+        "draft.check": defineCapability({
+          description: "Uses a draft-07 plain-name $id.",
+          input: jsonSchemaContract(input, output),
+          output: jsonSchemaContract(output, output),
+          access: "public",
+          async run() {
+            return {};
+          },
+        }),
+      },
+    });
+
+    const document = createHttpOpenApiDocument(engine);
+    const references = collectReferences(document.components.schemas);
+
+    expect(references).toContain(
+      "#/components/schemas/draft.check.Input/definitions/leaf",
+    );
+    for (const reference of collectReferences(document)) {
+      expect(resolvePointer(document, reference)).toBeDefined();
+    }
+  });
+
+  it("fails closed when a JSON Schema identifier would be published twice", () => {
+    const anchored = {
+      type: "object",
+      $defs: { Node: { $anchor: "node", type: "string" } },
+      properties: { a: { $ref: "#node" } },
+    };
+    const identified = {
+      type: "object",
+      properties: {
+        a: { $id: "https://schemas.example/shared.json", type: "string" },
+      },
+    };
+    const draftAnchor = {
+      type: "object",
+      properties: { a: { $id: "#shared", type: "string" } },
+    };
+    const plain = { type: "object" };
+    const capability = (input: JsonObject, output: JsonObject) =>
+      defineCapability({
+        description: "Shares schema identifiers.",
+        input: jsonSchemaContract(input, input),
+        output: jsonSchemaContract(output, output),
+        access: "public",
+        async run() {
+          return {};
+        },
+      });
+
+    for (const capabilities of [
+      { "same.schema": capability(anchored, anchored) },
+      {
+        first: capability(identified, plain),
+        second: capability(identified, plain),
+      },
+      {
+        first: capability(draftAnchor, plain),
+        second: capability(draftAnchor, plain),
+      },
+    ]) {
+      const engine = createEngine({
+        name: "ids",
+        version: "1.0.0",
+        capabilities,
+      });
+      expect(() => createHttpOpenApiDocument(engine)).toThrow(TypeError);
+      expect(() =>
+        createHttpHandler(engine, {
+          auth: { mode: "dangerously-disabled-for-development" },
+        }),
+      ).toThrow(TypeError);
+    }
+
+    const embedded = {
+      type: "object",
+      properties: {
+        a: {
+          $id: "https://schemas.example/a.json",
+          $defs: { x: { $anchor: "node", type: "string" } },
+        },
+        b: {
+          $id: "https://schemas.example/b.json",
+          $defs: { x: { $anchor: "node", type: "string" } },
+        },
+      },
+    };
+    const scoped = createEngine({
+      name: "scoped",
+      version: "1.0.0",
+      capabilities: { scoped: capability(embedded, plain) },
+    });
+    expect(() => createHttpOpenApiDocument(scoped)).not.toThrow();
+  });
+
+  it("rejects capability keys that URL parsing would remove", () => {
+    for (const capabilityId of [".", ".."]) {
+      const engine = createEngine({
+        name: "dots",
+        version: "1.0.0",
+        capabilities: {
+          [capabilityId]: defineCapability({
+            description: "Cannot be addressed.",
+            input: z.object({}),
+            output: z.object({}),
+            access: "public",
+            async run() {
+              return {};
+            },
+          }),
+        },
+      });
+      expect(() => createHttpOpenApiDocument(engine)).toThrow(TypeError);
+      expect(() =>
+        createHttpHandler(engine, {
+          auth: { mode: "dangerously-disabled-for-development" },
+        }),
+      ).toThrow(TypeError);
+    }
   });
 
   it("rejects invalid options", () => {

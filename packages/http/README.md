@@ -34,7 +34,9 @@ export const handler = createHttpHandler(engine, {
 | `POST {basePath}/capabilities/{id}` | The validated output of `engine.invoke(id, body)` |
 | `GET {basePath}/openapi.json` | The generated OpenAPI 3.1 document |
 
-`{id}` is the capability key as one percent-encoded path segment. The `POST`
+`{id}` is the capability key as one percent-encoded path segment, resolved
+against the catalog captured at construction, so an unknown ID is a 404 that
+never reaches `engine.invoke`. The `POST`
 body must be `application/json`, strict UTF-8, and at most 1,048,576 bytes by
 default (`maxRequestBodyBytes`). `request.signal` reaches the authenticator and
 `engine.invoke`, so a client disconnect cancels the invocation.
@@ -86,7 +88,8 @@ const server = await serveHttp(engine, {
 ```
 
 `serveHttp` binds `127.0.0.1:3000` by default, requires `allowedHosts` for a
-non-loopback bind, accepts only an origin-form target with exactly one `Host`
+non-loopback bind, accepts only an origin-form target that URL normalization
+leaves unchanged with exactly one `Host` and at most one `Authorization`
 header, aborts the invocation when the client disconnects, and closes
 idempotently. On Deno, Bun, or Cloudflare Workers, pass the handler to the
 runtime's server instead.

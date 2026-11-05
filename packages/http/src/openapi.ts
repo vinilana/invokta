@@ -71,8 +71,21 @@ export function normalizeBasePath(value: string | undefined): string {
   return value;
 }
 
+/**
+ * URL parsing removes `.` and `..` path segments, so a capability with one of
+ * those keys could never be reached. Publishing it would advertise dead
+ * routes, so construction fails closed instead.
+ */
+function assertAddressableCapabilityId(capabilityId: string): void {
+  if (capabilityId === "." || capabilityId === "..") {
+    throw new TypeError(
+      `Capability ${JSON.stringify(capabilityId)} cannot be addressed as an HTTP path segment.`,
+    );
+  }
+}
+
 /** The capability route below the base path, with the ID as one segment. */
-export function capabilityRoutePath(capabilityId: string): string {
+function capabilityRoutePath(capabilityId: string): string {
   return `/capabilities/${encodeURIComponent(capabilityId)}`;
 }
 
@@ -112,54 +125,108 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+interface RelocationContext {
+  readonly pointer: string;
+  readonly owner: string;
+  readonly identifiers: Map<string, string>;
+}
+
+/**
+ * Every component lives in the one OpenAPI document resource, so an `$id` or
+ * plain-name anchor that would appear twice there is ambiguous. Generation
+ * fails closed instead of publishing it.
+ */
+function claimIdentifier(context: RelocationContext, identifier: string): void {
+  const existing = context.identifiers.get(identifier);
+  if (existing !== undefined) {
+    throw new TypeError(
+      `The ${context.owner} repeats the JSON Schema ${identifier} already published by the ${existing}. Every $id and anchor must be unique within the OpenAPI document.`,
+    );
+  }
+  context.identifiers.set(identifier, context.owner);
+}
+
+function relocateMembers(
+  value: Readonly<Record<string, unknown>>,
+  relocate: (member: unknown) => unknown,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([name, member]) => [name, relocate(member)]),
+  );
+}
+
 /**
  * Copies one schema into `#/components/schemas/<name>`. JSON Schema resolves a
  * local `#` or `#/...` reference against the enclosing resource; once the
- * schema is embedded without its own `$id`, that resource is the OpenAPI
- * document, so those references are rebased onto the component. Only
- * reference keywords in schema positions change: data such as `const`,
- * `enum`, `default`, and `examples`, every other reference form, and every
- * subschema that declares its own `$id` are copied verbatim.
+ * schema is embedded, that resource is the OpenAPI document, so those
+ * references are rebased onto the component. Only reference keywords in schema
+ * positions change: data such as `const`, `enum`, `default`, and `examples`,
+ * every other reference form, and every subschema whose non-fragment `$id`
+ * starts its own resource are copied verbatim. A fragment-only `$id` is an
+ * anchor and does not stop rebasing. Members are created as own data
+ * properties, so a keyword or property named `__proto__` is preserved.
  */
-function relocateSchema(schema: unknown, componentPointer: string): unknown {
+function relocateSchema(
+  schema: unknown,
+  context: RelocationContext,
+  rebase: boolean,
+): unknown {
   if (Array.isArray(schema)) {
-    return schema.map((item) => relocateSchema(item, componentPointer));
+    return schema.map((item) => relocateSchema(item, context, rebase));
   }
   if (!isRecord(schema)) return structuredClone(schema);
-  if (typeof schema.$id === "string") return structuredClone(schema);
-  const relocated: Record<string, unknown> = {};
-  for (const [keyword, value] of Object.entries(schema)) {
-    if (referenceKeywords.has(keyword) && typeof value === "string") {
-      relocated[keyword] =
-        value === "#"
-          ? componentPointer
-          : value.startsWith("#/")
-            ? `${componentPointer}${value.slice(1)}`
-            : value;
-    } else if (
-      schemaKeywords.has(keyword) ||
-      schemaArrayKeywords.has(keyword)
-    ) {
-      relocated[keyword] = relocateSchema(value, componentPointer);
-    } else if (schemaMapKeywords.has(keyword) && isRecord(value)) {
-      const members: Record<string, unknown> = {};
-      for (const [name, member] of Object.entries(value)) {
-        members[name] = relocateSchema(member, componentPointer);
+  const id = Object.hasOwn(schema, "$id") ? schema.$id : undefined;
+  let nestedRebase = rebase;
+  if (typeof id === "string" && id !== "" && !id.startsWith("#")) {
+    claimIdentifier(context, `$id ${JSON.stringify(id)}`);
+    nestedRebase = false;
+  } else if (rebase) {
+    const anchors = [
+      typeof id === "string" && id.length > 1 ? id.slice(1) : undefined,
+      Object.hasOwn(schema, "$anchor") ? schema.$anchor : undefined,
+      Object.hasOwn(schema, "$dynamicAnchor")
+        ? schema.$dynamicAnchor
+        : undefined,
+    ];
+    for (const anchor of anchors) {
+      if (typeof anchor === "string") {
+        claimIdentifier(context, `anchor ${JSON.stringify(anchor)}`);
       }
-      relocated[keyword] = members;
-    } else if (keyword === "dependencies" && isRecord(value)) {
-      const members: Record<string, unknown> = {};
-      for (const [name, member] of Object.entries(value)) {
-        members[name] = isRecord(member)
-          ? relocateSchema(member, componentPointer)
-          : structuredClone(member);
-      }
-      relocated[keyword] = members;
-    } else {
-      relocated[keyword] = structuredClone(value);
     }
   }
-  return relocated;
+  const relocate = (member: unknown): unknown =>
+    relocateSchema(member, context, nestedRebase);
+  return Object.fromEntries(
+    Object.entries(schema).map(([keyword, value]) => {
+      if (referenceKeywords.has(keyword) && typeof value === "string") {
+        return [
+          keyword,
+          !nestedRebase
+            ? value
+            : value === "#"
+              ? context.pointer
+              : value.startsWith("#/")
+                ? `${context.pointer}${value.slice(1)}`
+                : value,
+        ];
+      }
+      if (schemaKeywords.has(keyword) || schemaArrayKeywords.has(keyword)) {
+        return [keyword, relocate(value)];
+      }
+      if (schemaMapKeywords.has(keyword) && isRecord(value)) {
+        return [keyword, relocateMembers(value, relocate)];
+      }
+      if (keyword === "dependencies" && isRecord(value)) {
+        return [
+          keyword,
+          relocateMembers(value, (member) =>
+            isRecord(member) ? relocate(member) : structuredClone(member),
+          ),
+        ];
+      }
+      return [keyword, structuredClone(value)];
+    }),
+  );
 }
 
 function componentBaseNames(
@@ -267,10 +334,14 @@ function fixedSchemas() {
 function schemaComponent(
   schema: EngineJsonSchema,
   name: string,
+  owner: string,
+  identifiers: Map<string, string>,
 ): Readonly<Record<string, unknown>> {
-  return relocateSchema(schema, `${COMPONENT_SCHEMAS}${name}`) as Readonly<
-    Record<string, unknown>
-  >;
+  return relocateSchema(
+    schema,
+    { pointer: `${COMPONENT_SCHEMAS}${name}`, owner, identifiers },
+    true,
+  ) as Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -300,6 +371,8 @@ export function createHttpOpenApiDocument<Capabilities extends CapabilityMap>(
     .map((summary) =>
       engine.describe(summary.id as Extract<keyof Capabilities, string>),
     );
+  for (const { id } of descriptions) assertAddressableCapabilityId(id);
+  const identifiers = new Map<string, string>();
   const names = componentBaseNames(
     descriptions.map((description) => description.id),
   );
@@ -324,8 +397,19 @@ export function createHttpOpenApiDocument<Capabilities extends CapabilityMap>(
     const name = names.get(description.id) ?? "_";
     const inputName = `${name}.Input`;
     const outputName = `${name}.Output`;
-    schemas[inputName] = schemaComponent(description.inputSchema, inputName);
-    schemas[outputName] = schemaComponent(description.outputSchema, outputName);
+    const owner = `capability ${JSON.stringify(description.id)}`;
+    schemas[inputName] = schemaComponent(
+      description.inputSchema,
+      inputName,
+      `${owner} input schema`,
+      identifiers,
+    );
+    schemas[outputName] = schemaComponent(
+      description.outputSchema,
+      outputName,
+      `${owner} output schema`,
+      identifiers,
+    );
     paths[capabilityRoutePath(description.id)] = {
       get: {
         operationId: `describe.${description.id}`,

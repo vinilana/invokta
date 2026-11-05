@@ -324,15 +324,20 @@ handler whose package-root modules import no Node-only API, and
 `engine.list()`, `GET /capabilities/{id}` returns `engine.describe(id)`,
 `POST /capabilities/{id}` returns the output of `engine.invoke(id, body)` with
 source `http`, and `GET /openapi.json` returns the generated document. `{id}`
-is one percent-encoded segment decoded once. The handler validates and
-snapshots its configuration at construction and never rejects. The optional
-`@invokta/http/node` subpath serves the same handler on `node:http` without
-adding routes, limits, or statuses (ADR 0048).
+is one percent-encoded segment decoded once; construction rejects the
+unreachable keys `.` and `..`. The handler validates and snapshots its
+configuration and capability IDs at construction and never rejects. The
+optional `@invokta/http/node` subpath serves the same handler on `node:http`
+without adding routes, limits, or statuses, and rejects a duplicated `Host` or
+`Authorization` header and every request target that URL normalization would
+change, including dot-segment aliases (ADR 0048).
 
 **AE-HTTP-02 — Boundary.** Each request is checked in order: host allowlist
 (loopback names by default), `Origin` (rejected unless CORS lists it exactly),
 route, CORS preflight, method (405 with `Allow`), declared body size (413),
-authentication, `application/json` content type (415), streamed strict UTF-8
+authentication, capability ID (an ID outside the captured catalog is 404
+`CAPABILITY_NOT_FOUND` without reaching `engine.invoke`, emitting an event, or
+reading the body), `application/json` content type (415), streamed strict UTF-8
 body within the limit (default 1,048,576 bytes; 413), and JSON parsing
 (400 `INVALID_JSON`). `auth` is required and uses the same required or
 `dangerously-disabled-for-development` modes and the same structural
@@ -349,7 +354,8 @@ every route, including the OpenAPI document. `null` or a malformed principal is
 `EXECUTION_FAILED` 500. The OpenAPI 3.1 document is derived only from `list`
 and `describe`, embeds each schema as a component with local references rebased
 onto it, uses the base path as a relative server URL, and declares Bearer
-security only when authentication is required.
+security only when authentication is required. A JSON Schema `$id` or anchor
+that would occur twice in the document fails generation with a `TypeError`.
 
 ## Authentication and authorization
 

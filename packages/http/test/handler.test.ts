@@ -350,6 +350,59 @@ describe("createHttpHandler routes", () => {
     }
   });
 
+  it("answers unknown capability IDs from the catalog without invoking or reading the body", async () => {
+    const events: EngineEvent[] = [];
+    const engine = createTestEngine({ onEvent: (event) => events.push(event) });
+    const invoke = vi.spyOn(engine, "invoke");
+    const handler = createHttpHandler(engine, {
+      auth: { mode: "required", authenticate: () => ({ id: "user:1" }) },
+    });
+    const pull = vi.fn((controller: ReadableStreamDefaultController) => {
+      controller.enqueue(new TextEncoder().encode("{}"));
+      controller.close();
+    });
+    const attackerId = `attacker-controlled\n${"x".repeat(8_000)}`;
+    let expected: unknown;
+    try {
+      engine.describe(attackerId as never);
+    } catch (error) {
+      const { code, message, publicDetails } = error as EngineError;
+      expected = { code, message, publicDetails };
+    }
+
+    const invoked = await handler(
+      new Request(
+        new URL(`/capabilities/${encodeURIComponent(attackerId)}`, origin),
+        {
+          method: "POST",
+          headers: { "content-type": "text/plain" },
+          body: new ReadableStream({ pull }, { highWaterMark: 0 }),
+          duplex: "half",
+        },
+      ),
+    );
+    const described = await handler(
+      get(`/capabilities/${encodeURIComponent(attackerId)}`),
+    );
+
+    for (const response of [invoked, described]) {
+      expect(response.status).toBe(404);
+      expect(await errorOf(response)).toEqual(expected);
+    }
+    expect(pull).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
+  it("does not reveal the catalog to unauthenticated callers", async () => {
+    const response = await createHttpHandler(createTestEngine(), {
+      auth: { mode: "required", authenticate: () => null },
+    })(post("/capabilities/support.missing", {}));
+
+    expect(response.status).toBe(401);
+    expect((await errorOf(response)).code).toBe("UNAUTHENTICATED");
+  });
+
   it("rejects malformed percent-encoding in a capability segment", async () => {
     const response = await handlerFor(createTestEngine())(
       get("/capabilities/%E0%A4%A"),

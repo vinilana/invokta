@@ -93,7 +93,15 @@ or a trailing slash, and at most 256 bytes.
 `{id}` is the capability key as one percent-encoded path segment, for example
 `/capabilities/support.classify-ticket` or `/capabilities/a%2Fb` for `a/b`.
 Matching is exact and case-sensitive; a trailing slash or an extra segment is
-404, and the query string is ignored.
+404, and the query string is ignored. URL parsing removes `.` and `..` path
+segments, so an engine with either capability key is rejected with a
+`TypeError` when the handler or document is created.
+
+The handler captures the engine's capability IDs when it is created. An
+authenticated request for an ID outside that catalog receives the same 404
+`CAPABILITY_NOT_FOUND` body the engine reports, before the content type or body
+is examined. The ID never reaches `engine.invoke`, so it never appears in
+invocation events.
 
 ```sh
 curl -sS http://127.0.0.1:3000/capabilities/support.classify-ticket \
@@ -126,9 +134,10 @@ Checks occur in this order:
 5. the method is supported;
 6. a declared body is within the limit;
 7. authentication succeeds and the principal is snapshotted;
-8. the content type is `application/json`;
-9. the streamed body is within the limit and valid UTF-8 JSON; and
-10. `engine.invoke` runs with source `http`.
+8. the capability ID is in the catalog;
+9. the content type is `application/json`;
+10. the streamed body is within the limit and valid UTF-8 JSON; and
+11. `engine.invoke` runs with source `http`.
 
 `allowedHosts` defaults to `127.0.0.1`, `localhost`, and `[::1]`. Names are
 compared case-insensitively without the port. List every public host name in a
@@ -208,9 +217,13 @@ produces a sanitized 500. The principal is deep-cloned and validated before the
 body is read. In required mode every route, including `openapi.json`, requires
 authentication. Capability authorization stays in the access rule.
 
-The Web `Headers` interface joins repeated header lines with `, `. An
+A Web `Request` hides raw request details: `Headers` joins repeated header
+lines with `, `, and `request.url` is already normalized, so the handler cannot
+see a duplicated `Authorization` header or a dot-segment alias such as
+`/x/../capabilities`. `serveHttp` rejects both. On another runtime, an
 authenticator must reject a credential value it cannot parse rather than split
-it.
+it, and a proxy that routes or denies by raw path must normalize or reject such
+targets before the handler.
 
 <Aside type="danger" title="Development mode supplies no identity">
   `dangerously-disabled-for-development` serves every route without
@@ -289,11 +302,22 @@ the relative base path, so no host is named.
 
 `<name>` is the capability key with every character outside `A-Z`, `a-z`,
 `0-9`, `.`, `_`, and `-` replaced by `_` (`_` for an empty key), plus `-2`,
-`-3`, and so on for later collisions. Schemas are copied verbatim except for
-local `#` and `#/...` references in schema positions, which are rebased onto
-the component that contains them so they still resolve. Each call returns a new
-plain object; a host that authenticates with another credential scheme can
-adjust its security entries before publishing it.
+`-3`, and so on for later collisions. Schemas are copied verbatim, including
+properties named `__proto__`, except for local `#` and `#/...` references in
+schema positions, which are rebased onto the component that contains them so
+they still resolve. A subschema with a non-fragment `$id` is its own resource
+and is not rebased; a fragment-only `$id` such as draft-07 `#plain` is an
+anchor.
+
+Every component shares the document's schema resource, so an `$anchor`,
+`$dynamicAnchor`, or `$id` that would occur twice is ambiguous. That happens
+when one schema with such an identifier is both a capability's input and
+output, or is used by two capabilities. Generation, and therefore handler
+creation, then fails with a `TypeError` naming the capability and identifier.
+Give each published schema its own identifiers, or remove them.
+
+Each call returns a new plain object; a host that authenticates with another
+credential scheme can adjust its security entries before publishing it.
 
 ## `serveHttp`
 
@@ -326,8 +350,11 @@ const server = await serveHttp(engine, {
 `serveHttp` serves `createHttpHandler` on `node:http`. It binds `127.0.0.1` and
 port `3000` by default. A non-loopback bind requires `allowedHosts`; otherwise
 the allowlist is the loopback names plus the bind host. It accepts only an
-origin-form request target and exactly one `Host` header without user
-information, and answers anything else with 400 `INVALID_REQUEST`. It aborts
+origin-form request target whose path URL parsing leaves unchanged, exactly one
+`Host` header without user information, and at most one `Authorization`
+header. It answers anything else, including dot segments such as
+`/x/../capabilities` and `/capabilities/%2e%2e/capabilities`, with 400
+`INVALID_REQUEST`. It aborts
 the request signal when the client disconnects, closes a connection whose body
 was not consumed, and its `close()` is idempotent and aborts active requests.
 Every route, limit, and status is the handler's.

@@ -143,7 +143,7 @@ describe("serveHttp", () => {
     expect(response).toContain('"HOST_NOT_ALLOWED"');
   });
 
-  it("rejects duplicate Host headers and request-target aliases", async () => {
+  it("rejects duplicate Host or Authorization headers and request-target aliases", async () => {
     const server = await start();
 
     for (const head of [
@@ -152,6 +152,11 @@ describe("serveHttp", () => {
       "GET //evil.example/capabilities HTTP/1.1\r\nHost: localhost\r\n",
       "GET /\\evil.example/capabilities HTTP/1.1\r\nHost: localhost\r\n",
       "GET /capabilities HTTP/1.1\r\nHost: user@localhost\r\n",
+      "GET /x/../capabilities HTTP/1.1\r\nHost: localhost\r\n",
+      "GET /capabilities/%2e%2e/capabilities HTTP/1.1\r\nHost: localhost\r\n",
+      "GET /capabilities/./support.echo HTTP/1.1\r\nHost: localhost\r\n",
+      "POST /public/../capabilities/support.echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n",
+      "GET /capabilities HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer a\r\nAuthorization: Bearer b\r\n",
     ]) {
       const response = await rawRequest(
         server,
@@ -160,6 +165,17 @@ describe("serveHttp", () => {
       expect(response, head).toMatch(/^HTTP\/1\.1 400 /u);
       expect(response).toContain('"INVALID_REQUEST"');
     }
+  });
+
+  it("accepts the canonical target with dots only in the query", async () => {
+    const server = await start();
+
+    const response = await rawRequest(
+      server,
+      "GET /capabilities/support.echo?from=../x HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+    );
+
+    expect(response).toMatch(/^HTTP\/1\.1 200 /u);
   });
 
   it("closes the connection when the body was not consumed", async () => {
