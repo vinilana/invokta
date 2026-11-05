@@ -22,7 +22,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - MCP stdio and HTTP forward progress as `notifications/progress` when a
   `tools/call` request carries `_meta.progressToken` (a string of at most 256
   UTF-16 code units or a safe integer), echoing the token and sending at most
-  one notification per 100 ms per request. Stateless MCP HTTP answers such a
+  one notification per 100 ms per request. A slow reader leaves at most one
+  unwritten notification and one held report per request; the held report is
+  delivered just before a successful result. Stateless MCP HTTP answers such a
   request with a request-scoped `text/event-stream` response that carries its
   notifications and then its result; every other request keeps the JSON
   response and all request bounds are unchanged.

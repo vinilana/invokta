@@ -95,12 +95,18 @@ so the length bound prevents a client from turning a large token into large
 repeated output.
 
 The adapter sends at most one notification per 100 milliseconds for one
-request. Reports inside the interval coalesce to the latest one, which is sent
-when the interval ends if the call is still active; a coalesced report still
-pending when the call settles is dropped. Because the core delivers only
-increasing values, the coalesced stream also increases. Notification send
-failures, including those for a request the client already cancelled, are
-contained and never change the tool result.
+request, and only when the previous notification of that request has been
+written and the request's response channel reports capacity through an
+optional request-scoped gate. Otherwise the newest report replaces the one it
+holds and is retried at the next interval. A slow or stalled reader therefore
+leaves at most one unwritten notification and one held report per request,
+whatever the capability's report rate, message size, or run time. The held
+report is delivered just before a successful result, so a final `n/n` report
+still arrives; it is dropped when the call fails or is cancelled. Because the
+core delivers only increasing values, the forwarded stream also increases.
+Notification send and gate failures, including sends for a request the client
+already cancelled, are contained and never change the tool result. Over stdio
+the write gate follows the protocol stream's write completion.
 
 Over stdio, notifications share the protocol stream with responses and are
 written before the result of the same call.
@@ -111,7 +117,7 @@ alone receives a `text/event-stream` response: the SDK transport for that
 request is created with `enableJsonResponse: false`, the stream carries only
 the progress notifications for that request followed by its JSON-RPC response,
 and it closes after the response. The adapter relays the stream event by event
-and honors socket backpressure instead of buffering the whole body. The SDK
+instead of buffering the whole body. The SDK
 sends an SSE keep-alive comment every 15 seconds while the stream is open.
 
 This fits the stateless profile of ADR 0007 because the stream belongs to one
@@ -160,7 +166,8 @@ progress-specific engine event are not provided.
   `reportProgress: () => undefined`. Capabilities, access rules, adapters, and
   callers of `invoke` are source compatible.
 - Progress is advisory. Reports may be dropped when invalid, non-increasing,
-  coalesced, late, or undeliverable, and no delivery guarantee is offered.
+  replaced while held, late, or undeliverable, and no delivery guarantee is
+  offered.
 - An HTTP client that sends a progress token now receives an SSE response. The
   Streamable HTTP transport already requires clients to accept both
   `application/json` and `text/event-stream`, and the adapter already rejected

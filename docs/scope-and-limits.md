@@ -79,7 +79,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Generated OpenAPI runtime request body | 10 MiB serialized JSON |
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |
 | Progress message | 1,024 UTF-16 code units |
-| MCP progress notifications | 1 per 100 ms per request, latest report wins |
+| MCP progress notifications | 1 per 100 ms per request; at most 1 unwritten and 1 held, latest wins |
 | Honored MCP progress token | String of at most 256 UTF-16 code units, or a safe integer |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,

@@ -104,8 +104,9 @@ report the capability delivers through `context.reportProgress` becomes a
 | Opt-in | Only a `tools/call` with a progress token receives notifications |
 | Honored token | A string of at most 256 UTF-16 code units or a safe integer, echoed exactly, including `0` and `""`; a longer string is ignored and the call runs without notifications |
 | Values | `progress`, optional `total`, and optional `message` after core validation; `progress` increases with every notification |
-| Rate | At most one notification per 100 ms per request; reports inside the interval coalesce to the latest one |
-| End | No notification after the call settles; a coalesced report still pending then is dropped |
+| Rate | At most one notification per 100 ms per request |
+| Slow reader | A notification is sent only after the previous one was written and while the response can take more; at most one report, the latest, is held meanwhile |
+| End | The held report is sent just before a successful result and dropped when the call fails or is cancelled; nothing is sent after the result |
 | Failures | A failed notification send never changes the tool result |
 
 Over stdio, notifications precede the result on standard output. Over HTTP,
@@ -216,9 +217,8 @@ Responses are a single JSON body. The one exception is a `tools/call` request
 with a usable progress token, which receives a request-scoped
 `text/event-stream` response carrying only its own
 [progress notifications](#progress-notifications) and result. That stream has
-no event IDs, priming event, or resumption, is relayed with socket
-backpressure, sends an SSE keep-alive comment every 15 seconds, and closes
-after the result. A client disconnect aborts the invocation. A reverse proxy
+no event IDs, priming event, or resumption, sends an SSE keep-alive comment
+every 15 seconds, and closes after the result. A client disconnect aborts the invocation. A reverse proxy
 must not buffer `text/event-stream` responses for progress to arrive early.
 
 The sole protocol endpoint is the exact canonical `POST` mount path, `/mcp` by

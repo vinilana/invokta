@@ -192,9 +192,11 @@ event, pipeline stage, error code, or cross-cutting hook.
 MCP forwards delivered reports as `notifications/progress` only for a
 `tools/call` request whose `_meta.progressToken` is a string of at most 256
 UTF-16 code units or a safe integer, echoing that token exactly. The adapter
-sends at most one notification per 100 milliseconds per request, coalescing
-reports inside the interval to the latest and dropping one still pending when
-the call settles; send failures never change the tool result. The CLI passes a
+sends at most one notification per 100 milliseconds per request, only after the
+previous one has been written and while the response channel reports capacity.
+It holds at most one report, the latest, delivers it just before a successful
+result, and drops it when the call fails or is cancelled; send failures never
+change the tool result. The CLI passes a
 sink only in the `human` format and writes progress to stderr. ADR 0043 defines
 the complete boundary.
 
@@ -293,8 +295,8 @@ server-to-client SSE disabled. Every response is one JSON body, except that a
 `tools/call` request carrying a usable progress token (`AE-PROGRESS-01`)
 receives a `text/event-stream` response for that request only. That stream
 carries the request's progress notifications followed by its JSON-RPC response,
-closes after the response, is relayed with socket backpressure, and has no
-event ID, priming event, or resumption.
+closes after the response, and has no event ID, priming event, or
+resumption.
 When OAuth Protected Resource Metadata is
 configured, its public well-known GET route is the only non-protocol route.
 Only the exact, canonical mount path reaches protocol dispatch; dot segments,

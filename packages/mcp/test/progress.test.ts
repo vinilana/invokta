@@ -11,6 +11,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { type McpHttpServerHandle, serveMcpHttp } from "../src/index.js";
+import {
+  createProgressForwarder,
+  MIN_PROGRESS_NOTIFICATION_INTERVAL_MS,
+} from "../src/progress.js";
 import { createMcpServer } from "../src/protocol-server.js";
 import { preserveFalsyRequestIds } from "../src/request-id-transport.js";
 
@@ -49,7 +53,10 @@ function createScriptEngine(
     capabilities: {
       "media.render": defineCapability({
         description: "Reports scripted progress while rendering.",
-        input: z.object({ steps: z.array(stepSchema).max(20) }),
+        input: z.object({
+          steps: z.array(stepSchema).max(100),
+          fail: z.boolean().optional(),
+        }),
         output: z.object({ rendered: z.boolean() }),
         access: "public",
         async run({ input, context }) {
@@ -69,6 +76,7 @@ function createScriptEngine(
             }
           }
           await hooks.beforeReturn?.();
+          if (input.fail === true) throw new Error("private render failure");
           return { rendered: true };
         },
       }),
@@ -82,6 +90,7 @@ function toolCall(
   id: string | number,
   steps: ReadonlyArray<Step>,
   meta?: Readonly<Record<string, unknown>>,
+  fail?: boolean,
 ): JSONRPCMessage {
   return {
     jsonrpc: "2.0",
@@ -89,19 +98,45 @@ function toolCall(
     method: "tools/call",
     params: {
       name: "media_render",
-      arguments: { steps },
+      arguments: { steps, ...(fail === undefined ? {} : { fail }) },
       ...(meta === undefined ? {} : { _meta: meta }),
     },
   } as JSONRPCMessage;
 }
 
-async function connectRaw(engine = createScriptEngine()) {
+function isProgressNotification(message: JSONRPCMessage): boolean {
+  return "method" in message && message.method === "notifications/progress";
+}
+
+async function connectRaw(
+  engine = createScriptEngine(),
+  options: {
+    readonly canSendProgress?: () => boolean;
+    /** Never settles progress writes, like a stdout pipe nobody drains. */
+    readonly stallProgressWrites?: boolean;
+  } = {},
+) {
   const server = createMcpServer(engine, {
     principal: null,
     source: "mcp-stdio",
+    ...(options.canSendProgress === undefined
+      ? {}
+      : { canSendProgress: options.canSendProgress }),
   });
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
+  let progressWrites = 0;
+  const sendToClient = serverTransport.send.bind(serverTransport);
+  serverTransport.send = (message, sendOptions) => {
+    if (!isProgressNotification(message)) {
+      return sendToClient(message, sendOptions);
+    }
+    progressWrites += 1;
+    if (options.stallProgressWrites !== true) {
+      return sendToClient(message, sendOptions);
+    }
+    return new Promise<void>(() => undefined);
+  };
   const received: JSONRPCMessage[] = [];
   clientTransport.onmessage = (message) => {
     received.push(message);
@@ -120,6 +155,7 @@ async function connectRaw(engine = createScriptEngine()) {
   };
   return {
     received,
+    progressWrites: () => progressWrites,
     send: (message: JSONRPCMessage) => clientTransport.send(message),
     responseFor,
     progressNotifications: () =>
@@ -252,15 +288,48 @@ describe("MCP progress notifications over a connected protocol server", () => {
     await connection.close();
   });
 
-  it("drops a coalesced report once the tool call settles", async () => {
+  it("delivers a coalesced report just before a successful result", async () => {
     const connection = await connectRaw();
 
     await connection.send(
-      toolCall("settled", [{ progress: 1 }, { progress: 2 }], {
-        progressToken: "settled",
-      }),
+      toolCall(
+        "settled",
+        [{ progress: 1, total: 3 }, { progress: 2 }, { progress: 3, total: 3 }],
+        { progressToken: "settled" },
+      ),
     );
     await connection.responseFor("settled");
+    await sleep(200);
+
+    expect(
+      connection.received.map((message) =>
+        isProgressNotification(message)
+          ? (message as unknown as { params: { progress: number } }).params
+              .progress
+          : "result",
+      ),
+    ).toEqual([1, 3, "result"]);
+    await connection.close();
+  });
+
+  it("drops a coalesced report when the tool call fails", async () => {
+    const connection = await connectRaw();
+
+    await connection.send(
+      toolCall(
+        "failed",
+        [{ progress: 1 }, { progress: 2 }],
+        { progressToken: "failed" },
+        true,
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(
+        connection.received.some(
+          (message) => "id" in message && message.id === "failed",
+        ),
+      ).toBe(true),
+    );
     await sleep(200);
 
     expect(
@@ -268,6 +337,67 @@ describe("MCP progress notifications over a connected protocol server", () => {
         .progressNotifications()
         .map((message) => message.params.progress),
     ).toEqual([1]);
+    expect(connection.received.at(-1)).toMatchObject({
+      id: "failed",
+      result: { isError: true },
+    });
+    await connection.close();
+  });
+
+  it("holds only the latest report while a stalled reader leaves a notification unwritten", async () => {
+    const connection = await connectRaw(createScriptEngine(), {
+      stallProgressWrites: true,
+    });
+    const steps = Array.from({ length: 40 }, (_, index) => [
+      { progress: index + 1, message: "m".repeat(1_024) },
+      { waitMs: 10 },
+    ]).flat();
+
+    await connection.send(
+      toolCall("stalled", steps, { progressToken: "t".repeat(256) }),
+    );
+    await connection.responseFor("stalled");
+
+    // One write stays pending for the whole call; the latest report is held
+    // and delivered once before the result instead of queueing 40 writes.
+    expect(connection.progressWrites()).toBe(2);
+    await connection.close();
+  });
+
+  it("holds only the latest report while the downstream gate is closed", async () => {
+    let open = false;
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const connection = await connectRaw(
+      createScriptEngine({ beforeReturn: () => released }),
+      { canSendProgress: () => open },
+    );
+
+    await connection.send(
+      toolCall(
+        "gated",
+        Array.from({ length: 10 }, (_, index) => [
+          { progress: index + 1 },
+          { waitMs: 20 },
+        ]).flat(),
+        { progressToken: "gated" },
+      ),
+    );
+    await sleep(350);
+    expect(connection.progressWrites()).toBe(0);
+
+    open = true;
+    await vi.waitFor(() => expect(connection.progressWrites()).toBe(1));
+    expect(
+      connection
+        .progressNotifications()
+        .map((message) => message.params.progress),
+    ).toEqual([10]);
+    release();
+    await connection.responseFor("gated");
+    expect(connection.progressWrites()).toBe(1);
     await connection.close();
   });
 
@@ -333,6 +463,98 @@ describe("MCP progress notifications over a connected protocol server", () => {
 
     expect(result).toMatchObject({ structuredContent: { rendered: true } });
     expect(progress).toEqual([{ progress: 1, total: 2, message: "Halfway." }]);
+  });
+});
+
+describe("the MCP progress forwarder", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function recordingSend() {
+    const sent: number[] = [];
+    const pending: Array<() => void> = [];
+    return {
+      sent,
+      settleAll: () => {
+        for (const settle of pending.splice(0)) settle();
+      },
+      send: (params: { readonly progress: number }) => {
+        sent.push(params.progress);
+        return new Promise<void>((resolve) => {
+          pending.push(resolve);
+        });
+      },
+    };
+  }
+
+  it("never has more than one notification in flight", async () => {
+    vi.useFakeTimers();
+    const downstream = recordingSend();
+    const forwarder = createProgressForwarder("token", downstream.send);
+
+    for (let progress = 1; progress <= 50; progress += 1) {
+      forwarder.report({ progress });
+      await vi.advanceTimersByTimeAsync(MIN_PROGRESS_NOTIFICATION_INTERVAL_MS);
+    }
+    expect(downstream.sent).toEqual([1]);
+
+    downstream.settleAll();
+    await vi.advanceTimersByTimeAsync(MIN_PROGRESS_NOTIFICATION_INTERVAL_MS);
+    expect(downstream.sent).toEqual([1, 50]);
+    forwarder.close();
+  });
+
+  it("treats a throwing gate as having no capacity", async () => {
+    vi.useFakeTimers();
+    const downstream = recordingSend();
+    const forwarder = createProgressForwarder("token", downstream.send, () => {
+      throw new Error("gate unavailable");
+    });
+
+    forwarder.report({ progress: 1 });
+    await vi.advanceTimersByTimeAsync(
+      10 * MIN_PROGRESS_NOTIFICATION_INTERVAL_MS,
+    );
+
+    expect(downstream.sent).toEqual([]);
+    forwarder.close();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("delivers the held report on finish and nothing after it", async () => {
+    vi.useFakeTimers();
+    const downstream = recordingSend();
+    const forwarder = createProgressForwarder("token", downstream.send);
+
+    forwarder.report({ progress: 1 });
+    forwarder.report({ progress: 2 });
+    forwarder.finish();
+    forwarder.report({ progress: 3 });
+    forwarder.finish();
+    await vi.advanceTimersByTimeAsync(
+      10 * MIN_PROGRESS_NOTIFICATION_INTERVAL_MS,
+    );
+
+    expect(downstream.sent).toEqual([1, 2]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("drops the held report on close", async () => {
+    vi.useFakeTimers();
+    const downstream = recordingSend();
+    const forwarder = createProgressForwarder("token", downstream.send);
+
+    forwarder.report({ progress: 1 });
+    forwarder.report({ progress: 2 });
+    forwarder.close();
+    forwarder.finish();
+    await vi.advanceTimersByTimeAsync(
+      10 * MIN_PROGRESS_NOTIFICATION_INTERVAL_MS,
+    );
+
+    expect(downstream.sent).toEqual([1]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

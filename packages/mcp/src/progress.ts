@@ -21,6 +21,9 @@ export interface McpProgressNotificationParams {
 
 export interface McpProgressForwarder {
   readonly report: (report: ProgressReport) => void;
+  /** Delivers the held report, if any, then closes the forwarder. */
+  readonly finish: () => void;
+  /** Drops the held report, if any, and closes the forwarder. */
   readonly close: () => void;
 }
 
@@ -59,38 +62,72 @@ export function requestsProgressNotifications(message: unknown): boolean {
 }
 
 /**
- * Forwards accepted progress reports as notifications for one request. At most
- * one notification is sent per interval; a burst inside the interval is
- * coalesced to its latest report, which is flushed when the interval ends
- * unless the forwarder has been closed. Send failures are contained.
+ * Forwards accepted progress reports as notifications for one request.
+ *
+ * The forwarder holds at most one report. It sends a notification only when
+ * the previous one has been written, the optional `canSend` gate reports
+ * downstream capacity, and at least one interval has passed since the last
+ * send. Otherwise the newest report replaces the held one and is retried at
+ * the next interval, so a slow or stalled reader never accumulates more than
+ * one unwritten notification and one held report. `finish` delivers the held
+ * report once; `close` drops it. Send and gate failures are contained.
  */
 export function createProgressForwarder(
   progressToken: McpProgressToken,
   send: (params: McpProgressNotificationParams) => Promise<void>,
+  canSend: () => boolean = () => true,
 ): McpProgressForwarder {
   let closed = false;
+  let writing = false;
   let lastSentAt: number | undefined;
-  let pending: ProgressReport | undefined;
+  let held: ProgressReport | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
+  const hasCapacity = (): boolean => {
+    if (writing) return false;
+    try {
+      return canSend() === true;
+    } catch {
+      return false;
+    }
+  };
   const deliver = (report: ProgressReport): void => {
     lastSentAt = performance.now();
+    writing = true;
+    const written = (): void => {
+      writing = false;
+    };
     try {
       void send({
         progressToken,
         progress: report.progress,
         ...(report.total === undefined ? {} : { total: report.total }),
         ...(report.message === undefined ? {} : { message: report.message }),
-      }).catch(() => undefined);
+      }).then(written, written);
     } catch {
       // A closed or failing transport cannot change the tool result.
+      written();
     }
   };
-  const flush = (): void => {
+  const retryAfter = (delayMs: number): void => {
+    timer ??= setTimeout(retry, Math.max(0, delayMs));
+  };
+  function retry(): void {
     timer = undefined;
-    const report = pending;
-    pending = undefined;
-    if (!closed && report !== undefined) deliver(report);
+    if (closed || held === undefined) return;
+    if (!hasCapacity()) {
+      retryAfter(MIN_PROGRESS_NOTIFICATION_INTERVAL_MS);
+      return;
+    }
+    const report = held;
+    held = undefined;
+    deliver(report);
+  }
+  const close = (): void => {
+    closed = true;
+    held = undefined;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
   };
 
   return Object.freeze({
@@ -102,18 +139,19 @@ export function createProgressForwarder(
           : lastSentAt +
             MIN_PROGRESS_NOTIFICATION_INTERVAL_MS -
             performance.now();
-      if (wait <= 0 && timer === undefined) {
+      if (wait <= 0 && timer === undefined && hasCapacity()) {
         deliver(report);
         return;
       }
-      pending = report;
-      timer ??= setTimeout(flush, Math.max(0, wait));
+      held = report;
+      retryAfter(wait > 0 ? wait : MIN_PROGRESS_NOTIFICATION_INTERVAL_MS);
     },
-    close(): void {
-      closed = true;
-      pending = undefined;
-      if (timer !== undefined) clearTimeout(timer);
-      timer = undefined;
+    finish(): void {
+      if (closed) return;
+      const report = held;
+      close();
+      if (report !== undefined) deliver(report);
     },
+    close,
   });
 }

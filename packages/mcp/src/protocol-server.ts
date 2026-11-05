@@ -23,6 +23,11 @@ interface McpServerOptions {
   readonly principal: Principal | null;
   readonly source: Extract<ExecutionSource, "mcp-stdio" | "mcp-http">;
   readonly requestSignal?: AbortSignal;
+  /**
+   * Reports whether the response channel can take another progress
+   * notification now. While it returns `false`, at most one report is held.
+   */
+  readonly canSendProgress?: () => boolean;
 }
 
 interface McpObjectSchema extends Readonly<Record<string, unknown>> {
@@ -223,11 +228,14 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
     const progress =
       progressToken === undefined
         ? undefined
-        : createProgressForwarder(progressToken, (params) =>
-            extra.sendNotification({
-              method: "notifications/progress",
-              params,
-            }),
+        : createProgressForwarder(
+            progressToken,
+            (params) =>
+              extra.sendNotification({
+                method: "notifications/progress",
+                params,
+              }),
+            options.canSendProgress,
           );
     try {
       const result = await engine.invoke(
@@ -243,6 +251,8 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
           ...(progress === undefined ? {} : { onProgress: progress.report }),
         },
       );
+      // The latest held report still precedes a successful result.
+      progress?.finish();
       const structuredContent = result as Readonly<Record<string, unknown>>;
       return {
         content: [
