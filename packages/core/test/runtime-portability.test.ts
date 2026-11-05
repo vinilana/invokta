@@ -391,6 +391,23 @@ describe("portable fallback without host introspection", () => {
             return { result: "ignored" };
           },
         }),
+        domain: core.defineCapability({
+          description: "Raises a declared domain error.",
+          input: z.object({}),
+          output: z.object({ ok: z.boolean() }),
+          access: "public",
+          errors: {
+            SLOT_CONFLICT: {
+              description: "The requested slot is no longer available.",
+              details: z.object({ slotId: z.string() }),
+            },
+          },
+          async run() {
+            throw new core.CapabilityError("SLOT_CONFLICT", {
+              details: { slotId: "S-1" },
+            });
+          },
+        }),
         proxiedInput: core.defineCapability({
           description: "Receives a forwarding proxy from its input schema.",
           input: {
@@ -421,6 +438,10 @@ describe("portable fallback without host introspection", () => {
     });
     await expect(engine.invoke("proxiedInput", {})).rejects.toMatchObject({
       code: "INPUT_INVALID",
+    });
+    await expect(engine.invoke("domain", {})).rejects.toMatchObject({
+      code: "DOMAIN_ERROR",
+      publicDetails: { code: "SLOT_CONFLICT", details: { slotId: "S-1" } },
     });
   });
 });

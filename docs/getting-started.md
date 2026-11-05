@@ -166,11 +166,15 @@ generated complete or CLI project exposes the same commands through scripts:
 npm run cli -- list
 npm run cli -- describe onboarding.create-welcome-message
 npm run cli -- run onboarding.create-welcome-message --input '{"name":"Ada"}'
+npm run cli -- run onboarding.create-welcome-message --name Ada
+npm run cli -- help onboarding.create-welcome-message
 ```
 
 JSON is the canonical output. Standard output contains only the requested
 result; diagnostics belong on standard error. The CLI also accepts JSON through
-standard input with the `--stdin` option.
+standard input with the `--stdin` option. Flags such as `--name` are derived
+from the top-level properties of the capability's input schema and build the
+same JSON object, which `engine.invoke` still validates; `help` lists them.
 
 ## 4. Add the MCP stdio entry point
 

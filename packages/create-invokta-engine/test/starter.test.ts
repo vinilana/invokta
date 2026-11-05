@@ -352,6 +352,59 @@ describe("createStarterFiles", () => {
   );
 
   it.each([
+    [
+      "npm",
+      [
+        "npm run cli -- list",
+        'npm run cli -- run onboarding.create-welcome-message --input \'{"name":"Ada"}\'',
+        "npm run cli -- run onboarding.create-welcome-message --name Ada",
+        "npm run cli -- help onboarding.create-welcome-message",
+      ],
+    ],
+    [
+      "pnpm",
+      [
+        "pnpm run cli list",
+        'pnpm run cli run onboarding.create-welcome-message --input \'{"name":"Ada"}\'',
+        "pnpm run cli run onboarding.create-welcome-message --name Ada",
+        "pnpm run cli help onboarding.create-welcome-message",
+      ],
+    ],
+    [
+      "yarn",
+      [
+        "yarn cli list",
+        'yarn cli run onboarding.create-welcome-message --input \'{"name":"Ada"}\'',
+        "yarn cli run onboarding.create-welcome-message --name Ada",
+        "yarn cli help onboarding.create-welcome-message",
+      ],
+    ],
+  ] as const)(
+    "documents JSON input, schema-derived flags, and help for %s CLI projects",
+    (manager, commands) => {
+      for (const profile of ["cli", "complete"] as const) {
+        const readme = createFiles(profile, manager).find(
+          (file) => file.path === "README.md",
+        );
+        const contents = readme && "contents" in readme ? readme.contents : "";
+
+        expect(contents).toContain(`\`\`\`sh\n${commands.join("\n")}\n\`\`\``);
+        expect(contents).toContain(
+          "Flags derived from a capability's input schema",
+        );
+      }
+      for (const profile of ["mcp-stdio", "mcp-http"] as const) {
+        const readme = createFiles(profile, manager).find(
+          (file) => file.path === "README.md",
+        );
+        const contents = readme && "contents" in readme ? readme.contents : "";
+
+        expect(contents).not.toContain("--name Ada");
+      }
+    },
+  );
+
+  it.each([
     ["npm", "npm run deploy:probe -- --url https://engine.example/mcp"],
     ["pnpm", "pnpm run deploy:probe -- --url https://engine.example/mcp"],
     ["yarn", "yarn deploy:probe --url https://engine.example/mcp"],

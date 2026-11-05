@@ -1,4 +1,5 @@
 import {
+  CapabilityError,
   createEngine,
   defineCapability,
   type ExecutionContext,
@@ -217,6 +218,67 @@ describe("Web-standard MCP HTTP handler", () => {
         content: [{ text: expect.stringContaining('"code":"FORBIDDEN"') }],
       },
     });
+  });
+
+  it("returns a declared domain error as a structured tool error", async () => {
+    const engine = createEngine({
+      name: "web-domain-error-engine",
+      version: "0.1.0",
+      capabilities: {
+        "appointments.schedule": defineCapability({
+          description: "Schedule an appointment in a free slot.",
+          input: z.object({ slotId: z.string() }),
+          output: z.object({ confirmed: z.boolean() }),
+          access: "authenticated",
+          errors: {
+            SLOT_CONFLICT: {
+              description: "The requested slot is no longer available.",
+              details: z.object({ slotId: z.string() }),
+              retryable: false,
+            },
+          },
+          async run({ input }) {
+            throw new CapabilityError("SLOT_CONFLICT", {
+              details: { slotId: input.slotId },
+              cause: new Error("secret calendar token: top-secret"),
+            });
+          },
+        }),
+      },
+    });
+
+    const handler = createMcpHttpHandler(engine, {
+      auth: { mode: "required", authenticate: bearer },
+    });
+
+    const response = await handler(
+      post(toolCall("appointments_schedule", { slotId: "S-1" }), {
+        token: "alice",
+      }),
+    );
+    const payload = await json(response);
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      result: {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              code: "DOMAIN_ERROR",
+              message: "The requested slot is no longer available.",
+              publicDetails: {
+                code: "SLOT_CONFLICT",
+                retryable: false,
+                details: { slotId: "S-1" },
+              },
+            }),
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(payload)).not.toContain("top-secret");
   });
 
   it("answers an unknown tool with a protocol error", async () => {

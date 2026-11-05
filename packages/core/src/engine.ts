@@ -1,3 +1,10 @@
+import {
+  type DomainErrorPublicDetails,
+  describeDeclaredErrors,
+  isRaisedCapabilityError,
+  resolveDomainError,
+  snapshotDeclaredErrors,
+} from "./capability-error.js";
 import { EngineError, type EngineErrorCode } from "./error.js";
 import { isProxy } from "./host-types.js";
 import {
@@ -68,6 +75,8 @@ const abortSignalReasonGetter = Object.getOwnPropertyDescriptor(
 const abortSignalAddEventListener = AbortSignal.prototype.addEventListener;
 const abortSignalRemoveEventListener =
   AbortSignal.prototype.removeEventListener;
+// Codes a thrown EngineError may keep. DOMAIN_ERROR is absent on purpose: only
+// the runtime issues it, after checking a CapabilityError against the contract.
 const engineErrorCodes = new Set<EngineErrorCode>([
   "CAPABILITY_NOT_FOUND",
   "INPUT_INVALID",
@@ -162,6 +171,7 @@ function describeCapability(
       `Capability ${capabilityId} output schema must have an object root.`,
     );
   }
+  const errors = describeDeclaredErrors(capabilityId, capability.errors);
   return snapshotLosslessJson({
     id: capabilityId,
     description: capability.description,
@@ -174,6 +184,7 @@ function describeCapability(
       : { timeoutMs: capability.timeoutMs }),
     inputSchema,
     outputSchema,
+    ...(errors === undefined ? {} : { errors }),
   });
 }
 
@@ -199,9 +210,11 @@ function snapshotCapability(
   const access = capability.access;
   const timeoutMs = capability.timeoutMs;
   const annotations = capability.annotations;
+  const errors = capability.errors;
   const run = capability.run;
 
   validateTimeoutMs(capabilityId, timeoutMs);
+  const declaredErrors = snapshotDeclaredErrors(capabilityId, errors);
   return Object.freeze({
     description,
     ...(title === undefined ? {} : { title }),
@@ -212,6 +225,7 @@ function snapshotCapability(
     ...(annotations === undefined
       ? {}
       : { annotations: snapshotLosslessJson(annotations) }),
+    ...(declaredErrors === undefined ? {} : { errors: declaredErrors }),
     run,
   }) as AnyCapability;
 }
@@ -545,6 +559,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
       }
 
       let signalState: ReturnType<typeof createSignal> | undefined;
+      let domainError: EngineError | undefined;
       try {
         const capability = capabilities.get(capabilityId);
         if (capability === undefined) {
@@ -640,10 +655,25 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           input: unknown;
           context: ExecutionContext;
         }) => Promise<unknown>;
-        const rawOutput = await raceWithCancellation(
-          Promise.resolve().then(() => run({ input, context })),
-          context.signal,
-        );
+        let rawOutput: unknown;
+        try {
+          rawOutput = await raceWithCancellation(
+            Promise.resolve().then(() => run({ input, context })),
+            context.signal,
+          );
+        } catch (failure) {
+          if (
+            !isRaisedCapabilityError(failure) ||
+            readSignalAborted(context.signal)
+          ) {
+            throw failure;
+          }
+          domainError = await raceWithCancellation(
+            resolveDomainError(capability.errors, failure),
+            context.signal,
+          );
+          throw domainError ?? executionFailed(failure);
+        }
         const output = await raceWithCancellation(
           validateSchema(capability.output, rawOutput, {
             code: "OUTPUT_INVALID",
@@ -661,7 +691,10 @@ export function createEngine<const Capabilities extends CapabilityMap>(
         });
         return output as CapabilityOutput<Capabilities[typeof capabilityId]>;
       } catch (cause) {
-        const error = normalizeError(cause, signalState?.signal);
+        const error =
+          domainError !== undefined && cause === domainError
+            ? domainError
+            : normalizeError(cause, signalState?.signal);
         signalState?.cleanup();
         signalState = undefined;
         emit({
@@ -670,6 +703,13 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           capabilityId,
           durationMs: globalThis.performance.now() - started,
           code: error.code,
+          ...(error === domainError
+            ? {
+                domainCode: (
+                  domainError.publicDetails as DomainErrorPublicDetails
+                ).code,
+              }
+            : {}),
         });
         throw error;
       } finally {

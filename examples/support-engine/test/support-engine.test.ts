@@ -1,4 +1,8 @@
-import type { EngineError, Principal } from "@invokta/core";
+import {
+  CapabilityError,
+  type EngineError,
+  type Principal,
+} from "@invokta/core";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import type {
@@ -124,24 +128,34 @@ describe("the support engine example", () => {
     expect(dependencies.tickets.findById).not.toHaveBeenCalled();
   });
 
-  it("returns a safe domain error when the requested ticket does not exist", async () => {
+  it("raises the declared TICKET_NOT_FOUND domain error for a missing ticket", async () => {
     const dependencies = createDependencies();
     dependencies.tickets.findById = vi.fn(async () => null);
     const engine = createSupportEngine(dependencies);
 
-    await expect(
-      engine.invoke(
+    const failure = await engine
+      .invoke(
         "support.classify-ticket",
         { ticketId: "T-404" },
         { source: "direct", principal },
-      ),
-    ).rejects.toEqual(
+      )
+      .then(
+        () => undefined,
+        (error: unknown) => error as EngineError,
+      );
+
+    expect(failure).toEqual(
       expect.objectContaining<Partial<EngineError>>({
-        code: "EXECUTION_FAILED",
-        message: "Ticket not found.",
-        publicDetails: { ticketId: "T-404" },
+        code: "DOMAIN_ERROR",
+        message: "The requested ticket does not exist.",
+        publicDetails: {
+          code: "TICKET_NOT_FOUND",
+          retryable: false,
+          details: { ticketId: "T-404" },
+        },
       }),
     );
+    expect(failure?.cause).toBeInstanceOf(CapabilityError);
     expect(dependencies.classifier.classify).not.toHaveBeenCalled();
   });
 
@@ -214,6 +228,20 @@ describe("the support engine example", () => {
       },
       inputSchema: { type: "object" },
       outputSchema: { type: "object" },
+      errors: [
+        {
+          code: "TICKET_NOT_FOUND",
+          description: "The requested ticket does not exist.",
+          retryable: false,
+          detailsSchema: {
+            $schema: "https://json-schema.org/draft/2020-12/schema",
+            type: "object",
+            properties: { ticketId: { type: "string" } },
+            required: ["ticketId"],
+            additionalProperties: false,
+          },
+        },
+      ],
     });
     expect(description.inputSchema).toEqual({
       $schema: "https://json-schema.org/draft/2020-12/schema",
