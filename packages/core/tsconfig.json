@@ -4,7 +4,10 @@
     "composite": true,
     "rootDir": "src",
     "outDir": "dist",
-    "tsBuildInfoFile": "tsconfig.tsbuildinfo"
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
+    "lib": ["ES2024", "DOM"],
+    "types": []
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "comment": "The core runs on any ECMAScript host with the Web platform globals (ADR 0042), so it compiles against those declarations instead of the Node.js types."
 }

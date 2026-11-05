@@ -1,0 +1,394 @@
+---
+title: '@invokta/http'
+description: API reference for the Web-standard plain HTTP JSON adapter, its OpenAPI 3.1 export, and the Node server entry point.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/http` publishes an engine as plain HTTP JSON routes for consumers
+that do not speak MCP, and describes those routes with a generated OpenAPI 3.1
+document. Every invocation executes through `engine.invoke` with source
+`http`; the adapter adds no second execution path.
+
+The main export is a Web-standard handler,
+`(request: Request) => Promise<Response>`. Its package-root modules import no
+Node.js built-in module, and neither does `@invokta/core`, so Node.js, Deno,
+Bun, Cloudflare Workers, and web frameworks that accept a `fetch` handler can
+mount it. As for `@invokta/mcp/web`, Node.js is the runtime verified by tests,
+including a simulated Web-standard host without Node.js built-ins; the other
+runtimes are supported by design. The
+[Web-standard runtimes guide](/guides/web-standard-runtimes/) covers the
+core's behavior on hosts without `process.getBuiltinModule`.
+
+## Install
+
+```sh
+yarn add @invokta/http
+```
+
+The package is native ESM, requires Node.js 22.20.0 or later for the Node entry
+point, and depends only on `@invokta/core`.
+
+## API
+
+The package root exports:
+
+- `createHttpHandler`, `HttpHandler`, and `HttpHandlerOptions`;
+- `HttpAuthOptions`, `HttpAuthenticationRequest`, and `HttpHeaderView`;
+- `HttpCorsOptions`;
+- `HttpErrorBody`, `HttpErrorCode`, and `HttpAdapterErrorCode`; and
+- `createHttpOpenApiDocument`, `HttpOpenApiDocument`, and
+  `HttpOpenApiDocumentOptions`.
+
+The `@invokta/http/node` subpath exports `serveHttp`, `ServeHttpOptions`,
+`HttpServerAddress`, and `HttpServerHandle`.
+
+## `createHttpHandler`
+
+```ts
+interface HttpHandlerOptions {
+  readonly basePath?: string;
+  readonly allowedHosts?: ReadonlyArray<string>;
+  readonly cors?: HttpCorsOptions;
+  readonly maxRequestBodyBytes?: number;
+  readonly auth: HttpAuthOptions;
+}
+
+type HttpHandler = (request: Request) => Promise<Response>;
+
+function createHttpHandler<Capabilities extends CapabilityMap>(
+  engine: Engine<Capabilities>,
+  options: HttpHandlerOptions,
+): HttpHandler;
+```
+
+```ts
+import { createHttpHandler } from "@invokta/http";
+
+import { authenticate } from "./http-auth.js";
+import { engine } from "./engine.js";
+
+export const handler = createHttpHandler(engine, {
+  basePath: "/api",
+  allowedHosts: ["engine.example"],
+  auth: { mode: "required", authenticate },
+});
+```
+
+The handler validates and snapshots its options when it is created and throws
+`TypeError` for an invalid value. It generates the OpenAPI document once. A
+request never rejects the returned promise: an unexpected failure becomes a
+sanitized 500.
+
+### Routes
+
+Paths are relative to `basePath`, which defaults to `/`. A configured base path
+is an absolute path of unreserved ASCII segments, such as `/api/support`,
+without a dot segment, an empty segment, percent encoding, a query, a fragment,
+or a trailing slash, and at most 256 bytes.
+
+| Method and path | Response |
+| --- | --- |
+| `GET {basePath}/capabilities` | `{ "capabilities": [...] }` from `engine.list()` |
+| `GET {basePath}/capabilities/{id}` | `engine.describe(id)` |
+| `POST {basePath}/capabilities/{id}` | The validated output of `engine.invoke(id, body)` |
+| `GET {basePath}/openapi.json` | The generated OpenAPI 3.1 document |
+
+`{id}` is the capability key as one percent-encoded path segment, for example
+`/capabilities/support.classify-ticket` or `/capabilities/a%2Fb` for `a/b`.
+Matching is exact and case-sensitive; a trailing slash or an extra segment is
+404, and the query string is ignored. URL parsing removes `.` and `..` path
+segments, so an engine with either capability key is rejected with a
+`TypeError` when the handler or document is created.
+
+The handler captures the engine's capability IDs when it is created. An
+authenticated request for an ID outside that catalog receives the same 404
+`CAPABILITY_NOT_FOUND` body the engine reports, before the content type or body
+is examined. The ID never reaches `engine.invoke`, so it never appears in
+invocation events.
+
+```sh
+curl -sS http://127.0.0.1:3000/capabilities/support.classify-ticket \
+  -H 'authorization: Bearer <token>' \
+  -H 'content-type: application/json' \
+  -d '{"ticketId":"T-123"}'
+```
+
+The `POST` body is the capability input. It must use the `application/json`
+media type (parameters such as `charset=utf-8` are allowed), be strict UTF-8,
+and parse as JSON. Send `{}` for a capability without input fields. A
+non-object value is passed to `engine.invoke`, which rejects it as
+`INPUT_INVALID`. The body limit defaults to 1,048,576 bytes and accepts any
+positive safe integer; it is inclusive, a declared `Content-Length` above it is
+rejected before authentication, and a streamed body is rejected at the chunk
+that crosses it.
+
+The handler passes `request.signal` to the authenticator and to
+`engine.invoke`. A runtime that aborts the signal when the client disconnects
+therefore cancels the invocation.
+
+### Request boundary
+
+Checks occur in this order:
+
+1. the request URL's host name is in `allowedHosts`;
+2. a present `Origin` is in `cors.allowedOrigins`;
+3. the route exists;
+4. a CORS preflight is answered;
+5. the method is supported;
+6. a declared body is within the limit;
+7. authentication succeeds and the principal is snapshotted;
+8. the capability ID is in the catalog;
+9. the content type is `application/json`;
+10. the streamed body is within the limit and valid UTF-8 JSON; and
+11. `engine.invoke` runs with source `http`.
+
+`allowedHosts` defaults to `127.0.0.1`, `localhost`, and `[::1]`. Names are
+compared case-insensitively without the port. List every public host name in a
+deployment; an unlisted host receives 403 before authentication.
+
+### Statuses and error body
+
+Success is `200` with the JSON result. Every error uses one body shape:
+
+```ts
+interface HttpErrorBody {
+  readonly error: {
+    readonly code: HttpErrorCode;
+    readonly message: string;
+    readonly publicDetails?: unknown;
+  };
+}
+```
+
+| Status | `error.code` |
+| --- | --- |
+| `400` | `INPUT_INVALID`, `INVALID_JSON` (malformed JSON or UTF-8), `INVALID_REQUEST` (malformed capability segment or unreadable body) |
+| `401` | `UNAUTHENTICATED`, with `WWW-Authenticate: Bearer` |
+| `403` | `FORBIDDEN`, `HOST_NOT_ALLOWED`, `ORIGIN_NOT_ALLOWED` |
+| `404` | `CAPABILITY_NOT_FOUND`, `NOT_FOUND` (unknown route) |
+| `405` | `METHOD_NOT_ALLOWED`, with `Allow` |
+| `413` | `PAYLOAD_TOO_LARGE` |
+| `415` | `UNSUPPORTED_MEDIA_TYPE` |
+| `422` | `DOMAIN_ERROR`, a declared domain error with `publicDetails` `{ code, retryable, details? }` |
+| `500` | `OUTPUT_INVALID`, `EXECUTION_FAILED`, `INTERNAL_ERROR` |
+| `503` | `CANCELLED` |
+
+`CANCELLED` is 503 because a client that receives it was stopped by a
+capability timeout, server shutdown, or dependency cancellation rather than by
+its own disconnect. The adapter uses neither the non-standard 499 nor 408
+Request Timeout, which describes a slow client and which some user agents
+retry automatically.
+
+`DOMAIN_ERROR` is 422 because the request was well-formed and authorized and
+the capability reported one of its declared domain outcomes. The status is the
+same for every domain code; branch on `publicDetails.code` and read
+`publicDetails.retryable` for the retry hint. `publicDetails` appears only when the
+`EngineError` provides it, and causes and stacks never appear. An unknown error,
+or one whose public fields cannot be serialized, becomes:
+
+```json
+{"error":{"code":"EXECUTION_FAILED","message":"Capability execution failed."}}
+```
+
+Responses carry `Content-Type: application/json`, `Cache-Control: no-store`,
+and `X-Content-Type-Options: nosniff`. A preflight returns an empty 204.
+
+## Authentication
+
+```ts
+type HttpAuthOptions =
+  | {
+      readonly mode: "required";
+      readonly authenticate: (
+        request: HttpAuthenticationRequest,
+      ) => Principal | null | Promise<Principal | null>;
+    }
+  | { readonly mode: "dangerously-disabled-for-development" };
+
+interface HttpAuthenticationRequest {
+  readonly path: string;
+  readonly method: string;
+  readonly headers: HttpHeaderView;
+  readonly signal: AbortSignal;
+}
+
+interface HttpHeaderView {
+  readonly get: (name: string) => string | null;
+  readonly has: (name: string) => boolean;
+}
+```
+
+`auth` is required. The authentication request has the same structure as
+`McpHttpAuthenticationRequest` from [`@invokta/mcp`](/reference/mcp/), so one
+authenticator serves both adapters, including `createJwtBearerAuthenticator`
+from [`@invokta/auth-jwt`](/reference/auth-jwt/). Returning a principal authenticates the
+request; returning `null` or a malformed principal produces 401; throwing
+produces a sanitized 500. The principal is deep-cloned and validated before the
+body is read. In required mode every route, including `openapi.json`, requires
+authentication. Capability authorization stays in the access rule.
+
+A Web `Request` hides raw request details: `Headers` joins repeated header
+lines with `, `, and `request.url` is already normalized, so the handler cannot
+see a duplicated `Authorization` header or a dot-segment alias such as
+`/x/../capabilities`. `serveHttp` rejects both. On another runtime, an
+authenticator must reject a credential value it cannot parse rather than split
+it, and a proxy that routes or denies by raw path must normalize or reject such
+targets before the handler.
+
+<Aside type="danger" title="Development mode supplies no identity">
+  `dangerously-disabled-for-development` serves every route without
+  authentication and invokes with `principal = null`, so `authenticated`
+  capabilities stay closed. Keep it on loopback.
+</Aside>
+
+## CORS
+
+```ts
+interface HttpCorsOptions {
+  readonly allowedOrigins: ReadonlyArray<string>;
+  readonly allowedHeaders?: ReadonlyArray<string>;
+  readonly maxAgeSeconds?: number;
+}
+```
+
+CORS is off by default, and any request with an `Origin` header then receives
+403 `ORIGIN_NOT_ALLOWED` before authentication. `allowedOrigins` is a non-empty
+list of exact HTTP(S) origins; wildcards, paths, and credentials are rejected.
+An allowed origin is reflected in `Access-Control-Allow-Origin` on every
+response, with `Vary: Origin`. Credentialed requests are not enabled, so
+browsers send a bearer token in `Authorization` rather than cookies.
+
+A preflight is an `OPTIONS` request with `Origin` and
+`Access-Control-Request-Method` on an existing route. It is answered before
+authentication with the route's methods, `authorization`, `content-type`, the
+configured `allowedHeaders` (for example an API-key header), and
+`Access-Control-Max-Age` only when `maxAgeSeconds` (0 through 86,400) is set.
+
+## `createHttpOpenApiDocument`
+
+```ts
+interface HttpOpenApiDocumentOptions {
+  readonly basePath?: string;
+  readonly security?: "bearer" | "none";
+}
+
+function createHttpOpenApiDocument<Capabilities extends CapabilityMap>(
+  engine: Engine<Capabilities>,
+  options?: HttpOpenApiDocumentOptions,
+): HttpOpenApiDocument;
+```
+
+The handler serves this document at `openapi.json`, with `security` derived
+from its auth mode. Call the function directly to publish the document from a
+build step:
+
+```ts
+import { writeFile } from "node:fs/promises";
+
+import { createHttpOpenApiDocument } from "@invokta/http";
+
+import { engine } from "./engine.js";
+
+await writeFile(
+  "openapi.json",
+  `${JSON.stringify(createHttpOpenApiDocument(engine), null, 2)}\n`,
+);
+```
+
+The document is OpenAPI 3.1.0 with the JSON Schema 2020-12 dialect. It uses
+only `engine.list()` and `engine.describe()`, so it publishes nothing those
+methods do not. `info` is the engine name and version, and the single server is
+the relative base path, so no host is named.
+
+| Element | Mapping |
+| --- | --- |
+| `GET /capabilities` | `listCapabilities` |
+| `GET /capabilities/{id}` | `describe.<id>` |
+| `POST /capabilities/{id}` | `invoke.<id>`, with the title as summary and the description |
+| Request body | `#/components/schemas/<name>.Input`, the input JSON Schema |
+| `200` response | `#/components/schemas/<name>.Output`, the output JSON Schema |
+| Error responses | The shared `Error` schema; 401 also documents `WWW-Authenticate` |
+| `422` response | Only for a capability with declared `errors`: a `oneOf` with one branch per domain code, fixing the code and retry hint, and `#/components/schemas/<name>.Error.<CODE>` for its details schema |
+| `security: "bearer"` (default) | An HTTP Bearer scheme required by every operation |
+
+`<name>` is the capability key with every character outside `A-Z`, `a-z`,
+`0-9`, `.`, `_`, and `-` replaced by `_` (`_` for an empty key), plus `-2`,
+`-3`, and so on for later collisions. Schemas are copied verbatim, including
+properties named `__proto__`, except for local `#` and `#/...` references in
+schema positions, which are rebased onto the component that contains them so
+they still resolve. A subschema with a non-fragment `$id` is its own resource
+and is not rebased; a fragment-only `$id` such as draft-07 `#plain` is an
+anchor.
+
+Every component shares the document's schema resource, so an `$anchor`,
+`$dynamicAnchor`, or `$id` that would occur twice is ambiguous. That happens
+when one schema with such an identifier is both a capability's input and
+output, or is used by two capabilities. Generation, and therefore handler
+creation, then fails with a `TypeError` naming the capability and identifier.
+Give each published schema its own identifiers, or remove them.
+
+Each call returns a new plain object; a host that authenticates with another
+credential scheme can adjust its security entries before publishing it.
+
+## `serveHttp`
+
+```ts
+interface ServeHttpOptions extends HttpHandlerOptions {
+  readonly host?: string;
+  readonly port?: number;
+}
+
+interface HttpServerHandle {
+  address(): { readonly host: string; readonly port: number };
+  close(): Promise<void>;
+}
+
+function serveHttp<Capabilities extends CapabilityMap>(
+  engine: Engine<Capabilities>,
+  options: ServeHttpOptions,
+): Promise<HttpServerHandle>;
+```
+
+```ts
+import { serveHttp } from "@invokta/http/node";
+
+const server = await serveHttp(engine, {
+  port: 3000,
+  auth: { mode: "required", authenticate },
+});
+```
+
+`serveHttp` serves `createHttpHandler` on `node:http`. It binds `127.0.0.1` and
+port `3000` by default. A non-loopback bind requires `allowedHosts`; otherwise
+the allowlist is the loopback names plus the bind host. It accepts only an
+origin-form request target whose path URL parsing leaves unchanged, exactly one
+`Host` header without user information, and at most one `Authorization`
+header. It answers anything else, including dot segments such as
+`/x/../capabilities` and `/capabilities/%2e%2e/capabilities`, with 400
+`INVALID_REQUEST`. It aborts
+the request signal when the client disconnects, closes a connection whose body
+was not consumed, and its `close()` is idempotent and aborts active requests.
+Every route, limit, and status is the handler's.
+
+On another runtime, pass the handler to its server. Only `@invokta/http/node`
+needs Node.js:
+
+```ts
+Deno.serve({ hostname: "127.0.0.1", port: 3000 }, handler);
+Bun.serve({ hostname: "127.0.0.1", port: 3000, fetch: handler });
+export default { fetch: handler }; // Cloudflare Workers
+```
+
+## Host responsibilities and limits
+
+The adapter provides no TLS termination, proxy-trust policy, rate limit,
+concurrency limit, compression, streaming, batch invocation, or request ID
+header. Forwarded-host headers are ignored. The host and deployment own those
+controls, and verifiers and capability dependencies must observe their signals
+and apply finite deadlines.
+
+See [execution channels](/guides/execution-channels/) for composition roots,
+the [HTTP authentication guide](/guides/http-authentication/) for verifier
+integration, and the [error reference](/reference/errors/) for invocation
+codes.

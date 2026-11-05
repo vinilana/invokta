@@ -1,25 +1,13 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import type {
-  AnyObjectSchema,
-  SchemaOutput,
-} from "@modelcontextprotocol/sdk/server/zod-compat.js";
-import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import {
   DEFAULT_NEGOTIATED_PROTOCOL_VERSION,
   InitializeRequestSchema,
-  type Notification,
-  type Request,
-  type Result,
-  type ServerNotification,
-  type ServerRequest,
-  type ServerResult,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from "@modelcontextprotocol/sdk/types.js";
 
-type ServerRequestExtra = RequestHandlerExtra<
-  ServerRequest | Request,
-  ServerNotification | Notification
->;
+// Derived from `Server` so this module reaches no further SDK module.
+type SetRequestHandlerArguments = Parameters<Server["setRequestHandler"]>;
+type ServerRequestExtra = Parameters<SetRequestHandlerArguments[1]>[1];
 
 function supportedProtocolVersion(value: unknown): string | undefined {
   return typeof value === "string" &&
@@ -40,12 +28,8 @@ function supportedProtocolVersion(value: unknown): string | undefined {
 export class ProtocolVersionServer extends Server {
   #negotiatedProtocolVersion: string | undefined;
 
-  override setRequestHandler<T extends AnyObjectSchema>(
-    requestSchema: T,
-    handler: (
-      request: SchemaOutput<T>,
-      extra: ServerRequestExtra,
-    ) => ServerResult | Result | Promise<ServerResult | Result>,
+  override setRequestHandler(
+    ...[requestSchema, handler]: SetRequestHandlerArguments
   ): void {
     if ((requestSchema as unknown) !== InitializeRequestSchema) {
       super.setRequestHandler(requestSchema, handler);

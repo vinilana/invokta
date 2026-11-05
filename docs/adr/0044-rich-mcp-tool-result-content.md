@@ -134,8 +134,9 @@ elements of the same array.
 Generated blocks also follow the protocol revision that governs the request.
 `image` exists in every supported revision, `audio` since `2025-03-26`, and
 `resource_link` since `2025-06-18`. Over stdio the revision is the one the
-`initialize` exchange negotiated. Over stateless HTTP it is the request's
-`MCP-Protocol-Version` header, which the SDK transport validates; a request
+`initialize` exchange negotiated. Over stateless HTTP, through `serveMcpHttp`
+or the Web handler of ADR 0042, it is the request's `MCP-Protocol-Version`
+header, which the SDK transport validates; a request
 without the header uses `2025-03-26`, as the specification prescribes. A value
 whose block type the revision does not define stays in the text block like an
 invalid value.

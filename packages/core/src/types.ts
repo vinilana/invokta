@@ -15,7 +15,12 @@ export interface Principal {
   readonly attributes?: Readonly<Record<string, unknown>>;
 }
 
-export type ExecutionSource = "direct" | "cli" | "mcp-stdio" | "mcp-http";
+export type ExecutionSource =
+  | "direct"
+  | "cli"
+  | "mcp-stdio"
+  | "mcp-http"
+  | "http";
 
 export interface EngineLogger {
   debug(message: string, details?: Readonly<Record<string, unknown>>): void;

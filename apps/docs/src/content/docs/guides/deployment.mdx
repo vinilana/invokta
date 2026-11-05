@@ -94,6 +94,16 @@ platform.
   and supervising the container.
 </Aside>
 
+## Serve from a host-owned server or a Fetch runtime
+
+The container context runs the Node.js listener started by `serveMcpHttp`. To
+publish the same endpoint from a server you already operate, a framework such
+as Hono, or a Fetch runtime such as Cloudflare Workers, Deno, or Bun, mount
+`createMcpHttpHandler` from `@invokta/mcp/web` instead. The
+[Web-standard runtimes guide](/guides/web-standard-runtimes/) shows each
+setup. Node.js is the runtime verified by tests; the other runtimes are
+supported by design. `invokta-deploy probe` checks any of these endpoints.
+
 For HTTP adapter behavior, including Host and Origin validation, see the
 [`@invokta/mcp` reference](/reference/mcp/). The
 [`@invokta/deploy` reference](/reference/deploy/) lists the manifest fields,

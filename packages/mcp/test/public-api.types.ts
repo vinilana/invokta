@@ -4,6 +4,7 @@ import { expectTypeOf } from "vitest";
 import {
   beginMcpOAuthAuthorization,
   connectMcpClient,
+  createMcpHttpHandler,
   inspectMcpOAuth,
   isForbiddenMcpClientHeader,
   type McpClientConnection,
@@ -15,6 +16,8 @@ import {
   type McpClientToolPage,
   type McpClientToolResult,
   type McpHttpAuthenticationRequest,
+  type McpHttpHandler,
+  type McpHttpHandlerOptions,
   type McpHttpServerHandle,
   type McpJsonValue,
   type McpOAuthAuthorization,
@@ -34,6 +37,7 @@ import {
   toMcpToolName,
   validateMcpToolCatalog,
 } from "../src/index.js";
+import * as web from "../src/web.js";
 
 expectTypeOf(toMcpToolName("support.classify-ticket")).toEqualTypeOf<string>();
 expectTypeOf(isForbiddenMcpClientHeader("X-API-Key")).toEqualTypeOf<boolean>();
@@ -248,3 +252,34 @@ serveMcpHttp(engine, {
     resourceMetadata: { resource: "https://engine.example.com/mcp" },
   },
 });
+
+const handlerOptions: McpHttpHandlerOptions = {
+  path: "/e/orders/mcp",
+  allowedHosts: ["engine.example.com"],
+  allowedOrigins: ["https://console.example.com"],
+  maxRequestBodyBytes: 1024,
+  auth: { mode: "required", authenticate: () => principal },
+};
+expectTypeOf(
+  createMcpHttpHandler(engine, handlerOptions),
+).toEqualTypeOf<McpHttpHandler>();
+expectTypeOf<McpHttpHandler>().toEqualTypeOf<
+  (request: Request) => Promise<Response>
+>();
+expectTypeOf(web.createMcpHttpHandler).toEqualTypeOf(createMcpHttpHandler);
+expectTypeOf<web.McpHttpHandlerOptions>().toEqualTypeOf<McpHttpHandlerOptions>();
+expectTypeOf<ServeMcpHttpOptions>().toExtend<McpHttpHandlerOptions>();
+
+createMcpHttpHandler(engine, {
+  // @ts-expect-error A Web handler does not bind a listener.
+  port: 3000,
+  auth: { mode: "dangerously-disabled-for-development" },
+});
+
+createMcpHttpHandler(engine, {
+  // @ts-expect-error Authentication cannot be omitted implicitly.
+  auth: undefined,
+});
+
+// @ts-expect-error The portable entry point does not include the Node.js listener.
+web.serveMcpHttp;

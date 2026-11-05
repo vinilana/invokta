@@ -1,0 +1,212 @@
+---
+title: Instrument an engine with OpenTelemetry
+description: Export one span per invocation and invocation metrics from engine events to the OpenTelemetry SDK your host runs.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Use this pattern when operators need invocation traces and RED metrics (rate,
+errors, duration) in the OpenTelemetry backend they already run. The engine
+attaches `@invokta/otel` to its `onEvent` hook; the host registers the
+OpenTelemetry SDK and exporter. Capabilities, schemas, and adapters do not
+change.
+
+This recipe follows the repository's `observability-engine` example, whose
+provider-backed composition root is instrumented this way.
+
+## Build the boundary
+
+<Steps>
+
+1. Install the instrumentation and the OpenTelemetry API
+
+   ```sh
+   npm install @invokta/otel @opentelemetry/api
+   ```
+
+   The API is a peer dependency, so the engine and the host's SDK share one
+   instance.
+
+2. Attach the handler at the composition root
+
+   ```ts
+   import { createEngine, type EngineEvent } from "@invokta/core";
+   import { createOpenTelemetryEventHandler } from "@invokta/otel";
+
+   export interface ObservabilityEngineOptions {
+     readonly onEvent?: (event: EngineEvent) => void | Promise<void>;
+   }
+
+   export function createObservabilityEngine(
+     dependencies: ObservabilityDependencies,
+     options: ObservabilityEngineOptions = {},
+   ) {
+     return createEngine({
+       name: "observability-engine",
+       version: "0.1.0",
+       capabilities: {
+         "observability.collect-incident-context":
+           createCollectIncidentContext(dependencies),
+       },
+       ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
+     });
+   }
+
+   export function createProviderBackedObservabilityEngine() {
+     // ... construct the Sentry, Datadog, and New Relic connectors
+     return createObservabilityEngine(ports, {
+       onEvent: createOpenTelemetryEventHandler(),
+     });
+   }
+   ```
+
+   Without options the handler reports to the global tracer and meter
+   providers. Until a host registers an SDK, the OpenTelemetry API records
+   nothing.
+
+3. Register an SDK in the host
+
+   The host owns the SDK, exporter, sampling, and resource. This
+   `instrumentation.mjs` prints spans and metrics to the console:
+
+   ```js
+   import { context, metrics, trace } from "@opentelemetry/api";
+   import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+   import {
+     ConsoleMetricExporter,
+     MeterProvider,
+     PeriodicExportingMetricReader,
+   } from "@opentelemetry/sdk-metrics";
+   import {
+     ConsoleSpanExporter,
+     SimpleSpanProcessor,
+     TracerProvider,
+   } from "@opentelemetry/sdk-trace";
+
+   const tracerProvider = new TracerProvider({
+     spanProcessors: [
+       new SimpleSpanProcessor({ exporter: new ConsoleSpanExporter() }),
+     ],
+   });
+   const meterProvider = new MeterProvider({
+     readers: [
+       new PeriodicExportingMetricReader({
+         exporter: new ConsoleMetricExporter(),
+       }),
+     ],
+   });
+
+   context.setGlobalContextManager(
+     new AsyncLocalStorageContextManager().enable(),
+   );
+   trace.setGlobalTracerProvider(tracerProvider);
+   metrics.setGlobalMeterProvider(meterProvider);
+
+   // Flush before a short-lived CLI or direct process exits.
+   process.once("beforeExit", () => {
+     void Promise.all([tracerProvider.shutdown(), meterProvider.shutdown()]);
+   });
+   ```
+
+   Preload it so the providers exist before the first invocation:
+
+   ```sh
+   node --import ./instrumentation.mjs dist/mcp-http.js
+   ```
+
+   Replace the console exporters with OTLP exporters, or start
+   `@opentelemetry/sdk-node`, for a production backend.
+
+4. Nest a capability's own spans when needed
+
+   The invocation span is not active inside `run`. Inject the handler's
+   `contextFor` and run the work inside it:
+
+   ```ts
+   import { context, trace } from "@opentelemetry/api";
+
+   const telemetry = createOpenTelemetryEventHandler();
+   const tracer = trace.getTracer("observability-engine");
+
+   async run({ input, context: execution }) {
+     return context.with(telemetry.contextFor(execution.requestId), () =>
+       tracer.startActiveSpan("incident.collect", async (span) => {
+         try {
+           return await collect(input, execution.signal);
+         } finally {
+           span.end();
+         }
+       }),
+     );
+   }
+   ```
+
+   Pass the same `telemetry` value to `onEvent` so `contextFor` sees its
+   pending spans. Keep request IDs unique among concurrent invocations: while
+   two running invocations share one, `contextFor` resolves no span and their
+   spans end without an outcome.
+
+</Steps>
+
+<Aside type="caution" title="Keep principal IDs out by default">
+  The handler does not record principal IDs unless you set
+  `recordPrincipalId: true`. Enable it only when your telemetry backend is
+  approved to store that identifier.
+</Aside>
+
+## Run it
+
+From the repository root, build the workspace and run the example's
+instrumentation tests. They use the OpenTelemetry SDK with in-memory
+exporters, a local provider stub, and no credentials:
+
+```sh
+yarn build
+yarn vitest run examples/observability-engine/test/opentelemetry-instrumentation.test.ts
+```
+
+The tests export spans named `invoke observability.collect-incident-context`
+with these attributes for a successful CLI-sourced invocation:
+
+```json
+{
+  "invokta.capability.id": "observability.collect-incident-context",
+  "invokta.execution.source": "cli",
+  "invokta.request.id": "incident-1",
+  "invokta.invocation.outcome": "completed"
+}
+```
+
+With the provider credentials from the example README exported, preload your
+SDK module in front of any entry point:
+
+```sh
+node --import ./instrumentation.mjs \
+  examples/observability-engine/dist/cli.js \
+  run observability.collect-incident-context \
+  --input '{"service":"checkout-api","from":"2026-07-28T12:00:00.000Z","to":"2026-07-28T13:00:00.000Z"}'
+```
+
+## Verify it
+
+The example tests prove successful and failed spans, sanitized error codes, and
+the provider-backed composition root reporting to a globally registered SDK:
+
+```sh
+yarn workspace @invokta/example-observability test
+yarn workspace @invokta/example-observability typecheck
+yarn workspace @invokta/example-observability build
+```
+
+The package tests cover span timing and parentage, `contextFor` nesting,
+eviction, reused request IDs, bounded attributes, and contained
+instrumentation failures:
+
+```sh
+yarn vitest run packages/otel
+```
+
+Read the [`@invokta/otel` reference](/reference/otel/) for every attribute,
+metric, and limit, and the complete
+[`observability-engine`](https://github.com/vinilana/invokta/tree/main/examples/observability-engine)
+example for the instrumented composition root and its tests.

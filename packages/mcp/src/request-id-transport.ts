@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   MessageExtraInfo,
   RequestId,
@@ -48,9 +47,9 @@ class FalsyRequestIdTransport implements Transport {
   ) => void;
 
   private readonly numericZeroSentinel =
-    `\u0000invokta-request-id:${randomUUID()}:numeric-zero`;
+    `\u0000invokta-request-id:${globalThis.crypto.randomUUID()}:numeric-zero`;
   private readonly emptyStringSentinel =
-    `\u0000invokta-request-id:${randomUUID()}:empty-string`;
+    `\u0000invokta-request-id:${globalThis.crypto.randomUUID()}:empty-string`;
 
   constructor(private readonly transport: Transport) {}
 

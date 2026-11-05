@@ -2,8 +2,8 @@ import { pathToFileURL } from "node:url";
 
 import { type McpHttpServerHandle, serveMcpHttp } from "@invokta/mcp";
 
+import { createDevelopmentBearerAuthenticator } from "./bearer-authentication.js";
 import { engine } from "./engine.js";
-import { localPrincipal } from "./local-principal.js";
 
 export interface SupportMcpHttpOptions {
   readonly expectedBearerToken: string;
@@ -19,12 +19,9 @@ export async function startSupportMcpHttp(
     ...(options.port === undefined ? {} : { port: options.port }),
     auth: {
       mode: "required",
-      authenticate(request) {
-        return request.headers.get("authorization") ===
-          `Bearer ${options.expectedBearerToken}`
-          ? localPrincipal
-          : null;
-      },
+      authenticate: createDevelopmentBearerAuthenticator(
+        options.expectedBearerToken,
+      ),
     },
   });
 }

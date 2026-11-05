@@ -1,7 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { performance } from "node:perf_hooks";
-import { types as nodeUtilTypes } from "node:util";
-
 import {
   type DomainErrorPublicDetails,
   describeDeclaredErrors,
@@ -10,6 +6,7 @@ import {
   snapshotDeclaredErrors,
 } from "./capability-error.js";
 import { EngineError, type EngineErrorCode } from "./error.js";
+import { isProxy } from "./host-types.js";
 import {
   type InferSchemaInput,
   type InferSchemaOutput,
@@ -78,7 +75,6 @@ const abortSignalReasonGetter = Object.getOwnPropertyDescriptor(
 const abortSignalAddEventListener = AbortSignal.prototype.addEventListener;
 const abortSignalRemoveEventListener =
   AbortSignal.prototype.removeEventListener;
-const isProxy = nodeUtilTypes.isProxy;
 // Codes a thrown EngineError may keep. DOMAIN_ERROR is absent on purpose: only
 // the runtime issues it, after checking a CapabilityError against the contract.
 const engineErrorCodes = new Set<EngineErrorCode>([
@@ -522,7 +518,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
       return snapshotLosslessJson(description);
     },
     async invoke(capabilityId, rawInput, options) {
-      let requestId: string = randomUUID();
+      let requestId: string = globalThis.crypto.randomUUID();
       let source: ExecutionContext["source"] = "direct";
       let optionsError: EngineError | undefined;
       try {
@@ -542,7 +538,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           principalError = unauthenticated(cause);
         }
       }
-      const started = performance.now();
+      const started = globalThis.performance.now();
       emit({
         type: "invocation.started",
         requestId,
@@ -556,7 +552,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           type: "invocation.failed",
           requestId,
           capabilityId,
-          durationMs: performance.now() - started,
+          durationMs: globalThis.performance.now() - started,
           code: optionsError.code,
         });
         throw optionsError;
@@ -691,7 +687,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           type: "invocation.completed",
           requestId,
           capabilityId,
-          durationMs: performance.now() - started,
+          durationMs: globalThis.performance.now() - started,
         });
         return output as CapabilityOutput<Capabilities[typeof capabilityId]>;
       } catch (cause) {
@@ -705,7 +701,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           type: "invocation.failed",
           requestId,
           capabilityId,
-          durationMs: performance.now() - started,
+          durationMs: globalThis.performance.now() - started,
           code: error.code,
           ...(error === domainError
             ? {

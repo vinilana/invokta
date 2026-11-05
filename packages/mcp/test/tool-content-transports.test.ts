@@ -11,7 +11,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { createEngine, defineCapability } from "@invokta/core";
 import { beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
+
+import { createMcpHttpHandler } from "../src/web.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixturePath = fileURLToPath(
@@ -267,6 +271,84 @@ describe("rich MCP tool result content over both transports", () => {
       } finally {
         await fixture.stop();
       }
+    },
+  );
+});
+
+describe("rich MCP tool result content through the Web handler", () => {
+  const handler = createMcpHttpHandler(
+    createEngine({
+      name: "rich-content-web-engine",
+      version: "0.1.0",
+      capabilities: {
+        "media.render": defineCapability({
+          description: "Returns annotated image, audio, and link content.",
+          input: z.object({}),
+          output: z.object({
+            chart: z.string().meta({
+              contentEncoding: "base64",
+              contentMediaType: "image/png",
+            }),
+            speech: z.string().meta({
+              contentEncoding: "base64",
+              contentMediaType: "audio/wav",
+            }),
+            report: z.object({
+              uri: z.httpUrl().meta({ contentMediaType: "text/uri-list" }),
+              name: z.string(),
+            }),
+          }),
+          access: "public",
+          async run() {
+            return {
+              chart,
+              speech: voice,
+              report: { uri: report.uri, name: report.name },
+            };
+          },
+        }),
+      },
+    }),
+    { auth: { mode: "dangerously-disabled-for-development" } },
+  );
+
+  it.each([
+    ["2024-11-05", ["text", "image"]],
+    [undefined, ["text", "image", "audio"]],
+    ["2025-06-18", ["text", "image", "audio", "resource_link"]],
+    ["2025-11-25", ["text", "image", "audio", "resource_link"]],
+  ])(
+    "emits only the block types that protocol %s defines",
+    async (version, types) => {
+      const response = await handler(
+        new Request("http://127.0.0.1:3000/mcp", {
+          method: "POST",
+          headers: {
+            accept: "application/json, text/event-stream",
+            "content-type": "application/json",
+            ...(version === undefined
+              ? {}
+              : { "mcp-protocol-version": version }),
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "media_render", arguments: {} },
+          }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        result: { content: { type: string }[]; structuredContent: unknown };
+      };
+      expect(body.result.content.map(({ type }) => type)).toEqual(types);
+      expect(body.result.structuredContent).toEqual({
+        chart,
+        speech: voice,
+        report: { uri: report.uri, name: report.name },
+      });
     },
   );
 });

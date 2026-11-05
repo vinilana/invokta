@@ -1,67 +1,35 @@
 import { pathToFileURL } from "node:url";
 
-import type { Principal } from "@invokta/core";
 import {
-  type McpHttpAuthenticationRequest,
-  type McpHttpHeaderView,
+  createJwtBearerAuthenticator,
+  isJwtSignatureAlgorithm,
+  type JwtBearerAuthenticator,
+  type JwtSignatureAlgorithm,
+} from "@invokta/auth-jwt";
+import {
   type McpHttpProtectedResourceMetadata,
   type McpHttpServerHandle,
   serveMcpHttp,
 } from "@invokta/mcp";
-import { createRemoteJWKSet } from "jose";
 
 import { engine } from "./engine.js";
-import {
-  type AccessTokenVerifier,
-  createAccessTokenVerifier,
-  defaultJwksTimeoutMs,
-  resolveJwksUri,
-} from "./identity/verifier.js";
+import { resolveJwksUri } from "./identity/jwks-location.js";
 
 /**
- * Reads the Bearer credential from the request headers.
- *
- * The adapter rejects a request carrying more than one raw `Authorization`
- * header before the hook runs, so exactly one value is possible here. The
- * scheme is matched case-insensitively per RFC 9110; anything that is not a
- * single non-whitespace token is treated as "no credential".
+ * Signature algorithms accepted when `AUTH_JWT_ALGORITHMS` is unset. The
+ * authenticator requires an explicit allowlist: without one, a token could
+ * choose its own algorithm.
  */
-export function readBearerToken(headers: McpHttpHeaderView): string | null {
-  const authorization = headers.get("authorization");
-  if (authorization === null) return null;
-
-  const match = /^Bearer (\S+)$/iu.exec(authorization);
-  return match?.[1] ?? null;
-}
-
-/**
- * Builds the `authenticate` hook.
- *
- * The three outcomes are deliberate and distinct:
- *
- * - a `Principal` for a credential that verified;
- * - `null` for a missing, malformed, expired, or otherwise invalid credential,
- *   which the adapter answers with HTTP 401;
- * - a rejected promise only when the check could not complete, which the
- *   adapter answers with a sanitized HTTP 500.
- *
- * Never collapse the third case into the second: an unreachable key source is
- * not proof that the caller presented a bad token.
- */
-export function createJwtBearerAuthenticate(
-  verifier: AccessTokenVerifier,
-): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
-  return async (request) => {
-    const token = readBearerToken(request.headers);
-    if (token === null) return null;
-    // The request signal is handed to the verifier so its I/O ends when the
-    // caller disconnects.
-    return verifier.verify(token, { signal: request.signal });
-  };
-}
+export const defaultSignatureAlgorithms: ReadonlyArray<JwtSignatureAlgorithm> =
+  Object.freeze(["RS256", "ES256"]);
 
 export interface AuthJwtBearerMcpHttpOptions {
-  readonly verifier: AccessTokenVerifier;
+  /**
+   * The `@invokta/auth-jwt` authenticator. It resolves a `Principal` for a
+   * verified token, `null` for a missing or invalid credential (HTTP 401), and
+   * rejects only when the check could not complete (sanitized HTTP 500).
+   */
+  readonly authenticate: JwtBearerAuthenticator;
   readonly host?: string;
   readonly port?: number;
   readonly allowedHosts?: ReadonlyArray<string>;
@@ -78,7 +46,9 @@ export interface AuthJwtBearerMcpHttpOptions {
    * `scopesSupported`: the challenge is authoritative for the current request,
    * while the metadata describes the minimal generally supported set. The
    * adapter requires `resourceMetadata` alongside them, and omitting them is
-   * correct when the policy cannot name a stable base set.
+   * correct when the policy cannot name a stable base set. When the
+   * authenticator has `requiredScopes`, list them here so a client holding a
+   * token without them learns what to request.
    */
   readonly challengeScopes?: ReadonlyArray<string>;
 }
@@ -97,7 +67,7 @@ export async function startAuthJwtBearerMcpHttp(
       : { allowedOrigins: options.allowedOrigins }),
     auth: {
       mode: "required",
-      authenticate: createJwtBearerAuthenticate(options.verifier),
+      authenticate: options.authenticate,
       ...(options.resourceMetadata === undefined
         ? {}
         : { resourceMetadata: options.resourceMetadata }),
@@ -126,6 +96,18 @@ function readList(name: string): ReadonlyArray<string> | undefined {
   if (items.length === 0)
     throw new Error(`${name} must list at least one entry.`);
   return items;
+}
+
+function readAlgorithms(): ReadonlyArray<JwtSignatureAlgorithm> {
+  const configured = readList("AUTH_JWT_ALGORITHMS");
+  if (configured === undefined) return defaultSignatureAlgorithms;
+  const algorithms = configured.filter(isJwtSignatureAlgorithm);
+  if (algorithms.length !== configured.length) {
+    throw new Error(
+      "AUTH_JWT_ALGORITHMS may list only asymmetric JWS algorithms such as RS256 or ES256.",
+    );
+  }
+  return algorithms;
 }
 
 function readPort(): number {
@@ -185,6 +167,9 @@ function readChallengeScopes(
  *   AUTH_JWT_JWKS_URI               explicit key-set URL; defaults to the
  *                                     conventional location under the issuer
  *   AUTH_JWT_ALGORITHMS             comma-separated signature allowlist
+ *   AUTH_JWT_REQUIRED_SCOPES        comma-separated scopes every token must
+ *                                     grant; list them in
+ *                                     AUTH_JWT_CHALLENGE_SCOPES as well
  *   AUTH_JWT_RESOURCE               public /mcp URL; enables Protected Resource
  *                                     Metadata and the discovery challenge
  *   AUTH_JWT_AUTHORIZATION_SERVERS  comma-separated AS issuers for the metadata
@@ -200,16 +185,18 @@ function readChallengeScopes(
  */
 export async function main(): Promise<McpHttpServerHandle> {
   const issuer = requireValue("AUTH_JWT_ISSUER");
-  const audience = requireValue("AUTH_JWT_AUDIENCE");
-  const algorithms = readList("AUTH_JWT_ALGORITHMS");
-  const jwksUri = resolveJwksUri(issuer, process.env.AUTH_JWT_JWKS_URI);
+  const requiredScopes = readList("AUTH_JWT_REQUIRED_SCOPES");
 
-  // The remote key set caches and bounds its own I/O. The verifier still
-  // observes the request signal, so a disconnect ends the check as well.
-  const getKey = createRemoteJWKSet(new URL(jwksUri), {
-    timeoutDuration: defaultJwksTimeoutMs,
-    cooldownDuration: 30_000,
-    cacheMaxAge: 600_000,
+  // The remote key set is fetched on first use with a bounded timeout, cached,
+  // and refetched for an unknown key at most once per cooldown. The
+  // authenticator also observes the request signal, so a disconnect ends the
+  // check.
+  const authenticate = createJwtBearerAuthenticator({
+    issuer,
+    audience: requireValue("AUTH_JWT_AUDIENCE"),
+    algorithms: readAlgorithms(),
+    jwksUrl: resolveJwksUri(issuer, process.env.AUTH_JWT_JWKS_URI),
+    ...(requiredScopes === undefined ? {} : { requiredScopes }),
   });
 
   const host = process.env.AUTH_JWT_HOST;
@@ -219,12 +206,7 @@ export async function main(): Promise<McpHttpServerHandle> {
   const challengeScopes = readChallengeScopes(resourceMetadata);
 
   return startAuthJwtBearerMcpHttp({
-    verifier: createAccessTokenVerifier({
-      issuer,
-      audience,
-      getKey,
-      ...(algorithms === undefined ? {} : { algorithms }),
-    }),
+    authenticate,
     ...(host === undefined || host === "" ? {} : { host }),
     port: readPort(),
     ...(allowedHosts === undefined ? {} : { allowedHosts }),
