@@ -641,3 +641,14 @@ export function composeCapabilities<
 export function isComposedCapabilities(value: unknown): boolean {
   return hasBrand(value, composedCapabilitiesBrand);
 }
+
+/**
+ * Internal to the core: carries composition provenance over to a map derived
+ * one-to-one from a composed map, so the same effective IDs keep their
+ * collision guarantee. Not exported from the package root.
+ */
+export function markComposedCapabilities<Value extends object>(
+  value: Value,
+): Value {
+  return brand(value, composedCapabilitiesBrand);
+}

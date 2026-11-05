@@ -7,6 +7,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `@invokta/core` exports `applyMiddleware(capabilities, ...middleware)` with
+  the `CapabilityMiddleware` and `CapabilityMiddlewareArgs` types. It returns a
+  new frozen capability map whose `run` functions execute the middleware, first
+  listed outermost, around the original handler, while every other capability
+  field is kept by identity. Input validation and `access` still run before the
+  chain, the timeout and cancellation signal cover it, its final result is
+  validated against the output schema, and middleware errors are normalized
+  like `run` errors. `next()` takes no arguments and starts the next layer at
+  most once. Composed maps keep their composition provenance, so
+  `invokta check-capabilities` accepts wrapped compositions. The engine, its
+  six stages, and its single `onEvent` hook are unchanged; a new recipe shows
+  audit logging, rate limiting, and caching middleware with their limits
+  (ADR 0051).
+
 ### Fixed
 
 - Release publication waits up to 10 minutes, with checks backing off from 5 to

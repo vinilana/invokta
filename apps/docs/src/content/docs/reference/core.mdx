@@ -1,6 +1,6 @@
 ---
 title: '@invokta/core'
-description: Complete public API reference for capability and connector contracts, engine execution, schemas, events, errors, and composition.
+description: Complete public API reference for capability and connector contracts, engine execution, schemas, events, errors, composition, and middleware.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -37,6 +37,7 @@ The package root exposes these public groups:
 | Composition values | `ExportedCapability`, `CapabilityLibrary`, `CapabilityImport`, `AnyCapabilityImport`, `ComposedCapabilities`, `CapabilitySource` |
 | Composition functions | `defineExportedCapability`, `defineCapabilityLibrary`, `importCapability`, `importCapabilities`, `composeCapabilities`, `isComposedCapabilities` |
 | Composition diagnostics | `CapabilityCompositionError`, `CapabilityCompositionIssue`, `CapabilityDeclarationProvenance`, `isCapabilityCompositionError` |
+| Middleware | `applyMiddleware`, `CapabilityMiddleware`, `CapabilityMiddlewareArgs` |
 
 Only the package root is exported. Internal schema, pipeline, and composition
 helpers are not public subpaths.
@@ -383,6 +384,79 @@ Use `isCapabilityCompositionError(error)` rather than `instanceof` when two
 installed copies of the core may exist. It recognizes the stable code and issue
 shape. Use `isComposedCapabilities(value)` to confirm a map retains composition
 provenance.
+
+## `applyMiddleware`
+
+```ts
+interface CapabilityMiddlewareArgs {
+  readonly capabilityId: string;
+  readonly input: unknown;
+  readonly context: ExecutionContext;
+  readonly next: () => Promise<unknown>;
+}
+
+type CapabilityMiddleware = (
+  args: CapabilityMiddlewareArgs,
+) => Promise<unknown>;
+
+function applyMiddleware<Capabilities extends CapabilityMap>(
+  capabilities: Capabilities,
+  ...middleware: readonly CapabilityMiddleware[]
+): Capabilities;
+```
+
+`applyMiddleware` returns a new frozen map with the same keys, in the same
+order, and the same static type. Each capability is a frozen copy that keeps
+every other field by identity, including schemas, `access`, `title`,
+`description`, `annotations`, and `timeoutMs`, and replaces only `run` with the
+middleware chain. The function is eager and synchronous: it reads each field
+once, registers nothing, performs no I/O, and calls no middleware, access rule,
+or handler. With no middleware it returns a frozen copy holding the original
+capabilities.
+
+```ts
+const capabilities = applyMiddleware(
+  composeCapabilities({ local, imports }),
+  auditLog,
+  rateLimit,
+);
+
+const engine = createEngine({ name, version, capabilities });
+```
+
+The first listed middleware is outermost and `run` is innermost. Applying
+middleware to an already wrapped map adds the new chain outside the earlier one.
+Because the chain replaces `run`, the engine validates input and enforces
+`access` before the first middleware, applies `timeoutMs` and caller
+cancellation to the whole chain through `context.signal`, validates the
+outermost result against the output schema, and normalizes a middleware error
+exactly like a `run` error.
+
+| Argument | Value |
+| --- | --- |
+| `capabilityId` | The capability's key in the map passed to `applyMiddleware` |
+| `input` | A deep-frozen snapshot of the validated input; `run` receives its own unmodified copy |
+| `context` | The engine's `ExecutionContext`, passed through unchanged |
+| `next` | Runs the rest of the chain and `run`, resolving to the unvalidated result |
+
+`next()` accepts no replacement input or context. A middleware may call it at
+most once while it is pending. A repeated call or a call after the middleware
+settled rejects with `TypeError` without running the next layer, and becomes
+`EXECUTION_FAILED` if it propagates. A call after the invocation signal aborted
+rejects with the abort reason without running the next layer.
+
+When the source map is a composed map, the result keeps its composition
+provenance and `isComposedCapabilities` returns `true`; a plain map never gains
+it. Wrapped capabilities may also be passed to `composeCapabilities`,
+`defineExportedCapability`, and `defineCapabilityLibrary`. Middleware applied
+before composition observes the key at that point, such as a library default
+ID, rather than the consumer's effective ID.
+
+A non-object or proxy map, a non-function middleware, and a capability that is
+not a non-proxy object with a `run` function throw `TypeError`. The core ships
+no concrete middleware; the [middleware recipe](/recipes/capability-middleware/)
+provides tested audit, rate-limit, and cache examples with their production
+limits.
 
 ## Invocation errors
 

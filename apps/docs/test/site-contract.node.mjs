@@ -60,6 +60,7 @@ const requiredRoutes = [
   "/examples/",
   "/recipes/",
   ...requiredRecipeRoutes,
+  "/recipes/capability-middleware/",
   "/reference/",
   ...packageReferences.map(([route]) => `/reference/${route}/`),
   "/reference/errors/",
@@ -424,6 +425,39 @@ test("recipes provide runnable commands, verification, and full examples", async
       relative(appRoot, path),
     );
   }
+});
+
+test("the middleware recipe matches its executable copies", async () => {
+  const recipe = await readFile(
+    join(contentRoot, "recipes", "capability-middleware.mdx"),
+    "utf8",
+  );
+  const executable = await readFile(
+    join(
+      repositoryRoot,
+      "packages",
+      "core",
+      "test",
+      "middleware-recipes.test.ts",
+    ),
+    "utf8",
+  );
+  const documented = [...recipe.matchAll(/^```ts\n(.*?)^```$/gmsu)]
+    .map((match) => match[1])
+    .join("\n");
+  const blocks = [
+    ...executable.matchAll(
+      /^\/\/ --- recipe: ([^\n]*?) -+\n(.*?)^\/\/ --- end recipe/gmsu,
+    ),
+  ];
+
+  assert.ok(blocks.length >= 4);
+  for (const [, name, code] of blocks) {
+    assert.ok(documented.includes(code.trim()), name);
+  }
+  assert.match(recipe, /^## Verify it$/mu);
+  assert.match(recipe, /packages\/core\/test\/middleware-recipes\.test\.ts/u);
+  assert.match(recipe, /not a framework export/u);
 });
 
 test("public copy avoids unsupported hype and prohibited phrasing", async () => {

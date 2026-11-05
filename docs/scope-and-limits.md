@@ -25,9 +25,9 @@ not create another capability execution path.
 
 **AE-SCOPE-02 — Framework.** Invokta provides typed capability and connector
 definitions, runtime capability validation, synchronous private connector
-configuration validation, eager composition, direct execution, minimal context,
-access enforcement, events, CLI and MCP adapters, and narrowly scoped supporting
-tools.
+configuration validation, eager composition, capability middleware
+composition, direct execution, minimal context, access enforcement, events, CLI
+and MCP adapters, and narrowly scoped supporting tools.
 
 **AE-SCOPE-03 — Custom engine.** Capabilities, prompts, models, engine-owned
 ports, outbound connectors for model, data, and tool integrations, business rules,
@@ -58,7 +58,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Required capability fields | 5 |
 | Invocation pipeline stages | 6 |
 | Invocation error codes | 7 |
-| Cross-cutting hooks | 1: `onEvent` |
+| Cross-cutting hooks | 1: `onEvent`; capability middleware is composed into `run`, not registered (ADR 0051) |
 | Auth or PDP implementations | 0 |
 | Containers or runtime plugin systems | 0 |
 | Devtools workbenches served together | 2: MCP and CLI, each idle until Connect |
@@ -86,7 +86,9 @@ scheduling, arbitrary streaming, or a progress API.
 **AE-LIMIT-02 — Architecture.** Invokta does not provide a dependency
 container, service locator, runtime plugin discovery, remote registry, or
 mutable module lifecycle. Capability composition is explicit, eager, and based
-on values imported by the application.
+on values imported by the application. Capability middleware is a pure function
+the application applies to an explicit capability map; the engine does not
+register, discover, or order it.
 
 **AE-LIMIT-03 — AI and quality.** Invokta does not provide a model router,
 context compiler, memory, RAG abstraction, prompt registry, official provider

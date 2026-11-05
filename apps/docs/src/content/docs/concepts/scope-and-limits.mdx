@@ -21,6 +21,7 @@ host owns identity and deployment controls.
 | Authentication | Required HTTP hook and optional protected-resource metadata | Credential verifier, identity provider, token policy, and verifier timeout |
 | Authorization | Enforcement of each capability's `access` rule | Roles, scopes, tenants, PDP integration, and domain policy |
 | Observability | Payload-free `onEvent` lifecycle hook and logger | Metrics, tracing, storage, alerts, costs, and domain measurements |
+| Cross-cutting behavior | `applyMiddleware` composition around each capability's `run` | Audit, rate-limit, cache, and idempotency policies and their stores |
 | AI behavior | Replaceable implementation boundary | Prompts, models, retrieval, tools, evidence, evaluations, and review |
 | Supporting tools | Engine creator, composition checker, confirmed MCP client configuration, deployment artifact generator | Engine execution, client policy, and operational authority |
 

@@ -80,6 +80,8 @@ ADR 0037 defines the optional typed construction helper.
 This pipeline has no port registry, concurrency slot, queue,
 before/after/onError policies, obligations, retry, fallback, cache, or model
 routing. Those decisions belong to the capability or its injected dependencies.
+Middleware composed into a capability's `run` (AE-MIDDLEWARE-01) is part of
+the capability, not a pipeline policy.
 
 Input and output validation includes checking the value produced by the Standard
 Schema transformation against the lossless JSON data model in ADR 0002. A value
@@ -110,6 +112,26 @@ When present, `timeoutMs` MUST be an integer from `1` through `2_147_483_647`,
 inclusive. `createEngine` validates this limit synchronously. Zero, negative or
 fractional values, non-finite numbers, and values above the limit fail
 construction with `TypeError`; they never reach the host timer implementation.
+
+## Capability middleware
+
+**AE-MIDDLEWARE-01 — Composition, not a pipeline stage.**
+`applyMiddleware(capabilities, ...middleware)` MAY wrap the `run` of every
+capability in an explicit map before `createEngine`. It is pure, eager, and
+synchronous: it returns a new frozen map with the same keys and copies of the
+capabilities that keep every other field by identity, registers nothing, and
+invokes no middleware, access rule, or handler. The chain therefore executes
+inside stage 5: input validation and `access` complete before the first
+middleware, the capability timeout and caller cancellation cover the whole
+chain through `context.signal`, the outermost result is validated against the
+output schema, and middleware failures are normalized exactly like `run`
+failures. A middleware receives the map key as `capabilityId`, a deep-frozen
+input snapshot, the unchanged `ExecutionContext`, and an argument-free
+`next()`. The first listed middleware is outermost. `next()` may start the next
+layer at most once, only while its middleware is pending and the signal is not
+aborted; other calls reject with `TypeError` or the abort reason. A composed
+map keeps its composition provenance; a plain map never gains it. ADR 0051
+defines the complete boundary.
 
 ## Errors
 
@@ -168,6 +190,9 @@ framework provides no delivery-completion guarantee. Rejections from the hook an
 asynchronous diagnostic logger are contained without producing an unhandled
 rejection. After successful output validation, the runtime MUST clear its
 capability timeout before invoking the completed hook.
+Capability middleware (AE-MIDDLEWARE-01) is composed into a capability's `run`
+before engine construction; it is not an engine hook and does not change this
+event stream.
 
 ## CLI
 
