@@ -431,8 +431,13 @@ details, a throwing validator, a non-object result, look-alike, prototype-forged
 proxied, and mutated errors, a forged `DOMAIN_ERROR`, a nested invocation's
 domain error, and an access-rule `CapabilityError`), cancellation precedence,
 the capability timeout during details validation, `describe` snapshots, and the
-construction limits. Public type tests prove that typed `CapabilityError`
-arguments reject undeclared codes and missing or mistyped details. On the
-development container (Node.js 22.23), `yarn run check` passed 3,265 tests with
-two skipped and all 19 example gates, and `yarn validate` in `apps/docs` passed
-its 15 contract tests, zero Astro diagnostics, and the 49-page build.
+construction limits. Two tests added in review pin that a `CapabilityError`
+thrown by the input or output validator is normalized as `INPUT_INVALID` or
+`OUTPUT_INVALID`. Public type tests prove that typed `CapabilityError`
+arguments reject undeclared codes and missing or mistyped details, that a second
+type argument narrows `code`, and that typed errors stay assignable to the plain
+`CapabilityError` type, which review found failing before the `Code` parameter.
+On the development container (Node.js 22.23), `yarn run check` passed 3,267
+tests with two skipped and all 19 example gates, and `yarn validate` in
+`apps/docs` passed its 15 contract tests, zero Astro diagnostics, and the
+49-page build.

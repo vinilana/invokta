@@ -24,8 +24,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 
 - `EngineErrorCode` gains `DOMAIN_ERROR`, the only framework code for declared
-  domain errors. Exhaustive `switch` statements that assert `never` must handle
-  it; engines that declare no domain errors never produce it.
+  domain errors. Exhaustive `switch` statements that assert `never` and
+  exhaustive `Record<EngineErrorCode, ...>` maps, including `satisfies` checks,
+  must handle it; engines that declare no domain errors never produce it.
 - The `support-engine` example reports a missing ticket as the declared
   `TICKET_NOT_FOUND` domain error instead of `EXECUTION_FAILED`, and its local
   operator may access the missing ticket `T-404` to demonstrate it.

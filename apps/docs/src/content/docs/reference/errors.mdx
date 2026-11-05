@@ -52,8 +52,9 @@ try {
 | `DOMAIN_ERROR` | `run` raised a domain error declared in the capability contract |
 
 Adding `DOMAIN_ERROR` in 0.10.0 extends the union. An exhaustive `switch` that
-asserts `never` must add the case; engines that declare no domain errors never
-produce it.
+asserts `never`, and an exhaustive `Record<EngineErrorCode, ...>` map such as an
+HTTP status table, must add the case; engines that declare no domain errors
+never produce it.
 
 ## Declared domain errors
 
@@ -142,6 +143,14 @@ received from another invocation, are never published as domain errors.
 `description`, `retryable` flag, and `detailsSchema`, so consumers and agents
 can discover them before calling. `retryable` is a hint: Invokta performs no
 automatic retry.
+
+<Aside type="caution" title="One installed copy of @invokta/core">
+  The engine recognizes only `CapabilityError` instances created by its own copy
+  of `@invokta/core`. A capability package that resolves a second copy still has
+  its declarations listed by `describe`, but its domain errors fail closed as
+  `EXECUTION_FAILED`. Capability packages should declare `@invokta/core` as a
+  peer dependency, or the engine's install must deduplicate it to one version.
+</Aside>
 
 ## Public and internal details
 

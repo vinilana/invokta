@@ -146,10 +146,44 @@ new CapabilityError("ANY_DECLARED_CODE", { details: { anything: true } });
 expectTypeOf(
   new CapabilityError<typeof scheduleErrors>("CALENDAR_UNAVAILABLE").code,
 ).toEqualTypeOf<"SLOT_CONFLICT" | "CALENDAR_UNAVAILABLE">();
-expectTypeOf(new CapabilityError("ANY").code).toEqualTypeOf<string>();
+expectTypeOf(new CapabilityError("ANY").code).toExtend<string>();
+expectTypeOf(
+  new CapabilityError("ANY", { details: { anything: true } }).code,
+).toEqualTypeOf<string>();
 
 // @ts-expect-error Typed domain errors reject undeclared codes.
 new CapabilityError<typeof scheduleErrors>("UNDECLARED");
+
+const narrowed = new CapabilityError<typeof scheduleErrors, "SLOT_CONFLICT">(
+  "SLOT_CONFLICT",
+  { details: { slotId: "S-1", attempts: "1" } },
+);
+expectTypeOf(narrowed.code).toEqualTypeOf<"SLOT_CONFLICT">();
+
+// @ts-expect-error A narrowed code type only accepts that code.
+new CapabilityError<typeof scheduleErrors, "SLOT_CONFLICT">(
+  "CALENDAR_UNAVAILABLE",
+);
+
+// @ts-expect-error The narrowed code must be declared by the map.
+new CapabilityError<typeof scheduleErrors, "UNDECLARED">("UNDECLARED");
+
+// Typed errors remain assignable to the plain CapabilityError type.
+const plainError: CapabilityError = new CapabilityError<typeof scheduleErrors>(
+  "CALENDAR_UNAVAILABLE",
+);
+const raisedErrors: CapabilityError[] = [
+  plainError,
+  narrowed,
+  new CapabilityError<typeof scheduleErrors>("CALENDAR_UNAVAILABLE"),
+];
+function slotConflict(slotId: string): CapabilityError {
+  return new CapabilityError<typeof scheduleErrors>("SLOT_CONFLICT", {
+    details: { slotId, attempts: "1" },
+  });
+}
+void raisedErrors;
+void slotConflict;
 
 // @ts-expect-error A declared details schema makes details required.
 new CapabilityError<typeof scheduleErrors>("SLOT_CONFLICT");

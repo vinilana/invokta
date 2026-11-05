@@ -145,7 +145,8 @@ invalid details, and a look-alike, prototype-forged, or proxied error become
 `EXECUTION_FAILED` with the original kept as the internal cause. Cancellation
 observed by the runtime keeps precedence. A thrown `EngineError` with code
 `DOMAIN_ERROR`, including one issued by another invocation, is never preserved,
-and a `CapabilityError` raised outside `run` is an unknown error. ADR 0045
+and a `CapabilityError` raised outside `run` is never a domain error; it is
+normalized like any other access-rule or validator failure. ADR 0045
 defines the declaration limits.
 
 Reading `requestId` and `source` from invocation options is part of this error

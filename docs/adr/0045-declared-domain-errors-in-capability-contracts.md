@@ -61,14 +61,20 @@ parameter. Without the type argument any code compiles. Thrown values are
 untyped in TypeScript and the type argument is not bound to the capability's
 own `errors` field, so the runtime check below remains authoritative; authors
 get the most from the types by declaring the map once as a constant and using
-it for both the field and the type argument.
+it for both the field and the type argument. A second optional type argument
+narrows `code` to one declared code. The instance `code` depends only on that
+parameter, so a typed error remains assignable to the plain `CapabilityError`
+type, for example as a helper's return type or an array element.
 
 The constructor records its code and details in a module-private registry. The
 engine reads only those constructor-time values, so replacing the instance
 properties later cannot select another outcome. Look-alike objects, objects
 created from the class prototype without the constructor, and proxies are not
 recognized. As with `instanceof EngineError` today, a `CapabilityError` created
-by a second installed copy of `@invokta/core` is not recognized and fails closed.
+by a second installed copy of `@invokta/core` is not recognized and fails closed,
+although `describe` still lists the capability's declarations. Capability
+packages must therefore resolve the engine's copy, for example by declaring
+`@invokta/core` as a peer dependency or deduplicating it to one version.
 
 ### Enforcement
 
@@ -90,8 +96,10 @@ Only a failure of `run` can become a domain error. When `run` rejects:
    the generic `EXECUTION_FAILED` with the original `CapabilityError` as its
    internal `cause`.
 
-A `CapabilityError` raised by an access rule or a schema validator is an unknown
-failure. A thrown `EngineError` with code `DOMAIN_ERROR` is never preserved, even
+A `CapabilityError` raised by an access rule or a schema validator is never a
+domain error; it is normalized like any other access-rule or validator failure,
+as `EXECUTION_FAILED`, `INPUT_INVALID`, or `OUTPUT_INVALID`. A thrown
+`EngineError` with code `DOMAIN_ERROR` is never preserved, even
 when another invocation issued it: only the invocation that validated a domain
 error against its own contract may publish it. A capability that forwards a
 nested invocation's domain error therefore fails as `EXECUTION_FAILED` unless it
@@ -149,11 +157,17 @@ than payload, so it can label metrics. Details are never part of an event, and
   identically through `engine.invoke`.
 - This extends the ADR 0003 taxonomy from seven to eight codes. Adding a member
   to `EngineErrorCode` is a breaking change for exhaustive switches that assert
-  `never`; they must handle `DOMAIN_ERROR`. Engines that declare no domain
-  errors never produce it.
+  `never` and for exhaustive maps typed as, or checked with `satisfies`,
+  `Record<EngineErrorCode, ...>`, such as HTTP status or exit-code tables; they
+  must handle `DOMAIN_ERROR`. Engines that declare no domain errors never
+  produce it.
 - Invalid domain outcomes fail closed, so a typo in a code or a details shape is
   visible as `EXECUTION_FAILED` in tests rather than leaking undeclared data.
 - `retryable` is a hint for consumers. The framework still performs no automatic
   retry, backoff, or idempotency handling.
 - Domain errors from access rules, framework-level retry metadata for other
-  codes, and domain errors in MCP tool listings require separate decisions.
+  codes, domain errors in MCP tool listings, and recognition of a
+  `CapabilityError` created by another installed copy of `@invokta/core`
+  require separate decisions. Cross-copy recognition would need a brand that
+  survives duplicate installations without weakening the constructor-time
+  registry.

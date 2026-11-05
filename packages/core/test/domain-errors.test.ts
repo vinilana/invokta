@@ -441,6 +441,43 @@ describe("declared domain errors", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["input", "INPUT_INVALID"],
+    ["output", "OUTPUT_INVALID"],
+  ] as const)(
+    "normalizes a CapabilityError thrown by the %s validator as %s",
+    async (side, code) => {
+      const raised = new CapabilityError<typeof errors>("CALENDAR_UNAVAILABLE");
+      const throwingSchema = objectSchema(() => {
+        throw raised;
+      });
+      const engine = createEngine({
+        name: "validator-domain-error-engine",
+        version: "0.1.0",
+        capabilities: {
+          validated: defineCapability({
+            description: "Raise a declared domain error from a validator.",
+            input: side === "input" ? throwingSchema : input,
+            output: side === "output" ? throwingSchema : output,
+            access: "public",
+            errors,
+            run: async () => ({ confirmed: true }),
+          }),
+        },
+      });
+
+      const error = await expectEngineError(
+        engine.invoke("validated", { slotId: "S-1" } as never),
+        code,
+      );
+
+      expect(error.cause).toBe(raised);
+      expect(JSON.stringify(error.publicDetails ?? null)).not.toContain(
+        "CALENDAR_UNAVAILABLE",
+      );
+    },
+  );
+
   it("reports cancellation when the handler raises a domain error after abort", async () => {
     const controller = new AbortController();
     const engine = scheduleEngine(async () => {

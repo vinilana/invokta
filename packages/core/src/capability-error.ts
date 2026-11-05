@@ -51,21 +51,24 @@ type DeclaredErrorArguments<Declaration extends CapabilityErrorDeclaration> =
 
 /**
  * Constructor arguments for `CapabilityError`. A concrete declaration map
- * restricts the code to its declared keys and the details to the input type of
- * the matching details schema; the default map accepts any code and details.
+ * restricts the code to its declared keys, optionally narrowed by `Code`, and
+ * the details to the input type of the matching details schema; the default map
+ * accepts any code and details.
  */
-export type CapabilityErrorArguments<Errors extends CapabilityErrorMap> =
-  string extends keyof Errors
-    ? [
-        code: string,
-        options?: { readonly details?: unknown; readonly cause?: unknown },
-      ]
-    : {
-        [Code in Extract<keyof Errors, string>]: [
-          code: Code,
-          ...DeclaredErrorArguments<Errors[Code]>,
-        ];
-      }[Extract<keyof Errors, string>];
+export type CapabilityErrorArguments<
+  Errors extends CapabilityErrorMap,
+  Code extends Extract<keyof Errors, string> = Extract<keyof Errors, string>,
+> = string extends keyof Errors
+  ? [
+      code: Code,
+      options?: { readonly details?: unknown; readonly cause?: unknown },
+    ]
+  : {
+      [Declared in Code]: [
+        code: Declared,
+        ...DeclaredErrorArguments<Errors[Declared]>,
+      ];
+    }[Code];
 
 interface RaisedCapabilityError {
   readonly code: unknown;
@@ -81,14 +84,17 @@ const raisedCapabilityErrors = new WeakMap<object, RaisedCapabilityError>();
  */
 export class CapabilityError<
   Errors extends CapabilityErrorMap = CapabilityErrorMap,
+  // `code` uses only this parameter, so a typed error stays assignable to the
+  // plain `CapabilityError` type.
+  Code extends Extract<keyof Errors, string> = Extract<keyof Errors, string>,
 > extends Error {
-  readonly code: Extract<keyof Errors, string>;
+  readonly code: Code;
   readonly details?: unknown;
   override readonly cause?: unknown;
 
-  constructor(...args: CapabilityErrorArguments<Errors>) {
+  constructor(...args: CapabilityErrorArguments<Errors, Code>) {
     const [code, options] = args as unknown as readonly [
-      Extract<keyof Errors, string>,
+      Code,
       { readonly details?: unknown; readonly cause?: unknown }?,
     ];
     const details = options?.details;

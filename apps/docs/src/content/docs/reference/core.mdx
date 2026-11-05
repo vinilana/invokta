@@ -104,12 +104,14 @@ interface CapabilityErrorDeclaration {
 
 type CapabilityErrorMap = Readonly<Record<string, CapabilityErrorDeclaration>>;
 
-class CapabilityError<Errors extends CapabilityErrorMap = CapabilityErrorMap>
-  extends Error {
-  readonly code: Extract<keyof Errors, string>;
+class CapabilityError<
+  Errors extends CapabilityErrorMap = CapabilityErrorMap,
+  Code extends Extract<keyof Errors, string> = Extract<keyof Errors, string>,
+> extends Error {
+  readonly code: Code;
   readonly details?: unknown;
   readonly cause?: unknown;
-  constructor(...args: CapabilityErrorArguments<Errors>);
+  constructor(...args: CapabilityErrorArguments<Errors, Code>);
 }
 ```
 
@@ -143,6 +145,15 @@ the raised error against the snapshotted declaration and publishes a
 `DOMAIN_ERROR`, or fails closed with `EXECUTION_FAILED`. Only errors raised by
 `run` and created by the constructor qualify; the engine uses the
 constructor-time code and details. See [declared domain errors](/reference/errors/#declared-domain-errors).
+
+The error must come from the same installed copy of `@invokta/core` as
+`createEngine`. A capability package that resolves its own copy keeps its
+declarations in `describe`, but its domain errors become `EXECUTION_FAILED`;
+capability packages should declare the core as a peer dependency or be
+deduplicated to one version. With the optional type arguments,
+`CapabilityError<typeof errors>` types `code` as the union of declared codes and
+`CapabilityError<typeof errors, "TICKET_NOT_FOUND">` as that one code; both stay
+assignable to `CapabilityError`.
 
 ## `defineConnector`
 

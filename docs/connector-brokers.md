@@ -72,7 +72,7 @@ invariant:
 | --- | --- |
 | Add `context.connectors` or `context.credentials` to `ExecutionContext` | `AE-CTX-01` — the context is closed at five fields and carries no service locator or metadata bag |
 | Ship `@invokta/connect` now | `AE-LIMIT-02`, `AE-SCOPE-04` — no runtime plugin discovery; abstractions require repeated evidence |
-| Add a `CONNECTOR_AUTHORIZATION_REQUIRED` error code | `AE-LIMIT-*`, ADR 0003 — the error set is closed at seven codes |
+| Add a `CONNECTOR_AUTHORIZATION_REQUIRED` error code | `AE-LIMIT-*`, ADRs 0003 and 0045 — the framework error set is closed; capability-specific outcomes are declared domain errors |
 
 This mirrors the boundary ADR 0024 already drew for inbound OAuth: Invokta owns
 the protocol contract and the conformance path; one official example owns a
