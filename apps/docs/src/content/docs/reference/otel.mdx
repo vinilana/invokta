@@ -22,7 +22,9 @@ npm install @invokta/otel @opentelemetry/api
 
 `@opentelemetry/api` is a peer dependency with the range `^1.9.0`, so the
 engine and the host's SDK share one API instance. The package is native ESM and
-requires Node.js 22.20.0 or later.
+an optional runtime helper: no framework runtime package depends on it. Its
+root imports only `@opentelemetry/api` and core types and loads no Node.js
+built-in. Tests and the declared engine run on Node.js 22.20.0 or later.
 
 ## API
 
@@ -125,7 +127,7 @@ invocation uses the same request ID, it returns the active context unchanged. Us
 | Attribute | Set when | Value |
 | --- | --- | --- |
 | `invokta.capability.id` | Start | Requested capability ID |
-| `invokta.execution.source` | Start | `direct`, `cli`, `mcp-stdio`, `mcp-http`, or a later source |
+| `invokta.execution.source` | Start | `direct`, `cli`, `mcp-stdio`, `mcp-http`, `http`, or a later source |
 | `invokta.request.id` | Start | Invocation request ID |
 | `invokta.principal.id` | Start, with `recordPrincipalId: true` | Principal ID |
 | `invokta.invocation.outcome` | End | `completed` or `failed` |

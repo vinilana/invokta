@@ -1,6 +1,6 @@
 ---
 title: '@invokta/mcp'
-description: Complete API and protocol reference for MCP tools over stdio and stateless Streamable HTTP.
+description: Complete API and protocol reference for MCP tools over stdio and stateless Streamable HTTP, from a Node.js listener or a Web-standard handler.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -18,8 +18,11 @@ pinned to `1.32.2` in the package manifest.
 yarn add @invokta/mcp
 ```
 
-The package is native ESM and requires Node.js 22.20.0 or later. SDK and
-transport types are not part of its public API.
+The package is native ESM. The package root requires Node.js 22.20.0 or later.
+The `@invokta/mcp/web` entry point imports no Node.js built-in module, so the
+same HTTP endpoint can run on Fetch runtimes (see
+[`createMcpHttpHandler`](#createmcphttphandler)). SDK and transport types are
+not part of the public API.
 
 ## API
 
@@ -29,10 +32,16 @@ The package root exports:
 - `toMcpToolName`;
 - `validateMcpToolCatalog` and `McpToolNameCollisionError`;
 - `serveMcpHttp` and `ServeMcpHttpOptions`;
+- `createMcpHttpHandler`, `McpHttpHandler`, and `McpHttpHandlerOptions`;
 - `McpHttpAuthOptions`;
 - `McpHttpAuthenticationRequest` and `McpHttpHeaderView`;
 - `McpHttpProtectedResourceMetadata`; and
 - `McpHttpServerAddress` and `McpHttpServerHandle`.
+
+The portable `@invokta/mcp/web` subpath exports only `createMcpHttpHandler`,
+`McpHttpHandler`, `McpHttpHandlerOptions`, `McpHttpAuthOptions`,
+`McpHttpAuthenticationRequest`, `McpHttpHeaderView`,
+`McpHttpProtectedResourceMetadata`, and `McpToolNameCollisionError`.
 
 ## Tool mapping
 
@@ -137,13 +146,17 @@ belong on standard error.
 ## `serveMcpHttp`
 
 ```ts
-interface ServeMcpHttpOptions {
-  readonly host?: string;
-  readonly port?: number;
+interface McpHttpHandlerOptions {
+  readonly path?: string;
   readonly allowedHosts?: ReadonlyArray<string>;
   readonly allowedOrigins?: ReadonlyArray<string>;
   readonly maxRequestBodyBytes?: number;
   readonly auth: McpHttpAuthOptions;
+}
+
+interface ServeMcpHttpOptions extends McpHttpHandlerOptions {
+  readonly host?: string;
+  readonly port?: number;
 }
 
 interface McpHttpServerHandle {
@@ -226,6 +239,77 @@ incremental UTF-8.
 | `415` | Missing, duplicated, or unsupported content type |
 | `500` | Authentication infrastructure or internal boundary failure |
 
+## `createMcpHttpHandler`
+
+```ts
+type McpHttpHandler = (request: Request) => Promise<Response>;
+
+function createMcpHttpHandler<Capabilities extends CapabilityMap>(
+  engine: Engine<Capabilities>,
+  options: McpHttpHandlerOptions,
+): McpHttpHandler;
+```
+
+```ts
+import { createMcpHttpHandler } from "@invokta/mcp/web";
+
+const handler = createMcpHttpHandler(engine, {
+  allowedHosts: ["engine.example.com"],
+  auth: { mode: "required", authenticate },
+});
+
+const response = await handler(request);
+```
+
+The handler serves the same stateless endpoint as `serveMcpHttp` from a Fetch
+`Request`, so an engine can be mounted in a host-owned server or deployed to a
+Fetch runtime. Both share one protocol implementation: the same options,
+validation, status codes, authentication, principal snapshot, media types, body
+limit, JSON-RPC rules, Protected Resource Metadata, and `engine.invoke` path
+with `source: "mcp-http"`. The
+[Web-standard runtimes guide](/guides/web-standard-runtimes/) mounts it in a
+Node.js server, Hono, and a Cloudflare Worker.
+
+Options are validated when the handler is created, which throws a `TypeError`
+for an invalid value or `McpToolNameCollisionError` for an ambiguous catalog.
+The returned function never rejects; a request object it cannot read produces a
+sanitized 500. Pass the request with its body unread.
+
+A Fetch request does not expose everything a Node.js listener sees, so the
+boundary maps to it as follows:
+
+- Without `allowedHosts`, only `127.0.0.1`, `localhost`, and `[::1]` are
+  allowed. List the public host names of a deployed handler. The `Host` header,
+  when present, and the request URL's authority must each be allowed.
+- The URL's path must equal the mount path. A query, including an empty one, a
+  fragment, and percent encoding are rejected. The host has already resolved
+  dot segments, so the handler routes the path the host routes.
+- Fetch joins repeated header fields with `, `. Any comma in `Host`, and a
+  comma outside a quoted parameter value in `Content-Type`, counts as a
+  repeated field and is rejected; `application/json; profile="a,b"` is
+  accepted. A joined `Authorization` value reaches the authenticator as one
+  value, which a Bearer authenticator must reject.
+- The body is read incrementally from `request.body`, and the stream is
+  cancelled as soon as the limit is crossed, UTF-8 is malformed, or
+  `request.signal` aborts. A declared `Content-Length` above the limit is
+  rejected before authentication when the host exposes it.
+- `request.signal` is the cancellation signal for authentication, body
+  reading, and the invocation. The host owns connections and shutdown; the
+  handler sets no hop-by-hop header.
+
+<Aside type="note" title="Verified and supported runtimes">
+  Node.js is verified by tests, including a run that approximates a Web-only
+  isolate: every Node.js built-in module blocked, no
+  `process.getBuiltinModule`, a non-Node.js user agent, and code generation
+  from strings disallowed. Deno, Bun, Cloudflare Workers, Vercel Edge, and Node.js
+  frameworks such as Hono and Next.js route handlers are supported by design:
+  they provide the Fetch API, Web Streams, `TextDecoder`, `structuredClone`,
+  `crypto.randomUUID`, and `AbortSignal.any` that the handler and the core use,
+  but they are not run in CI. On Node.js the core refuses to load without
+  `process.getBuiltinModule`; see ADR 0042 for its behavior on other hosts
+  without it.
+</Aside>
+
 ## HTTP authentication
 
 ```ts
@@ -251,7 +335,9 @@ adapter validates and deep-snapshots the principal before `engine.invoke`.
 
 Domain authorization stays in the capability access rule. Read the
 [HTTP authentication guide](/guides/http-authentication/) for verifier mapping,
-Protected Resource Metadata, proxy boundaries, and secret handling.
+Protected Resource Metadata, proxy boundaries, and secret handling. The optional
+[`@invokta/auth-jwt`](/reference/auth-jwt/) authenticator is a ready-made hook
+for one issuer's JWT bearer tokens.
 
 ### Development mode
 

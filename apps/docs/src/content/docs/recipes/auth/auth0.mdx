@@ -66,87 +66,58 @@ specific to Auth0.
    The same function accepts `your-tenant.eu.auth0.com`, the full origin, or
    an Auth0 custom domain.
 
-3. Verify the token with an injectable key source
+3. Configure the authenticator for Auth0
 
    ```ts
-   export function createAuth0AccessTokenVerifier(
-     options: Auth0VerifierOptions,
-   ): Auth0AccessTokenVerifier {
-     const issuer = auth0Issuer(options.domain);
+   import {
+     createJwtBearerAuthenticator,
+     type JwtBearerAuthenticator,
+     type JwtKeySource,
+   } from "@invokta/auth-jwt";
+
+   export function createAuth0Authenticator(
+     options: Auth0AuthenticatorOptions,
+   ): JwtBearerAuthenticator {
      const audience = options.audience.trim();
      if (audience === "") {
        throw new TypeError(
          "An Auth0 API identifier is required as the audience.",
        );
      }
-     const keySource: JWTVerifyGetKey =
-       options.keySource ??
-       createRemoteJWKSet(auth0JwksUri(options.domain), {
-         timeoutDuration: options.jwksTimeoutMs ?? 5_000,
-       });
-
-     return {
-       async verify(token, { signal }) {
-         try {
-           signal.throwIfAborted();
-           const { payload } = await settleWith(
-             jwtVerify(token, keySource, {
-               issuer,
-               audience,
-               algorithms: ["RS256"],
-               requiredClaims: ["sub", "iss", "aud", "exp"],
-               clockTolerance: options.clockToleranceSeconds ?? 5,
-             }),
-             signal,
-           );
-           return payload;
-         } catch (error) {
-           if (isInvalidCredential(error)) return null;
-           // The provider error may quote the token, so it is never re-thrown.
-           throw new Auth0VerificationUnavailableError();
-         }
-       },
-     };
+     return createJwtBearerAuthenticator({
+       issuer: auth0Issuer(options.domain),
+       audience,
+       // Auth0 signs API access tokens with RS256.
+       algorithms: ["RS256"],
+       clockToleranceSeconds: options.clockToleranceSeconds ?? 5,
+       principal: toAuth0Principal,
+       ...(options.keySource ?? { jwksUrl: auth0JwksUri(options.domain) }),
+     });
    }
    ```
 
-   `audience` is not optional. Without it, a token the same tenant minted for
-   another API — or for its own `/userinfo` endpoint — would satisfy the
-   issuer and signature checks. `createRemoteJWKSet` caches and bounds its own
-   fetch, and `settleWith` stops observing the result when the adapter cancels
-   the request.
+   [`@invokta/auth-jwt`](/reference/auth-jwt/) performs the bearer parsing
+   and the signature, algorithm, issuer, audience, and expiry checks; this
+   function only supplies what is Auth0-specific. `audience` is not optional.
+   Without it, a token the same tenant minted for another API — or for its own
+   `/userinfo` endpoint — would satisfy the issuer and signature checks.
 
-   The `keySource` option is what makes the verifier testable: production
-   omits it and gets the tenant's remote JWKS, while tests inject
-   `createLocalJWKSet` and verify real signatures offline.
+   The `keySource` option is what makes the authenticator testable:
+   production omits it and gets the tenant's remote JWKS, fetched on first use
+   with a bounded timeout and cached, while tests pass `{ jwks }` with a
+   locally generated public key and verify real signatures offline.
 
 4. Separate an invalid credential from an unreachable tenant
 
-   ```ts
-   const invalidCredentialCodes: ReadonlySet<string> = new Set([
-     "ERR_JOSE_ALG_NOT_ALLOWED",
-     "ERR_JWKS_NO_MATCHING_KEY",
-     "ERR_JWS_INVALID",
-     "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
-     "ERR_JWT_CLAIM_VALIDATION_FAILED",
-     "ERR_JWT_EXPIRED",
-     "ERR_JWT_INVALID",
-   ]);
-
-   function isInvalidCredential(error: unknown): boolean {
-     if (typeof error !== "object" || error === null) return false;
-     const code = (error as { readonly code?: unknown }).code;
-     return typeof code === "string" && invalidCredentialCodes.has(code);
-   }
-   ```
-
-   Only these `jose` codes mean "this credential is not valid" and become
-   `null`, which the adapter answers with HTTP 401. A JWKS timeout
-   (`ERR_JWKS_TIMEOUT`), a transport failure, or an ambiguous key set
-   (`ERR_JWKS_MULTIPLE_MATCHING_KEYS` — the tenant's key-publication problem,
-   not the caller's) falls through to a thrown
-   `Auth0VerificationUnavailableError`, which becomes a sanitized HTTP 500. A
-   tenant outage must never look like a rejected user.
+   The authenticator resolves `null` for every expired, foreign-issuer,
+   wrong-audience, unknown-key, forged, malformed, or non-RS256 token, which
+   the adapter answers with HTTP 401. A token without a `kid` header is tried
+   against each RS256 key the tenant publishes during rotation, up to eight,
+   and resolves `null` when none of them signed it. A JWKS timeout or an
+   unreachable tenant rejects with `JwtVerificationUnavailableError` instead,
+   which becomes a sanitized HTTP 500. A tenant outage must never look like a
+   rejected user, and the fixed, causeless error carries neither the token
+   nor the tenant's response.
 
 5. Map the claims Auth0 actually verified
 
@@ -176,30 +147,19 @@ specific to Auth0.
    drops a malformed `permissions` claim entirely rather than trusting part of
    it, so an access rule never sees a half-parsed permission set.
 
-   The token, the `azp` client id, and the rest of the claim set stay at the
-   composition root.
+   The authenticator calls this mapper only after the token verified and never
+   passes it the raw token. The `azp` client id and the rest of the claim set
+   stay out of the principal.
 
 6. Wire the hook at the composition root
 
    ```ts
-   export function createAuth0Authenticate(
-     verifier: Auth0AccessTokenVerifier,
-   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
-     return async (request) => {
-       const token = readBearerToken(request.headers);
-       if (token === null) return null;
-
-       const claims = await verifier.verify(token, { signal: request.signal });
-       return claims === null ? null : toAuth0Principal(claims);
-     };
-   }
-
    const server = await serveMcpHttp(engine, {
      host: "127.0.0.1",
      port: 3000,
      auth: {
        mode: "required",
-       authenticate: createAuth0Authenticate(verifier),
+       authenticate: createAuth0Authenticator({ domain, audience }),
        resourceMetadata: {
          resource: "http://127.0.0.1:3000/mcp",
          authorizationServers: [auth0Issuer(domain)],
@@ -264,8 +224,8 @@ specific to Auth0.
   ```
 
   It is an Express middleware, not a verifier function, so it does not drop
-  into the `authenticate` hook. The example keeps the `jose` verifier, which
-  is the same library the SDK wraps.
+  into the `authenticate` hook. The example uses `@invokta/auth-jwt`, which
+  wraps `jose`, the same library the SDK wraps.
 </Aside>
 
 <Aside type="caution" title="Never widen the audience">
@@ -314,8 +274,8 @@ and the discovery challenge.
 ## Verify it
 
 The example's tests mint RS256 tokens from a locally generated key pair and
-resolve them through a local JWKS, so signature verification is real and no
-test reaches Auth0:
+pass the public key to the authenticator as a local JWKS, so signature
+verification is real and no test reaches Auth0:
 
 ```sh
 yarn workspace @invokta/example-auth-auth0 test
@@ -323,8 +283,9 @@ yarn workspace @invokta/example-auth-auth0 test
 
 They cover a valid token, an expired token, a foreign issuer, an issuer missing
 the trailing slash, a wrong audience, a missing audience, an unknown signing
-key, a forged signature, a malformed token, a missing header, a JWKS outage, and
-the absence of any token material in the produced `Principal`.
+key, a forged signature, a malformed token, a missing header, a JWKS outage
+served by a loopback endpoint, and the absence of any token material in the
+produced `Principal`.
 
 <Aside type="tip" title="Adapting this code to other OIDC issuers">
   This integration derives the issuer from an origin and fetches

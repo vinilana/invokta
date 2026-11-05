@@ -29,9 +29,13 @@ code set may grow through other decisions.
 
 ### Package and dependency
 
-Invokta publishes `@invokta/otel` as a runtime instrumentation package. It
-depends on `@invokta/core` for the `EngineEvent` type only and on
-`@opentelemetry/api` as a **peer dependency** with the caret range `^1.9.0`.
+Invokta publishes `@invokta/otel` as an optional runtime helper package, like
+`@invokta/auth-jwt` (ADR 0049): engines opt in, and no framework runtime package
+depends on it. It depends on `@invokta/core` for the `EngineEvent` type only and
+on `@opentelemetry/api` as a **peer dependency** with the caret range `^1.9.0`.
+Its source imports only those two packages and loads no Node.js built-in, and
+the OpenTelemetry API loads none either, so the package root runs wherever the
+API runs. Its tests run on Node.js only.
 
 The OpenTelemetry API is a process-wide singleton: the tracer provider, meter
 provider, context manager, and diagnostic logger are registered globally and
@@ -117,7 +121,7 @@ event with the same `requestId`.
 | Attribute | Set on | Value |
 | --- | --- | --- |
 | `invokta.capability.id` | Start | Requested capability ID |
-| `invokta.execution.source` | Start | `direct`, `cli`, `mcp-stdio`, `mcp-http`, or a later source |
+| `invokta.execution.source` | Start | `direct`, `cli`, `mcp-stdio`, `mcp-http`, `http`, or a later source |
 | `invokta.request.id` | Start | Invocation request ID |
 | `invokta.principal.id` | Start, only with `recordPrincipalId: true` | Principal ID |
 | `invokta.invocation.outcome` | End | `completed` or `failed` |

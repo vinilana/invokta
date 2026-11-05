@@ -118,7 +118,7 @@ access: ({ principal, input }) =>
 ```ts
 interface ExecutionContext {
   requestId: string;
-  source: "direct" | "cli" | "mcp-stdio" | "mcp-http";
+  source: "direct" | "cli" | "mcp-stdio" | "mcp-http" | "http";
   principal: Principal | null;
   signal: AbortSignal;
   logger: EngineLogger;

@@ -16,8 +16,9 @@ npm install @invokta/otel @opentelemetry/api
 ```
 
 `@opentelemetry/api` is a peer dependency (`^1.9.0`) so the engine and your
-SDK share one API instance. The package is native ESM and requires Node.js
-22.20.0 or later.
+SDK share one API instance. The package is native ESM. Its root imports only
+`@opentelemetry/api` and core types and loads no Node.js built-in; it is tested
+on Node.js 22.20.0 or later, the version its manifest declares.
 
 ## Use
 
@@ -83,7 +84,7 @@ createEngine({
 | Attribute | When |
 | --- | --- |
 | `invokta.capability.id` | Always |
-| `invokta.execution.source` | Always |
+| `invokta.execution.source` | Always; `direct`, `cli`, `mcp-stdio`, `mcp-http`, `http`, or a later source |
 | `invokta.request.id` | Always |
 | `invokta.principal.id` | Only with `recordPrincipalId: true` |
 | `invokta.invocation.outcome` | `completed` or `failed` |

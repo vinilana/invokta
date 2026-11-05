@@ -89,7 +89,7 @@ Application ──┘                  |
 
 The action owns its integrations, rules, permissions, validation, and output
 contract. Every consumer reaches the same implementation through application
-code, the CLI, MCP stdio, or stateless MCP Streamable HTTP.
+code, the CLI, MCP stdio, stateless MCP Streamable HTTP, or plain HTTP JSON.
 
 <Aside type="tip" title="MCP provides access to an owned capability">
   MCP gives compatible agents a standard way to discover and call tools.
@@ -170,7 +170,7 @@ continue to request the same outcome.
 
 Define a capability once with its input, output, access rule, and execution
 behavior. Invokta applies the same invocation pipeline from application code,
-the CLI, MCP stdio, and stateless MCP Streamable HTTP.
+the CLI, MCP stdio, stateless MCP Streamable HTTP, and plain HTTP JSON.
 
 <CardGrid>
   <Card title="Stable contracts" icon="seti:typescript">

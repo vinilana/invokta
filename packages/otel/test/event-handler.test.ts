@@ -252,6 +252,23 @@ describe("invocation spans", () => {
     expect(limit?.attributes["invokta.invocation.outcome"]).toBe("completed");
   });
 
+  it("records later execution sources such as http unchanged", async () => {
+    const handler = createHandler();
+
+    handler(started("request-1", { source: "http" }));
+    handler(completed("request-1"));
+
+    expect(telemetry.spans()[0]?.attributes["invokta.execution.source"]).toBe(
+      "http",
+    );
+    const metrics = await telemetry.metrics();
+    expect(
+      metrics.get("invokta.invocations")?.points[0]?.attributes[
+        "invokta.execution.source"
+      ],
+    ).toBe("http");
+  });
+
   it("correlates interleaved invocations by request ID", () => {
     const handler = createHandler();
 

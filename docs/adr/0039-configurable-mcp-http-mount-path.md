@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-02
+- Amended by: [ADR 0042](./0042-web-standard-runtime-portability.md)
 
 ## Context
 
@@ -48,7 +49,8 @@ of substituting `/mcp`, and they continue to reject every alias of it.
 
 The adapter still creates one server per engine. Mounting an engine inside a
 host-owned server, or a fetch-handler adapter for serverless platforms, remains
-a separate decision. Devtools keep serving their workbenches at `/mcp` and
+a separate decision; ADR 0042 makes it with a Web-standard handler that applies
+the same mount-path rule. Devtools keep serving their workbenches at `/mcp` and
 `/cli`; those are not engine mount paths.
 
 ## Consequences

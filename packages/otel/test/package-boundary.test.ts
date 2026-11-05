@@ -1,4 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { isBuiltin } from "node:module";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -61,6 +63,36 @@ describe("@invokta/otel package boundary", () => {
         }
         expect(specifier.from, source.name).toBe("@opentelemetry/api");
       }
+    }
+  });
+
+  it("loads no Node.js built-in from its source or the OpenTelemetry API", () => {
+    const specifier =
+      /\b(?:from|import)\s*\(?\s*["']([^"'\n]+)["']|\brequire\s*\(\s*["']([^"'\n]+)["']/gu;
+    const builtins = (path: string): string[] =>
+      Array.from(
+        readFileSync(path, "utf8").matchAll(specifier),
+        (match) => match[1] ?? match[2] ?? "",
+      ).filter((name) => isBuiltin(name));
+    const sourceDirectory = `${packageDirectory}/src`;
+    const sources = readdirSync(sourceDirectory)
+      .filter((name) => name.endsWith(".ts"))
+      .map((name) => join(sourceDirectory, name));
+    const apiDirectory = `${repositoryRoot}/node_modules/@opentelemetry/api/build/esm`;
+    const apiModules = readdirSync(apiDirectory, {
+      recursive: true,
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
+      .map((entry) => join(entry.parentPath, entry.name));
+
+    expect(apiModules.length).toBeGreaterThan(10);
+    for (const path of [...sources, ...apiModules]) {
+      expect(builtins(path), path).toEqual([]);
+    }
+    for (const path of sources) {
+      const text = readFileSync(path, "utf8");
+      expect(text, path).not.toMatch(/\bprocess\.|\bBuffer\b/u);
     }
   });
 

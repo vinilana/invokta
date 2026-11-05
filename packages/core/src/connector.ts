@@ -1,7 +1,6 @@
-import { types as nodeUtilTypes } from "node:util";
-
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
+import { isPromise, isProxy } from "./host-types.js";
 import { snapshotLosslessJson } from "./schema.js";
 
 type ConnectorConfiguration = Readonly<Record<string, unknown>>;
@@ -59,7 +58,7 @@ function isRecord(value: unknown): value is object {
 function readDataProperty(value: object, key: PropertyKey): unknown {
   let current: object | null = value;
   while (current !== null) {
-    if (nodeUtilTypes.isProxy(current)) {
+    if (isProxy(current)) {
       throw new TypeError("Connector contracts must not contain proxies.");
     }
     const descriptor = Object.getOwnPropertyDescriptor(current, key);
@@ -94,21 +93,26 @@ function validateConfiguration<ConfigSchema extends ConnectorConfigSchema>(
     throw invalidConfiguration();
   }
 
-  if (nodeUtilTypes.isPromise(result)) {
-    void result.catch(() => undefined);
+  if (isPromise(result)) {
+    try {
+      void result.catch(() => undefined);
+    } catch {
+      // A promise-like value without a working catch method has no rejection
+      // to observe; the synchronous-validation failure below still applies.
+    }
     throw new TypeError(
       "Connector configuration validation must be synchronous.",
     );
   }
 
   try {
-    if (!isRecord(result) || nodeUtilTypes.isProxy(result)) {
+    if (!isRecord(result) || isProxy(result)) {
       throw invalidConfiguration();
     }
     const issues = readDataProperty(result, "issues");
     if (issues !== undefined) throw invalidConfiguration();
     const validated = readDataProperty(result, "value");
-    if (!isRecord(validated) || nodeUtilTypes.isProxy(validated)) {
+    if (!isRecord(validated) || isProxy(validated)) {
       throw invalidConfiguration();
     }
     return snapshotLosslessJson(
@@ -122,7 +126,7 @@ function validateConfiguration<ConfigSchema extends ConnectorConfigSchema>(
 function snapshotPorts<Ports extends ConnectorPorts>(
   instance: ConnectorInstance<Ports>,
 ): ConnectorInstance<Ports> {
-  if (!isRecord(instance) || nodeUtilTypes.isProxy(instance)) {
+  if (!isRecord(instance) || isProxy(instance)) {
     throw new TypeError(
       "Connector factory must return an object with a ports record.",
     );
@@ -136,7 +140,7 @@ function snapshotPorts<Ports extends ConnectorPorts>(
       "Connector factory must return an object with a ports record.",
     );
   }
-  if (!isRecord(ports) || nodeUtilTypes.isProxy(ports)) {
+  if (!isRecord(ports) || isProxy(ports)) {
     throw new TypeError(
       "Connector factory must return an object with a ports record.",
     );
@@ -173,7 +177,7 @@ export function defineConnector<
 >(
   definition: ConnectorDefinition<Name, ConfigSchema, Dependencies, Ports>,
 ): ConnectorFactory<Name, ConfigSchema, Dependencies, Ports> {
-  if (!isRecord(definition) || nodeUtilTypes.isProxy(definition)) {
+  if (!isRecord(definition) || isProxy(definition)) {
     throw new TypeError("A connector definition must be an object.");
   }
 
@@ -183,7 +187,7 @@ export function defineConnector<
   if (typeof name !== "string" || name.length === 0) {
     throw new TypeError("Connector name must be a non-empty string.");
   }
-  if (!isRecord(config) || nodeUtilTypes.isProxy(config)) {
+  if (!isRecord(config) || isProxy(config)) {
     throw new TypeError("Connector configuration schema is malformed.");
   }
 
@@ -193,7 +197,7 @@ export function defineConnector<
   let validate: unknown;
   try {
     standard = config["~standard"];
-    if (!isRecord(standard) || nodeUtilTypes.isProxy(standard)) {
+    if (!isRecord(standard) || isProxy(standard)) {
       throw new TypeError();
     }
     version = readDataProperty(standard, "version");
