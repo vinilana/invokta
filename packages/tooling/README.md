@@ -103,9 +103,11 @@ The capability contract release gate
 and writes a deterministic JSON snapshot of its public contract to stdout or to
 `--output`: `formatVersion` `1`, the engine name and version, and each
 capability's title, description, access kind, timeout, annotations, deprecation
-notice, and input and output JSON Schemas. Capability IDs and JSON Schema
-keywords are sorted, so declaration order never changes the bytes. No
-capability is invoked.
+notice, and input and output JSON Schemas. Object keys are sorted by code unit
+(JSON serialization still writes integer-like keys such as `"9"` and `"10"`
+first, in numeric order), and the set-valued `required`, `type`, and `enum`
+arrays are sorted, so reordering properties, keywords, required names, or enum
+members never changes the bytes. No capability is invoked.
 
 `diff` compares two snapshots and writes a report to stdout:
 
@@ -128,10 +130,17 @@ result: breaking changes found
 ```
 
 Narrowing an input or widening an output is breaking; the opposite is
-compatible. Adding an output property is compatible because consumers must
-tolerate unknown output properties. A change the comparison cannot decide, such
-as `$ref`, `anyOf`, `oneOf`, `allOf`, `not`, `format`, `default`, or a replaced
-`pattern`, is potentially breaking. The
+compatible. Adding an output property to a closed object
+(`additionalProperties: false`, which Zod emits for every output object) is
+potentially breaking (`CLOSED_OUTPUT_PROPERTY_ADDED`): MCP SDK clients validate
+results against their cached `tools/list` schema and reject the new property
+until they list tools again. A property added where an `additionalProperties`
+schema or `patternProperties` previously applied is potentially breaking unless
+its schema is identical. Nullable values (`anyOf: [S, { type: "null" }]`) are
+compared through `S`. A change the comparison cannot decide, such as `$ref`,
+other `anyOf` or `oneOf` unions, `allOf`, `not`, `format`, `default`, or a
+replaced `pattern`, is potentially breaking; engines that rely on them should
+pass `--fail-on-potentially-breaking`. The
 [stability policy](../../docs/stability-policy.md#guidance-for-engine-authors)
 lists every rule.
 
@@ -142,7 +151,9 @@ lists every rule.
 | `2`  | Invalid usage, a module or export failure, or an unreadable or invalid snapshot |
 
 Snapshot files are limited to 16 MiB and 256 levels of schema nesting. Unknown
-snapshot fields are rejected, and JSON parser messages are never echoed.
+snapshot fields are rejected, JSON parser messages are never echoed, echoed
+keys and capability IDs are truncated to 64 characters, and control and format
+characters are escaped in every diagnostic and report.
 
 ```bash
 invokta contract snapshot dist/engine.js --output contract.next.json

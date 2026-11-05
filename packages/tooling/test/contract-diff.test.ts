@@ -371,19 +371,95 @@ describe("object properties", () => {
     ).toEqual(["breaking REQUIRED_CHANGED c output#/properties/result"]);
   });
 
-  it("classifies added output properties as compatible, even for closed objects", () => {
+  it("flags an output property added to a closed object as potentially breaking", () => {
+    const diff = diffContractSnapshots(
+      snapshot({
+        c: capability({
+          outputSchema: objectSchema(
+            { result: { type: "string" } },
+            ["result"],
+            {
+              additionalProperties: false,
+            },
+          ),
+        }),
+      }),
+      snapshot({
+        c: capability({
+          outputSchema: objectSchema(
+            { result: { type: "string" }, score: { type: "number" } },
+            ["result", "score"],
+            { additionalProperties: false },
+          ),
+        }),
+      }),
+    );
+
+    expect(summarize(diff)).toEqual([
+      "potentially-breaking CLOSED_OUTPUT_PROPERTY_ADDED c output#/properties/score",
+    ]);
+    expect(diff.changes[0]?.message).toContain(
+      "reject results until they list tools again",
+    );
+  });
+
+  it("classifies an output property added to an open object as compatible", () => {
     expect(
       diffOutput(
-        objectSchema({ result: { type: "string" } }, ["result"], {
-          additionalProperties: false,
-        }),
+        objectSchema({ result: { type: "string" } }, ["result"]),
         objectSchema(
           { result: { type: "string" }, score: { type: "number" } },
-          ["result", "score"],
-          { additionalProperties: false },
+          ["result"],
         ),
       ),
     ).toEqual(["compatible PROPERTY_ADDED c output#/properties/score"]);
+  });
+
+  it.each([
+    ["input", { type: "number" }, { type: "string" }, "potentially-breaking"],
+    ["output", { type: "number" }, { type: "string" }, "potentially-breaking"],
+    ["input", { type: "number" }, { type: "number" }, "compatible"],
+    ["output", { type: "number" }, { type: "number" }, "compatible"],
+  ] as const)(
+    "checks a property added to an %s object against its previous additionalProperties %j",
+    (direction, additional, added, severity) => {
+      const previous = objectSchema({}, [], {
+        additionalProperties: additional,
+      });
+      const next = objectSchema({ name: added }, [], {
+        additionalProperties: additional,
+      });
+
+      expect(
+        direction === "input"
+          ? diffInput(previous, next)
+          : diffOutput(previous, next),
+      ).toEqual([`${severity} PROPERTY_ADDED c ${direction}#/properties/name`]);
+    },
+  );
+
+  it("treats a property added under previous patternProperties as potentially breaking", () => {
+    expect(
+      diffInput(
+        objectSchema({}, [], {
+          patternProperties: { "^n": { type: "number" } },
+        }),
+        objectSchema({ name: { type: "string" } }, [], {
+          patternProperties: { "^n": { type: "number" } },
+        }),
+      ),
+    ).toEqual(["potentially-breaking PROPERTY_ADDED c input#/properties/name"]);
+  });
+
+  it("keeps a new required input property breaking under a catchall", () => {
+    expect(
+      diffInput(
+        objectSchema({}, [], { additionalProperties: { type: "number" } }),
+        objectSchema({ name: { type: "number" } }, ["name"], {
+          additionalProperties: { type: "number" },
+        }),
+      ),
+    ).toEqual(["breaking PROPERTY_ADDED c input#/properties/name"]);
   });
 
   it("classifies an input property made optional as compatible", () => {
@@ -442,8 +518,8 @@ describe("additional properties", () => {
 
   it.each([
     [undefined, false, "compatible"],
-    [false, undefined, "compatible"],
-    [false, { type: "string" }, "compatible"],
+    [false, undefined, "potentially-breaking"],
+    [false, { type: "string" }, "potentially-breaking"],
     [{ type: "string" }, undefined, "breaking"],
     [{ type: "string" }, false, "compatible"],
   ] as const)(
@@ -581,6 +657,99 @@ describe("types, values, and bounds", () => {
       "breaking TYPE_CHANGED c input#/properties/value",
     ]);
     expect(diffInput(propertySchema(true), propertySchema({}))).toEqual([]);
+  });
+});
+
+describe("nullable values", () => {
+  const object = (properties: Readonly<Record<string, unknown>>) =>
+    objectSchema(properties, Object.keys(properties), {
+      additionalProperties: false,
+    });
+  const nullable = (schema: unknown, nullFirst = false) => ({
+    anyOf: nullFirst ? [{ type: "null" }, schema] : [schema, { type: "null" }],
+  });
+
+  it("compares the non-null branch of a nullable object", () => {
+    expect(
+      diffOutput(
+        propertySchema(
+          nullable(object({ x: { type: "string" }, y: { type: "string" } })),
+        ),
+        propertySchema(nullable(object({ x: { type: "string" } }))),
+      ),
+    ).toEqual([
+      "breaking PROPERTY_REMOVED c output#/properties/value/anyOf/0/properties/y",
+    ]);
+    expect(
+      diffInput(
+        propertySchema(nullable(object({ x: { type: "string" } }))),
+        propertySchema(
+          nullable(object({ x: { type: "string" }, y: { type: "string" } })),
+        ),
+      ),
+    ).toEqual([
+      "breaking PROPERTY_ADDED c input#/properties/value/anyOf/0/properties/y",
+    ]);
+  });
+
+  it("classifies adding and removing null by direction", () => {
+    const plain = object({ x: { type: "string" } });
+
+    expect(
+      diffOutput(propertySchema(plain), propertySchema(nullable(plain))),
+    ).toEqual(["breaking TYPE_CHANGED c output#/properties/value"]);
+    expect(
+      diffInput(propertySchema(plain), propertySchema(nullable(plain))),
+    ).toEqual(["compatible TYPE_CHANGED c input#/properties/value"]);
+    expect(
+      diffInput(propertySchema(nullable(plain)), propertySchema(plain)),
+    ).toEqual(["breaking TYPE_CHANGED c input#/properties/value"]);
+  });
+
+  it("treats branch order and the type-array form as the same nullable value", () => {
+    const inner = { type: "array", items: { type: "string" } };
+
+    expect(
+      diffOutput(
+        propertySchema(nullable(inner)),
+        propertySchema(nullable(inner, true)),
+      ),
+    ).toEqual([]);
+    expect(
+      diffOutput(
+        propertySchema({ type: ["string", "null"], minLength: 1 }),
+        propertySchema(nullable({ type: "string", minLength: 1 })),
+      ),
+    ).toEqual([]);
+    expect(
+      diffOutput(
+        propertySchema(nullable(inner)),
+        propertySchema(
+          nullable({ type: "array", items: { type: ["number", "string"] } }),
+        ),
+      ),
+    ).toEqual([
+      "breaking TYPE_CHANGED c output#/properties/value/anyOf/0/items",
+    ]);
+  });
+
+  it("keeps other unions undecidable", () => {
+    expect(
+      diffOutput(
+        propertySchema({ anyOf: [{ type: "string" }, { type: "number" }] }),
+        propertySchema({ anyOf: [{ type: "string" }, { type: "boolean" }] }),
+      ),
+    ).toEqual([
+      "potentially-breaking KEYWORD_CHANGED c output#/properties/value",
+    ]);
+    expect(
+      diffOutput(
+        propertySchema({ type: "object", ...nullable({ type: "string" }) }),
+        propertySchema({ type: "object", ...nullable({ type: "number" }) }),
+      ),
+    ).toEqual([
+      "potentially-breaking KEYWORD_CHANGED c output#/properties/value",
+    ]);
   });
 });
 
@@ -854,6 +1023,59 @@ file: ${JSON.stringify(path)}
 reason: ${reason}
 `);
     expect(result.stderr).not.toContain("secret-marker");
+  });
+
+  it("bounds and escapes identifiers echoed from an invalid snapshot", async () => {
+    const validPath = writeSnapshot("echo-valid.json", snapshot({}));
+    const longKey = "S".repeat(200_000);
+    const longPath = writeSnapshot("echo-long.json", {
+      ...snapshot({}),
+      [longKey]: 1,
+    });
+    const controlPath = writeSnapshot("echo-control.json", {
+      ...snapshot({}),
+      capabilities: { "x\u009b31m\u202eRED": { description: 1 } },
+    });
+
+    const long = await runContract("contract", "diff", longPath, validPath);
+    const control = await runContract(
+      "contract",
+      "diff",
+      controlPath,
+      validPath,
+    );
+
+    expect(long.exitCode).toBe(2);
+    expect(long.stderr).toContain(
+      `reason: snapshot contains the unsupported field "${"S".repeat(64)}…".`,
+    );
+    expect(long.stderr.length).toBeLessThan(longPath.length + 300);
+    expect(control.exitCode).toBe(2);
+    expect(control.stderr).toContain(
+      'reason: capabilities["x\\u009b31m\\u202eRED"].access must be',
+    );
+    expect(control.stderr).not.toMatch(/[\u0080-\u009f\u202e]/u);
+  });
+
+  it("escapes control and format characters in the report", async () => {
+    const previousPath = writeSnapshot(
+      "escape-previous.json",
+      snapshot({ "bad\u009b\u2028id": capability() }),
+    );
+    const nextPath = writeSnapshot("escape-next.json", snapshot({}));
+
+    const result = await runContract(
+      "contract",
+      "diff",
+      previousPath,
+      nextPath,
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain(
+      'CAPABILITY_REMOVED capability="bad\\u009b\\u2028id"',
+    );
+    expect(result.stdout).not.toMatch(/[\u0080-\u009f\u2028]/u);
   });
 
   it("rejects a snapshot file larger than 16 MiB before reading it", async () => {

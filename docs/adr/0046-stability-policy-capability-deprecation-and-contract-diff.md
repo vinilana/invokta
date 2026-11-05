@@ -86,8 +86,12 @@ engine. `list()` and the MCP tool listing do not include it.
   `describe` only. The snapshot has `formatVersion: 1`, the engine name and
   version, and each capability's title, description, access kind, timeout,
   boolean annotation hints, deprecation notice, and input and output JSON
-  Schemas. Capability IDs and JSON Schema keywords are sorted by code unit, so
-  declaration and keyword order never change the bytes.
+  Schemas. Object keys, including capability IDs and JSON Schema keywords, are
+  sorted by code unit, except that JSON serialization emits integer-like keys
+  such as `"9"` and `"10"` first in ascending numeric order. The set-valued
+  `required`, `type`, and `enum` arrays are sorted too; data arrays inside
+  `const`, `default`, and `examples` keep their order. Reordering properties,
+  keywords, required names, or enum members therefore never changes the bytes.
 - `invokta contract diff <previous> <next> [--fail-on-potentially-breaking]`
   reads two snapshots and writes a report grouped as breaking, potentially
   breaking, and compatible. Each change carries a stable code, the capability
@@ -99,22 +103,40 @@ widening an output is breaking; the opposite is compatible. It decides `type`
 (with `integer` inside `number`), `enum` and `const`, numeric and count bounds,
 `uniqueItems`, the addition or removal of `pattern` and `multipleOf`,
 `properties`, `required`, `additionalProperties`, and `items`, recursively.
-Every other keyword change, including `$ref`, `$defs`, `anyOf`, `oneOf`,
-`allOf`, `not`, conditionals, `format`, `default`, and a replaced `pattern`, is
-potentially breaking rather than guessed. Adding an output property is
-compatible even for a closed output object, because the policy requires
-consumers to tolerate unknown output properties; schema libraries routinely
-close output objects, and classifying every added field as a break would hide
-real breaks. Capability-level rules cover removal and addition (a rename is
-both), access, timeout, annotation guarantees, deprecation, documentation, and
-the engine name.
+The nullable form `anyOf: [S, { type: "null" }]`, in either order and with only
+documentation or `default` beside it, is decided by comparing `S` and whether
+null is accepted, and it is equivalent to `type: [T, "null"]`. Every other
+keyword change, including `$ref`, `$defs`, other `anyOf` and `oneOf` unions,
+discriminated unions, `allOf`, `not`, conditionals, `format`, `default`, and a
+replaced `pattern`, is potentially breaking rather than guessed; the policy
+recommends `--fail-on-potentially-breaking` for engines that rely on them.
+
+An added property is compared with what governed its values before. Under a
+previous `additionalProperties` schema (a Zod `catchall`) or
+`patternProperties`, it is potentially breaking unless its schema is identical.
+On output, adding a property to a closed object (`additionalProperties: false`)
+is potentially breaking with the dedicated code `CLOSED_OUTPUT_PROPERTY_ADDED`,
+and so is opening a closed output object. Zod closes every output object, and
+the official MCP SDK client, which `connectMcpClient` uses, validates results
+against the output schema cached from `tools/list`: after a stateless deploy
+adds a property, every call fails until the client lists tools again, and the
+stateless adapter sends no `tools/list_changed` notification. Classifying the
+addition as breaking would flag every additive release, and calling it
+compatible would hide that failure, so it is reported for review and the
+policy recommends releasing it in a minor version with a notice. Adding a
+property to an open output object stays compatible. Capability-level rules
+cover removal and addition (a rename is both), access, timeout, annotation
+guarantees, deprecation, documentation, and the engine name.
 
 `contract diff` exits `0` without breaking changes, `1` with breaking changes
 (or potentially breaking changes under the flag), and `2` for usage errors and
 unreadable or invalid snapshots. Snapshots are limited to 16 MiB, schema
 documents to 256 levels of nesting, and unknown snapshot fields are rejected so
 an older tool never compares a newer snapshot partially. Invalid JSON is
-reported without echoing parser messages, which can quote file content. The
+reported without echoing parser messages, which can quote file content. Keys
+and capability IDs echoed by a diagnostic are truncated to 64 characters, and
+every echoed or reported string escapes control, separator, and format
+characters such as U+009B and bidirectional overrides. The
 package root exports `runContractCommand`, `createContractSnapshot`,
 `serializeContractSnapshot`, `diffContractSnapshots`, and their types.
 

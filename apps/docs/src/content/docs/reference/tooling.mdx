@@ -149,9 +149,13 @@ contract to standard output, or to `--output`. It reads only `engine.list()` and
 }
 ```
 
-Capability IDs and JSON Schema keywords are sorted, so declaration and keyword
-order never change the bytes. Only the four boolean annotation hints are
-recorded. The snapshot command fails with exit code `2` if the engine's
+Object keys, including capability IDs and JSON Schema keywords, are sorted by
+code unit, except that integer-like keys such as `"9"` and `"10"` are written
+first in ascending numeric order, as JSON serialization requires. The
+set-valued `required`, `type`, and `enum` arrays are sorted too, while data
+arrays in `const`, `default`, and `examples` keep their order. Reordering
+properties, keywords, required names, or enum members therefore never changes
+the bytes. Only the four boolean annotation hints are recorded. The snapshot command fails with exit code `2` if the engine's
 descriptions do not include an access kind.
 
 `contract diff` compares two snapshots and writes a report to standard output.
@@ -171,14 +175,15 @@ breaking.
 | --- | --- | --- |
 | `CAPABILITY_REMOVED` | Breaking | A capability ID disappeared; a rename is a removal plus an addition |
 | `CAPABILITY_ADDED` | Compatible | A new capability ID |
-| `PROPERTY_ADDED` | Breaking for a required input property, otherwise compatible | `priority` added to `required` and `properties` |
+| `PROPERTY_ADDED` | Breaking for a required input property; potentially breaking when its values were previously governed by a different `additionalProperties` schema or by `patternProperties`; otherwise compatible | `priority` added to `required` and `properties` |
+| `CLOSED_OUTPUT_PROPERTY_ADDED` | Potentially breaking | An output property was added to an object whose previous schema set `additionalProperties: false` |
 | `PROPERTY_REMOVED` | Breaking for output or a closed input object, otherwise potentially breaking | An output property was dropped |
 | `REQUIRED_CHANGED` | Breaking when an input becomes required or an output becomes optional | `required` changed |
 | `TYPE_CHANGED` | By direction; disjoint types are breaking | `string` to `number`; `integer` to `number` widens |
 | `VALUES_CHANGED` | By direction; removing and adding is breaking | An `enum` value or `const` changed |
 | `CONSTRAINT_CHANGED` | By direction; a replaced `pattern` or `multipleOf` and any `format` change are potentially breaking | `minimum`, `maxLength`, `minItems`, `uniqueItems`, `pattern` |
-| `ADDITIONAL_PROPERTIES_CHANGED` | By direction; adding output properties is always compatible | An input started rejecting unknown properties |
-| `KEYWORD_CHANGED` | Potentially breaking | `$ref`, `$defs`, `anyOf`, `oneOf`, `allOf`, `not`, `if`, `default`, or any other keyword |
+| `ADDITIONAL_PROPERTIES_CHANGED` | By direction; opening a closed output object is potentially breaking | An input started rejecting unknown properties |
+| `KEYWORD_CHANGED` | Potentially breaking | `$ref`, `$defs`, a union in `anyOf` or `oneOf`, `allOf`, `not`, `if`, `default`, or any other keyword |
 | `ACCESS_CHANGED` | Breaking from `public`; compatible to `public`; otherwise potentially breaking | `public` to `authenticated` |
 | `TIMEOUT_CHANGED` | Potentially breaking when added or shortened | `timeoutMs` from 30000 to 5000 |
 | `ANNOTATIONS_CHANGED` | Potentially breaking when a guarantee is lost | `readOnly` from true to false |
@@ -187,9 +192,19 @@ breaking.
 | `ENGINE_NAME_CHANGED` | Potentially breaking | The MCP server identity changed |
 
 The comparison never guesses: any JSON Schema change it cannot decide is
-potentially breaking. Consumers must tolerate unknown output properties, so an
-added output property is compatible even when the output schema sets
-`additionalProperties: false`.
+potentially breaking. A nullable value, `anyOf: [S, { type: "null" }]` in either
+order, is decided by comparing `S` and whether null is accepted, the same way
+as `type: [T, "null"]`. Other unions, including Zod discriminated unions, stay
+undecidable; engines that use them should add `--fail-on-potentially-breaking`.
+
+Zod closes every output object with `additionalProperties: false`, and the
+official MCP SDK client, which `connectMcpClient` uses, validates results
+against the output schema it cached from `tools/list`. After a stateless deploy
+adds an output property, that client rejects every call to the tool until it
+lists tools again, so the addition is `CLOSED_OUTPUT_PROPERTY_ADDED`. Release it
+in a minor version with a notice and have clients list tools again. Adding a
+property to an output object that already allowed additional properties is
+compatible.
 
 | Exit code | Meaning |
 | --- | --- |
@@ -200,7 +215,9 @@ added output property is compatible even when the output schema sets
 A snapshot file may be at most 16 MiB with at most 256 nesting levels per
 schema document. Unknown fields and other format versions are rejected, and
 invalid JSON is reported without echoing parser messages, which can quote file
-content.
+content. Keys and capability IDs echoed in a diagnostic are truncated to 64
+characters, and control, separator, and format characters are escaped in every
+diagnostic and report.
 
 <Aside type="note" title="A structural check">
   The diff compares published contracts. Handler behavior, a function access

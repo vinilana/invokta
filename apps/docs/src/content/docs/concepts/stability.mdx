@@ -77,8 +77,11 @@ Security fixes may change behavior without a deprecation window.
 
 Security fixes ship as a patch release of every package on the latest release
 line, described under `Security` in the changelog without exploit details.
-There is no dedicated security contact yet: open a GitHub issue asking the
-maintainer for a private channel, without the vulnerability details.
+Report a suspected vulnerability privately with **Report a vulnerability** on
+the repository's [Security tab](https://github.com/vinilana/invokta/security).
+Never put vulnerability details in a public issue, discussion, or pull request.
+If private reporting is unavailable, a public issue may only ask the maintainer
+for a private contact channel, without any details.
 
 ## Criteria for 1.0
 
@@ -91,8 +94,8 @@ maintainer for a private channel, without the vulnerability details.
 2. At least one minor release has followed this policy, including a completed
    deprecation.
 3. CI exercises every supported Node.js major version.
-4. A security policy publishes a private reporting channel and supported
-   release lines.
+4. Private vulnerability reporting is enabled and a security policy describes
+   it and the supported release lines.
 5. Release verification detects unintended export changes.
 6. The official examples gate their contracts with `invokta contract diff`.
 7. The MCP SDK review and conformance process passes on the baseline.

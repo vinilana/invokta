@@ -138,9 +138,13 @@ Capabilities published by an engine are deprecated with the capability-level
   details. Dependency updates that address advisories are listed there too.
 - CI audits the workspace, documentation, and standalone OAuth example
   dependencies on every pull request.
-- The repository does not yet publish a dedicated security contact. Until it
-  does, do not disclose vulnerability details publicly: open a GitHub issue that
-  asks the maintainer for a private channel, without including the details.
+- Report a suspected vulnerability privately through GitHub private
+  vulnerability reporting: the **Report a vulnerability** button on the
+  repository's
+  [Security tab](https://github.com/vinilana/invokta/security). Never put
+  vulnerability details in a public issue, discussion, or pull request. If
+  private reporting is unavailable, a public issue may be used only to ask the
+  maintainer for a private contact channel, without any details.
 
 ## Criteria for 1.0
 
@@ -152,8 +156,8 @@ a state, not a date.
 2. At least one minor release has followed this policy, including a
    deprecation completed through its window.
 3. CI exercises every supported Node.js major version.
-4. A security policy file publishes a private reporting channel and the
-   supported release lines.
+4. Private vulnerability reporting is enabled, and a security policy file
+   describes it and the supported release lines.
 5. Release verification detects unintended changes to each package's exported
    names.
 6. The official examples gate their capability contracts with
@@ -166,12 +170,26 @@ a state, not a date.
 An engine's `version` and its capability contracts are owned by the engine
 author. Version an engine with SemVer and treat each capability as a public
 contract: its ID, input and output schemas, access kind, timeout, and
-annotations. Two rules apply to every consumer:
+annotations. A removed or renamed capability ID breaks every caller that uses
+it.
 
-- consumers MUST tolerate output properties they do not know, so adding an
-  output property is compatible even when the output schema sets
-  `additionalProperties: false`; and
-- a removed or renamed capability ID breaks every caller that uses it.
+### Adding output properties
+
+Invokta publishes output schemas as the schema library produces them, and Zod
+closes every output object with `additionalProperties: false`. A consumer that
+validates results against the schema it received therefore rejects a property
+it has not seen. The official MCP SDK client, which `connectMcpClient` uses,
+caches each tool's output schema from `tools/list` and fails every call to that
+tool after a deploy that adds an output property, until it lists tools again.
+The stateless MCP HTTP adapter does not send `tools/list_changed`
+notifications, so the client is not told to refresh.
+
+Adding a property to a closed output object is therefore potentially breaking.
+Release it in a minor version of the engine with a changelog notice, and have
+MCP clients list tools again (for example by reconnecting) after the deploy.
+Direct callers that ignore unknown properties are unaffected. Adding a property
+to an output object whose schema already allowed additional properties is
+compatible.
 
 ### What counts as a breaking change
 
@@ -188,10 +206,13 @@ annotations. Two rules apply to every consumer:
 | Lose a behavioral hint guarantee: `readOnly` true to false, `destructive` false to true, `idempotent` true to false, or `openWorld` false to true | Potentially breaking |
 | Switch access between `authenticated` and a function rule | Potentially breaking |
 | Remove an optional input property from a schema that still accepts additional properties | Potentially breaking |
+| Add an output property to a closed output object (`additionalProperties: false`, which Zod emits for every output object), or let a closed output object accept additional properties | Potentially breaking: see [adding output properties](#adding-output-properties) |
+| Add a property whose values were previously governed by an `additionalProperties` schema (a Zod `catchall`) or `patternProperties`, with a different schema | Potentially breaking |
 | Change `anyOf`, `oneOf`, `allOf`, `not`, `if`, `$ref`, `$defs`, `patternProperties`, `format`, `default`, or replace a `pattern` | Potentially breaking: review manually |
+| Change anything inside a union or discriminated union, which Zod emits as `anyOf` or `oneOf` | Potentially breaking: review manually. A nullable value (`anyOf: [S, { type: "null" }]`) is compared through `S` |
 | Rename the engine | Potentially breaking: it is the MCP server identity |
-| Add a capability, or add an optional input property | Compatible |
-| Widen an input, narrow an output, make an input property optional, add an output property | Compatible |
+| Add a capability, or add an optional input property | Compatible, assuming callers did not already send that property with another type |
+| Widen an input, narrow an output, make an input property optional, add an output property to an object that allows additional properties | Compatible |
 | Deprecate a capability, or change titles, descriptions, and examples | Compatible |
 
 Handler behavior, a function access rule's logic, latency, cost, and the model
@@ -222,4 +243,7 @@ invokta contract diff contract.json contract.next.json
 `--fail-on-potentially-breaking`, also for potentially breaking changes. Commit
 the accepted `contract.json` and update it deliberately when a release changes
 the contract. Changes the comparison cannot decide are reported as potentially
-breaking rather than guessed compatible.
+breaking rather than guessed compatible. Engines whose schemas use unions,
+discriminated unions, `$ref`, or other composition keywords should run
+`contract diff` with `--fail-on-potentially-breaking` so those changes are
+reviewed before release.

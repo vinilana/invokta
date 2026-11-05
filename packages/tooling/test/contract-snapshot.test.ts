@@ -4,11 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import type { Engine } from "@invokta/core";
+import { createEngine, defineCapability, type Engine } from "@invokta/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
   createContractSnapshot,
+  diffContractSnapshots,
   runContractCommand,
   serializeContractSnapshot,
 } from "../src/index.js";
@@ -106,7 +108,16 @@ describe("contract snapshots", () => {
             replacement: "support.triage",
             since: "2.0.0",
           },
-          inputSchema: engine.describe("support.classify").inputSchema,
+          inputSchema: {
+            $schema: "https://json-schema.org/draft/2020-12/schema",
+            type: "object",
+            properties: {
+              ticketId: { type: "string", minLength: 1 },
+              // Enum membership is canonicalized; declaration order was low, high.
+              priority: { type: "string", enum: ["high", "low"] },
+            },
+            required: ["ticketId"],
+          },
           outputSchema: engine.describe("support.classify").outputSchema,
         },
         "support.triage": {
@@ -150,6 +161,184 @@ describe("contract snapshots", () => {
     expect(forwardBytes).toContain(
       '"properties": {\n          "count": {\n            "minimum": 0,\n            "type": "integer"\n          },',
     );
+  });
+
+  it("sorts set-valued required, type, and enum arrays but keeps data arrays", () => {
+    const shapes = [
+      {
+        b: z.string(),
+        a: z.union([z.string(), z.number()]),
+        k: z.enum(["y", "x"]),
+        d: z.array(z.string()).default(["b", "a"]),
+      },
+      {
+        a: z.union([z.number(), z.string()]),
+        k: z.enum(["x", "y"]),
+        d: z.array(z.string()).default(["b", "a"]),
+        b: z.string(),
+      },
+    ];
+    const [first, second] = shapes.map((shape) =>
+      serializeContractSnapshot(
+        createContractSnapshot(
+          createEngine({
+            name: "order-engine",
+            version: "1.0.0",
+            capabilities: {
+              "orders.read": defineCapability({
+                description: "Reads an order.",
+                input: z.object(shape),
+                output: z.object({ ok: z.boolean() }),
+                access: "public",
+                async run() {
+                  return { ok: true };
+                },
+              }),
+            },
+          }),
+        ),
+      ),
+    );
+
+    expect(second).toBe(first);
+    const input = JSON.parse(first as string).capabilities["orders.read"]
+      .inputSchema;
+    expect(input.required).toEqual(["a", "b", "k"]);
+    expect(input.properties.a.type).toEqual(["number", "string"]);
+    expect(input.properties.k.enum).toEqual(["x", "y"]);
+    expect(input.properties.d.default).toEqual(["b", "a"]);
+  });
+
+  it("keeps const values and schemas named like data keywords intact", () => {
+    const document = {
+      type: "object",
+      properties: {
+        enum: { type: "object", required: ["z", "a"] },
+        mode: { const: ["b", "a"] },
+      },
+      required: ["mode", "enum"],
+      examples: [{ required: ["b", "a"] }],
+    };
+    const snapshot = createContractSnapshot(
+      createEngine({
+        name: "data-engine",
+        version: "1.0.0",
+        capabilities: {
+          echo: {
+            description: "Returns its input.",
+            input: {
+              "~standard": {
+                version: 1,
+                vendor: "invokta-tooling-test",
+                validate: (value: unknown) => ({ value }),
+                jsonSchema: { input: () => document, output: () => document },
+              },
+            },
+            output: {
+              "~standard": {
+                version: 1,
+                vendor: "invokta-tooling-test",
+                validate: (value: unknown) => ({ value }),
+                jsonSchema: { input: () => document, output: () => document },
+              },
+            },
+            access: "public",
+            async run({ input }) {
+              return input as Record<string, unknown>;
+            },
+          },
+        },
+      }),
+    );
+
+    expect(snapshot.capabilities.echo?.inputSchema).toEqual({
+      type: "object",
+      properties: {
+        enum: { type: "object", required: ["a", "z"] },
+        mode: { const: ["b", "a"] },
+      },
+      required: ["enum", "mode"],
+      examples: [{ required: ["b", "a"] }],
+    });
+  });
+
+  it("serializes integer-like keys first in ascending numeric order", () => {
+    const snapshot = createContractSnapshot(
+      createEngine({
+        name: "key-engine",
+        version: "1.0.0",
+        capabilities: {
+          b: defineCapability({
+            description: "B.",
+            input: z.object({
+              "10": z.string(),
+              a: z.string(),
+              "9": z.string(),
+            }),
+            output: z.object({}),
+            access: "public",
+            async run() {
+              return {};
+            },
+          }),
+          "10": defineCapability({
+            description: "Ten.",
+            input: z.object({}),
+            output: z.object({}),
+            access: "public",
+            async run() {
+              return {};
+            },
+          }),
+        },
+      }),
+    );
+    const parsed = JSON.parse(serializeContractSnapshot(snapshot));
+
+    expect(Object.keys(parsed.capabilities)).toEqual(["10", "b"]);
+    expect(Object.keys(parsed.capabilities.b.inputSchema.properties)).toEqual([
+      "9",
+      "10",
+      "a",
+    ]);
+  });
+
+  it("captures a capability whose ID is __proto__", () => {
+    const capabilities = Object.defineProperty({}, "__proto__", {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: defineCapability({
+        description: "Has an unusual ID.",
+        input: z.object({}),
+        output: z.object({}),
+        access: "public",
+        async run() {
+          return {};
+        },
+      }),
+    });
+    const protoEngine = createEngine({
+      name: "proto-engine",
+      version: "1.0.0",
+      capabilities,
+    });
+
+    const snapshot = createContractSnapshot(protoEngine);
+    const serialized = serializeContractSnapshot(snapshot);
+
+    expect(Object.keys(snapshot.capabilities)).toEqual(["__proto__"]);
+    expect(Object.hasOwn(snapshot.capabilities, "__proto__")).toBe(true);
+    const parsed = JSON.parse(serialized).capabilities;
+    expect(
+      Object.getOwnPropertyDescriptor(parsed, "__proto__")?.value.description,
+    ).toBe("Has an unusual ID.");
+    expect(diffContractSnapshots(snapshot, JSON.parse(serialized))).toEqual({
+      changes: [],
+      breaking: 0,
+      potentiallyBreaking: 0,
+      compatible: 0,
+    });
   });
 
   it("rejects an engine whose descriptions do not publish an access kind", async () => {

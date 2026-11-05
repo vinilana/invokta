@@ -6,6 +6,11 @@ import {
   type ContractSnapshot,
   readContractSnapshot,
 } from "./contract-snapshot.js";
+import {
+  escapeText,
+  maximumEchoedLength,
+  quoteIdentifier,
+} from "./contract-text.js";
 
 export type ContractChangeSeverity =
   | "breaking"
@@ -23,6 +28,7 @@ export type ContractChangeCode =
   | "DEPRECATION_CHANGED"
   | "PROPERTY_REMOVED"
   | "PROPERTY_ADDED"
+  | "CLOSED_OUTPUT_PROPERTY_ADDED"
   | "REQUIRED_CHANGED"
   | "TYPE_CHANGED"
   | "VALUES_CHANGED"
@@ -100,8 +106,9 @@ const annotationGuarantees = [
 
 const maximumListedValues = 5;
 
+/** File-controlled names in messages are bounded and escaped. */
 function quote(value: string): string {
-  return JSON.stringify(value);
+  return quoteIdentifier(value);
 }
 
 function compareCodeUnits(left: string, right: string): number {
@@ -306,7 +313,10 @@ function readValues(schema: UnknownRecord): ValueSet {
 }
 
 function listValues(keys: readonly string[]): string {
-  const listed = keys.slice(0, maximumListedValues).join(", ");
+  const listed = keys
+    .slice(0, maximumListedValues)
+    .map((key) => escapeText(key, maximumEchoedLength))
+    .join(", ");
   const omitted = keys.length - maximumListedValues;
   return omitted > 0 ? `${listed}, and ${String(omitted)} more` : listed;
 }
@@ -607,8 +617,15 @@ function compareAdditionalProperties(
   const narrowed =
     afterKind === "closed" || (beforeKind === "open" && afterKind === "schema");
   if (scope.direction === "output" && beforeKind === "closed") {
-    // Consumers must tolerate additional output properties (stability policy).
-    record(scope, path, "ADDITIONAL_PROPERTIES_CHANGED", "compatible", message);
+    // Formally a widening, but only clients validating against the cached
+    // closed schema reject results; flag it for review rather than block.
+    record(
+      scope,
+      path,
+      "ADDITIONAL_PROPERTIES_CHANGED",
+      "potentially-breaking",
+      `${message} Clients that validate results against a cached copy of the previous closed schema, such as the official MCP SDK client, reject additional properties until they list tools again.`,
+    );
     return;
   }
   recordEffect(
@@ -644,6 +661,8 @@ function compareProperty(
   previous: {
     readonly properties: UnknownRecord;
     readonly required: ReadonlySet<string>;
+    readonly additional: unknown;
+    readonly patterned: boolean;
   },
   next: {
     readonly properties: UnknownRecord;
@@ -686,13 +705,12 @@ function compareProperty(
     return;
   }
   if (!inBefore && inAfter) {
-    const breaking = scope.direction === "input" && requiredAfter;
-    record(
+    compareAddedProperty(
       scope,
       propertyPath,
-      "PROPERTY_ADDED",
-      breaking ? "breaking" : "compatible",
-      `${requiredAfter ? "A required" : "An optional"} ${scope.direction} property was added.`,
+      next.properties[name],
+      requiredAfter,
+      previous,
     );
     return;
   }
@@ -714,6 +732,57 @@ function compareProperty(
       ? "The property is now required."
       : "The property is now optional.",
   );
+}
+
+/**
+ * Classifies a property that the previous schema did not name. Before, its
+ * values were governed by `additionalProperties` (or `patternProperties`), so
+ * the addition is only free when that rule accepted anything.
+ */
+function compareAddedProperty(
+  scope: SchemaScope,
+  path: string,
+  schema: unknown,
+  required: boolean,
+  previous: { readonly additional: unknown; readonly patterned: boolean },
+): void {
+  const label = `${required ? "A required" : "An optional"} ${scope.direction} property was added`;
+  if (scope.direction === "input" && required) {
+    record(scope, path, "PROPERTY_ADDED", "breaking", `${label}.`);
+    return;
+  }
+  const previousKind = additionalKind(previous.additional);
+  if (
+    previous.patterned ||
+    previousKind === "invalid" ||
+    (previousKind === "schema" && !jsonEqual(previous.additional, schema))
+  ) {
+    record(
+      scope,
+      path,
+      "PROPERTY_ADDED",
+      "potentially-breaking",
+      `${label}; its values were previously governed by ${previous.patterned ? '"patternProperties"' : '"additionalProperties"'}, and the new schema differs.`,
+    );
+    return;
+  }
+  if (scope.direction === "output" && previousKind === "closed") {
+    record(
+      scope,
+      path,
+      "CLOSED_OUTPUT_PROPERTY_ADDED",
+      "potentially-breaking",
+      `${label} to an object whose previous schema rejected additional properties. Clients that validate results against a cached copy of that schema, such as the official MCP SDK client, reject results until they list tools again.`,
+    );
+    return;
+  }
+  record(scope, path, "PROPERTY_ADDED", "compatible", `${label}.`);
+}
+
+function hasPatternProperties(schema: UnknownRecord): boolean {
+  const patterns = own(schema, "patternProperties");
+  if (patterns === undefined) return false;
+  return !isRecord(patterns) || Object.keys(patterns).length > 0;
 }
 
 function compareObject(
@@ -742,7 +811,12 @@ function compareObject(
       compareProperty(
         scope,
         name,
-        { properties: beforeProperties, required: beforeRequired },
+        {
+          properties: beforeProperties,
+          required: beforeRequired,
+          additional: own(previous, "additionalProperties"),
+          patterned: hasPatternProperties(previous),
+        },
         { properties: afterProperties, required: afterRequired, closed },
         path,
       );
@@ -787,6 +861,105 @@ const classifiedKeywords = new Set<string>([
   "items",
 ]);
 
+const nullSchema: UnknownRecord = { type: "null" };
+
+/** Keywords allowed beside a nullable `anyOf`; none of them can reject null. */
+const nullableSiblingKeywords = new Set<string>([
+  ...documentationKeywords,
+  "default",
+]);
+
+/**
+ * One side of a comparison split into its non-null part and whether it also
+ * accepts null. Schema libraries emit a nullable value either as
+ * `type: [T, "null"]` or as `anyOf: [S, { type: "null" }]`; both decompose to
+ * the same view so the non-null part stays comparable.
+ */
+interface NullableView {
+  readonly inner: unknown;
+  readonly innerPath: string;
+  readonly siblings: UnknownRecord;
+  readonly nullable: boolean;
+}
+
+function nullableAnyOf(
+  schema: UnknownRecord,
+  path: string,
+): NullableView | undefined {
+  const branches = own(schema, "anyOf");
+  if (!Array.isArray(branches) || branches.length !== 2) return undefined;
+  const nullIndex = branches.findIndex((branch) =>
+    jsonEqual(branch, nullSchema),
+  );
+  if (nullIndex === -1) return undefined;
+  const innerIndex = nullIndex === 0 ? 1 : 0;
+  const inner: unknown = branches[innerIndex];
+  if (jsonEqual(inner, nullSchema) || !(inner === true || isRecord(inner))) {
+    return undefined;
+  }
+  const siblings = Object.fromEntries(
+    Object.entries(schema).filter(([keyword]) => keyword !== "anyOf"),
+  );
+  if (!Object.keys(siblings).every((key) => nullableSiblingKeywords.has(key))) {
+    return undefined;
+  }
+  return {
+    inner,
+    innerPath: `${path}/anyOf/${String(innerIndex)}`,
+    siblings,
+    nullable: true,
+  };
+}
+
+function plainView(schema: UnknownRecord, path: string): NullableView {
+  const types = readTypes(schema);
+  if (types instanceof Set && types.has("null") && types.size > 1) {
+    const remaining = [...types]
+      .filter((type) => type !== "null")
+      .sort(compareCodeUnits);
+    const values = own(schema, "enum");
+    return {
+      inner: {
+        ...schema,
+        type: remaining.length === 1 ? remaining[0] : remaining,
+        ...(Array.isArray(values)
+          ? { enum: values.filter((value) => value !== null) }
+          : {}),
+      },
+      innerPath: path,
+      siblings: {},
+      nullable: true,
+    };
+  }
+  return { inner: schema, innerPath: path, siblings: {}, nullable: false };
+}
+
+function compareNullable(
+  scope: SchemaScope,
+  before: NullableView,
+  after: NullableView,
+  path: string,
+): void {
+  if (before.nullable !== after.nullable) {
+    recordEffect(
+      scope,
+      path,
+      "TYPE_CHANGED",
+      after.nullable ? "widened" : "narrowed",
+      after.nullable
+        ? "The schema now also accepts null."
+        : "The schema no longer accepts null.",
+    );
+  }
+  compareDocumentation(scope, before.siblings, after.siblings, path);
+  if (
+    !jsonEqual(own(before.siblings, "default"), own(after.siblings, "default"))
+  ) {
+    undecidable(scope, path, "default");
+  }
+  compareSchema(scope, before.inner, after.inner, after.innerPath);
+}
+
 function normalizeSchema(value: unknown): UnknownRecord | "never" | "invalid" {
   if (value === true) return {};
   if (value === false) return "never";
@@ -821,6 +994,17 @@ function compareSchema(
       before === "never"
         ? "The schema no longer rejects every value."
         : "The schema now rejects every value.",
+    );
+    return;
+  }
+  const beforeNullable = nullableAnyOf(before, path);
+  const afterNullable = nullableAnyOf(after, path);
+  if (beforeNullable !== undefined || afterNullable !== undefined) {
+    compareNullable(
+      scope,
+      beforeNullable ?? plainView(before, path),
+      afterNullable ?? plainView(after, path),
+      path,
     );
     return;
   }

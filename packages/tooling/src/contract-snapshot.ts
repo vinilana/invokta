@@ -7,6 +7,8 @@ import type {
   EngineJsonSchema,
 } from "@invokta/core";
 
+import { quoteIdentifier } from "./contract-text.js";
+
 /** The public contract of one capability as recorded in a snapshot. */
 export interface ContractCapabilitySnapshot {
   readonly title?: string;
@@ -66,10 +68,6 @@ export class ContractSnapshotError extends TypeError {
   }
 }
 
-function quote(value: string): string {
-  return JSON.stringify(value);
-}
-
 function compareCodeUnits(left: string, right: string): number {
   if (left === right) return 0;
   return left < right ? -1 : 1;
@@ -103,7 +101,7 @@ function expectOnlyKeys(
 ): void {
   for (const key of Object.keys(record).sort(compareCodeUnits)) {
     if (!allowed.includes(key)) {
-      fail(`${path} contains the unsupported field ${quote(key)}.`);
+      fail(`${path} contains the unsupported field ${quoteIdentifier(key)}.`);
     }
   }
 }
@@ -118,11 +116,81 @@ function childPath(path: string, key: string): string {
 }
 
 /**
- * Copies a JSON value with object keys in code-unit order so the serialized
- * bytes depend only on the content. `Object.fromEntries` defines own data
- * properties, so a `__proto__` key stays an ordinary member.
+ * How a JSON value is interpreted while it is canonicalized. Inside a schema,
+ * set-valued keywords are sorted; inside data (`const`, `default`, `examples`,
+ * `enum` members) only object keys are sorted, because array order is data.
+ * A schema map (`properties`, `$defs`, ...) holds schemas under arbitrary
+ * names, so a property named `enum` is still a schema.
  */
-function canonicalJson(value: unknown, path: string, depth: number): unknown {
+type JsonContext = "schema" | "schema-map" | "data";
+
+const dataKeywords = new Set(["const", "default", "enum", "examples"]);
+const stringSetKeywords = new Set(["required", "type"]);
+const schemaMapKeywords = new Set([
+  "$defs",
+  "definitions",
+  "dependentSchemas",
+  "patternProperties",
+  "properties",
+]);
+
+function sortedArray(
+  values: readonly unknown[],
+  key: (value: unknown) => string,
+): readonly unknown[] {
+  return Object.freeze(
+    [...values].sort((left, right) => compareCodeUnits(key(left), key(right))),
+  );
+}
+
+function canonicalMember(
+  key: string,
+  member: unknown,
+  path: string,
+  depth: number,
+  context: JsonContext,
+): unknown {
+  if (context === "data") return canonicalJson(member, path, depth, "data");
+  if (context === "schema-map") {
+    return canonicalJson(member, path, depth, "schema");
+  }
+  if (dataKeywords.has(key)) {
+    const copy = canonicalJson(member, path, depth, "data");
+    // Enum membership is a set: its order never changes what validates.
+    return key === "enum" && Array.isArray(copy)
+      ? sortedArray(copy, (entry) => JSON.stringify(entry))
+      : copy;
+  }
+  const copy = canonicalJson(
+    member,
+    path,
+    depth,
+    schemaMapKeywords.has(key) ? "schema-map" : "schema",
+  );
+  if (
+    stringSetKeywords.has(key) &&
+    Array.isArray(copy) &&
+    copy.every((entry) => typeof entry === "string")
+  ) {
+    return sortedArray(copy, (entry) => entry as string);
+  }
+  return copy;
+}
+
+/**
+ * Copies a JSON value with object keys in code-unit order, and with the
+ * set-valued `required`, `type`, and `enum` arrays sorted, so the serialized
+ * bytes depend only on the content. JSON serialization still emits
+ * integer-like keys such as `"9"` and `"10"` first, in ascending numeric
+ * order. `Object.fromEntries` defines own data properties, so a `__proto__`
+ * key stays an ordinary member.
+ */
+function canonicalJson(
+  value: unknown,
+  path: string,
+  depth: number,
+  context: JsonContext,
+): unknown {
   if (depth > maximumSchemaDepth) {
     fail(
       `${path} exceeds the maximum JSON nesting depth of ${String(maximumSchemaDepth)}.`,
@@ -141,7 +209,14 @@ function canonicalJson(value: unknown, path: string, depth: number): unknown {
   }
   if (Array.isArray(value)) {
     return Object.freeze(
-      value.map((entry) => canonicalJson(entry, path, depth + 1)),
+      value.map((entry) =>
+        canonicalJson(
+          entry,
+          path,
+          depth + 1,
+          context === "schema-map" ? "schema" : context,
+        ),
+      ),
     );
   }
   if (!isRecord(value)) fail(`${path} contains a value outside JSON.`);
@@ -149,14 +224,17 @@ function canonicalJson(value: unknown, path: string, depth: number): unknown {
     Object.fromEntries(
       Object.keys(value)
         .sort(compareCodeUnits)
-        .map((key) => [key, canonicalJson(value[key], path, depth + 1)]),
+        .map((key) => [
+          key,
+          canonicalMember(key, value[key], path, depth + 1, context),
+        ]),
     ),
   );
 }
 
 function readSchema(value: unknown, path: string): EngineJsonSchema {
   expectRecord(value, path);
-  return canonicalJson(value, path, 1) as EngineJsonSchema;
+  return canonicalJson(value, path, 1, "schema") as EngineJsonSchema;
 }
 
 function readAnnotations(
@@ -260,7 +338,7 @@ export function readContractSnapshot(value: unknown): ContractSnapshot {
   const entries = Object.keys(capabilities)
     .sort(compareCodeUnits)
     .map((id) => {
-      const path = `capabilities[${quote(id)}]`;
+      const path = `capabilities[${quoteIdentifier(id)}]`;
       return [id, readCapability(capabilities[id], path)] as const;
     });
   return Object.freeze({
@@ -283,7 +361,9 @@ function captureCapability(
   const record = isRecord(description) ? description : undefined;
   const access = record === undefined ? undefined : own(record, "access");
   if (!accessKinds.includes(access as CapabilityAccessKind)) {
-    fail(`capability ${quote(id)} does not describe a supported access kind.`);
+    fail(
+      `capability ${quoteIdentifier(id)} does not describe a supported access kind.`,
+    );
   }
   const fields: Record<string, unknown> = {};
   for (const key of capabilityKeys) {
@@ -310,12 +390,15 @@ function captureCapability(
 export function createContractSnapshot<Capabilities extends CapabilityMap>(
   engine: Engine<Capabilities>,
 ): ContractSnapshot {
-  const capabilities: Record<string, unknown> = {};
+  // A null prototype keeps an ID such as `__proto__` an ordinary own member.
+  const capabilities = Object.create(null) as Record<string, unknown>;
   for (const summary of engine.list()) {
     const id = summary.id;
     if (typeof id !== "string") fail("the engine listed a non-string ID.");
     if (Object.hasOwn(capabilities, id)) {
-      fail(`the engine listed capability ${quote(id)} more than once.`);
+      fail(
+        `the engine listed capability ${quoteIdentifier(id)} more than once.`,
+      );
     }
     capabilities[id] = captureCapability(
       engine.describe(id as Extract<keyof Capabilities, string>),

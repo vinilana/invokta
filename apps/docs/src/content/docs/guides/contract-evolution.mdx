@@ -18,13 +18,27 @@ change in a release:
 | Change | Engine version |
 | --- | --- |
 | Remove or rename a capability; add a required input property; narrow an input; widen or drop part of an output; make access stricter | Major |
-| Add a capability or an optional input property; widen an input; add an output property; deprecate a capability | Minor |
+| Add a capability or an optional input property; widen an input; add an output property; deprecate a capability | Minor, with a notice for an added output property |
 | Fix a handler without changing the contract | Patch |
 
-Consumers must tolerate output properties they do not know, so adding one is
-compatible even when the output schema closes the object. Changing what an
-existing field means is breaking even when no schema changes; tooling cannot see
-it.
+Changing what an existing field means is breaking even when no schema changes;
+tooling cannot see it.
+
+## Add output properties carefully
+
+Zod closes every output object with `additionalProperties: false`. MCP clients
+built on the official SDK, including `connectMcpClient`, validate each result
+against the output schema they cached from `tools/list`, and the stateless HTTP
+adapter never tells them the list changed. After a deploy that adds an output
+property, those clients reject every call to the tool until they list tools
+again.
+
+`contract diff` therefore reports the addition as potentially breaking
+(`CLOSED_OUTPUT_PROPERTY_ADDED`). Ship it in a minor version with a changelog
+notice, and ask MCP consumers to reconnect or list tools again after the
+deploy. Direct callers that ignore unknown properties are unaffected, and an
+output object that already allowed additional properties can gain properties
+freely.
 
 ## Deprecate before removing
 
@@ -112,9 +126,12 @@ npx invokta contract diff contract.json contract.next.json
 
 The diff exits `1` when it finds a breaking change. Add
 `--fail-on-potentially-breaking` to also stop on changes that need review, such
-as a shorter timeout, a lost `readOnly` guarantee, or a JSON Schema change the
-tool cannot decide (`$ref`, `anyOf`, `oneOf`, `allOf`, `not`, a replaced
-`pattern`, and similar keywords). When a release intentionally changes the
+as a shorter timeout, a lost `readOnly` guarantee, an output property added to
+a closed object, or a JSON Schema change the tool cannot decide (`$ref`, unions
+and discriminated unions in `anyOf` or `oneOf`, `allOf`, `not`, a replaced
+`pattern`, and similar keywords). Nullable values are still compared through
+their non-null schema. Engines that use unions or `$ref` should always pass
+the flag. When a release intentionally changes the
 contract, bump the engine version and commit the new snapshot as the baseline.
 
 The same check runs in a test:

@@ -18,6 +18,7 @@ import {
   readContractSnapshot,
   serializeContractSnapshot,
 } from "./contract-snapshot.js";
+import { quoteText } from "./contract-text.js";
 
 export interface ContractCommandIo {
   readonly writeStdout: (text: string) => void | Promise<void>;
@@ -91,8 +92,9 @@ class OutputError extends Error {
   }
 }
 
+/** Every echoed value is an escaped JSON string literal (see `quoteText`). */
 function quote(value: string): string {
-  return JSON.stringify(value);
+  return quoteText(value);
 }
 
 function asRecord(value: unknown): UnknownRecord | undefined {
