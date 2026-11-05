@@ -14,7 +14,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Direct execution | Run the common `engine.invoke` pipeline | Supply trusted principal, signal, and dependencies | Distributed executor or background jobs |
 | CLI | `list`, `describe`, `run`, JSON I/O, schema-derived run flags, capability help, and stable exit codes | Own the executable, local principal, and untrusted-input bounds | Login, actor flags, shell completion, or plugin discovery |
 | MCP | Map capabilities to tools over stdio and stateless HTTP | Own process composition and deployment | Resources, prompts, tasks, sessions, or resumption |
-| HTTP authentication | Run a required hook, issue a configured 401 Bearer challenge, and publish configured resource metadata | Verify credentials and return a minimal Principal | Identity provider, login, token lifecycle, or universal token verifier |
+| HTTP authentication | Run a required hook, issue a configured 401 Bearer challenge, and publish configured resource metadata; optionally verify one issuer's JWT bearer tokens with `@invokta/auth-jwt` | Verify credentials and return a minimal Principal, or configure the JWT bearer helper | Identity provider, login, token lifecycle, introspection, or universal token verifier |
 | Authorization | Enforce each capability's `access` rule before `run` | Encode domain policy or call a PDP | Policy language, role model, PDP adapter, or relationship graph |
 | HTTP security | Default to loopback; validate exact Host, Origin, route, media types, and body bounds | Configure TLS, proxy trust, allowlists, exposure, and secrets | API gateway, WAF, or certificate management |
 | Errors | Eight `EngineError` codes, contract-checked declared domain errors, and safe adapter mappings | Declare domain outcomes and keep public messages and details safe | Stack or cause disclosure and automatic recovery policy |
@@ -32,6 +32,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | --- | --- |
 | Framework runtime packages | 3 |
 | Supporting packages | 7 |
+| Optional runtime helper packages | 1: auth-jwt |
 | Official inbound adapters | 2: CLI and MCP |
 | MCP transports | 2: stdio and stateless Streamable HTTP |
 | Core primitives | 5: Capability, Connector Definition, Engine, Context, Principal |
@@ -39,7 +40,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Runtime pipeline stages | 6 |
 | Invocation error codes | 8 |
 | Cross-cutting hooks | 1: `onEvent` |
-| Authentication implementations | 0 |
+| Authentication implementations | 1: opt-in JWT bearer verification |
 | Directly supported policy engines | 0 |
 | Dependency containers | 0 |
 | Runtime plugin systems | 0 |
@@ -69,7 +70,7 @@ observable repetition, for example:
 
 | Candidate | Minimum evidence |
 | --- | --- |
-| Authentication package | Several engines repeat the same real identity integration |
+| Authentication package | Several engines repeat the same real identity integration; met for JWT bearer verification by ADR 0049 |
 | PDP adapter | Multiple engines repeat the same provider mapping |
 | Lifecycle | Multiple dependencies repeatedly require coordinated start and stop |
 | Concurrency control | An engine demonstrates saturation that its host cannot solve |

@@ -2,13 +2,14 @@
 
 ## Public packages
 
-**AE-SCOPE-01 — Ten packages with isolated roles.** Invokta publishes:
+**AE-SCOPE-01 — Eleven packages with isolated roles.** Invokta publishes:
 
 | Package | Responsibility |
 | --- | --- |
 | `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, `help`, and `run` with JSON or schema-derived flags over `engine.invoke` |
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
+| `@invokta/auth-jwt` | Optional JWT bearer authenticator for one configured issuer, usable as the HTTP `authenticate` hook |
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
@@ -19,7 +20,8 @@
 
 All packages are native ESM. The core has no transport dependency. Runtime
 adapters depend only on the core's public API, and supporting applications do
-not create another capability execution path.
+not create another capability execution path. `@invokta/auth-jwt` depends only
+on `jose`; no core or adapter package depends on it.
 
 ## Ownership
 
@@ -38,6 +40,9 @@ engine built by the user.
 evidence across real engines. They are not added because they may eventually be
 useful. The optional connector definition is extracted from repeated network and
 filesystem construction boundaries; connector implementations remain engine
+owned. The optional JWT bearer authenticator is extracted from the `jose`
+verification repeated by nine authentication examples (ADR 0049); identity
+providers and token policy beyond one issuer's signed access tokens remain host
 owned.
 
 An official example may demonstrate a complete host-owned integration without
@@ -52,6 +57,7 @@ while the example owns one replaceable Authorization Server implementation.
 | --- | --- |
 | Framework runtime packages | 3: core, CLI, and MCP |
 | Supporting packages | 7: tooling, installer, deploy, devtools, and three project creators |
+| Optional runtime helper packages | 1: auth-jwt |
 | Official inbound adapters | CLI and MCP |
 | MCP transports | stdio and stateless Streamable HTTP |
 | Core primitives | Capability, Connector Definition, Engine, Context, and Principal |
@@ -59,7 +65,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Invocation pipeline stages | 6 |
 | Invocation error codes | 8 framework codes; up to 64 declared domain codes per capability, published inside `DOMAIN_ERROR` |
 | Cross-cutting hooks | 1: `onEvent` |
-| Auth or PDP implementations | 0 |
+| Auth or PDP implementations | 1: the opt-in `@invokta/auth-jwt` JWT bearer authenticator; no PDP |
 | Containers or runtime plugin systems | 0 |
 | Devtools workbenches served together | 2: MCP and CLI, each idle until Connect |
 | Concurrent attached devtools targets | 1 per workbench |
@@ -80,6 +86,10 @@ while the example owns one replaceable Authorization Server implementation.
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |
 | CLI flag spelling | 64 characters; reserved `input`, `stdin`, `help`, and `format` |
 | CLI capability help page | 100 flag or input-only entries, 20 allowed values per flag, and 500 characters per text field |
+| JWT bearer token length | 8,192 characters by default; at most 16,384 |
+| JWT bearer clock tolerance | 0 seconds by default; at most 300 |
+| JWT bearer remote JWKS | 5-second fetch timeout, 10-minute cache, 30-second unknown-key refetch cooldown after a successful fetch, 5-second no-fetch window on the monotonic clock after a failed fetch, no redirects, response size bounded only by the timeout |
+| JWT bearer candidate keys for a token without `kid` | 8 signature checks per token |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,
@@ -97,8 +107,12 @@ engine, eval runner, automated judge,
 release gate, or canary platform.
 
 **AE-LIMIT-04 — Security.** Invokta does not provide an identity provider,
-token issuer, universal JWT/JWKS or introspection client, DPoP, mTLS, policy
-language, relationship graph, PDP adapter, or session binding.
+token issuer, token introspection client, OpenID Connect discovery, DPoP, mTLS,
+policy language, relationship graph, PDP adapter, or session binding. The
+optional `@invokta/auth-jwt` package verifies signed JWT bearer access tokens
+from one configured issuer against an explicit JWKS URL or local key set; it
+does not accept opaque, encrypted, or shared-secret tokens, several issuers,
+or sender-constrained tokens, and it is not a universal token verifier.
 
 **AE-LIMIT-05 — MCP.** Invokta does not provide MCP resources, prompts,
 sampling, elicitation, tasks, stateful sessions, resumption, or server-to-client

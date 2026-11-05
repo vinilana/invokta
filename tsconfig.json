@@ -11,6 +11,7 @@
     { "path": "./packages/create-invokta-engine" },
     { "path": "./packages/installer" },
     { "path": "./packages/tooling" },
+    { "path": "./packages/auth-jwt" },
     { "path": "./examples/auth-api-key-engine" },
     { "path": "./examples/auth-auth0-engine" },
     { "path": "./examples/auth-authjs-engine" },

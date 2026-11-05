@@ -169,6 +169,8 @@ turning the framework into a service container.
   JSON or schema-derived flags through `engine.invoke`.
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure,
   stateless Streamable HTTP.
+- `@invokta/auth-jwt` optionally verifies one issuer's JWT bearer access
+  tokens as the MCP HTTP authentication hook.
 - `@invokta/tooling` validates composed capabilities and final MCP tool names.
 - `@invokta/devtools` provides an engine inspector plus MCP and CLI
   workbenches.

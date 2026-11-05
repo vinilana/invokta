@@ -7,9 +7,11 @@ acts only as a Resource Server boundary. It does not perform login or consent,
 issue or refresh tokens, store users or sessions, act as an Authorization
 Server, or prescribe a JWT or introspection implementation.
 
-Use an identity library or trusted identity service already selected by the host
-application. Keep provider-specific request and response types outside the
-engine's capabilities.
+When the host accepts signed JWT access tokens from one issuer that publishes a
+JWKS, the optional [`@invokta/auth-jwt`](#jwt-bearer-helper) package provides
+the hook. Otherwise, use an identity library or trusted identity service
+already selected by the host application. Keep provider-specific request and
+response types outside the engine's capabilities.
 
 ## Required authentication
 
@@ -108,6 +110,69 @@ principal immediately, requires a nonempty string `id`, and accepts
 treated like invalid credentials and produces HTTP 401. This request-local
 snapshot prevents later mutation or reuse of a principal object from changing
 another request's identity.
+
+## JWT bearer helper
+
+`@invokta/auth-jwt` returns a hook that verifies one configured issuer's signed
+JWT access tokens with `jose` (ADR 0049):
+
+```ts
+import { createJwtBearerAuthenticator } from "@invokta/auth-jwt";
+
+const requiredScopes = ["engine:invoke"];
+
+await serveMcpHttp(engine, {
+  auth: {
+    mode: "required",
+    authenticate: createJwtBearerAuthenticator({
+      issuer: "https://identity.example.com",
+      audience: "https://engine.example.com/mcp",
+      algorithms: ["RS256"],
+      jwksUrl: "https://identity.example.com/.well-known/jwks.json",
+      requiredScopes,
+    }),
+    resourceMetadata: {
+      resource: "https://engine.example.com/mcp",
+      authorizationServers: ["https://identity.example.com"],
+      scopesSupported: requiredScopes,
+    },
+    challengeScopes: requiredScopes,
+  },
+});
+```
+
+The helper reads only `Authorization: Bearer <compact JWS>` with a
+case-insensitive scheme, one space, and a token of at most 8,192 characters by
+default. It requires an explicit asymmetric algorithm allowlist, the exact
+issuer, one of the configured audiences, `sub`, and `exp`, and honors `nbf`
+within a clock tolerance of at most 300 seconds. Its outcomes follow the hook
+contract above:
+
+- a principal mapped from verified claims, by default `sub` as the `id` and
+  `scope`, `iss`, and `client_id` as `attributes.scopes`, `attributes.issuer`,
+  and `attributes.clientId`;
+- `null` for every missing, malformed, oversized, expired, not-yet-valid,
+  wrongly issued, wrongly addressed, disallowed-algorithm, unknown-key, or
+  bad-signature credential, and for a token missing a required scope. A token
+  without `kid` that fits several published keys is tried against at most
+  eight of them and resolves `null` when none verifies it; and
+- a `JwtVerificationUnavailableError` rejection with a fixed message and no
+  cause when the key set times out, is unreachable, answers anything but 200,
+  or is malformed, or the request is cancelled. After a failed fetch nothing is
+  fetched for 5 seconds; a fresh cached key set keeps answering meanwhile, and
+  a `kid` missing from it, even a newly rotated one, resolves `null` until a
+  refetch succeeds.
+
+A token without a required scope therefore receives 401, not an RFC 6750
+`insufficient_scope` 403, because the hook can return only a principal or
+`null`. Configure `challengeScopes` with the same scopes so the challenge names
+what the client must request. Scopes needed only by some capabilities belong in
+their `access` rules.
+
+The helper is not an identity provider, introspection client, OpenID Connect
+discovery client, or DPoP or mTLS verifier. Configure the JWKS URL explicitly,
+preferably from the issuer's `jwks_uri`, and write a host hook for opaque
+tokens, several issuers, or sender-constrained tokens.
 
 ## Protected Resource Metadata and challenges
 
@@ -214,7 +279,9 @@ examples that implement this hook contract for common TypeScript identity
 providers — generic OIDC/JWT bearer, Supabase, Clerk, Auth0, AWS Cognito,
 Firebase Auth, Better Auth, Auth.js, WorkOS AuthKit, and machine-to-machine API
 keys — under [`examples/auth-*`](../examples/). Each pairs with a documentation
-recipe at <https://docs.invokta.dev/recipes/auth/>.
+recipe at <https://docs.invokta.dev/recipes/auth/>. The generic JWT bearer and
+Auth0 examples configure `@invokta/auth-jwt`; the other JWT examples still show
+a complete `jose` verifier.
 
 ## Dangerous development mode
 
@@ -243,7 +310,9 @@ network or in production.
   or configuration needed at the composition root.
 - Validate the minimum token properties required by the application's security
   policy inside the verifier. The framework does not define issuer, audience,
-  signature, expiry, replay, or scope policy.
+  signature, expiry, replay, or scope policy; `@invokta/auth-jwt` enforces only
+  the issuer, audience, algorithm, signature, lifetime, and scope policy the
+  host configures, and no replay policy.
 - Bound provider calls with the verifier's own timeout and observe
   `request.signal`. The framework does not provide authentication retries.
 
