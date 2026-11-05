@@ -11,8 +11,9 @@ audience swaps of this file set.
 
 ## What it shows
 
-- `jose` JWKS verification of an Auth0 access token in the `auth.authenticate`
-  hook: issuer, audience, RS256, and expiry are all enforced.
+- [`@invokta/auth-jwt`](../../packages/auth-jwt/) as the `auth.authenticate`
+  hook, configured for Auth0: the trailing-slash tenant issuer, the API
+  audience, RS256, expiry, and the tenant JWKS are all enforced.
 - The failure semantics the framework requires: `null` for every invalid or
   missing credential (HTTP 401), a rejection only when the check itself cannot
   run (sanitized HTTP 500).
@@ -30,8 +31,8 @@ MCP HTTP request
       v
 auth.authenticate hook          src/mcp-http.ts
       |
-      +--> Auth0 access token verifier    src/identity/verifier.ts
-      |        (jose JWKS, issuer + audience + RS256)
+      +--> Auth0 authenticator            src/identity/authenticator.ts
+      |        (@invokta/auth-jwt: JWKS, issuer + audience + RS256)
       |
       +--> claims -> Principal            src/identity/principal.ts
       |
@@ -39,15 +40,16 @@ auth.authenticate hook          src/mcp-http.ts
  engine.invoke  ->  identity.whoami       src/capabilities/whoami.ts
 ```
 
-- `src/identity/verifier.ts` owns credential verification. Key resolution is
-  injectable: production uses the tenant's remote JWKS, tests inject a local
-  JWKS so signature verification is real and offline.
-- `src/identity/principal.ts` owns the claims mapping. It never copies the raw
-  token or the full claim set.
+- `src/identity/authenticator.ts` derives the Auth0 issuer and JWKS URL and
+  configures `createJwtBearerAuthenticator`. The key source is injectable:
+  production uses the tenant's remote JWKS, tests pass a local key set so
+  signature verification is real and offline.
+- `src/identity/principal.ts` is the authenticator's claims mapper. It receives
+  only verified claims, never the raw token, and copies no full claim set.
 - `src/capabilities/whoami.ts` declares `access: "authenticated"` and derives
   its result only from `context.principal`. It has no idea Auth0 exists.
-- `src/mcp-http.ts` is the composition root: bearer parsing, the hook, and the
-  Protected Resource Metadata document.
+- `src/mcp-http.ts` is the composition root: the hook and the Protected
+  Resource Metadata document.
 
 Authorization stays separate. `identity.whoami` only requires an authenticated
 caller; a real capability decides, in its `access` rule, what
@@ -111,9 +113,9 @@ yarn workspace @invokta/example-auth-auth0 build
 The tests mint RS256 tokens from a locally generated key pair and cover a valid
 token, an expired token, a foreign issuer, an issuer missing the trailing slash,
 a wrong audience, a missing audience, an unknown signing key, a forged
-signature, a malformed token, a missing header, a JWKS outage, and the absence
-of any token material in the produced `Principal`. No test performs network I/O
-and no Auth0 account is needed.
+signature, a malformed token, a missing header, a JWKS outage served by a
+loopback endpoint, and the absence of any token material in the produced
+`Principal`. No test leaves the machine and no Auth0 account is needed.
 
 ## Verify the OAuth discovery chain
 

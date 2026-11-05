@@ -1,0 +1,201 @@
+---
+title: '@invokta/auth-jwt'
+description: API reference for the optional JWT bearer authenticator used as the MCP HTTP authentication hook.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/auth-jwt` verifies signed JWT access tokens from one configured issuer
+and returns the function that `serveMcpHttp` expects as its `authenticate`
+hook. It is optional: the core and the MCP adapter do not depend on it, and any
+host-written hook remains valid.
+
+The package adds no execution path. The principal it returns reaches
+capabilities only through `engine.invoke`, where each capability's `access`
+rule still decides authorization.
+
+## Install
+
+```sh
+yarn add @invokta/auth-jwt
+```
+
+The package is native ESM and requires Node.js 22.20.0 or later. Its only
+runtime dependency is `jose` 6.2.12, pinned exactly.
+
+## API
+
+The package root exports:
+
+- `createJwtBearerAuthenticator` and `JwtBearerAuthenticatorOptions`;
+- `JwtBearerPolicyOptions` and `JwtKeySource`;
+- `JwtBearerAuthenticator`, `JwtBearerRequest`, and `JwtBearerHeaders`;
+- `JwtPrincipal`, `JwtPrincipalMapper`, `VerifiedJwtClaims`, and
+  `defaultJwtPrincipal`;
+- `JwtSignatureAlgorithm` and `isJwtSignatureAlgorithm`; and
+- `JwtVerificationUnavailableError`.
+
+```ts
+function createJwtBearerAuthenticator(
+  options: JwtBearerAuthenticatorOptions,
+): JwtBearerAuthenticator;
+
+type JwtBearerAuthenticator = (
+  request: JwtBearerRequest,
+) => Promise<JwtPrincipal | null>;
+
+interface JwtBearerRequest {
+  readonly headers: { get(name: string): string | null };
+  readonly signal?: AbortSignal;
+}
+
+interface JwtPrincipal {
+  readonly id: string;
+  readonly attributes?: Readonly<Record<string, unknown>>;
+}
+```
+
+The request view is structural. The MCP HTTP authentication request, a Web
+`Request`, and any adapter exposing the same header lookup fit without
+conversion. `JwtPrincipal` is structurally identical to the core `Principal`.
+
+## Use it with MCP HTTP
+
+```ts
+import { createJwtBearerAuthenticator } from "@invokta/auth-jwt";
+import { serveMcpHttp } from "@invokta/mcp";
+
+const requiredScopes = ["engine:invoke"];
+
+await serveMcpHttp(engine, {
+  auth: {
+    mode: "required",
+    authenticate: createJwtBearerAuthenticator({
+      issuer: "https://identity.example.com",
+      audience: "https://engine.example.com/mcp",
+      algorithms: ["RS256"],
+      jwksUrl: "https://identity.example.com/.well-known/jwks.json",
+      requiredScopes,
+    }),
+    resourceMetadata: {
+      resource: "https://engine.example.com/mcp",
+      authorizationServers: ["https://identity.example.com"],
+      scopesSupported: requiredScopes,
+    },
+    challengeScopes: requiredScopes,
+  },
+});
+```
+
+## Options
+
+| Option | Required | Contract |
+| --- | --- | --- |
+| `issuer` | Yes | Exact `iss` value, a non-empty string without surrounding whitespace |
+| `audience` | Yes | A string or non-empty list; the token's `aud` must contain one |
+| `algorithms` | Yes | Non-empty, duplicate-free allowlist of `JwtSignatureAlgorithm` values |
+| `jwksUrl` | One key source | HTTPS URL, or loopback HTTP for development, without credentials or a fragment |
+| `jwks` | One key source | Local JSON Web Key Set containing public keys only |
+| `clockToleranceSeconds` | No | Integer from 0 to 300 applied to `exp` and `nbf`; default 0 |
+| `requiredScopes` | No | Non-empty, duplicate-free list of RFC 6749 scope tokens |
+| `maxTokenLength` | No | Integer from 1 to 16,384 characters; default 8,192 |
+| `principal` | No | Synchronous `JwtPrincipalMapper`; default `defaultJwtPrincipal` |
+
+`JwtSignatureAlgorithm` is one of `RS256`, `RS384`, `RS512`, `PS256`, `PS384`,
+`PS512`, `ES256`, `ES384`, `ES512`, `EdDSA`, or `Ed25519`. `none`, `HS256`,
+`HS384`, `HS512`, unknown names, and duplicates are rejected.
+`isJwtSignatureAlgorithm` narrows a configuration string to that union.
+
+`createJwtBearerAuthenticator` validates and snapshots every option. An invalid
+option throws a `TypeError` whose message never repeats the configured value.
+Mutating an options object afterward does not change the authenticator.
+
+### Key sources
+
+`jwksUrl` uses the `jose` remote key set. Nothing is fetched until the first
+credential arrives. Each fetch has a 5-second timeout and follows no redirect.
+The key set is cached for 10 minutes, and a token whose key identifier is
+unknown triggers a refetch at most once every 30 seconds, so random key
+identifiers cannot drive unbounded traffic to the issuer.
+
+`jwks` verifies against a local set of public keys, for tests, offline
+development, or pinned keys. A key carrying private material (`d`, `k`, or
+`priv`) is rejected.
+
+Configure the URL from the issuer's OpenID Connect or OAuth metadata
+`jwks_uri`. The package does not discover it.
+
+## Verification outcomes
+
+The authenticator reads only the `authorization` header and accepts
+`Bearer <token>` with a case-insensitive scheme, exactly one space, and a
+compact JWS of three non-empty base64url segments within `maxTokenLength`.
+
+| Request | Result | MCP HTTP |
+| --- | --- | --- |
+| Token verifies, carries `sub` and `exp`, grants every required scope, and maps to a valid principal | Principal | Continues to `engine.invoke` |
+| Missing, malformed, or oversized credential | `null` | 401 with the Bearer challenge |
+| Expired or not yet valid, wrong issuer or audience, algorithm outside the allowlist, unknown key, bad signature, or missing `sub` or `exp` | `null` | 401 |
+| Missing required scope, or a mapper result of `null` or a malformed principal | `null` | 401 |
+| Key set times out, is unreachable, answers anything but 200, or is malformed; the key set holds several matching keys; the request is aborted | Rejects with `JwtVerificationUnavailableError` | Sanitized 500 |
+
+A `null` result never states which check failed.
+`JwtVerificationUnavailableError` always has the message
+`JWT bearer verification is unavailable.` and no `cause`, so no token, key-set
+URL, or provider response can reach a response or a log through it. An error
+thrown by a custom mapper propagates unchanged.
+
+The optional `signal` is observed before and during verification. `jose` takes
+no per-call signal, so a key-set fetch already in flight completes in the
+background within its timeout and refreshes the cache.
+
+<Aside type="caution" title="Insufficient scope is a 401">
+  The `authenticate` contract is `Principal | null`, so a token without a
+  required scope is unauthenticated and receives HTTP 401, not an RFC 6750
+  `insufficient_scope` 403. Set the adapter's `challengeScopes` to the same
+  scopes so the challenge names what the client must request. Scopes that only
+  some capabilities need belong in their `access` rules, which return
+  `FORBIDDEN` inside the MCP response.
+</Aside>
+
+## Principal mapping
+
+```ts
+type VerifiedJwtClaims = Readonly<JWTPayload>;
+
+type JwtPrincipalMapper = (
+  claims: VerifiedJwtClaims,
+) => JwtPrincipal | null;
+
+function defaultJwtPrincipal(
+  claims: VerifiedJwtClaims,
+): JwtPrincipal | null;
+```
+
+`defaultJwtPrincipal` returns a frozen principal whose `id` is `sub` and whose
+`attributes` contain only:
+
+| Attribute | Source |
+| --- | --- |
+| `scopes` | The space-delimited `scope` claim, split and de-duplicated; `[]` when absent or not a string |
+| `issuer` | `iss` |
+| `clientId` | `client_id`, when it is a non-empty string |
+
+It returns `null` for a blank `sub` or an empty `iss`. A custom mapper receives
+the verified claims only, never the raw token. Copy only verified,
+authorization-relevant claims into the principal.
+
+## Limits
+
+The package does not:
+
+- issue, refresh, introspect, or revoke tokens;
+- discover `jwks_uri` from issuer metadata;
+- accept opaque, encrypted, or shared-secret tokens, or several issuers;
+- enforce the RFC 9068 `typ` header;
+- verify DPoP or mTLS sender constraints, or bind sessions; or
+- retry a failed key-set fetch or log anything.
+
+Write a host hook for those requirements. Read the
+[HTTP authentication guide](/guides/http-authentication/) for the hook contract
+and the [JWT bearer recipe](/recipes/auth/jwt-bearer/) for a runnable engine.

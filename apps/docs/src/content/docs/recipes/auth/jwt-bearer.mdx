@@ -1,6 +1,6 @@
 ---
 title: Authenticate with a JWT bearer token
-description: Verify an OIDC access token with jose and map its claims to a Principal at the MCP HTTP boundary.
+description: Verify an OIDC access token with @invokta/auth-jwt and map its claims to a Principal at the MCP HTTP boundary.
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
@@ -10,210 +10,170 @@ into Invokta the same way: the `serveMcpHttp` `authenticate` hook verifies the
 token, maps a few verified claims to a `Principal`, and hands it to
 `engine.invoke`. Nothing about the provider reaches a capability.
 
-This is the base authentication recipe. The provider-specific recipes change
-only the issuer, the audience, and the claim names — the mechanics below stay
-the same.
+The optional [`@invokta/auth-jwt`](/reference/auth-jwt/) package is that hook.
+This recipe configures it for a generic OIDC issuer; the provider-specific
+recipes change only the issuer, the audience, the key-set location, and the
+claim names.
 
 ## Build the integration
 
 <Steps>
 
-1. Map verified claims to a `Principal`
+1. Install the authenticator
+
+   ```sh
+   yarn add @invokta/auth-jwt
+   ```
+
+   It depends only on `jose`. The engine and its capabilities do not import
+   it; only the HTTP composition root does.
+
+2. Configure the authentication policy
 
    ```ts
-   export function toPrincipal(
-     claims: VerifiedAccessTokenClaims,
-   ): Principal | null {
-     const subject = claims.sub;
-     if (typeof subject !== "string" || subject.trim() === "") return null;
+   export const defaultSignatureAlgorithms: ReadonlyArray<JwtSignatureAlgorithm> =
+     Object.freeze(["RS256", "ES256"]);
 
-     const issuer = claims.iss;
-     if (typeof issuer !== "string" || issuer === "") return null;
+   const authenticate = createJwtBearerAuthenticator({
+     issuer,
+     audience: requireValue("AUTH_JWT_AUDIENCE"),
+     algorithms: readAlgorithms(),
+     jwksUrl: resolveJwksUri(issuer, process.env.AUTH_JWT_JWKS_URI),
+     ...(requiredScopes === undefined ? {} : { requiredScopes }),
+   });
+   ```
 
-     const clientId = claims.client_id;
-     const attributes: JwtPrincipalAttributes = {
-       scopes: parseScopeClaim(claims.scope),
-       issuer,
-       ...(typeof clientId === "string" && clientId !== ""
-         ? { clientId }
-         : {}),
-     };
+   Every check the security policy depends on is configured here: the exact
+   issuer, the audience, an explicit signature algorithm allowlist, and the
+   key-set URL. The token must also carry `sub` and `exp`. The authenticator
+   rejects `none`, shared-secret `HS*` algorithms, and a plaintext key-set URL
+   off loopback when it is created, so a misconfiguration fails at startup
+   rather than on the first request.
 
-     return Object.freeze({
-       id: subject,
-       attributes: Object.freeze({ ...attributes }),
+3. Validate algorithm names from configuration
+
+   ```ts
+   function readAlgorithms(): ReadonlyArray<JwtSignatureAlgorithm> {
+     const configured = readList("AUTH_JWT_ALGORITHMS");
+     if (configured === undefined) return defaultSignatureAlgorithms;
+     const algorithms = configured.filter(isJwtSignatureAlgorithm);
+     if (algorithms.length !== configured.length) {
+       throw new Error(
+         "AUTH_JWT_ALGORITHMS may list only asymmetric JWS algorithms such as RS256 or ES256.",
+       );
+     }
+     return algorithms;
+   }
+   ```
+
+   `isJwtSignatureAlgorithm` narrows an environment string to the supported
+   asymmetric algorithms, so the allowlist stays typed without a cast.
+
+4. Resolve the key set at the composition root
+
+   ```ts
+   export function resolveJwksUri(issuer: string, override?: string): string {
+     if (override !== undefined && override !== "") return override;
+     return conventionalJwksUri(issuer);
+   }
+   ```
+
+   `conventionalJwksUri` falls back to `<issuer>/.well-known/jwks.json` — a
+   widespread convention, not a specification requirement. The authoritative
+   location is the `jwks_uri` member of
+   `<issuer>/.well-known/openid-configuration`; read it once and set
+   `AUTH_JWT_JWKS_URI` when your provider hosts its key set elsewhere. The
+   authenticator holds the URL to HTTPS, with loopback HTTP only for local
+   development: a key set fetched over plaintext HTTP could be replaced by an
+   on-path attacker, and a substituted key turns into accepted
+   attacker-minted tokens.
+
+   The remote key set is fetched on first use with a 5-second timeout, cached
+   for 10 minutes, and refetched for an unknown key identifier at most once
+   every 30 seconds.
+
+5. Know what reaches the `Principal`
+
+   ```ts
+   {
+     id: "user-42",
+     attributes: {
+       scopes: ["engine:invoke", "reports:read"],
+       issuer: "https://identity.example.com",
+       clientId: "reporting-cli",
+     },
+   }
+   ```
+
+   The default mapping is an allowlist. `sub` becomes `Principal.id`; the
+   space-delimited `scope` claim, `iss`, and `client_id` become attributes an
+   access rule can read. Every other claim — email, name, provider metadata,
+   the raw token — stays out. Pass a `principal` mapper to choose other
+   verified claims; it receives the claims, never the token, and returns
+   `null` to reject the credential.
+
+6. Separate an invalid credential from a broken check
+
+   The authenticator resolves `null` for a missing, malformed, oversized,
+   expired, not-yet-valid, wrongly issued, wrongly addressed,
+   disallowed-algorithm, unknown-key, or bad-signature credential. The adapter
+   answers 401 and never says which check failed.
+
+   A key-set timeout, an unreachable or malformed key set, or a cancelled
+   request means the check never happened, so the authenticator rejects with
+   `JwtVerificationUnavailableError` instead. Its message is fixed and it has
+   no cause, so no token, URL, or provider response can reach a log through
+   it; the adapter answers a sanitized 500.
+
+   A key set with two same-algorithm keys and no `kid` to choose between them
+   is reported the same way. That is the issuer's key-publication problem,
+   not evidence against the credential, and treating it as 401 would silently
+   reject every legitimate token during a kid-less key rotation.
+
+7. Wire the hook
+
+   ```ts
+   export async function startAuthJwtBearerMcpHttp(
+     options: AuthJwtBearerMcpHttpOptions,
+   ): Promise<McpHttpServerHandle> {
+     return serveMcpHttp(engine, {
+       ...(options.host === undefined ? {} : { host: options.host }),
+       ...(options.port === undefined ? {} : { port: options.port }),
+       auth: {
+         mode: "required",
+         authenticate: options.authenticate,
+         ...(options.resourceMetadata === undefined
+           ? {}
+           : { resourceMetadata: options.resourceMetadata }),
+         ...(options.challengeScopes === undefined
+           ? {}
+           : { challengeScopes: options.challengeScopes }),
+       },
      });
    }
    ```
 
-   The claim allowlist is the whole point. `sub` becomes `Principal.id`;
-   `scope`, `iss`, and `client_id` become attributes an access rule can read.
-   Every other claim — email, name, provider metadata, the raw token — stays
-   out. A claim set that cannot identify a subject returns `null`, which the
-   caller turns into an invalid credential, never into an anonymous principal.
-
-2. Parse the `scope` claim defensively
-
-   ```ts
-   export function parseScopeClaim(value: unknown): ReadonlyArray<string> {
-     if (typeof value !== "string") return Object.freeze([]);
-     const scopes = value.split(/\s+/u).filter((scope) => scope !== "");
-     return Object.freeze([...new Set(scopes)]);
-   }
-   ```
-
-   RFC 6749 defines `scope` as a space-delimited string, and RFC 9068 keeps
-   that form for JWT access tokens. Any other shape is treated as "no scopes"
-   rather than guessed at, so a malformed claim can never widen authority.
-
-3. Verify the token with an injectable key source
-
-   ```ts
-   export function createAccessTokenVerifier(
-     options: AccessTokenVerifierOptions,
-   ): AccessTokenVerifier {
-     const verifyOptions: JWTVerifyOptions = {
-       issuer: options.issuer,
-       audience: options.audience,
-       algorithms: [...(options.algorithms ?? defaultSignatureAlgorithms)],
-       requiredClaims: ["sub", "iss", "aud", "exp"],
-       ...(options.clockToleranceSeconds === undefined
-         ? {}
-         : { clockTolerance: options.clockToleranceSeconds }),
-     };
-
-     return {
-       async verify(token, { signal }) {
-         if (signal.aborted) {
-           throw new AccessTokenVerificationUnavailableError();
-         }
-         // ... abort wiring omitted; see the example
-         try {
-           const { payload } = await Promise.race([
-             jwtVerify(token, options.getKey, verifyOptions),
-             cancellation,
-           ]);
-           return toPrincipal(payload);
-         } catch (error) {
-           if (isInvalidCredential(error)) return null;
-           throw new AccessTokenVerificationUnavailableError();
-         } finally {
-           removeAbortListener();
-         }
-       },
-     };
-   }
-   ```
-
-   `getKey` is a `JWTVerifyGetKey`, so the key source is a parameter rather
-   than a hard-coded fetch. Every check the security policy depends on lives
-   here: signature, algorithm allowlist, issuer, audience, expiry, and the
-   claims the mapping needs. The framework defines none of them.
-
-4. Separate an invalid credential from a broken check
-
-   ```ts
-   const invalidCredentialCodes: ReadonlySet<string> = new Set([
-     errors.JOSEAlgNotAllowed.code,
-     errors.JOSENotSupported.code,
-     errors.JWKSNoMatchingKey.code,
-     errors.JWSInvalid.code,
-     errors.JWSSignatureVerificationFailed.code,
-     errors.JWTClaimValidationFailed.code,
-     errors.JWTExpired.code,
-     errors.JWTInvalid.code,
-   ]);
-
-   function isInvalidCredential(error: unknown): boolean {
-     return (
-       error instanceof errors.JOSEError &&
-       invalidCredentialCodes.has(error.code)
-     );
-   }
-   ```
-
-   These jose codes mean the caller's token is not acceptable, so `verify`
-   resolves `null`. A JWKS timeout, an unusable key set, or an unexpected
-   failure means the check never happened, so `verify` rejects instead. The
-   rejection carries a fixed sentence and no cause, so no token, URL, or
-   provider response can reach a log through it.
-
-   `JWKSMultipleMatchingKeys` stays out of the invalid set on purpose. Two
-   same-algorithm keys published without `kid` headers is the issuer's
-   key-publication problem, not evidence against the credential, and treating
-   it as 401 would silently reject every legitimate token during a kid-less
-   key rotation. This example reports the honest 500; jose also documents a
-   candidate-retry iteration on that error for deployments that must tolerate
-   such issuers.
-
-5. Read the Bearer credential
-
-   ```ts
-   export function readBearerToken(headers: McpHttpHeaderView): string | null {
-     const authorization = headers.get("authorization");
-     if (authorization === null) return null;
-
-     const match = /^Bearer (\S+)$/iu.exec(authorization);
-     return match?.[1] ?? null;
-   }
-   ```
-
-   The adapter rejects a request carrying more than one raw `Authorization`
-   header before the hook runs, so exactly one value is possible here. Anything
-   that is not a single non-whitespace token after the scheme is treated as no
-   credential at all.
-
-6. Wire the hook
-
-   ```ts
-   export function createJwtBearerAuthenticate(
-     verifier: AccessTokenVerifier,
-   ): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
-     return async (request) => {
-       const token = readBearerToken(request.headers);
-       if (token === null) return null;
-       return verifier.verify(token, { signal: request.signal });
-     };
-   }
-
-   await serveMcpHttp(engine, {
-     host,
-     port,
-     auth: {
-       mode: "required",
-       authenticate: createJwtBearerAuthenticate(verifier),
-     },
-   });
-   ```
-
-   The request signal is handed to the verifier, so its I/O ends when the
+   The authenticator observes the request signal, so its work stops when the
    caller disconnects. Three outcomes, three HTTP results: a principal
    continues to `engine.invoke`, `null` becomes 401, and a rejection becomes a
    sanitized 500.
 
-7. Resolve the key set at the composition root
+8. Require base scopes and name them in the challenge
 
-   ```ts
-   const jwksUri = resolveJwksUri(issuer, process.env.AUTH_JWT_JWKS_URI);
-
-   const getKey = createRemoteJWKSet(new URL(jwksUri), {
-     timeoutDuration: defaultJwksTimeoutMs,
-     cooldownDuration: 30_000,
-     cacheMaxAge: 600_000,
-   });
+   ```sh
+   AUTH_JWT_REQUIRED_SCOPES=engine:invoke
+   AUTH_JWT_RESOURCE=https://engine.example.com/mcp
+   AUTH_JWT_CHALLENGE_SCOPES=engine:invoke
    ```
 
-   `createRemoteJWKSet` caches keys and bounds its own I/O, which is the
-   verifier's timeout obligation. `resolveJwksUri` falls back to
-   `<issuer>/.well-known/jwks.json` — a widespread convention, not a
-   specification requirement. The authoritative location is the `jwks_uri`
-   member of `<issuer>/.well-known/openid-configuration`; read it once and set
-   `AUTH_JWT_JWKS_URI` when your provider hosts its key set elsewhere. The
-   override is held to the same HTTPS-or-loopback rule as the issuer: a key
-   set fetched over plaintext HTTP could be replaced by an on-path attacker,
-   and a substituted key turns into accepted attacker-minted tokens.
+   With `requiredScopes`, a token that does not grant every listed scope
+   resolves `null`. Because the hook can return only a principal or `null`,
+   the caller receives 401 rather than an `insufficient_scope` 403, so list
+   the same scopes in the challenge: an OAuth client reads them from the
+   `WWW-Authenticate` header and requests them. Scopes that only some
+   capabilities need belong in those capabilities' `access` rules.
 
-8. Keep the capability free of identity plumbing
+9. Keep the capability free of identity plumbing
 
    ```ts
    export const whoami = defineCapability({
@@ -247,16 +207,17 @@ the same.
 <Aside type="caution" title="Audience is not optional">
   A token that verifies against your issuer but was minted for a different
   resource must be rejected. Set `audience` to this engine's canonical `/mcp`
-  URL and let `jwtVerify` enforce it; without that check, any service sharing
-  the issuer can replay its tokens against your engine.
+  URL; the authenticator requires it. Without that check, any service sharing
+  the issuer could replay its tokens against your engine.
 </Aside>
 
-<Aside type="tip" title="Use a provider SDK if you prefer">
-  Swapping `jose` for a provider SDK changes one function. A verifier built on
-  `@clerk/backend` `verifyToken`, `firebase-admin` `verifyIdToken`, or
-  `aws-jwt-verify` still returns a `Principal` for a valid credential, `null`
-  for an invalid one, and throws only when the check could not run. The rest of
-  this recipe is unchanged.
+<Aside type="tip" title="Write your own hook when the helper does not fit">
+  The helper verifies one issuer's signed JWTs. Opaque tokens that need
+  introspection, several issuers, sender-constrained tokens, or a provider SDK
+  such as `@clerk/backend` `verifyToken`, `firebase-admin` `verifyIdToken`, or
+  `aws-jwt-verify` need a host-written hook. It still returns a `Principal` for
+  a valid credential, `null` for an invalid one, and throws only when the
+  check could not run; the rest of this recipe is unchanged.
 </Aside>
 
 ## Run it
@@ -289,23 +250,24 @@ carry a discovery pointer, follow
 ## Verify it
 
 The example mints tokens from a key pair generated inside the test process and
-serves them through `createLocalJWKSet`, so signature verification is real and
-nothing touches the network:
+passes the public half to the authenticator as a local `jwks`, so signature
+verification is real and nothing leaves the machine:
 
 ```sh
 yarn workspace @invokta/example-auth-jwt-bearer test
 ```
 
-The suite covers the valid credential, every invalid class (missing header,
-wrong scheme, malformed, expired, wrong issuer, wrong audience, unknown key,
-bad signature, algorithm outside the allowlist, missing subject), the
-infrastructure-failure rejection, cancellation, and the assertion that no token
-material appears in the produced principal.
+The suite covers the valid credential, the invalid classes this configuration
+must reject (missing header, wrong scheme, malformed, expired, wrong issuer,
+wrong audience, unknown key, bad signature, algorithm outside the allowlist,
+missing subject, missing required scope), a key-set outage served by a loopback
+endpoint, and the assertion that no token material appears in the produced
+principal. Cancellation, the remote key-set cache, and every bearer parsing
+rule are covered by the `@invokta/auth-jwt` package tests.
 
 Read the complete
 [`auth-jwt-bearer-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-jwt-bearer-engine)
-example for the verifier, the claim mapping, the composition root, and the
-tests.
+example for the composition root, the key-set location, and the tests.
 
 ## Next
 

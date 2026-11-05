@@ -7,6 +7,40 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `@invokta/auth-jwt` provides `createJwtBearerAuthenticator`, an optional JWT
+  bearer authenticator usable directly as the `serveMcpHttp` `authenticate`
+  hook or with any adapter exposing `headers.get` and an optional `signal`
+  (ADR 0049). It verifies one configured issuer's signed access tokens with
+  `jose` 6.2.12, its only runtime dependency, against a remote HTTPS JWKS URL
+  or a local key set. It requires an exact issuer, an audience, an explicit
+  asymmetric algorithm allowlist, `sub`, and `exp`, and supports a clock
+  tolerance of at most 300 seconds, required scopes, a token length bound of
+  8,192 characters by default and 16,384 at most, and a claims-to-principal
+  mapper that never receives the raw token. Invalid, expired, not-yet-valid,
+  wrongly issued or addressed, unknown-key, disallowed-algorithm, and
+  insufficient-scope credentials resolve `null`; key-set outages, ambiguous key
+  sets, and cancellation reject with a fixed, causeless
+  `JwtVerificationUnavailableError`, which the MCP adapter answers with its
+  sanitized 500.
+
+### Changed
+
+- AE-LIMIT-04 is amended for the optional JWT bearer helper. Invokta still
+  provides no identity provider, token issuer, introspection client, OpenID
+  Connect discovery, DPoP, mTLS, policy language, PDP adapter, or session
+  binding.
+- The private `auth-jwt-bearer-engine` and `auth-auth0-engine` examples use
+  `@invokta/auth-jwt` instead of their own `jose` verifiers. Their exported
+  helpers change accordingly: `startAuthJwtBearerMcpHttp` takes an
+  `authenticate` function instead of a `verifier`, and `startAuth0McpHttp` a
+  `keySource` instead of a `verifier`; `createAuth0Authenticator` replaces
+  `createAuth0AccessTokenVerifier` and `createAuth0Authenticate`. Bearer
+  parsing now requires exactly one space and a compact JWS, the JWT bearer
+  example's `AUTH_JWT_ALGORITHMS` accepts only asymmetric algorithms, and its
+  new optional `AUTH_JWT_REQUIRED_SCOPES` names scopes every token must grant.
+
 ### Fixed
 
 - Release publication waits up to 10 minutes, with checks backing off from 5 to

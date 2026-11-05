@@ -332,6 +332,17 @@ gives `access` and `run` independent copies. Malformed or uncloneable identity i
 The framework does not issue tokens, perform login, store users, validate JWTs
 from a specific provider, or implement an Authorization Server/policy engine.
 
+**AE-SEC-03 — Optional JWT bearer helper.** `@invokta/auth-jwt` MAY supply the
+HTTP `authenticate` hook for signed JWT bearer tokens from one configured
+issuer (ADR 0049). It MUST require an exact issuer, an audience, an explicit
+asymmetric algorithm allowlist, one key source, `sub`, and `exp`; parse only a
+bounded `Bearer <compact JWS>` credential; resolve `null` for every invalid or
+insufficiently scoped credential without revealing the failed check; reject
+with a fixed, causeless error when the key set cannot be used or the request is
+cancelled; and never pass the raw token to the principal mapper. It depends
+only on `jose`; the core and adapters do not depend on it, and claim mapping
+beyond its default remains host code.
+
 ## MCP client installation
 
 **AE-INSTALL-01 — Static sources.** `@invokta/installer` MAY configure a

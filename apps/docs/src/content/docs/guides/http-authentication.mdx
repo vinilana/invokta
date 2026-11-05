@@ -11,7 +11,9 @@ returns it before the request reaches `engine.invoke`.
 
 Invokta acts as a Resource Server boundary. It does not issue or refresh tokens,
 perform login or consent, store users or sessions, or prescribe a JWT,
-introspection, or workload-identity provider.
+introspection, or workload-identity provider. For signed JWT access tokens from
+one issuer, the optional [`@invokta/auth-jwt`](/reference/auth-jwt/) package
+provides a ready-made hook.
 
 ## Integrate a verifier
 
@@ -124,6 +126,48 @@ when authentication infrastructure cannot complete the check.
 The adapter snapshots its authentication configuration before listening. It
 deep-clones every returned principal, requires a non-empty string `id`, and
 accepts `attributes` only as a structured-cloneable record.
+
+## Use the JWT bearer helper
+
+When the host accepts signed JWT access tokens from one issuer that publishes a
+JWKS, `@invokta/auth-jwt` replaces steps 1 to 3:
+
+```ts
+import { createJwtBearerAuthenticator } from "@invokta/auth-jwt";
+
+const requiredScopes = ["engine:invoke"];
+
+const server = await serveMcpHttp(engine, {
+  auth: {
+    mode: "required",
+    authenticate: createJwtBearerAuthenticator({
+      issuer: "https://identity.example.com",
+      audience: "https://engine.example.com/mcp",
+      algorithms: ["RS256"],
+      jwksUrl: "https://identity.example.com/.well-known/jwks.json",
+      requiredScopes,
+    }),
+    resourceMetadata: {
+      resource: "https://engine.example.com/mcp",
+      authorizationServers: ["https://identity.example.com"],
+      scopesSupported: requiredScopes,
+    },
+    challengeScopes: requiredScopes,
+  },
+});
+```
+
+The helper follows the same outcome table. Every invalid, expired, wrongly
+issued or addressed, disallowed-algorithm, unknown-key, or insufficiently
+scoped credential resolves `null`. A key-set outage, an ambiguous key set, or a
+cancelled request rejects with a fixed, causeless error that the adapter turns
+into its sanitized 500.
+
+A token without a required scope receives 401 rather than an
+`insufficient_scope` 403, because a hook can return only a principal or `null`.
+Setting `challengeScopes` to the same scopes tells the client what to request.
+See the [`@invokta/auth-jwt` reference](/reference/auth-jwt/) for every option,
+bound, and limit.
 
 ## Protected Resource Metadata
 
