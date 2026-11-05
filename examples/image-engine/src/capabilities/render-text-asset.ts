@@ -9,6 +9,7 @@ import {
   requiredTextSchema,
   singleImageOutputSchema,
 } from "./image-contract.js";
+import { reportWhileProviderWorks } from "./provider-progress-contract.js";
 
 export function createRenderTextAsset(renderer: TextImageRenderer) {
   return defineCapability({
@@ -26,7 +27,11 @@ export function createRenderTextAsset(renderer: TextImageRenderer) {
     annotations: generativeAnnotations,
     async run({ input, context }) {
       return {
-        image: await renderer.render(input, { signal: context.signal }),
+        image: await reportWhileProviderWorks(
+          context,
+          "Rendering the text image asset.",
+          () => renderer.render(input, { signal: context.signal }),
+        ),
       };
     },
   });

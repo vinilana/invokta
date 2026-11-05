@@ -37,6 +37,15 @@ and answers unauthenticated requests with a `WWW-Authenticate` challenge naming
 it. Authorization servers must use HTTPS; a loopback HTTP resource may name a
 loopback HTTP authorization server for local development.
 
+A `tools/call` request that carries `_meta.progressToken` receives the
+capability's `context.reportProgress` reports as `notifications/progress` with
+the same token, at most one per 100 ms, and a client that stops reading holds
+at most one queued notification and one held report. Over HTTP, from both
+`serveMcpHttp` and `createMcpHttpHandler`, that request alone is answered with
+a request-scoped `text/event-stream` response that ends with the result; every
+other request keeps the JSON response
+([ADR 0043](../../docs/adr/0043-capability-progress-reporting-and-mcp-progress-notifications.md)).
+
 The protocol endpoint is `/mcp` by default. `path` mounts it under a prefix so
 several engines can share one origin, each behind its own loopback-bound
 server and its own resource identifier

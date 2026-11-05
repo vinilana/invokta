@@ -354,6 +354,7 @@ describe("applyMiddleware arguments", () => {
           principal: null,
           signal: new AbortController().signal,
           logger: console,
+          reportProgress: () => undefined,
         },
       }),
     ).resolves.toEqual({ category: "direct" });
@@ -899,6 +900,7 @@ describe("applyMiddleware next()", () => {
           principal: null,
           signal: forgedSignal,
           logger: console,
+          reportProgress: () => undefined,
         },
       }),
     ).rejects.toBeInstanceOf(TypeError);

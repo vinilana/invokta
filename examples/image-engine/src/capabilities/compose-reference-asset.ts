@@ -10,6 +10,7 @@ import {
   resolutionSchema,
   singleImageOutputSchema,
 } from "./image-contract.js";
+import { reportWhileProviderWorks } from "./provider-progress-contract.js";
 
 export function createComposeReferenceAsset(composer: ReferenceImageComposer) {
   return defineCapability({
@@ -28,7 +29,11 @@ export function createComposeReferenceAsset(composer: ReferenceImageComposer) {
     annotations: generativeAnnotations,
     async run({ input, context }) {
       return {
-        image: await composer.compose(input, { signal: context.signal }),
+        image: await reportWhileProviderWorks(
+          context,
+          "Composing the reference image asset.",
+          () => composer.compose(input, { signal: context.signal }),
+        ),
       };
     },
   });

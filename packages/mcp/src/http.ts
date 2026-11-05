@@ -143,6 +143,55 @@ function requestBody(request: IncomingMessage): ReadableStream<Uint8Array> {
   );
 }
 
+function waitForDrainOrClose(response: ServerResponse): Promise<void> {
+  return new Promise((resolve) => {
+    const settle = (): void => {
+      response.off("drain", settle);
+      response.off("close", settle);
+      resolve();
+    };
+    response.once("drain", settle);
+    response.once("close", settle);
+  });
+}
+
+/**
+ * Relays a progress event stream chunk by chunk. The next chunk is read only
+ * after the socket has taken the previous one, so a client that stops reading
+ * stops the relay instead of growing a buffer here. Node.js applies its own
+ * keep-alive rules because the boundary sends no connection-scoped header.
+ */
+async function writeEventStream(
+  response: ServerResponse,
+  status: number,
+  headers: Readonly<Record<string, string>>,
+  body: ReadableStream<Uint8Array>,
+): Promise<void> {
+  const reader = body.getReader();
+  const cancel = (): void => {
+    void reader.cancel().catch(() => undefined);
+  };
+  response.once("close", cancel);
+  try {
+    if (response.headersSent || response.destroyed) return;
+    response.writeHead(status, headers);
+    response.flushHeaders();
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done || response.destroyed) break;
+      if (!response.write(chunk.value)) await waitForDrainOrClose(response);
+    }
+    if (!response.destroyed) response.end();
+  } catch (error) {
+    // Before the head the caller still answers 500; a broken stream closes.
+    if (!response.headersSent) throw error;
+    response.destroy();
+  } finally {
+    response.off("close", cancel);
+    cancel();
+  }
+}
+
 /**
  * Writes the boundary's response. A response produced before the body was
  * consumed advertises connection closure, drains what is available, and
@@ -157,6 +206,15 @@ async function writeResponse(
   result.response.headers.forEach((value, key) => {
     headers[key] = value;
   });
+  if (result.streaming === true && result.response.body !== null) {
+    await writeEventStream(
+      response,
+      result.response.status,
+      headers,
+      result.response.body,
+    );
+    return;
+  }
   const body = Buffer.from(await result.response.arrayBuffer());
   if (response.headersSent || response.destroyed) return;
   if (result.bodyUnconsumed) {

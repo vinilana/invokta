@@ -76,6 +76,7 @@ describe("@invokta/mcp/web portability", () => {
 
     expect([...graph.keys()].sort()).toEqual([
       "http-protocol.ts",
+      "progress.ts",
       "protocol-server.ts",
       "protocol-version.ts",
       "request-id-transport.ts",

@@ -385,7 +385,9 @@ export default { fetch: handler }; // Cloudflare Workers
 
 The adapter provides no TLS termination, proxy-trust policy, rate limit,
 concurrency limit, compression, streaming, batch invocation, or request ID
-header. Forwarded-host headers are ignored. The host and deployment own those
+header. It answers with one JSON body, so callers receive no capability
+progress; `context.reportProgress` is a no-op for its invocations. Use MCP for
+progress notifications. Forwarded-host headers are ignored. The host and deployment own those
 controls, and verifiers and capability dependencies must observe their signals
 and apply finite deadlines.
 

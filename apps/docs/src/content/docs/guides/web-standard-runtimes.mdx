@@ -164,6 +164,7 @@ follow from what a Fetch `Request` exposes:
 | Body limit | Enforced while streaming `request.body`, which is cancelled when the limit is crossed or the request aborts |
 | Cancellation | `request.signal` reaches the authenticator, body reading, and the capability |
 | Connections and shutdown | Owned by the host; the handler sets no hop-by-hop header |
+| Progress | A progress-token `tools/call` returns a `text/event-stream` body; the platform must stream it, and a stalled reader holds at most one queued notification and one held report |
 
 <Aside type="caution" title="Reject anything that is not exactly one credential">
   A repeated `Authorization` header arrives as `Bearer a, Bearer b`. Match the

@@ -133,6 +133,7 @@ export default defineConfig({
             { slug: "recipes/mcp-stdio-consumer" },
             { slug: "recipes/mcp-rich-content" },
             { slug: "recipes/external-provider" },
+            { slug: "recipes/long-running-progress" },
             { slug: "recipes/opentelemetry" },
             {
               label: "Authentication",

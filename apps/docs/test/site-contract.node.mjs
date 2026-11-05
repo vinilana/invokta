@@ -17,6 +17,7 @@ const requiredRecipeRoutes = [
   "/recipes/mcp-stdio-consumer/",
   "/recipes/mcp-rich-content/",
   "/recipes/external-provider/",
+  "/recipes/long-running-progress/",
   "/recipes/opentelemetry/",
   "/recipes/auth/jwt-bearer/",
   "/recipes/auth/supabase/",

@@ -22,6 +22,7 @@ host owns identity and deployment controls.
 | Authentication | Required HTTP hook, optional protected-resource metadata, and the optional `@invokta/auth-jwt` JWT bearer authenticator | Credential verifier or helper configuration, identity provider, token policy, and verifier timeout |
 | Authorization | Enforcement of each capability's `access` rule | Roles, scopes, tenants, PDP integration, and domain policy |
 | Observability | Payload-free `onEvent` lifecycle hook, logger, and `@invokta/otel` spans and invocation metrics | OpenTelemetry SDK and exporters, storage, alerts, costs, and domain measurements |
+| Progress | Advisory `context.reportProgress`, direct `onProgress`, MCP progress notifications, and CLI human progress lines | Meaningful progress values, messages, and reporting frequency |
 | Cross-cutting behavior | `applyMiddleware` composition around each capability's `run` | Audit, rate-limit, cache, and idempotency policies and their stores |
 | AI behavior | Replaceable implementation boundary | Prompts, models, retrieval, tools, evidence, evaluations, and review |
 | Supporting tools | Engine creator, composition checker, contract snapshot diff, confirmed MCP client configuration, deployment artifact generator | Engine execution, client policy, and operational authority |
@@ -30,8 +31,8 @@ host owns identity and deployment controls.
 
 Invokta does not provide:
 
-- queues, scheduling, jobs, distributed execution, progress APIs, or arbitrary
-  streaming;
+- queues, scheduling, jobs, distributed execution, durable or replayable
+  progress, streaming partial results, or arbitrary streaming;
 - framework-wide retries, fallbacks, caches, model routing, context compilation,
   memory, or RAG abstractions;
 - a service container, mutable plugin registry, remote discovery, or dependency

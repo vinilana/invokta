@@ -171,6 +171,7 @@ boundary.
 | GPT Image timeout | 150 seconds |
 | Seedream campaign timeout | 180 seconds |
 | Nano Banana timeout | 150 seconds |
+| Progress while a provider request is pending | Immediately, then every 15 seconds |
 
 Aspect ratio defaults to `1:1` and accepts `1:1`, `3:2`, `2:3`, `16:9`, or
 `9:16`. Every outbound connector propagates the invocation's `AbortSignal` to
@@ -201,6 +202,28 @@ visual-quality guarantee. This example validates schemas, counts, formats, and
 sizes, but it does not run OCR or perceptual evaluations. A production workflow
 that requires provably exact copy, brand identity, or cross-image consistency
 should add an eval and human-approval step after this capability returns.
+
+## Progress while a provider works
+
+A provider request can take most of a capability's 150- to 180-second budget,
+which is longer than many MCP clients wait for a silent tool call. Every
+capability therefore wraps its request in `reportWhileProviderWorks`
+(`src/capabilities/provider-progress-contract.ts`). It reports progress
+immediately and then every 15 seconds until the request settles. Because the
+providers expose no completion percentage, `progress` counts elapsed seconds
+and has no `total`:
+
+```json
+{"progress":15,"message":"Generating 3 campaign images."}
+```
+
+Direct callers observe the reports through `InvokeOptions.onProgress`. MCP
+stdio and HTTP clients receive them as `notifications/progress` when their
+`tools/call` request carries a progress token; MCP HTTP answers such a request
+with a `text/event-stream` response. The official TypeScript SDK client sends a
+token for a call with `onprogress` and keeps waiting past its default 60-second
+request timeout only with `resetTimeoutOnProgress: true`. This example's CLI
+uses the default JSON format and therefore writes no progress.
 
 ## Verify the example
 

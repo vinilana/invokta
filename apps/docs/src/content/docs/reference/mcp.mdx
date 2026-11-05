@@ -190,6 +190,47 @@ add warning codes; treat an unknown code as a warning.
 Follow the [rich content recipe](/recipes/mcp-rich-content/) for Zod 4
 authoring.
 
+## Progress notifications
+
+When a `tools/call` request carries `params._meta.progressToken`, each progress
+report the capability delivers through `context.reportProgress` becomes a
+`notifications/progress` notification with the same token:
+
+```json
+{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"render-7","progress":1,"total":4,"message":"Rendering frame 1."}}
+```
+
+| Rule | Behavior |
+| --- | --- |
+| Opt-in | Only a `tools/call` with a progress token receives notifications |
+| Honored token | A string of at most 256 UTF-16 code units or a safe integer, echoed exactly, including `0` and `""`; a longer string is ignored and the call runs without notifications |
+| Values | `progress`, optional `total`, and optional `message` after core validation; `progress` increases with every notification |
+| Rate | At most one notification per 100 ms per request |
+| Slow reader | A notification is sent only after the previous one was written and while the response can take more; at most one report, the latest, is held meanwhile |
+| End | The held report is sent just before a successful result and dropped when the call fails or is cancelled; nothing is sent after the result |
+| Failures | A failed notification send never changes the tool result |
+
+Over stdio, notifications precede the result on standard output. Over HTTP,
+such a request receives a `text/event-stream` response for that POST only; it
+carries the request's notifications, then its JSON-RPC response, then closes.
+Every other request keeps the single JSON response.
+
+Clients must opt in to wait longer than their own request timeout. For example,
+the official TypeScript SDK client resets its timeout on progress only when the
+call passes `resetTimeoutOnProgress: true`:
+
+```ts
+await client.callTool(
+  { name: "image_generate-campaign-series", arguments },
+  undefined,
+  {
+    onprogress: (progress) => console.error(progress),
+    resetTimeoutOnProgress: true,
+    maxTotalTimeout: 200_000,
+  },
+);
+```
+
 ## `serveMcpStdio`
 
 ```ts
@@ -277,6 +318,23 @@ Each accepted POST creates a fresh MCP server and transport. The adapter has no
 session ID, resumption, event store, server-to-client SSE, cross-request
 cancellation, resources, prompts, sampling, elicitation, or tasks.
 
+Responses are a single JSON body. The one exception is a `tools/call` request
+with a usable progress token, which receives a request-scoped
+`text/event-stream` response carrying only its own
+[progress notifications](#progress-notifications) and result. That stream has
+no event IDs, priming event, resumption, or `Connection`, `Keep-Alive`, or
+`Transfer-Encoding` header, sends an SSE keep-alive comment every 15 seconds,
+and closes after the result. The same applies to `createMcpHttpHandler`.
+
+The stream passes through a queue of one chunk, and the next notification is
+offered only after the reader took the previous one. A client that stops
+reading therefore leaves at most one queued notification and one held report
+per request, however often the capability reports. Cancelling the response
+stream aborts the invocation. `serveMcpHttp` reads the next chunk only after
+the socket has taken the previous one and closes the connection after the
+stream when the request sent `Connection: close`. A client disconnect aborts the invocation. A reverse proxy
+must not buffer `text/event-stream` responses for progress to arrive early.
+
 The sole protocol endpoint is the exact canonical `POST` mount path, `/mcp` by
 default. The optional `path` option mounts it under a prefix such as
 `/e/orders/mcp` so several engines can share one origin, each with its own
@@ -312,7 +370,7 @@ incremental UTF-8.
 
 | Status | Boundary meaning |
 | --- | --- |
-| `200` | MCP response, including capability `FORBIDDEN` as a tool error |
+| `200` | MCP response, including capability `FORBIDDEN` as a tool error; `text/event-stream` for a progress-token tool call |
 | `202` | Accepted notification with no protocol result body |
 | `400` | Invalid target/header ambiguity, JSON parsing, or top-level batch |
 | `401` | Missing/invalid credentials or malformed returned Principal |

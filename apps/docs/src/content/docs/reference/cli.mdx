@@ -227,6 +227,22 @@ including when its value is `null`. An absent property is invalid usage.
 compact `json`; `human` uses deterministic two-space JSON formatting for
 successful results. Error output remains compact in either mode.
 
+Only the `human` format observes capability progress. Each delivered report
+becomes one standard-error line, and standard output still contains only the
+result:
+
+```text
+progress 0: Generating 3 campaign images.
+progress 15: Generating 3 campaign images.
+progress 2/4
+```
+
+The line is `progress <progress>[/<total>][: <message>]`. Unicode control,
+format, line-separator, and paragraph-separator characters in the message are
+escaped as `\uXXXX` or `\u{X}`. Progress writes are not awaited, and a failed
+write is contained. The default `json` format ignores progress, so its
+standard output and standard error are unchanged.
+
 `io` can replace any subset of standard input, output, and diagnostics. Both
 synchronous and asynchronous writers are supported and awaited; unspecified
 methods use the process defaults.

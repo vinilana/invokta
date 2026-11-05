@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { Progress } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { startImageMcpHttp } from "../src/mcp-http.js";
@@ -160,17 +161,26 @@ describe("image engine entrypoints", () => {
       { capabilities: {} },
     );
 
+    const progress: Progress[] = [];
+
     try {
       await client.connect(transport);
       await expect(
-        client.callTool({
-          name: "image_compose-reference-asset",
-          arguments: {
-            prompt: "Compose a new product scene.",
-            referenceImages,
+        client.callTool(
+          {
+            name: "image_compose-reference-asset",
+            arguments: {
+              prompt: "Compose a new product scene.",
+              referenceImages,
+            },
           },
-        }),
+          undefined,
+          { onprogress: (update) => void progress.push(update) },
+        ),
       ).resolves.toEqual(nativeImageResult(stub.generatedData));
+      expect(progress).toEqual([
+        { progress: 0, message: "Composing the reference image asset." },
+      ]);
     } finally {
       await client.close();
     }
@@ -224,15 +234,23 @@ describe("image engine entrypoints", () => {
         { capabilities: {} },
       );
       await client.connect(transport as unknown as Transport);
+      const progress: Progress[] = [];
       await expect(
-        client.callTool({
-          name: "image_edit-asset",
-          arguments: {
-            prompt: "Change the background.",
-            referenceImages: referenceImages.slice(0, 1),
+        client.callTool(
+          {
+            name: "image_edit-asset",
+            arguments: {
+              prompt: "Change the background.",
+              referenceImages: referenceImages.slice(0, 1),
+            },
           },
-        }),
+          undefined,
+          { onprogress: (update) => void progress.push(update) },
+        ),
       ).resolves.toEqual(nativeImageResult(stub.generatedData));
+      expect(progress).toEqual([
+        { progress: 0, message: "Editing the image asset." },
+      ]);
       expect(stub.requests.at(-1)).toMatchObject({
         path: "/openai/v1/images/edits",
         authorization: "Bearer openai-stub-key",

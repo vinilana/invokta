@@ -17,6 +17,7 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { createProgressForwarder, readProgressToken } from "./progress.js";
 import { ProtocolVersionServer } from "./protocol-version.js";
 import {
   createMcpToolCatalogReport,
@@ -32,6 +33,11 @@ interface McpServerOptions {
   readonly principal: Principal | null;
   readonly source: Extract<ExecutionSource, "mcp-stdio" | "mcp-http">;
   readonly requestSignal?: AbortSignal;
+  /**
+   * Reports whether the response channel can take another progress
+   * notification now. While it returns `false`, at most one report is held.
+   */
+  readonly canSendProgress?: () => boolean;
 }
 
 interface McpObjectSchema extends Readonly<Record<string, unknown>> {
@@ -287,6 +293,19 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
         `Tool ${request.params.name} not found`,
       );
     }
+    const progressToken = readProgressToken(request.params);
+    const progress =
+      progressToken === undefined
+        ? undefined
+        : createProgressForwarder(
+            progressToken,
+            (params) =>
+              extra.sendNotification({
+                method: "notifications/progress",
+                params,
+              }),
+            options.canSendProgress,
+          );
     try {
       const result = await engine.invoke(
         capabilityId,
@@ -298,15 +317,21 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
             options.requestSignal === undefined
               ? extra.signal
               : AbortSignal.any([extra.signal, options.requestSignal]),
+          ...(progress === undefined ? {} : { onProgress: progress.report }),
         },
       );
-      return catalog.toolResult(
+      const toolResult = catalog.toolResult(
         capabilityId,
         result as Readonly<Record<string, unknown>>,
         server.protocolVersionFor(extra),
       );
+      // The latest held report still precedes a successful result.
+      progress?.finish();
+      return toolResult;
     } catch (error) {
       return errorResult(error);
+    } finally {
+      progress?.close();
     }
   });
 

@@ -67,6 +67,33 @@ composed into the capability map before `createEngine` and adds no stage or
 hook. Read the [middleware recipe](/recipes/capability-middleware/) for tested
 examples.
 
+## Progress
+
+A long-running handler can tell its caller that it is still working with
+`context.reportProgress`. The engine validates each report, keeps only reports
+whose `progress` increases, and passes a frozen snapshot to the caller's sink:
+
+```ts
+await engine.invoke(
+  "image.generate-campaign-series",
+  { prompt: "A coherent launch series.", count: 3 },
+  {
+    principal: { id: "user:42" },
+    onProgress: ({ progress, total, message }) => {
+      console.error(progress, total, message);
+    },
+  },
+);
+```
+
+Progress is delivered only while `run` is pending. Reports from an access rule,
+after the handler settles, or after cancellation or a timeout are dropped.
+Reporting never throws into the handler, never waits for the sink, and never
+changes the result, so progress is advisory rather than part of the contract.
+The same reports reach MCP clients that send a progress token and the CLI in
+its human format; read the
+[progress recipe](/recipes/long-running-progress/) for each channel.
+
 ## Events
 
 The optional `onEvent` hook receives a compact lifecycle stream:

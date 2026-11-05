@@ -107,10 +107,15 @@ while the example owns one replaceable Authorization Server implementation.
 | JWT bearer clock tolerance | 0 seconds by default; at most 300 |
 | JWT bearer remote JWKS | 5-second fetch timeout, 10-minute cache, 30-second unknown-key refetch cooldown after a successful fetch, 5-second no-fetch window on the monotonic clock after a failed fetch, no redirects, response size bounded only by the timeout |
 | JWT bearer candidate keys for a token without `kid` | 8 signature checks per token |
+| Progress message | 1,024 UTF-16 code units |
+| MCP progress notifications | 1 per 100 ms per request; at most 1 unwritten and 1 held, latest wins |
+| Honored MCP progress token | String of at most 256 UTF-16 code units, or a safe integer |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,
-scheduling, arbitrary streaming, or a progress API.
+scheduling, or arbitrary streaming. Progress is limited to the advisory,
+per-invocation reporter of ADR 0043: Invokta does not persist, replay, or
+guarantee delivery of progress, and does not stream partial results.
 
 **AE-LIMIT-02 — Architecture.** Invokta does not provide a dependency
 container, service locator, runtime plugin discovery, remote registry, or
@@ -145,7 +150,9 @@ requests. Rich tool results are limited to `image`, `audio`, and
 `resource_link` blocks derived from content keywords on top-level output
 properties and gated by the negotiated protocol revision (ADR 0044); linked
 URIs are not served through `resources/read`, and embedded resources and
-content annotations are not produced.
+content annotations are not produced. It sends `notifications/progress` only
+for a `tools/call` request that carries a progress token, and over HTTP only on
+that request's own response stream (ADR 0043).
 
 **AE-LIMIT-06 — Installed MCP inspection.** Devtools may initialize, list tools
 from, and manually call one explicitly configured stdio or Streamable HTTP MCP

@@ -11,6 +11,7 @@ import type { WebStandardStreamableHTTPServerTransportOptions } from "@modelcont
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { OAuthProtectedResourceMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
 
+import { requestsProgressNotifications } from "./progress.js";
 import { createMcpServer, createMcpToolCatalog } from "./protocol-server.js";
 import { preserveFalsyRequestIds } from "./request-id-transport.js";
 
@@ -90,6 +91,11 @@ export interface McpHttpRequestFacts {
 
 export interface McpHttpProtocolResult {
   readonly response: Response;
+  /**
+   * Whether the body is a progress event stream that a host must relay chunk
+   * by chunk, reading the next chunk only when its connection can take it.
+   */
+  readonly streaming?: boolean;
   /**
    * Whether the response was produced before the request body was consumed.
    * A host that owns the connection closes it after the response instead of
@@ -642,6 +648,77 @@ function protocolErrorBody(code: number, message: string) {
   return { jsonrpc: "2.0", error: { code, message }, id: null } as const;
 }
 
+/** Connection-scoped fields that belong to the host, not to the response. */
+const HOP_BY_HOP_HEADERS = ["connection", "keep-alive", "transfer-encoding"];
+
+function withoutHopByHopHeaders(source: Headers): Headers {
+  const headers = new Headers(source);
+  for (const name of HOP_BY_HOP_HEADERS) headers.delete(name);
+  return headers;
+}
+
+function isEventStream(response: Response): boolean {
+  return (
+    response.body !== null &&
+    response.headers.get("content-type")?.split(";", 1)[0]?.trim() ===
+      "text/event-stream"
+  );
+}
+
+/**
+ * Relays the SDK's progress event stream through a queue of at most one chunk.
+ * The returned gate is open only while that queue has room, so the protocol
+ * server offers a notification only when the consumer has taken the previous
+ * one; while the consumer stalls, the forwarder holds a single report instead
+ * of letting the SDK queue grow. `onSettled` runs once, with `cancelled` set
+ * when the consumer cancelled the stream or reading it failed.
+ */
+function relayProgressStream(
+  source: ReadableStream<Uint8Array>,
+  onSettled: (cancelled: boolean) => void,
+): { readonly stream: ReadableStream<Uint8Array>; hasCapacity(): boolean } {
+  const reader = source.getReader();
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let settled = false;
+  const settle = (cancelled: boolean): void => {
+    if (settled) return;
+    settled = true;
+    onSettled(cancelled);
+  };
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      start(streamController) {
+        controller = streamController;
+      },
+      async pull(streamController) {
+        let chunk: Awaited<ReturnType<typeof reader.read>>;
+        try {
+          chunk = await reader.read();
+        } catch (error) {
+          settle(true);
+          streamController.error(error);
+          return;
+        }
+        if (chunk.done) {
+          streamController.close();
+          settle(false);
+          return;
+        }
+        streamController.enqueue(chunk.value);
+      },
+      async cancel(reason) {
+        settle(true);
+        await reader.cancel(reason).catch(() => undefined);
+      },
+    },
+    new CountQueuingStrategy({ highWaterMark: 1 }),
+  );
+  return {
+    stream,
+    hasCapacity: () => !settled && (controller.desiredSize ?? 0) > 0,
+  };
+}
+
 /** A response produced before the request body was read to its end. */
 function early(
   status: number,
@@ -813,17 +890,23 @@ export function createMcpHttpProtocol<Capabilities extends CapabilityMap>(
     principal: Principal | null,
     authority: string,
   ): Promise<McpHttpProtocolResult> {
+    // A cancelled progress stream aborts the invocation in every host.
+    const streamAbort = new AbortController();
+    let progressCapacity = (): boolean => true;
     const protocolServer = createMcpServer(
       engine,
-      { principal, source: "mcp-http", requestSignal: facts.signal },
+      {
+        principal,
+        source: "mcp-http",
+        requestSignal: AbortSignal.any([facts.signal, streamAbort.signal]),
+        canSendProgress: () => progressCapacity(),
+      },
       toolCatalog,
     );
-    const statelessTransportOptions: WebStandardStreamableHTTPServerTransportOptions =
-      { enableJsonResponse: true };
-    const transport = new WebStandardStreamableHTTPServerTransport(
-      statelessTransportOptions,
-    );
+    const closeProtocolServer = (): Promise<void> =>
+      protocolServer.close().catch(() => undefined);
     let consumedBody = false;
+    let streaming = false;
     try {
       const bodyResult = await readBody(
         facts.body,
@@ -858,6 +941,14 @@ export function createMcpHttpProtocol<Capabilities extends CapabilityMap>(
           ),
         );
       }
+      // Only a tools/call carrying a usable progress token is answered with a
+      // request-scoped SSE stream; every other message keeps the JSON body.
+      const progressStream = requestsProgressNotifications(parsedBody);
+      const statelessTransportOptions: WebStandardStreamableHTTPServerTransportOptions =
+        { enableJsonResponse: !progressStream };
+      const transport = new WebStandardStreamableHTTPServerTransport(
+        statelessTransportOptions,
+      );
       const sdkHeaders = new Headers(facts.headers);
       sdkHeaders.set("accept", "application/json, text/event-stream");
       sdkHeaders.set("content-type", "application/json");
@@ -869,6 +960,25 @@ export function createMcpHttpProtocol<Capabilities extends CapabilityMap>(
       const sdkResponse = await transport.handleRequest(sdkRequest, {
         parsedBody,
       });
+      if (progressStream && isEventStream(sdkResponse)) {
+        const relay = relayProgressStream(
+          sdkResponse.body as ReadableStream<Uint8Array>,
+          (cancelled) => {
+            if (cancelled) streamAbort.abort();
+            void closeProtocolServer();
+          },
+        );
+        progressCapacity = relay.hasCapacity;
+        streaming = true;
+        return {
+          response: new Response(relay.stream, {
+            status: sdkResponse.status,
+            headers: withoutHopByHopHeaders(sdkResponse.headers),
+          }),
+          bodyUnconsumed: false,
+          streaming: true,
+        };
+      }
       // The stateless JSON profile answers with a complete body; reading it
       // here lets the protocol server close only after the response exists.
       const responseBody =
@@ -884,7 +994,8 @@ export function createMcpHttpProtocol<Capabilities extends CapabilityMap>(
       const failure = protocolErrorBody(-32603, "Internal server error");
       return consumedBody ? consumed(500, failure) : early(500, failure);
     } finally {
-      await protocolServer.close().catch(() => undefined);
+      // A progress stream closes its protocol server when the stream settles.
+      if (!streaming) await closeProtocolServer();
     }
   }
 }

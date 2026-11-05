@@ -49,6 +49,7 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0040](0040-installer-mounted-mcp-urls.md) | Installer support for mounted MCP URLs | Accepted | 2026-09-05 |
 | [0041](0041-multiple-managed-installation-removal.md) | Multiple managed installation removal | Accepted | 2026-09-05 |
 | [0042](0042-web-standard-runtime-portability.md) | Web-standard runtime portability for core and MCP HTTP | Accepted | 2026-11-05 |
+| [0043](0043-capability-progress-reporting-and-mcp-progress-notifications.md) | Capability progress reporting and MCP progress notifications | Accepted | 2026-11-05 |
 | [0044](0044-rich-mcp-tool-result-content.md) | Rich MCP tool result content | Accepted | 2026-11-05 |
 | [0045](0045-declared-domain-errors-in-capability-contracts.md) | Declared domain errors in capability contracts | Accepted | 2026-11-05 |
 | [0046](0046-stability-policy-capability-deprecation-and-contract-diff.md) | Stability policy, capability deprecation, and contract diff | Accepted | 2026-11-05 |

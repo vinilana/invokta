@@ -16,6 +16,8 @@ import {
   type EngineEvent,
   type InferSchemaInput,
   type InferSchemaOutput,
+  type InvokeOptions,
+  type ProgressReport,
 } from "../src/index.js";
 
 // @ts-expect-error Connector configuration must validate to an object root.
@@ -101,8 +103,14 @@ const engine = createEngine({
       input,
       output,
       access,
-      async run({ input }) {
+      async run({ input, context }) {
         expectTypeOf(input).toEqualTypeOf<{ value: number }>();
+        expectTypeOf(context.reportProgress).toEqualTypeOf<
+          (report: ProgressReport) => void
+        >();
+        context.reportProgress({ progress: 1, total: 2, message: "Halfway." });
+        // @ts-expect-error Progress reports require a numeric progress value.
+        context.reportProgress({ total: 2 });
         return { result: String(input.value) };
       },
     }),
@@ -239,3 +247,21 @@ expectTypeOf<DomainErrorPublicDetails>().toEqualTypeOf<{
 expectTypeOf<
   Extract<EngineEvent, { type: "invocation.failed" }>["domainCode"]
 >().toEqualTypeOf<string | undefined>();
+
+expectTypeOf<ProgressReport>().toEqualTypeOf<{
+  readonly progress: number;
+  readonly total?: number;
+  readonly message?: string;
+}>();
+expectTypeOf<InvokeOptions["onProgress"]>().toEqualTypeOf<
+  ((report: ProgressReport) => void | Promise<void>) | undefined
+>();
+engine.invoke(
+  "example.transform",
+  { value: "four" },
+  {
+    onProgress(report) {
+      expectTypeOf(report).toEqualTypeOf<ProgressReport>();
+    },
+  },
+);

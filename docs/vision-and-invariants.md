@@ -120,9 +120,11 @@ receives `{ principal, input, context, capabilityId }` and permits access only
 when it returns `true`.
 
 **AE-CTX-01 — Minimal context.** `ExecutionContext` MUST contain only `requestId`,
-`source`, `principal`, `signal`, and `logger`. `source` is `direct`, `cli`,
-`mcp-stdio`, `mcp-http`, or `http`. The context MUST NOT contain a service
-locator, port registry, error factory, policy context, or mutable metadata bag.
+`source`, `principal`, `signal`, `logger`, and `reportProgress`. `source` is
+`direct`, `cli`, `mcp-stdio`, `mcp-http`, or `http`. `reportProgress` is the
+advisory, non-throwing progress reporter of `AE-PROGRESS-01` (ADR 0043). The
+context MUST NOT contain a service locator, port registry, error factory,
+policy context, or mutable metadata bag.
 
 **AE-PRINCIPAL-01 — Minimal identity.** `Principal` MUST be a structured-cloneable
 record with a non-empty string `id` and MAY contain `attributes` as a

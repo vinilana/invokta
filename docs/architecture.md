@@ -195,11 +195,13 @@ and a `CapabilityError` raised outside `run` is never a domain error; it is
 normalized like any other access-rule or validator failure. ADR 0045
 defines the declaration limits.
 
-Reading `requestId` and `source` from invocation options is part of this error
-boundary. If either property access throws, the runtime discards all partially
-read option metadata, uses a generated request ID and the default `direct`
-source, emits the ordered started and failed events, and throws a normalized
-`EXECUTION_FAILED` error. The property failure remains internal as the cause.
+Reading `requestId`, `source`, and `onProgress` from invocation options is part
+of this error boundary. If any of these property accesses throws, or
+`onProgress` is present but is not a function, the runtime discards all
+partially read option metadata, uses a generated request ID and the default
+`direct` source, emits the ordered started and failed events, and throws a
+normalized `EXECUTION_FAILED` error. The property failure remains internal as
+the cause.
 Failures while reading or snapshotting `principal` are a distinct identity
 boundary and always produce a sanitized `UNAUTHENTICATED` error. Failures while
 reading `signal` or setting up caller-signal state always produce a sanitized
@@ -260,6 +262,36 @@ across the overlapping invocations within the `maxPendingSpans` bound. The invoc
 `contextFor(requestId)` accessor. ADR 0050 defines the attribute names,
 metric units, and limits.
 
+## Progress
+
+**AE-PROGRESS-01 — Advisory progress.** `ExecutionContext.reportProgress`
+accepts `{ progress, total?, message? }` and delivers a fresh, frozen snapshot
+synchronously to the invocation's optional `InvokeOptions.onProgress` sink. A
+report is delivered only when `progress` is finite, at least zero, and greater
+than the last delivered value; `total`, when present, is finite and positive;
+and `message`, when present, is a string of at most 1,024 UTF-16 code units.
+Negative zero is delivered as `0`. Invalid, proxy, non-increasing, and late
+reports are dropped. The reporter never throws, returns nothing, and is a no-op
+without a sink. Delivery is active only while `run` is pending: an access rule
+receives a no-op reporter, and delivery stops when `run` settles or the
+invocation signal aborts. A sink's synchronous throw or rejected promise is
+contained, a returned promise is never awaited, and the first sink failure of
+an invocation sends one payload-free `Invocation progress callback failed.`
+diagnostic with only the `requestId` to the logger. Progress adds no engine
+event, pipeline stage, error code, or cross-cutting hook.
+
+MCP forwards delivered reports as `notifications/progress` only for a
+`tools/call` request whose `_meta.progressToken` is a string of at most 256
+UTF-16 code units or a safe integer, echoing that token exactly. The adapter
+sends at most one notification per 100 milliseconds per request, only after the
+previous one has been written and while the response channel reports capacity.
+It holds at most one report, the latest, delivers it just before a successful
+result, and drops it when the call fails or is cancelled; send failures never
+change the tool result. The CLI passes a
+sink only in the `human` format and writes progress to stderr. The plain HTTP
+adapter (`AE-HTTP-01`) answers with one JSON body and passes no sink, so its
+callers receive no progress. ADR 0043 defines the complete boundary.
+
 ## CLI
 
 **AE-CLI-01 — Commands.** `@invokta/cli` MUST implement `list`, `describe`,
@@ -275,7 +307,12 @@ exit code and does not terminate the process or mutate `process.exitCode`; the
 composition root owns that process-level decision. Errors are compact JSON with
 only `code`, `message`, and optional `publicDetails`. JSON is the default output
 format; trusted configuration may select deterministic, pretty-printed JSON as
-the human rendering of the same result. Invokta does not impose a stdin size
+the human rendering of the same result. Only the `human` format observes
+progress: it writes each delivered report as one
+`progress <progress>[/<total>][: <message>]` line to `stderr` without awaiting
+the write, escaping Unicode control, format, line-separator, and
+paragraph-separator characters in the message.
+Invokta does not impose a stdin size
 limit; hosts that accept untrusted local input must bound the stream before it
 reaches the adapter.
 
@@ -410,7 +447,19 @@ shutdown to the host; `request.signal` is the request cancellation signal.
 
 The protocol endpoint accepts only `POST`. Each accepted POST creates a new MCP
 server and a new transport with sessions, resumption, event storage, and
-server-to-client SSE disabled. When OAuth Protected Resource Metadata is
+server-to-client SSE disabled. Every response is one JSON body, except that a
+`tools/call` request carrying a usable progress token (`AE-PROGRESS-01`)
+receives a `text/event-stream` response for that request only, from both
+`serveMcpHttp` and `createMcpHttpHandler`. That stream carries the request's
+progress notifications followed by its JSON-RPC response, closes after the
+response, and has no event ID, priming event, resumption, or connection-scoped
+header. The boundary relays it through a queue of at most one chunk and offers
+the next progress notification only while that queue is empty, so a consumer
+that stops reading leaves at most one queued notification and one held report
+per request; cancelling the stream aborts the invocation. The Node.js adapter
+reads the next chunk only after the socket has taken the previous one and
+applies Node.js connection rules, including a client's `Connection: close`.
+When OAuth Protected Resource Metadata is
 configured, its public well-known GET route is the only non-protocol route.
 Only the exact, canonical mount path reaches protocol dispatch; dot segments,
 percent encoding, a query, a fragment, and absolute-form targets are rejected.
