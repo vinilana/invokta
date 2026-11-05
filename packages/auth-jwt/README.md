@@ -49,11 +49,16 @@ adapter exposing the same header lookup.
 | --- | --- | --- |
 | Verified token with every required scope | Principal | Request continues to `engine.invoke` |
 | Missing, malformed, oversized, expired, not-yet-valid, wrong issuer, wrong audience, disallowed algorithm, unknown key, bad signature, missing `sub` or `exp`, or missing required scope | `null` | 401 with the configured Bearer challenge |
-| Key set unreachable, non-200, malformed, or ambiguous; request cancelled | Rejects with `JwtVerificationUnavailableError` | Sanitized 500 |
+| Key set unreachable, non-200, or malformed; request cancelled | Rejects with `JwtVerificationUnavailableError` | Sanitized 500 |
 
 A `null` result never says why the credential was rejected. The rejection has a
 fixed message and no cause, so no token, key-set URL, or provider response can
 reach a response or a log through it.
+
+A token without a `kid` header that fits several published keys, as during an
+issuer's key rotation, is tried against at most eight of them in key-set order.
+It verifies if one of them signed it and is otherwise an invalid credential, so
+a forged token cannot turn into a 500.
 
 ## Options
 
@@ -70,9 +75,11 @@ reach a response or a log through it.
 | `principal` | No | Synchronous claims-to-principal mapper; default `defaultJwtPrincipal` |
 
 `none` and shared-secret `HS*` algorithms are rejected at construction. A remote
-key set is fetched on first use, with a 5-second timeout, cached for 10 minutes,
-and refetched for an unknown key identifier at most once every 30 seconds.
-Redirects are not followed. Configuration is validated and snapshotted when the
+key set is fetched on first use, with a 5-second timeout, and cached for 10
+minutes. After a successful fetch, an unknown key identifier triggers a refetch
+at most once every 30 seconds. After a failed fetch, nothing is fetched for 5
+seconds: a fresh cached key set keeps answering, and without one requests are
+rejected at once. Redirects are not followed. Configuration is validated and snapshotted when the
 authenticator is created, and configuration errors never echo a configured
 value.
 
@@ -117,6 +124,10 @@ introspect opaque tokens, decrypt JWE tokens, enforce the RFC 9068 `typ`
 header, accept several issuers, bind tokens with DPoP or mTLS, check
 revocation, or retry a failed key-set fetch. Compose a host-owned hook for
 those requirements.
+
+The remote key-set response body is read whole by `jose`, bounded only by the
+5-second fetch timeout, not by a size limit. Configure `jwksUrl` only for an
+issuer endpoint you trust.
 
 Read the [`@invokta/auth-jwt` reference](https://docs.invokta.dev/reference/auth-jwt/)
 and the

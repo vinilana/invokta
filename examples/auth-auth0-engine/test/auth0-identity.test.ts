@@ -179,30 +179,36 @@ describe("auth0 access token verification", () => {
     await expect(authenticator()(bearer(token))).resolves.toBeNull();
   });
 
-  it("throws when the key set is ambiguous for the token", async () => {
-    // Two same-algorithm keys without kid headers: jose cannot pick a
-    // candidate, which is the tenant's key-publication problem, not proof
-    // against the credential — so it surfaces as unavailable, not null.
-    const first = await generateKeyPair("RS256", { extractable: true });
-    const second = await generateKeyPair("RS256", { extractable: true });
-    const ambiguous: JwtKeySource = {
+  it("tries both rotation keys for a token without a key identifier", async () => {
+    // During key rotation the tenant publishes two RS256 keys. A token without
+    // a kid header is tried against each: the one it was signed with verifies
+    // it, and a forged token is an invalid credential, not a tenant outage.
+    const current = await generateKeyPair("RS256", { extractable: true });
+    const next = await generateKeyPair("RS256", { extractable: true });
+    const rotation: JwtKeySource = {
       jwks: {
         keys: [
-          { ...(await exportJWK(first.publicKey)), alg: "RS256", use: "sig" },
-          { ...(await exportJWK(second.publicKey)), alg: "RS256", use: "sig" },
+          { ...(await exportJWK(current.publicKey)), alg: "RS256", use: "sig" },
+          { ...(await exportJWK(next.publicKey)), alg: "RS256", use: "sig" },
         ],
       },
     };
     const now = Math.floor(Date.now() / 1000);
-    const token = await new SignJWT(validClaims())
-      .setProtectedHeader({ alg: "RS256" })
-      .setIssuedAt(now)
-      .setExpirationTime(now + 3600)
-      .sign(first.privateKey);
+    const signedWith = (key: CryptoKey) =>
+      new SignJWT(validClaims())
+        .setProtectedHeader({ alg: "RS256" })
+        .setIssuedAt(now)
+        .setExpirationTime(now + 3600)
+        .sign(key);
 
     await expect(
-      authenticator(ambiguous)(bearer(token)),
-    ).rejects.toBeInstanceOf(JwtVerificationUnavailableError);
+      authenticator(rotation)(bearer(await signedWith(next.privateKey))),
+    ).resolves.toMatchObject({ id: "auth0|64f0c0ffee0000000000abcd" });
+    await expect(
+      authenticator(rotation)(
+        bearer(await signedWith((await generateKeyPair("RS256")).privateKey)),
+      ),
+    ).resolves.toBeNull();
   });
 
   it("throws when the tenant JWKS cannot be fetched", async () => {

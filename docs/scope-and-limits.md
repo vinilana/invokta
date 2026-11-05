@@ -86,7 +86,8 @@ while the example owns one replaceable Authorization Server implementation.
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |
 | JWT bearer token length | 8,192 characters by default; at most 16,384 |
 | JWT bearer clock tolerance | 0 seconds by default; at most 300 |
-| JWT bearer remote JWKS | 5-second fetch timeout, 10-minute cache, 30-second unknown-key refetch cooldown, no redirects |
+| JWT bearer remote JWKS | 5-second fetch timeout, 10-minute cache, 30-second unknown-key refetch cooldown after a successful fetch, 5-second no-fetch window after a failed fetch, no redirects, response size bounded only by the timeout |
+| JWT bearer candidate keys for a token without `kid` | 8 |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,

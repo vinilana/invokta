@@ -337,9 +337,11 @@ HTTP `authenticate` hook for signed JWT bearer tokens from one configured
 issuer (ADR 0049). It MUST require an exact issuer, an audience, an explicit
 asymmetric algorithm allowlist, one key source, `sub`, and `exp`; parse only a
 bounded `Bearer <compact JWS>` credential; resolve `null` for every invalid or
-insufficiently scoped credential without revealing the failed check; reject
-with a fixed, causeless error when the key set cannot be used or the request is
-cancelled; and never pass the raw token to the principal mapper. It depends
+insufficiently scoped credential without revealing the failed check, including
+a token without `kid` that none of at most eight matching keys verifies; reject
+with a fixed, causeless error when the key set cannot be fetched or used or the
+request is cancelled; not refetch a failing remote key set within a bounded
+window; and never pass the raw token to the principal mapper. It depends
 only on `jose`; the core and adapters do not depend on it, and claim mapping
 beyond its default remains host code.
 

@@ -153,10 +153,13 @@ contract above:
   and `attributes.clientId`;
 - `null` for every missing, malformed, oversized, expired, not-yet-valid,
   wrongly issued, wrongly addressed, disallowed-algorithm, unknown-key, or
-  bad-signature credential, and for a token missing a required scope; and
+  bad-signature credential, and for a token missing a required scope. A token
+  without `kid` that fits several published keys is tried against at most
+  eight of them and resolves `null` when none verifies it; and
 - a `JwtVerificationUnavailableError` rejection with a fixed message and no
   cause when the key set times out, is unreachable, answers anything but 200,
-  is malformed or ambiguous, or the request is cancelled.
+  or is malformed, or the request is cancelled. After a failed fetch nothing is
+  fetched for 5 seconds; a fresh cached key set keeps answering meanwhile.
 
 A token without a required scope therefore receives 401, not an RFC 6750
 `insufficient_scope` 403, because the hook can return only a principal or

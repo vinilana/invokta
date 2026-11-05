@@ -50,9 +50,14 @@ Configuration:
 - Exactly one key source: `jwksUrl`, an HTTPS URL or loopback HTTP for
   development without credentials or a fragment, verified through `jose`'s
   remote key set with a 5-second fetch timeout, a 10-minute cache, a 30-second
-  refetch cooldown for unknown key identifiers, and no redirects; or `jwks`, a
-  local set of public keys for tests, offline use, or pinned keys. A remote key
-  set is not fetched until a credential arrives.
+  refetch cooldown for unknown key identifiers after a successful fetch, and no
+  redirects; or `jwks`, a local set of public keys for tests, offline use, or
+  pinned keys. A remote key set is not fetched until a credential arrives.
+  Because `jose` starts its cooldown only after a successful fetch, the helper
+  adds a 5-second window after a failed fetch in which nothing is fetched: a
+  fresh cached key set keeps answering, and without one the lookup fails at
+  once. The response body is read whole and is bounded only by the fetch
+  timeout, so the host must configure a trusted endpoint.
 - `clockToleranceSeconds` is an integer from 0 to 300 and defaults to 0.
 - `maxTokenLength` is an integer from 1 to 16,384 and defaults to 8,192
   characters.
@@ -79,8 +84,16 @@ The call then resolves:
   result, without revealing which check failed; or
 - a rejected `JwtVerificationUnavailableError` with a fixed message and no
   cause when verification cannot complete: a key-set timeout, transport
-  failure, non-200 or redirect response, malformed or unusable key set, an
-  ambiguous key set, or cancellation through the optional request signal.
+  failure, non-200 or redirect response, malformed or unusable key set, the
+  failed-fetch window without a fresh cache, or cancellation through the
+  optional request signal.
+
+A token without a `kid` header can match several published keys, which is
+normal while an issuer rotates keys. The caller, not the issuer, creates that
+ambiguity by omitting `kid`, so it is never reported as an unavailable key set.
+The helper tries at most eight matching keys in key-set order. The key that
+signed a legitimate token verifies it, and a token that none of them verifies
+resolves `null`. A forged token therefore cannot force a 500.
 
 An unreachable key set is therefore not reported as an invalid credential.
 The MCP HTTP adapter answers the rejection with its existing sanitized 500, so

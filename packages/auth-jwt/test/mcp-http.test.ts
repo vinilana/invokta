@@ -1,5 +1,6 @@
 import { createEngine, defineCapability } from "@invokta/core";
 import { type McpHttpServerHandle, serveMcpHttp } from "@invokta/mcp";
+import { exportJWK, generateKeyPair } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -45,6 +46,7 @@ const engine = createEngine({
 let keys: TestKeys;
 let healthy: McpHttpServerHandle;
 let unavailable: McpHttpServerHandle;
+let rotating: McpHttpServerHandle;
 let outage: JwksServer;
 
 beforeAll(async () => {
@@ -72,6 +74,26 @@ beforeAll(async () => {
       challengeScopes: requiredScopes,
     },
   });
+  // Two RS256 keys, as an issuer publishes during key rotation.
+  const current = await generateKeyPair("RS256", { extractable: true });
+  const next = await generateKeyPair("RS256", { extractable: true });
+  rotating = await serveMcpHttp(engine, {
+    port: 0,
+    auth: {
+      mode: "required",
+      authenticate: createJwtBearerAuthenticator({
+        issuer: testIssuer,
+        audience: testAudience,
+        algorithms: ["RS256"],
+        jwks: {
+          keys: [
+            { ...(await exportJWK(current.publicKey)), alg: "RS256" },
+            { ...(await exportJWK(next.publicKey)), alg: "RS256" },
+          ],
+        },
+      }),
+    },
+  });
   unavailable = await serveMcpHttp(engine, {
     port: 0,
     auth: {
@@ -89,6 +111,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await healthy?.close();
   await unavailable?.close();
+  await rotating?.close();
   await outage?.close();
 });
 
@@ -155,6 +178,19 @@ describe("serveMcpHttp with the JWT bearer authenticator", () => {
       `Bearer resource_metadata="${metadataUrl}", scope="engine:invoke"`,
     );
     expect(JSON.parse(body)).toEqual({ error: "unauthorized" });
+  });
+
+  it("answers 401, not 500, for a forged token without a key identifier", async () => {
+    const segment = (value: unknown) =>
+      Buffer.from(JSON.stringify(value)).toString("base64url");
+
+    const response = await callWhoami(
+      rotating,
+      `${segment({ alg: "RS256" })}.${segment(validClaims())}.AAAA`,
+    );
+    await response.arrayBuffer();
+
+    expect(response.status).toBe(401);
   });
 
   it("answers a sanitized 500 when the key set cannot be fetched", async () => {

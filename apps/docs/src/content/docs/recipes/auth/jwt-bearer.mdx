@@ -88,9 +88,10 @@ claim names.
    on-path attacker, and a substituted key turns into accepted
    attacker-minted tokens.
 
-   The remote key set is fetched on first use with a 5-second timeout, cached
-   for 10 minutes, and refetched for an unknown key identifier at most once
-   every 30 seconds.
+   The remote key set is fetched on first use with a 5-second timeout and
+   cached for 10 minutes. After a successful fetch, an unknown key identifier
+   triggers a refetch at most once every 30 seconds; after a failed fetch,
+   nothing is fetched for 5 seconds.
 
 5. Know what reaches the `Principal`
 
@@ -125,10 +126,11 @@ claim names.
    no cause, so no token, URL, or provider response can reach a log through
    it; the adapter answers a sanitized 500.
 
-   A key set with two same-algorithm keys and no `kid` to choose between them
-   is reported the same way. That is the issuer's key-publication problem,
-   not evidence against the credential, and treating it as 401 would silently
-   reject every legitimate token during a kid-less key rotation.
+   A token without a `kid` header can match several keys, for example while
+   the issuer publishes two keys during rotation. The authenticator tries at
+   most eight of them: the key that signed a legitimate token verifies it, and
+   a forged token resolves `null`. The caller chose to omit `kid`, so the
+   ambiguity is never reported as an unavailable key set.
 
 7. Wire the hook
 

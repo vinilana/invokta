@@ -20,10 +20,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   8,192 characters by default and 16,384 at most, and a claims-to-principal
   mapper that never receives the raw token. Invalid, expired, not-yet-valid,
   wrongly issued or addressed, unknown-key, disallowed-algorithm, and
-  insufficient-scope credentials resolve `null`; key-set outages, ambiguous key
-  sets, and cancellation reject with a fixed, causeless
-  `JwtVerificationUnavailableError`, which the MCP adapter answers with its
-  sanitized 500.
+  insufficient-scope credentials resolve `null`. A token without `kid` that
+  fits several published keys is tried against at most eight of them and
+  resolves `null` when none verifies it. Key-set outages and cancellation
+  reject with a fixed, causeless `JwtVerificationUnavailableError`, which the
+  MCP adapter answers with its sanitized 500. A remote key set is cached for 10
+  minutes, refetched for an unknown key at most every 30 seconds, and not
+  refetched for 5 seconds after a failed fetch.
 
 ### Changed
 

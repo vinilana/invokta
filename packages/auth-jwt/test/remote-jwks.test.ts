@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { exportJWK, generateKeyPair, type JSONWebKeySet } from "jose";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   createJwtBearerAuthenticator,
@@ -9,6 +10,7 @@ import {
   bearerRequest,
   createTestKeys,
   mintToken,
+  nowSeconds,
   type TestKeys,
   testAudience,
   testIssuer,
@@ -23,6 +25,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(servers.splice(0).map((server) => server.close()));
 });
 
@@ -119,21 +122,6 @@ describe("remote JWKS key source", () => {
     },
   );
 
-  it("recovers once the key set is reachable again", async () => {
-    const server = await jwksServer({ kind: "status", status: 503 });
-    const authenticate = remoteAuthenticator(server);
-    const token = await mintToken(keys);
-
-    await expect(
-      authenticate(bearerRequest(`Bearer ${token}`)),
-    ).rejects.toBeInstanceOf(JwtVerificationUnavailableError);
-    server.setBehavior({ kind: "serve", jwks: keys.jwks });
-
-    await expect(
-      authenticate(bearerRequest(`Bearer ${token}`)),
-    ).resolves.toMatchObject({ id: "user-42" });
-  });
-
   it("stops waiting for a slow key set when the request is aborted", async () => {
     const server = await jwksServer({ kind: "hang" });
     const token = await mintToken(keys);
@@ -149,5 +137,134 @@ describe("remote JWKS key source", () => {
       JwtVerificationUnavailableError,
     );
     expect(Date.now() - started).toBeLessThan(2_000);
+  });
+});
+
+describe("remote JWKS tokens without a key identifier", () => {
+  it("answers a forged token with null when the issuer publishes two keys", async () => {
+    const current = await generateKeyPair("RS256", { extractable: true });
+    const next = await generateKeyPair("RS256", { extractable: true });
+    const rotation: JSONWebKeySet = {
+      keys: [
+        { ...(await exportJWK(current.publicKey)), alg: "RS256", use: "sig" },
+        { ...(await exportJWK(next.publicKey)), alg: "RS256", use: "sig" },
+      ],
+    };
+    const server = await jwksServer({ kind: "serve", jwks: rotation });
+    const authenticate = remoteAuthenticator(server);
+    const header = Buffer.from(JSON.stringify({ alg: "RS256" })).toString(
+      "base64url",
+    );
+    const payload = Buffer.from(JSON.stringify(validClaims())).toString(
+      "base64url",
+    );
+    const legitimate = await mintToken(keys, validClaims(), {
+      key: next.privateKey,
+      keyId: null,
+    });
+
+    await expect(
+      authenticate(bearerRequest(`Bearer ${header}.${payload}.AAAA`)),
+    ).resolves.toBeNull();
+    await expect(
+      authenticate(bearerRequest(`Bearer ${legitimate}`)),
+    ).resolves.toMatchObject({ id: "user-42" });
+    expect(server.requests()).toBe(1);
+  });
+});
+
+describe("remote JWKS failure cooldown", () => {
+  /** Fakes only the clock, so loopback HTTP and jose's timeout stay real. */
+  function freezeClock(): (milliseconds: number) => void {
+    const start = Date.now();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(start);
+    return (milliseconds) => vi.setSystemTime(start + milliseconds);
+  }
+
+  async function longLivedToken(
+    overrides: Parameters<typeof mintToken>[2] = {},
+  ): Promise<string> {
+    return mintToken(keys, validClaims(), {
+      expiresAt: nowSeconds() + 3_600,
+      ...overrides,
+    });
+  }
+
+  it("does not refetch a failing key set for five seconds", async () => {
+    const server = await jwksServer({ kind: "status", status: 503 });
+    const authenticate = remoteAuthenticator(server);
+    const token = await longLivedToken();
+    const advanceTo = freezeClock();
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await expect(
+        authenticate(bearerRequest(`Bearer ${token}`)),
+      ).rejects.toBeInstanceOf(JwtVerificationUnavailableError);
+    }
+    expect(server.requests()).toBe(1);
+
+    server.setBehavior({ kind: "serve", jwks: keys.jwks });
+    advanceTo(4_999);
+    await expect(
+      authenticate(bearerRequest(`Bearer ${token}`)),
+    ).rejects.toBeInstanceOf(JwtVerificationUnavailableError);
+    expect(server.requests()).toBe(1);
+
+    advanceTo(5_000);
+    await expect(
+      authenticate(bearerRequest(`Bearer ${token}`)),
+    ).resolves.toMatchObject({ id: "user-42" });
+    expect(server.requests()).toBe(2);
+  });
+
+  it("keeps answering from a fresh cache while refetches fail", async () => {
+    const server = await jwksServer({ kind: "serve", jwks: keys.jwks });
+    const authenticate = remoteAuthenticator(server);
+    const valid = await longLivedToken();
+    const unknown = await longLivedToken({
+      key: keys.foreignPrivateKey,
+      keyId: "rotated-in",
+    });
+    const advanceTo = freezeClock();
+
+    await authenticate(bearerRequest(`Bearer ${valid}`));
+    server.setBehavior({ kind: "status", status: 503 });
+    // Past jose's 30-second unknown-key cooldown, inside its 10-minute cache.
+    advanceTo(31_000);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await expect(
+        authenticate(bearerRequest(`Bearer ${unknown}`)),
+      ).resolves.toBeNull();
+    }
+    await expect(
+      authenticate(bearerRequest(`Bearer ${valid}`)),
+    ).resolves.toMatchObject({ id: "user-42" });
+    expect(server.requests()).toBe(2);
+
+    advanceTo(36_000);
+    await expect(
+      authenticate(bearerRequest(`Bearer ${unknown}`)),
+    ).resolves.toBeNull();
+    expect(server.requests()).toBe(3);
+  });
+
+  it("fails fast once the cache has expired and the key set is failing", async () => {
+    const server = await jwksServer({ kind: "serve", jwks: keys.jwks });
+    const authenticate = remoteAuthenticator(server);
+    const token = await longLivedToken();
+    const advanceTo = freezeClock();
+
+    await authenticate(bearerRequest(`Bearer ${token}`));
+    server.setBehavior({ kind: "status", status: 503 });
+    advanceTo(600_001);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(
+        authenticate(bearerRequest(`Bearer ${token}`)),
+      ).rejects.toBeInstanceOf(JwtVerificationUnavailableError);
+    }
+    expect(server.requests()).toBe(2);
   });
 });

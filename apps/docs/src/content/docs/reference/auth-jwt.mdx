@@ -114,9 +114,17 @@ Mutating an options object afterward does not change the authenticator.
 
 `jwksUrl` uses the `jose` remote key set. Nothing is fetched until the first
 credential arrives. Each fetch has a 5-second timeout and follows no redirect.
-The key set is cached for 10 minutes, and a token whose key identifier is
-unknown triggers a refetch at most once every 30 seconds, so random key
-identifiers cannot drive unbounded traffic to the issuer.
+
+| Key-set state | Fetch behavior |
+| --- | --- |
+| After a successful fetch | Cached for 10 minutes; a token with an unknown key identifier triggers a refetch at most once every 30 seconds |
+| After a failed fetch | Nothing is fetched for 5 seconds; a fresh cached key set keeps answering, otherwise requests reject at once |
+| Concurrent lookups that need a fetch | Share one in-flight fetch |
+
+Random key identifiers therefore cause at most one refetch every 30 seconds
+while the issuer is healthy and one fetch attempt every 5 seconds while it is
+failing. The response body is read whole, bounded only by the fetch timeout,
+so configure only an issuer endpoint you trust.
 
 `jwks` verifies against a local set of public keys, for tests, offline
 development, or pinned keys. A key carrying private material (`d`, `k`, or
@@ -137,7 +145,12 @@ compact JWS of three non-empty base64url segments within `maxTokenLength`.
 | Missing, malformed, or oversized credential | `null` | 401 with the Bearer challenge |
 | Expired or not yet valid, wrong issuer or audience, algorithm outside the allowlist, unknown key, bad signature, or missing `sub` or `exp` | `null` | 401 |
 | Missing required scope, or a mapper result of `null` or a malformed principal | `null` | 401 |
-| Key set times out, is unreachable, answers anything but 200, or is malformed; the key set holds several matching keys; the request is aborted | Rejects with `JwtVerificationUnavailableError` | Sanitized 500 |
+| Key set times out, is unreachable, answers anything but 200, or is malformed, including during the 5-second failure window without a fresh cache; the request is aborted | Rejects with `JwtVerificationUnavailableError` | Sanitized 500 |
+
+A token without a `kid` header that fits several published keys, as during an
+issuer's key rotation, is tried against at most eight of them in key-set order.
+It verifies if one of them signed it; otherwise it resolves `null`, so a forged
+token without `kid` is a 401, never a 500.
 
 A `null` result never states which check failed.
 `JwtVerificationUnavailableError` always has the message
@@ -193,7 +206,8 @@ The package does not:
 - discover `jwks_uri` from issuer metadata;
 - accept opaque, encrypted, or shared-secret tokens, or several issuers;
 - enforce the RFC 9068 `typ` header;
-- verify DPoP or mTLS sender constraints, or bind sessions; or
+- verify DPoP or mTLS sender constraints, or bind sessions;
+- bound the size of the remote key-set response beyond its fetch timeout; or
 - retry a failed key-set fetch or log anything.
 
 Write a host hook for those requirements. Read the

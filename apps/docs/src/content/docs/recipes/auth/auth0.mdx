@@ -111,10 +111,11 @@ specific to Auth0.
 
    The authenticator resolves `null` for every expired, foreign-issuer,
    wrong-audience, unknown-key, forged, malformed, or non-RS256 token, which
-   the adapter answers with HTTP 401. A JWKS timeout, an unreachable tenant, or
-   an ambiguous key set — the tenant's key-publication problem, not the
-   caller's — rejects with `JwtVerificationUnavailableError` instead, which
-   becomes a sanitized HTTP 500. A tenant outage must never look like a
+   the adapter answers with HTTP 401. A token without a `kid` header is tried
+   against each RS256 key the tenant publishes during rotation, up to eight,
+   and resolves `null` when none of them signed it. A JWKS timeout or an
+   unreachable tenant rejects with `JwtVerificationUnavailableError` instead,
+   which becomes a sanitized HTTP 500. A tenant outage must never look like a
    rejected user, and the fixed, causeless error carries neither the token
    nor the tenant's response.
 

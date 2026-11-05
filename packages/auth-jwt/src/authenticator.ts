@@ -6,6 +6,7 @@ import {
   type JWTPayload,
   type JWTVerifyGetKey,
   type JWTVerifyOptions,
+  type JWTVerifyResult,
   jwtVerify,
 } from "jose";
 
@@ -36,6 +37,8 @@ const MAX_CLOCK_TOLERANCE_SECONDS = 300;
 const JWKS_TIMEOUT_MS = 5_000;
 const JWKS_COOLDOWN_MS = 30_000;
 const JWKS_CACHE_MAX_AGE_MS = 600_000;
+const JWKS_FAILURE_COOLDOWN_MS = 5_000;
+const MAX_CANDIDATE_KEYS = 8;
 const BEARER_PREFIX = "bearer ";
 const COMPACT_JWS = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u;
 const SCOPE_TOKEN = /^[\x21\x23-\x5b\x5d-\x7e]+$/u;
@@ -48,8 +51,9 @@ const PRIVATE_KEY_MEMBERS = ["d", "k", "priv"] as const;
 
 /**
  * jose failures that prove the presented credential is unacceptable. Every
- * other failure (a JWKS timeout, transport error, unusable key set, ambiguous
- * key set, or cancellation) means the check did not complete.
+ * other failure (a JWKS timeout, transport error, unusable key set, or
+ * cancellation) means the check did not complete. Several keys matching a
+ * token without `kid` are tried in turn instead; see `verifyToken`.
  */
 const INVALID_CREDENTIAL_CODES: ReadonlySet<string> = new Set([
   errors.JOSEAlgNotAllowed.code,
@@ -107,8 +111,10 @@ export type JwtKeySource =
   | {
       /**
        * HTTPS JWKS URL, or loopback HTTP for local development. The key set is
-       * fetched on first use with a 5 second timeout, cached for 10 minutes,
-       * and refetched for an unknown key at most once every 30 seconds.
+       * fetched on first use with a 5 second timeout and cached for 10
+       * minutes. After a successful fetch, an unknown key triggers a refetch at
+       * most once every 30 seconds; after a failed fetch, nothing is fetched
+       * for 5 seconds.
        */
       readonly jwksUrl: string | URL;
       readonly jwks?: never;
@@ -144,8 +150,8 @@ export type JwtBearerAuthenticatorOptions = JwtBearerPolicyOptions &
   JwtKeySource;
 
 /**
- * Signals that verification could not complete: the key set was unreachable,
- * unusable, or ambiguous, or the request was cancelled. The message is fixed
+ * Signals that verification could not complete: the key set was unreachable or
+ * unusable, or the request was cancelled. The message is fixed
  * and no cause is attached, so no token, URL, or provider response can reach a
  * response or a log through it.
  */
@@ -321,6 +327,57 @@ function createLocalKeySet(value: unknown): JWTVerifyGetKey {
   }
 }
 
+/**
+ * Key lookups that inspected a usable key set: the token names no published
+ * key, several keys match it, or its algorithm cannot use a key set. They say
+ * nothing about the key set's availability.
+ */
+function isKeySelectionError(error: unknown): boolean {
+  return (
+    error instanceof errors.JWKSNoMatchingKey ||
+    error instanceof errors.JWKSMultipleMatchingKeys ||
+    error instanceof errors.JOSENotSupported
+  );
+}
+
+/**
+ * Wraps jose's remote key set, whose cache and unknown-key cooldown start only
+ * after a successful fetch, so that a failed fetch is not retried for a fixed
+ * window. Inside that window nothing is fetched: a fresh cached key set still
+ * answers lookups, and without one the lookup fails at once.
+ */
+function createRemoteKeySet(url: URL): JWTVerifyGetKey {
+  const remote = createRemoteJWKSet(url, {
+    timeoutDuration: JWKS_TIMEOUT_MS,
+    cooldownDuration: JWKS_COOLDOWN_MS,
+    cacheMaxAge: JWKS_CACHE_MAX_AGE_MS,
+  });
+  let retryAfter = 0;
+  let cached: JWTVerifyGetKey | undefined;
+
+  // Resolves a key from the fresh cache only, or fails fast without one.
+  const fromCache: JWTVerifyGetKey = (protectedHeader, token) => {
+    const jwks = remote.fresh ? remote.jwks() : undefined;
+    if (jwks === undefined) throw new JwtVerificationUnavailableError();
+    cached ??= createLocalJWKSet(jwks);
+    return cached(protectedHeader, token);
+  };
+
+  return async (protectedHeader, token) => {
+    if (Date.now() < retryAfter) return fromCache(protectedHeader, token);
+    cached = undefined;
+    try {
+      return await remote(protectedHeader, token);
+    } catch (error) {
+      if (isKeySelectionError(error)) throw error;
+      retryAfter = Date.now() + JWKS_FAILURE_COOLDOWN_MS;
+      // A fetch that fails while the cache is fresh was a refetch for an
+      // unknown key, which the cached set answers.
+      return fromCache(protectedHeader, token);
+    }
+  };
+}
+
 function createKeySource(options: JwtKeySource): JWTVerifyGetKey {
   const remote = options.jwksUrl !== undefined;
   const local = options.jwks !== undefined;
@@ -328,11 +385,40 @@ function createKeySource(options: JwtKeySource): JWTVerifyGetKey {
     throw new TypeError("Configure exactly one key source: jwksUrl or jwks.");
   }
   if (local) return createLocalKeySet(options.jwks);
-  return createRemoteJWKSet(snapshotJwksUrl(options.jwksUrl), {
-    timeoutDuration: JWKS_TIMEOUT_MS,
-    cooldownDuration: JWKS_COOLDOWN_MS,
-    cacheMaxAge: JWKS_CACHE_MAX_AGE_MS,
-  });
+  return createRemoteKeySet(snapshotJwksUrl(options.jwksUrl));
+}
+
+/**
+ * Verifies the token. When it carries no `kid` and several published keys fit
+ * its algorithm, as during an issuer's key rotation, the first
+ * {@link MAX_CANDIDATE_KEYS} candidates are tried in turn. A token that none of
+ * them verifies is an invalid credential, not an unavailable key set.
+ */
+async function verifyToken(
+  token: string,
+  getKey: JWTVerifyGetKey,
+  verifyOptions: JWTVerifyOptions,
+): Promise<JWTVerifyResult> {
+  try {
+    return await jwtVerify(token, getKey, verifyOptions);
+  } catch (error) {
+    if (!(error instanceof errors.JWKSMultipleMatchingKeys)) throw error;
+    let attempts = 0;
+    for await (const key of error) {
+      try {
+        return await jwtVerify(token, key, verifyOptions);
+      } catch (candidateError) {
+        if (
+          !(candidateError instanceof errors.JWSSignatureVerificationFailed)
+        ) {
+          throw candidateError;
+        }
+      }
+      attempts += 1;
+      if (attempts === MAX_CANDIDATE_KEYS) break;
+    }
+    throw new errors.JWSSignatureVerificationFailed();
+  }
 }
 
 /**
@@ -469,7 +555,7 @@ export function createJwtBearerAuthenticator(
     let claims: JWTPayload;
     try {
       ({ payload: claims } = await settleWithin(
-        jwtVerify(token, getKey, verifyOptions),
+        verifyToken(token, getKey, verifyOptions),
         signal,
       ));
     } catch (error) {

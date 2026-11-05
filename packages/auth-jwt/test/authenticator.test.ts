@@ -1,5 +1,6 @@
 import {
   exportJWK,
+  type GenerateKeyPairResult,
   generateKeyPair,
   generateSecret,
   type JSONWebKeySet,
@@ -40,13 +41,6 @@ function authenticator(overrides: Partial<JwtBearerAuthenticatorOptions> = {}) {
     jwks: keys.jwks,
     ...overrides,
   } as JwtBearerAuthenticatorOptions);
-}
-
-async function failureOf(promise: Promise<unknown>): Promise<unknown> {
-  return promise.then(
-    () => undefined,
-    (error: unknown) => error,
-  );
 }
 
 describe("valid credentials", () => {
@@ -394,32 +388,105 @@ describe("principal mapping", () => {
   });
 });
 
-describe("verification that cannot complete", () => {
-  it("rejects with a fixed error when the key set is ambiguous", async () => {
-    const first = await generateKeyPair("RS256", { extractable: true });
-    const second = await generateKeyPair("RS256", { extractable: true });
-    const ambiguous: JSONWebKeySet = {
-      keys: [
-        { ...(await exportJWK(first.publicKey)), alg: "RS256", use: "sig" },
-        { ...(await exportJWK(second.publicKey)), alg: "RS256", use: "sig" },
-      ],
-    };
-    const token = await mintToken(keys, validClaims(), {
-      key: first.privateKey,
+async function rotationKeySet(count: number) {
+  const pairs: GenerateKeyPairResult[] = [];
+  for (let index = 0; index < count; index += 1) {
+    pairs.push(await generateKeyPair("RS256", { extractable: true }));
+  }
+  const jwks: JSONWebKeySet = {
+    keys: await Promise.all(
+      pairs.map(async ({ publicKey }) => ({
+        ...(await exportJWK(publicKey)),
+        alg: "RS256",
+        use: "sig",
+      })),
+    ),
+  };
+  return {
+    jwks,
+    privateKeys: pairs.map(({ privateKey }) => privateKey),
+    privateKey(index: number): CryptoKey {
+      const pair = pairs[index];
+      if (pair === undefined) throw new RangeError("No such rotation key.");
+      return pair.privateKey;
+    },
+  };
+}
+
+/** A token whose header carries no `kid` and whose signature is garbage. */
+const forgedWithoutKeyId = `${Buffer.from(
+  JSON.stringify({ alg: "RS256" }),
+).toString("base64url")}.${Buffer.from(JSON.stringify(validClaims())).toString(
+  "base64url",
+)}.AAAA`;
+
+describe("tokens without a key identifier", () => {
+  it("verifies against whichever of several matching keys signed it", async () => {
+    const rotation = await rotationKeySet(2);
+    const authenticate = authenticator({ jwks: rotation.jwks });
+
+    for (const privateKey of rotation.privateKeys) {
+      const token = await mintToken(keys, validClaims(), {
+        key: privateKey,
+        keyId: null,
+      });
+      await expect(
+        authenticate(bearerRequest(`Bearer ${token}`)),
+      ).resolves.toMatchObject({ id: "user-42" });
+    }
+  });
+
+  it("resolves null for a forged token when several keys match", async () => {
+    const rotation = await rotationKeySet(2);
+    const authenticate = authenticator({ jwks: rotation.jwks });
+    const foreign = await mintToken(keys, validClaims(), {
+      key: keys.foreignPrivateKey,
       keyId: null,
     });
 
-    const failure = await failureOf(
-      authenticator({ jwks: ambiguous })(bearerRequest(`Bearer ${token}`)),
-    );
-
-    expect(failure).toBeInstanceOf(JwtVerificationUnavailableError);
-    expect((failure as Error).message).toBe(
-      "JWT bearer verification is unavailable.",
-    );
-    expect((failure as Error).cause).toBeUndefined();
+    await expect(
+      authenticate(bearerRequest(`Bearer ${forgedWithoutKeyId}`)),
+    ).resolves.toBeNull();
+    await expect(
+      authenticate(bearerRequest(`Bearer ${foreign}`)),
+    ).resolves.toBeNull();
   });
 
+  it("resolves null for a correctly signed but expired token among several keys", async () => {
+    const rotation = await rotationKeySet(2);
+    const token = await mintToken(keys, validClaims(), {
+      key: rotation.privateKey(1),
+      keyId: null,
+      expiresAt: nowSeconds() - 60,
+    });
+
+    await expect(
+      authenticator({ jwks: rotation.jwks })(bearerRequest(`Bearer ${token}`)),
+    ).resolves.toBeNull();
+  });
+
+  it("tries at most eight candidate keys", async () => {
+    const rotation = await rotationKeySet(9);
+    const authenticate = authenticator({ jwks: rotation.jwks });
+    const eighth = await mintToken(keys, validClaims(), {
+      key: rotation.privateKey(7),
+      keyId: null,
+    });
+    const ninth = await mintToken(keys, validClaims(), {
+      key: rotation.privateKey(8),
+      keyId: null,
+    });
+
+    await expect(
+      authenticate(bearerRequest(`Bearer ${eighth}`)),
+    ).resolves.toMatchObject({ id: "user-42" });
+    await expect(
+      authenticate(bearerRequest(`Bearer ${ninth}`)),
+    ).resolves.toBeNull();
+  });
+});
+
+describe("verification that cannot complete", () => {
   it("rejects when the request is already aborted", async () => {
     const token = await mintToken(keys);
     const controller = new AbortController();
