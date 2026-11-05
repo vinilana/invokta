@@ -166,8 +166,11 @@ To serve the same endpoint from a server or runtime you already operate, mount
 
 Use [`@invokta/http`](/reference/http/) when a remote application, gateway, or
 automation needs HTTP without MCP. Its handler is a Web-standard
-`(request: Request) => Promise<Response>` function, so the same composition root
-runs on Node, Deno, Bun, Cloudflare Workers, or inside a web framework:
+`(request: Request) => Promise<Response>` function. Like `@invokta/core` and
+`@invokta/mcp/web`, it imports no Node.js built-in module, so the same
+composition root runs on Node.js, Deno, Bun, Cloudflare Workers, or inside a web
+framework. Node.js is the runtime verified by tests; see the
+[Web-standard runtimes guide](/guides/web-standard-runtimes/) for the others:
 
 ```ts
 import { createHttpHandler } from "@invokta/http";

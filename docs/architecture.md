@@ -45,7 +45,8 @@ Bun) to recognize proxies and promises without running user code. A process
 that identifies as Node.js but cannot resolve it MUST fail to load the core.
 Other hosts use the documented fallback of ADR 0042: JSON values still reject
 proxies through structured cloning, while other defensive boundaries may
-invoke proxy traps. `@invokta/mcp/web` MUST NOT load a Node.js built-in module. Node.js is
+invoke proxy traps. `@invokta/mcp/web` and the `@invokta/http` package root
+MUST NOT load a Node.js built-in module. Node.js is
 the runtime verified by tests; Fetch runtimes are supported by design.
 
 ## Outbound connectors
@@ -393,7 +394,8 @@ may use path components.
 
 **AE-HTTP-01 — Web-standard handler.** `@invokta/http` exports
 `createHttpHandler(engine, options)`, a `(request: Request) => Promise<Response>`
-handler whose package-root modules import no Node-only API, and
+handler whose package-root modules import no Node.js built-in module
+(AE-ARCH-04), and
 `createHttpOpenApiDocument(engine, options?)`. Relative to a validated
 `basePath` (default `/`), `GET /capabilities` returns `{ capabilities }` from
 `engine.list()`, `GET /capabilities/{id}` returns `engine.describe(id)`,

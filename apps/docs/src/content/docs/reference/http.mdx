@@ -12,9 +12,13 @@ document. Every invocation executes through `engine.invoke` with source
 
 The main export is a Web-standard handler,
 `(request: Request) => Promise<Response>`. Its package-root modules import no
-Node-only API, so Node, Deno, Bun, Cloudflare Workers, and web frameworks that
-accept a `fetch` handler can mount it. The engine itself also needs a runtime
-that supports `@invokta/core`.
+Node.js built-in module, and neither does `@invokta/core`, so Node.js, Deno,
+Bun, Cloudflare Workers, and web frameworks that accept a `fetch` handler can
+mount it. As for `@invokta/mcp/web`, Node.js is the runtime verified by tests,
+including a simulated Web-standard host without Node.js built-ins; the other
+runtimes are supported by design. The
+[Web-standard runtimes guide](/guides/web-standard-runtimes/) covers the
+core's behavior on hosts without `process.getBuiltinModule`.
 
 ## Install
 
@@ -367,7 +371,8 @@ the request signal when the client disconnects, closes a connection whose body
 was not consumed, and its `close()` is idempotent and aborts active requests.
 Every route, limit, and status is the handler's.
 
-On another runtime, pass the handler to its server:
+On another runtime, pass the handler to its server. Only `@invokta/http/node`
+needs Node.js:
 
 ```ts
 Deno.serve({ hostname: "127.0.0.1", port: 3000 }, handler);

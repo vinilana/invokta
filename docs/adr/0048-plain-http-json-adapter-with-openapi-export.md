@@ -35,9 +35,15 @@ The package root exports
 `createHttpHandler(engine, options): (request: Request) => Promise<Response>`
 and `createHttpOpenApiDocument(engine, options?)`. The package-root modules use
 only Web-standard APIs (`Request`, `Response`, `Headers`, `URL`, streams,
-`TextDecoder`, `structuredClone`) and import no `node:` module. Full portability
-of the engine itself also depends on `@invokta/core`, whose Web-runtime
-portability is ADR 0042's concern. The handler validates and snapshots its
+`TextDecoder`, `structuredClone`) and import no `node:` module. Under ADR 0042
+`@invokta/core` imports no Node.js built-in module either, so an engine and this
+handler run on Fetch runtimes, just like `createMcpHttpHandler` from
+`@invokta/mcp/web`. A test loads the handler on a simulated Web-standard host
+with Node.js built-ins, `process.getBuiltinModule`, and code generation from
+strings unavailable. Node.js is the runtime verified by tests; Deno, Bun,
+Cloudflare Workers, and Vercel Edge are supported by design, as ADR 0042 states
+for the core. `@invokta/http/node` remains a Node.js entry point. The handler
+validates and snapshots its
 configuration at construction, generates the OpenAPI document once, and never
 rejects: an unexpected failure becomes a sanitized 500.
 

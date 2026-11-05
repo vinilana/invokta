@@ -5,8 +5,10 @@ capability as an HTTP route, generates an OpenAPI 3.1 description of those
 routes, and executes every call through `engine.invoke` with source `http`.
 
 The main export is a Web-standard handler, `(request: Request) =>
-Promise<Response>`, whose package-root modules import no Node-only API. The
-optional `@invokta/http/node` subpath serves the same handler on `node:http`.
+Promise<Response>`, whose package-root modules import no Node.js built-in
+module. `@invokta/core` imports none either (ADR 0042), so the handler runs on
+Fetch runtimes; Node.js is the runtime verified by tests. The optional
+`@invokta/http/node` subpath serves the same handler on `node:http`.
 
 ```sh
 yarn add @invokta/http
