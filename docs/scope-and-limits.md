@@ -31,9 +31,10 @@ on OpenTelemetry (ADR 0050).
 
 **AE-SCOPE-02 — Framework.** Invokta provides typed capability and connector
 definitions, runtime capability validation, synchronous private connector
-configuration validation, eager composition, direct execution, minimal context,
-access enforcement, events and their optional OpenTelemetry instrumentation,
-CLI, MCP, and plain HTTP JSON adapters, and narrowly scoped supporting tools.
+configuration validation, eager composition, capability middleware
+composition, direct execution, minimal context, access enforcement, events and
+their optional OpenTelemetry instrumentation, CLI, MCP, and plain HTTP JSON
+adapters, and narrowly scoped supporting tools.
 
 **AE-SCOPE-03 — Custom engine.** Capabilities, prompts, models, engine-owned
 ports, outbound connectors for model, data, and tool integrations, business rules,
@@ -72,7 +73,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Required capability fields | 5 |
 | Invocation pipeline stages | 6 |
 | Invocation error codes | 8 framework codes; up to 64 declared domain codes per capability, published inside `DOMAIN_ERROR` |
-| Cross-cutting hooks | 1: `onEvent` |
+| Cross-cutting hooks | 1: `onEvent`; capability middleware is composed into `run`, not registered (ADR 0051) |
 | OpenTelemetry signals | 1 span per invocation and 3 metric instruments |
 | Pending OpenTelemetry invocation spans | 10,000 by default, configurable; the oldest is evicted, and the same cap bounds evicted-invocation bookkeeping |
 | OpenTelemetry attribute values | 256 characters on spans and metrics; 256 distinct per metric attribute by default, configurable |
@@ -109,7 +110,9 @@ scheduling, arbitrary streaming, or a progress API.
 **AE-LIMIT-02 — Architecture.** Invokta does not provide a dependency
 container, service locator, runtime plugin discovery, remote registry, or
 mutable module lifecycle. Capability composition is explicit, eager, and based
-on values imported by the application.
+on values imported by the application. Capability middleware is a pure function
+the application applies to an explicit capability map; the engine does not
+register, discover, or order it.
 
 **AE-LIMIT-03 — AI and quality.** Invokta does not provide a model router,
 context compiler, memory, RAG abstraction, prompt registry, official provider

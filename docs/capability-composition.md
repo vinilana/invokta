@@ -314,6 +314,28 @@ load failure, a missing export, or an untracked raw map. Run it for every engine
 that composes imported capabilities; without it, a dynamic composition is
 protected only by the best-effort static gate.
 
+## Wrap a composition with middleware
+
+`applyMiddleware` (ADR 0051) wraps the `run` of every capability in a map and
+keeps every other field, so composition and middleware combine in either
+order. Applied to the composed map, it keeps the composition provenance and
+middleware observes effective IDs:
+
+```ts
+// auditLog and rateLimit are engine-owned middleware, for example the ones in
+// the "Wrap capabilities with middleware" recipe.
+export const capabilities = applyMiddleware(
+  composeCapabilities({ local, imports }),
+  auditLog,
+  rateLimit,
+);
+```
+
+The checker still accepts that export. Wrapping a raw object-spread map does
+not make it a tracked composition. A library or atomic export may also wrap its
+own capabilities before publication; that middleware observes the package's
+default IDs, not the consumer's effective IDs.
+
 ## Versioning and compatibility
 
 - The composition API is additive. Existing engines may keep passing a plain

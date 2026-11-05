@@ -65,6 +65,7 @@ const requiredRoutes = [
   "/examples/",
   "/recipes/",
   ...requiredRecipeRoutes,
+  "/recipes/capability-middleware/",
   "/reference/",
   ...packageReferences.map(([route]) => `/reference/${route}/`),
   "/reference/errors/",
@@ -429,6 +430,123 @@ test("recipes provide runnable commands, verification, and full examples", async
       relative(appRoot, path),
     );
   }
+});
+
+function normalizeLineEndings(text) {
+  return text.replace(/\r\n?/gu, "\n");
+}
+
+/**
+ * Returns every fenced block in the given language, including fences indented
+ * inside lists or components, with the fence indentation removed.
+ */
+function fencedBlocks(source, language) {
+  return [...source.matchAll(/^([ \t]*)```(\S*)\n(.*?)^\1```$/gmsu)]
+    .filter(([, , fenceLanguage]) => fenceLanguage === language)
+    .map(([, indent, , body]) =>
+      body
+        .split("\n")
+        .map((line) =>
+          line.startsWith(indent) ? line.slice(indent.length) : line,
+        )
+        .join("\n")
+        .trimEnd(),
+    );
+}
+
+test("the middleware recipe matches its executable copies", async () => {
+  const recipe = normalizeLineEndings(
+    await readFile(
+      join(contentRoot, "recipes", "capability-middleware.mdx"),
+      "utf8",
+    ),
+  );
+  const executable = normalizeLineEndings(
+    await readFile(
+      join(
+        repositoryRoot,
+        "packages",
+        "core",
+        "test",
+        "middleware-recipes.test.ts",
+      ),
+      "utf8",
+    ),
+  );
+  const coreIndex = normalizeLineEndings(
+    await readFile(
+      join(repositoryRoot, "packages", "core", "src", "index.ts"),
+      "utf8",
+    ),
+  );
+
+  // Every JavaScript or TypeScript block needs an executable copy.
+  const documented = ["ts", "tsx", "js", "mjs"].flatMap((language) =>
+    fencedBlocks(recipe, language),
+  );
+  // Each marked block restores its commented imports, so imports are compared too.
+  const executableBlocks = [
+    ...executable.matchAll(
+      /^\/\/ --- recipe: .+? -+\n(.*?)^\/\/ --- end recipe -+$/gmsu,
+    ),
+  ].map(([, body]) => body.replace(/^\/\/ (import .*)$/gmu, "$1").trimEnd());
+
+  assert.ok(executableBlocks.length >= 5);
+  assert.deepEqual([...documented].sort(), [...executableBlocks].sort());
+
+  const importLine = /^import (?:type )?\{ ([^}]+) \} from "([^"]+)";$/u;
+  const coreExports = new Set(
+    [...coreIndex.matchAll(/export (?:type )?\{([^}]*)\}/gu)].flatMap(
+      ([, names]) =>
+        names
+          .split(",")
+          .map((name) => name.trim())
+          .filter(Boolean),
+    ),
+  );
+  for (const block of documented) {
+    const lines = block.split("\n");
+    const code = lines.filter((text) => !/^import\b/u.test(text)).join("\n");
+    const imported = new Set();
+    for (const line of lines.filter((text) => /^import\b/u.test(text))) {
+      const match = importLine.exec(line);
+      assert.ok(match, `unsupported import form: ${line}`);
+      const [, names, specifier] = match;
+      for (const name of names
+        .split(",")
+        .map((entry) => entry.trim().replace(/^type /u, ""))) {
+        imported.add(name);
+        assert.match(
+          code,
+          new RegExp(`\\b${name}\\b`, "u"),
+          `unused import ${name}`,
+        );
+        if (specifier === "@invokta/core") {
+          assert.match(
+            coreIndex,
+            new RegExp(`(?:^|[\\s{,])${name}(?:[\\s},]|$)`, "mu"),
+            `@invokta/core does not export ${name}`,
+          );
+        } else if (specifier.startsWith("node:")) {
+          assert.ok(
+            name in (await import(specifier)),
+            `${specifier} does not export ${name}`,
+          );
+        } else {
+          assert.fail(`unexpected import specifier ${specifier}`);
+        }
+      }
+    }
+    for (const name of coreExports) {
+      if (new RegExp(`\\b${name}\\b`, "u").test(code)) {
+        assert.ok(imported.has(name), `${name} is used but not imported`);
+      }
+    }
+  }
+
+  assert.match(recipe, /^## Verify it$/mu);
+  assert.match(recipe, /packages\/core\/test\/middleware-recipes\.test\.ts/u);
+  assert.match(recipe, /not a framework export/u);
 });
 
 test("public copy avoids unsupported hype and prohibited phrasing", async () => {

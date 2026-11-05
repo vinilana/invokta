@@ -127,6 +127,7 @@ export default defineConfig({
             { slug: "recipes/dependency-injection" },
             { slug: "recipes/domain-authorization" },
             { slug: "recipes/capability-composition" },
+            { slug: "recipes/capability-middleware" },
             { slug: "recipes/mcp-stdio-consumer" },
             { slug: "recipes/external-provider" },
             { slug: "recipes/opentelemetry" },

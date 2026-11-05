@@ -20,7 +20,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | HTTP security | Default to loopback; validate exact Host, Origin, route, media types, and body bounds | Configure TLS, proxy trust, allowlists, exposure, and secrets | API gateway, WAF, or certificate management |
 | Errors | Eight `EngineError` codes, contract-checked declared domain errors, and safe adapter mappings | Declare domain outcomes and keep public messages and details safe | Stack or cause disclosure and automatic recovery policy |
 | Cancellation | Propagate signals and optional capability timeout | Make downstream I/O observe signals | Scheduler or durable execution |
-| Retry, fallback, cache, routing | No automatic behavior | Implement domain-specific policies behind a capability or port | Framework-wide retry, model router, or semantic cache |
+| Retry, fallback, cache, routing | No automatic behavior; `applyMiddleware` composes engine-owned wrappers around `run` | Implement domain-specific policies behind a capability, port, or middleware | Framework-wide retry, model router, semantic cache, or bundled middleware |
 | Observability | Minimal payload-free `onEvent` hook and `@invokta/otel` spans and invocation metrics through the OpenTelemetry API | Register the OpenTelemetry SDK and exporter; connect logging and domain measurements | Observability platform, OpenTelemetry SDK or exporter, or economics envelope |
 | AI implementation | Keep implementation replaceable | Own prompts, models, retrieval, tools, evidence, and risk controls | Provider SDKs, prompt registry, RAG abstraction, or memory |
 | Quality | Validate contracts and provide testable direct execution | Own fixtures, evals, regression suites, and human review | Eval runner, automated judge, or canary platform |
@@ -40,7 +40,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Required capability fields | 5 |
 | Runtime pipeline stages | 6 |
 | Invocation error codes | 8 |
-| Cross-cutting hooks | 1: `onEvent` |
+| Cross-cutting hooks | 1: `onEvent`; capability middleware is composed into `run` |
 | Authentication implementations | 1: opt-in JWT bearer verification |
 | Directly supported policy engines | 0 |
 | Dependency containers | 0 |

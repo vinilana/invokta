@@ -132,5 +132,6 @@ non-null identity fails as `UNAUTHENTICATED` before `access` or `run`.
 
 Invokta addresses level B, a contracted capability, and level C, a reusable
 engine. It provides minimal extension points for level D through pluggable
-authentication, authorization, and events. It MUST NOT attempt to implement the
+authentication, authorization, events, and explicit capability middleware
+composition. It MUST NOT attempt to implement the
 federated platform of level E.

@@ -1,0 +1,346 @@
+---
+title: Wrap capabilities with middleware
+description: Share audit logging, rate limiting, and caching across capabilities with applyMiddleware.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Use capability middleware when several capabilities need the same behavior
+around execution, such as an audit record, a rate limit, or a cache, and that
+behavior must act on the invocation rather than only observe it. The
+[`onEvent` hook](/concepts/invocation-pipeline/#events) remains the right tool
+for payload-free observation; a domain rule that belongs to one capability
+still belongs in its `run` or an engine-owned port.
+
+`applyMiddleware` from `@invokta/core` is a pure function. It takes a
+capability map and returns a new frozen map whose `run` functions execute the
+middleware around the original handler. It registers nothing with the engine
+and adds no pipeline stage. The concrete middleware on this page is
+documentation code for your engine, not a framework export.
+
+## How middleware runs
+
+Middleware executes where `run` executes, inside the normal
+[invocation pipeline](/concepts/invocation-pipeline/):
+
+- input is validated and transformed first, and invalid input never reaches
+  middleware;
+- `access` runs before the first middleware, so middleware cannot bypass
+  authorization;
+- the capability `timeoutMs` and caller cancellation cover the whole chain
+  through `context.signal`;
+- the outermost result is validated against the output schema, even when a
+  middleware produced it instead of `run`; and
+- an error thrown by middleware is normalized exactly like an error thrown by
+  `run`: a stable `EngineError` is preserved, a `CapabilityError` becomes
+  `DOMAIN_ERROR` only when the capability declares its code, and anything else
+  becomes `EXECUTION_FAILED`.
+
+The wrapped capabilities keep their schemas, access rule, title, description,
+annotations, `timeoutMs`, and every other field, so `list`, `describe`, CLI, and
+MCP publish the same contract.
+
+## Write and apply middleware
+
+<Steps>
+
+1. Implement the `CapabilityMiddleware` signature
+
+   ```ts
+   import type { CapabilityMiddleware } from "@invokta/core";
+
+   const timing: CapabilityMiddleware = async ({
+     capabilityId,
+     context,
+     next,
+   }) => {
+     const startedAt = performance.now();
+     try {
+       return await next();
+     } finally {
+       context.logger.debug("capability.timing", {
+         capabilityId,
+         durationMs: performance.now() - startedAt,
+       });
+     }
+   };
+   ```
+
+   A middleware receives `capabilityId`, the capability's key in the map you
+   wrap, and `context`, the engine's `ExecutionContext`, passed through
+   unchanged. It also receives `input`, a deep-frozen snapshot of the
+   validated input, taken the first time a middleware reads it and shared by
+   every middleware of the invocation. `run` keeps its own copy and may change
+   it, so read `input` before calling `next()` when you need the value as
+   validated.
+
+2. Call `next()` at most once, and await it
+
+   `next()` takes no arguments, runs the rest of the chain and then `run`, and
+   resolves to that layer's unvalidated result. Return it, return a different
+   value, or throw. A second call, a call after the middleware settled, or a
+   call after the invocation signal aborted rejects without running the next
+   layer, so middleware cannot retry the handler.
+
+   Middleware cannot detach work from the invocation either. If a middleware
+   returns without awaiting a `next()` it started, the invocation still waits
+   for that layer to settle, within the same timeout and signal, and ignores
+   its outcome. Bound latency with `timeoutMs`, not with a race against
+   `next()`.
+
+3. Apply the chain at the composition root
+
+   ```ts
+   import { applyMiddleware, composeCapabilities } from "@invokta/core";
+
+   const rateLimit = createRateLimit({
+     limit: 60,
+     windowMs: 60_000,
+     maxTrackedKeys: 10_000,
+   });
+   const cache = createResultCache({
+     capabilityIds: new Set(["kb.lookup"]),
+     ttlMs: 30_000,
+     maxEntries: 1_000,
+   });
+
+   export const capabilities = applyMiddleware(
+     composeCapabilities({ local, imports }),
+     auditLog,
+     rateLimit,
+     cache,
+   );
+   ```
+
+   `local` and `imports` are your composition inputs, and `auditLog`,
+   `createRateLimit`, and `createResultCache` are defined below. The first
+   listed middleware is outermost. Here `auditLog` records every execution,
+   including rate-limit rejections and cache hits, and `rateLimit` counts cache
+   hits. Put `cache` before `rateLimit` if hits should not count. Applied to a
+   composed map, the result keeps its composition provenance, so
+   [`invokta check-capabilities`](/reference/tooling/) still accepts it, and
+   middleware observes the effective engine IDs.
+
+</Steps>
+
+<Aside type="caution" title="Middleware is trusted code">
+  Middleware runs with the same authority as `run`. It can short-circuit
+  execution and replace results, so review it like a handler. The engine
+  freezes the context, but `context.principal` is the same object `run`
+  receives: never mutate it, and keep identity decisions in `access`. Keep
+  payloads, tokens, and credentials out of logs and public errors.
+</Aside>
+
+## Audit log
+
+Record who executed which capability and how it ended, without payloads:
+
+```ts
+import { type CapabilityMiddleware, EngineError } from "@invokta/core";
+
+export const auditLog: CapabilityMiddleware = async ({
+  capabilityId,
+  context,
+  next,
+}) => {
+  const startedAt = performance.now();
+  let outcome: "returned" | "threw" = "threw";
+  let code: string | undefined;
+  try {
+    const output = await next();
+    outcome = "returned";
+    return output;
+  } catch (error) {
+    if (error instanceof EngineError) code = error.code;
+    throw error;
+  } finally {
+    context.logger.info("capability.audit", {
+      capabilityId,
+      requestId: context.requestId,
+      source: context.source,
+      principalId: context.principal?.id ?? null,
+      outcome,
+      ...(code === undefined ? {} : { code }),
+      durationMs: Math.round(performance.now() - startedAt),
+    });
+  }
+};
+```
+
+Denied requests never reach middleware, so they produce no audit record; use
+`onEvent` when you also need those. The record describes what the chain did,
+not the final invocation result: output validation runs after the chain, and
+cancellation can settle the invocation while middleware is still waiting. A
+logger that throws fails the invocation, which is usually what an audit trail
+needs; contain the call if your audit is best-effort.
+
+## Rate limit
+
+Allow a fixed number of invocations per principal and capability in a window,
+and reject the rest with a sanitized public error:
+
+```ts
+import { type CapabilityMiddleware, EngineError } from "@invokta/core";
+
+function assertPositiveInteger(name: string, value: number): void {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new TypeError(`${name} must be a positive safe integer.`);
+  }
+}
+
+export interface RateLimitOptions {
+  /** Invocations allowed per principal and capability in one window. */
+  readonly limit: number;
+  readonly windowMs: number;
+  /** Upper bound on tracked principal and capability pairs. */
+  readonly maxTrackedKeys: number;
+  readonly now?: () => number;
+}
+
+export function createRateLimit(
+  options: RateLimitOptions,
+): CapabilityMiddleware {
+  const { limit, windowMs, maxTrackedKeys, now = Date.now } = options;
+  assertPositiveInteger("limit", limit);
+  assertPositiveInteger("windowMs", windowMs);
+  assertPositiveInteger("maxTrackedKeys", maxTrackedKeys);
+  const windows = new Map<string, { startedAt: number; count: number }>();
+
+  return async ({ capabilityId, context, next }) => {
+    const key = JSON.stringify([capabilityId, context.principal?.id ?? null]);
+    const at = now();
+    let window = windows.get(key);
+    if (window === undefined || at - window.startedAt >= windowMs) {
+      windows.delete(key);
+      window = { startedAt: at, count: 0 };
+      windows.set(key, window);
+      if (windows.size > maxTrackedKeys) {
+        // Map iteration follows insertion order: evict the oldest window.
+        const oldest = windows.keys().next();
+        if (oldest.done !== true) windows.delete(oldest.value);
+      }
+    }
+    if (window.count >= limit) {
+      throw new EngineError({
+        code: "EXECUTION_FAILED",
+        message: "Capability rate limit exceeded.",
+        publicDetails: {
+          reason: "RATE_LIMITED",
+          retryAfterMs: window.startedAt + windowMs - at,
+        },
+      });
+    }
+    window.count += 1;
+    return next();
+  };
+}
+```
+
+The thrown `EngineError` is preserved by the engine, so CLI and MCP clients see
+the fixed message and `publicDetails`, and never the principal or input. All
+anonymous callers share one window. A capability can instead declare a
+`RATE_LIMITED` domain error in its `errors` field and have the middleware throw
+`new CapabilityError("RATE_LIMITED")`. It is published as `DOMAIN_ERROR` only
+for capabilities that declare that code; any other capability fails as
+`EXECUTION_FAILED`.
+
+Production limits:
+
+- state lives in one process; several replicas each enforce their own limit,
+  and a restart resets every window;
+- memory is bounded by `maxTrackedKeys`, and evicting the oldest window under
+  pressure resets that caller's count;
+- a fixed window allows a burst of up to twice `limit` across a window
+  boundary; and
+- for a shared limit, put the counter behind an engine-owned port backed by a
+  store with atomic increments.
+
+## Result cache
+
+Serve repeated reads of read-only capabilities from memory for a short time:
+
+```ts
+import { createHash } from "node:crypto";
+import type { CapabilityMiddleware } from "@invokta/core";
+
+export interface ResultCacheOptions {
+  /** Only these read-only capabilities are cached. */
+  readonly capabilityIds: ReadonlySet<string>;
+  readonly ttlMs: number;
+  readonly maxEntries: number;
+  readonly now?: () => number;
+}
+
+export function createResultCache(
+  options: ResultCacheOptions,
+): CapabilityMiddleware {
+  const { capabilityIds, ttlMs, maxEntries, now = Date.now } = options;
+  assertPositiveInteger("ttlMs", ttlMs);
+  assertPositiveInteger("maxEntries", maxEntries);
+  const entries = new Map<string, { expiresAt: number; output: unknown }>();
+
+  return async ({ capabilityId, input, context, next }) => {
+    if (!capabilityIds.has(capabilityId)) return next();
+    // `access` already ran for this caller. Keying by principal keeps one
+    // caller's result from being served to another.
+    const key = createHash("sha256")
+      .update(
+        JSON.stringify([capabilityId, context.principal?.id ?? null, input]),
+      )
+      .digest("base64url");
+    const at = now();
+    const hit = entries.get(key);
+    if (hit !== undefined && hit.expiresAt > at) {
+      return structuredClone(hit.output);
+    }
+    entries.delete(key);
+
+    const output = await next();
+    entries.set(key, {
+      expiresAt: at + ttlMs,
+      output: structuredClone(output),
+    });
+    if (entries.size > maxEntries) {
+      const oldest = entries.keys().next();
+      if (oldest.done !== true) entries.delete(oldest.value);
+    }
+    return output;
+  };
+}
+```
+
+`assertPositiveInteger` is the helper from the rate-limit example. List only
+capabilities whose result is safe to reuse, typically those annotated
+`readOnly`. The key includes the principal ID and reads `input` before
+`next()`, because the parameter list destructures it. If a result depends on
+principal attributes such as a tenant, include them in the key.
+
+Production limits:
+
+- the cache is per process and is lost on restart; replicas do not share it;
+- memory is bounded by `maxEntries` times the size of a result, and each key is
+  a fixed-size hash;
+- the cached value is the handler's raw result, so an output that fails
+  validation is cached and fails again until it expires; and
+- concurrent misses for the same key all execute the handler, because there is
+  no in-flight deduplication.
+
+An idempotency wrapper for a destructive capability follows the same shape,
+keyed by an `idempotencyKey` input field. An in-memory store is not enough
+there: duplicates that arrive at another replica or after a restart would run
+again, so keep idempotency records behind a port backed by a durable store with
+an atomic insert.
+
+## Verify it
+
+The repository runs every code block on this page against a real engine,
+including principal isolation, window and TTL expiry, memory bounds, and
+payload-free audit records, and the documentation tests keep each block
+identical to its executable copy:
+
+```sh
+yarn vitest run packages/core/test/middleware-recipes.test.ts
+```
+
+Read the [`applyMiddleware` reference](/reference/core/#applymiddleware) for the
+complete contract.
