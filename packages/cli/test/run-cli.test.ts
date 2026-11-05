@@ -312,6 +312,7 @@ describe("runCli", () => {
     });
     const described = createIo();
     const output = createIo();
+    const flagOutput = createIo();
 
     await expect(
       runCli(engine, {
@@ -324,6 +325,11 @@ describe("runCli", () => {
       argv: ["run", "appointments.schedule", "--input", '{"slotId":"S-1"}'],
       principal: null,
       io: output.io,
+    });
+    const flagCode = await runCli(engine, {
+      argv: ["run", "appointments.schedule", "--slot-id", "S-1"],
+      principal: null,
+      io: flagOutput.io,
     });
 
     expect(JSON.parse(described.stdout.join("")).errors).toEqual([
@@ -340,6 +346,9 @@ describe("runCli", () => {
       '{"error":{"code":"DOMAIN_ERROR","message":"The calendar is busy; retry the request later.","publicDetails":{"code":"CALENDAR_BUSY","retryable":true,"details":{"slotId":"S-1"}}}}\n',
     ]);
     expect(output.stderr.join("")).not.toContain("secret calendar endpoint");
+    expect(flagCode).toBe(1);
+    expect(flagOutput.stdout).toEqual([]);
+    expect(flagOutput.stderr).toEqual(output.stderr);
   });
 
   it("contains a throwing EngineError message accessor", async () => {

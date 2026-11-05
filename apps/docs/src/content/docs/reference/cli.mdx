@@ -5,9 +5,9 @@ description: Complete API and command reference for the local Invokta CLI adapte
 
 import { Aside } from '@astrojs/starlight/components';
 
-`@invokta/cli` exposes an engine through `list`, `describe`, and `run`. A run
-always calls `engine.invoke`; the adapter does not import handlers or reproduce
-domain validation, authorization, events, or error normalization.
+`@invokta/cli` exposes an engine through `list`, `describe`, `run`, and `help`.
+A run always calls `engine.invoke`; the adapter does not import handlers or
+reproduce domain validation, authorization, events, or error normalization.
 
 ## Install
 
@@ -25,6 +25,9 @@ engine list
 engine describe <capability-id>
 engine run <capability-id> --input '<json>'
 engine run <capability-id> --stdin
+engine run <capability-id> --<flag> <value> ...
+engine run <capability-id> --help
+engine help [<capability-id>]
 ```
 
 ### `list`
@@ -45,7 +48,8 @@ node dist/cli.js describe support.classify-ticket
 
 ### `run`
 
-Exactly one input source is required. Pass a JSON object as an argument:
+Exactly one input source is required: a JSON argument, standard input, or flags
+derived from the capability's input schema. Pass a JSON object as an argument:
 
 ```sh
 node dist/cli.js run support.classify-ticket \
@@ -59,9 +63,121 @@ printf '%s' '{"ticketId":"T-123"}' | \
   node dist/cli.js run support.classify-ticket --stdin
 ```
 
+Or set top-level input properties with flags:
+
+```sh
+node dist/cli.js run onboarding.create-welcome-message --name Ada
+```
+
 Missing, duplicate, combined, trailing, or unknown arguments are invalid usage.
+Flags cannot be combined with `--input` or `--stdin`, and `run` with no input
+argument is invalid; pass `--input '{}'` for an empty object. `--input` and
+`--stdin` behave exactly as before and do not read the capability description.
+
 The CLI has no actor, role, login, or principal-selection flag. The composition
-root supplies trusted local identity.
+root supplies trusted local identity. A property named `actor` or `role` is
+ordinary business input, whether it arrives through a flag or through JSON.
+
+### Schema-derived flags
+
+A flag run reads the capability's published input schema through
+`engine.describe` and derives one flag from each eligible top-level property,
+in schema order:
+
+| Property schema | Flag | Result |
+| --- | --- | --- |
+| `string` | `--name Ada` or `--name=Ada` | `"Ada"` |
+| `number` | `--ratio -0.5` | `-0.5` |
+| `integer` | `--count 3` | `3` |
+| `boolean` | `--dry-run`, `--dry-run=true`, `--no-dry-run`, `--dry-run=false` | `true` or `false` |
+| `enum` or `const` of one scalar type | `--mode fast` | decoded by that type |
+| `array` of any type above | `--tag a --tag b` | `["a", "b"]` |
+
+Property names become kebab-case spellings: `ticketId`, `ticket_id`, and
+`ticket-id` all map to `--ticket-id`, and `HTTPServer` maps to `--http-server`.
+Only names that start with an ASCII letter and contain ASCII letters, digits,
+`_`, and `-` have a spelling, and a spelling has at most 64 characters.
+
+Values follow these rules:
+
+- In `--name value`, the next argument is the value unless it starts with `--`;
+  use `--name=--value` for such a value.
+- A boolean flag never takes the next argument as its value. Only `true` and
+  `false` are accepted after `=`, and `--no-<flag>` takes no value.
+- Numbers and integers use the JSON number grammar. Numbers must be finite and
+  integers must be safe integers.
+- A repeated array flag appends in order. Any other flag may appear once;
+  `--dry-run --no-dry-run` is a duplicate.
+
+Flags only decode values by the declared type. The CLI does not check required
+properties, apply defaults, or check enum membership, so the capability's input
+validation remains authoritative: `--mode medium` reaches `engine.invoke` and
+fails there with `INPUT_INVALID`.
+
+Some properties cannot be set with flags and require `--input` or `--stdin`:
+
+- nested objects, records, tuples, unions, `$ref`, type lists such as a
+  nullable string, and schemas without a decidable scalar type;
+- properties whose spelling is a reserved option: `input`, `stdin`, `help`, or
+  `format`;
+- properties whose spellings collide, such as `ticketId` and `ticket_id`, or a
+  boolean `cache` and a property `noCache` that both claim `--no-cache`; every
+  property in a collision loses its flag, including a reserved boolean such as
+  `help` next to `noHelp`; and
+- property names without a spelling, such as `"first name"`.
+
+A flag for one of these properties fails with a diagnostic that names the
+property and says to use `--input` or `--stdin`. Unknown flags, positional
+arguments, the `--` end-of-options marker, missing or undecodable values, and
+duplicates are also invalid usage.
+Diagnostics never repeat flag values. Prefer `z.enum(["fast", "slow"])` over a
+union of literals when a property should be settable with a flag.
+
+A flag run against an unknown capability reports `CAPABILITY_NOT_FOUND` with
+exit code `1` while reading its description, before `engine.invoke`, so no
+invocation event is emitted for it.
+
+### `help`
+
+```sh
+node dist/cli.js help
+node dist/cli.js help onboarding.create-welcome-message
+node dist/cli.js run onboarding.create-welcome-message --help
+```
+
+`help`, `--help`, and `help --help` print the general usage.
+`help <capability-id>` and `run <capability-id> --help` print one capability
+page:
+
+```text
+Capability: onboarding.create-welcome-message
+Title: Create a welcome message
+Description: Creates a short welcome message for a new team member.
+Annotations: readOnly=true, destructive=false, idempotent=true, openWorld=false
+
+Usage:
+  engine run onboarding.create-welcome-message [flags]
+  engine run onboarding.create-welcome-message --input '<json>'
+  engine run onboarding.create-welcome-message --stdin
+
+Flags:
+  --name <string> (required)
+
+Flags build one JSON input object that the capability's input schema
+validates. Use --input or --stdin for values that flags cannot express.
+```
+
+Each flag shows its type, `required` and `repeatable` markers, description,
+allowed values, and declared default. Input-only properties are listed with the
+reason they need `--input` or `--stdin`. Help is plain text on standard output
+with exit code `0`; it ignores the `format` option and never invokes the
+capability. The page is deterministic and bounded: it lists at most 100 flag or
+input-only entries, 20 allowed values per flag, and 500 characters per text
+field. Whitespace, control characters, Unicode format characters (including
+bidirectional, zero-width, and tag characters), and line separators in author
+text become spaces.
+
+Shell completion is not provided.
 
 ## API
 
@@ -138,10 +254,10 @@ process.exitCode = exitCode;
 | --- | --- |
 | `0` | Command and output write completed successfully |
 | `1` | Invocation, cancellation, validation, authorization, declared domain error, or output write failed |
-| `2` | Invalid command, arguments, JSON, principal option, or UTF-8 input |
+| `2` | Invalid command, arguments, flags, JSON, principal option, or UTF-8 input |
 
-Standard output contains only the requested JSON result. Diagnostics and compact
-errors are written to standard error.
+Standard output contains only the requested JSON result, or the help text for a
+help command. Diagnostics and compact errors are written to standard error.
 
 An engine error contains `code`, `message`, and optional `publicDetails`. Cause,
 stack, rejected input, and principal are not serialized. A declared domain error
