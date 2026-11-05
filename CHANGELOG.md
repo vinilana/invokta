@@ -27,6 +27,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   written to stdout with exit code `0`. Shell completion is not provided.
 - Generated `complete` and `cli` engine READMEs show the flag and help commands
   next to the JSON `--input` example.
+- Capabilities can declare stable domain errors in an optional `errors` field,
+  keyed by UPPER_SNAKE_CASE codes with a public `description`, an optional
+  `retryable` hint, and an optional object-rooted `details` schema, and raise
+  them from `run` with the new standalone `CapabilityError` class. Its optional
+  type argument checks codes and details against the declaration. The engine
+  validates the code and details and publishes the outcome as `DOMAIN_ERROR`;
+  undeclared codes, invalid details, and forged errors fail closed as
+  `EXECUTION_FAILED`. `describe` lists the declarations with their details
+  JSON Schema, `invocation.failed` events carry the `domainCode`, and the CLI
+  (exit code `1`) and MCP tool errors include the domain code, retry hint, and
+  details (ADR 0045).
 
 ### Changed
 
@@ -37,6 +48,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `engine.invoke`, without an invocation event, instead of invalid usage.
   Existing `--input` and `--stdin` invocations, output, and exit codes are
   unchanged.
+- `EngineErrorCode` gains `DOMAIN_ERROR`, the only framework code for declared
+  domain errors. Exhaustive `switch` statements that assert `never` and
+  exhaustive `Record<EngineErrorCode, ...>` maps, including `satisfies` checks,
+  must handle it; engines that declare no domain errors never produce it.
+- The `support-engine` example reports a missing ticket as the declared
+  `TICKET_NOT_FOUND` domain error instead of `EXECUTION_FAILED`, and its local
+  operator may access the missing ticket `T-404` to demonstrate it.
 
 ### Fixed
 

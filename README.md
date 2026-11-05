@@ -215,7 +215,8 @@ for profile contents, automation flags, GitHub imports, and OpenAPI limits.
 
 - [`hello-engine`](./examples/hello-engine/) is the shortest complete path.
 - [`support-engine`](./examples/support-engine/) demonstrates dependency
-  injection, authorization, safe errors, and all four execution channels.
+  injection, authorization, a declared domain error, and all four execution
+  channels.
 - [`crawl-engine`](./examples/crawl-engine/) puts Firecrawl behind an
   engine-owned `WebCrawler` port.
 - [`composed-engine`](./examples/composed-engine/) combines local, atomic, and

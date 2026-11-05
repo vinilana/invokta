@@ -48,4 +48,5 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0039](0039-configurable-mcp-http-mount-path.md) | Configurable MCP HTTP mount path | Accepted | 2026-09-02 |
 | [0040](0040-installer-mounted-mcp-urls.md) | Installer support for mounted MCP URLs | Accepted | 2026-09-05 |
 | [0041](0041-multiple-managed-installation-removal.md) | Multiple managed installation removal | Accepted | 2026-09-05 |
+| [0045](0045-declared-domain-errors-in-capability-contracts.md) | Declared domain errors in capability contracts | Accepted | 2026-11-05 |
 | [0047](0047-schema-derived-cli-flags-and-capability-help.md) | Schema-derived CLI flags and capability help | Accepted | 2026-11-05 |

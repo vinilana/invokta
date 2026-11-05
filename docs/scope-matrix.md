@@ -17,7 +17,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | HTTP authentication | Run a required hook, issue a configured 401 Bearer challenge, and publish configured resource metadata | Verify credentials and return a minimal Principal | Identity provider, login, token lifecycle, or universal token verifier |
 | Authorization | Enforce each capability's `access` rule before `run` | Encode domain policy or call a PDP | Policy language, role model, PDP adapter, or relationship graph |
 | HTTP security | Default to loopback; validate exact Host, Origin, route, media types, and body bounds | Configure TLS, proxy trust, allowlists, exposure, and secrets | API gateway, WAF, or certificate management |
-| Errors | Seven `EngineError` codes and safe adapter mappings | Keep public messages and details safe | Stack or cause disclosure and automatic recovery policy |
+| Errors | Eight `EngineError` codes, contract-checked declared domain errors, and safe adapter mappings | Declare domain outcomes and keep public messages and details safe | Stack or cause disclosure and automatic recovery policy |
 | Cancellation | Propagate signals and optional capability timeout | Make downstream I/O observe signals | Scheduler or durable execution |
 | Retry, fallback, cache, routing | No automatic behavior | Implement domain-specific policies behind a capability or port | Framework-wide retry, model router, or semantic cache |
 | Observability | Minimal payload-free `onEvent` hook | Connect logging, metrics, tracing, and domain measurements | Observability platform or economics envelope |
@@ -37,7 +37,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Core primitives | 5: Capability, Connector Definition, Engine, Context, Principal |
 | Required capability fields | 5 |
 | Runtime pipeline stages | 6 |
-| Invocation error codes | 7 |
+| Invocation error codes | 8 |
 | Cross-cutting hooks | 1: `onEvent` |
 | Authentication implementations | 0 |
 | Directly supported policy engines | 0 |

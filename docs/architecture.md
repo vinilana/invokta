@@ -94,7 +94,8 @@ nor authorization mutation changes the data that execution observes.
 `createEngine` is also the capability-contract boundary. It MUST capture every
 top-level capability field exactly once at construction so later replacement or
 changing accessors for `input`, `output`, `access`, `run`, metadata, annotations,
-or timeout configuration cannot create a split registered contract. The same
+declared domain errors, or timeout configuration cannot create a split registered
+contract. The same
 captured `timeoutMs` value is validated, described, and used for execution.
 Standard JSON Schema converters run synchronously during construction. Their
 documents MUST be object-rooted lossless JSON, copied away from converter-owned
@@ -121,14 +122,32 @@ construction with `TypeError`; they never reach the host timer implementation.
 - `FORBIDDEN`;
 - `OUTPUT_INVALID`;
 - `CANCELLED`;
-- `EXECUTION_FAILED`.
+- `EXECUTION_FAILED`;
+- `DOMAIN_ERROR`.
 
 Unknown errors become `EXECUTION_FAILED`. Only `publicDetails` may be serialized;
 `cause` and the stack remain internal. Cancellation or a timeout observed by the
 runtime becomes `CANCELLED`. A thrown `EngineError` is preserved only when its
 own `code` and `message` data properties form a stable public error. A proxy,
-accessor-backed property, missing message, or code outside the seven-code
-taxonomy is treated as an unknown error without invoking the unsafe property.
+accessor-backed property, missing message, or code outside the first seven codes
+of the taxonomy is treated as an unknown error without invoking the unsafe
+property.
+
+**AE-ERR-02 — Declared domain errors.** Only the runtime issues `DOMAIN_ERROR`.
+When `run` rejects with a `CapabilityError` created by the core's constructor,
+its constructor-time code must be declared in the capability's `errors` field
+and its details must pass the declared schema, as a lossless JSON object, within
+the capability timeout and cancellation race. The resulting error has the
+declared description as its message and `publicDetails` of
+`{ code, retryable, details? }` with the domain code, the declared retry hint,
+and the validated frozen details. An undeclared code, missing, unexpected, or
+invalid details, and a look-alike, prototype-forged, or proxied error become
+`EXECUTION_FAILED` with the original kept as the internal cause. Cancellation
+observed by the runtime keeps precedence. A thrown `EngineError` with code
+`DOMAIN_ERROR`, including one issued by another invocation, is never preserved,
+and a `CapabilityError` raised outside `run` is never a domain error; it is
+normalized like any other access-rule or validator failure. ADR 0045
+defines the declaration limits.
 
 Reading `requestId` and `source` from invocation options is part of this error
 boundary. If either property access throws, the runtime discards all partially
@@ -157,7 +176,8 @@ with the events `invocation.started`, `invocation.completed`, and
 `invocation.failed`. The started event contains `requestId`, `capabilityId`,
 `source`, optional `principalId`, and ISO `startedAt`. The completed event contains
 `requestId`, `capabilityId`, and `durationMs`. The failed event contains those
-identifiers, `durationMs`, and an `EngineErrorCode`. Payloads, tokens, and
+identifiers, `durationMs`, an `EngineErrorCode`, and, only for `DOMAIN_ERROR`,
+the declared `domainCode`; domain error details are never included. Payloads, tokens, and
 credentials are not included by default. A rejected or thrown `onEvent` hook
 MUST NOT change the invocation result; the runtime MAY send a payload-free
 diagnostic to the configured logger. The runtime invokes the started hook and
@@ -178,7 +198,8 @@ login flag; schema-derived flags populate business input only.
 
 **AE-CLI-02 — I/O.** `stdout` contains only the requested result; logs and
 diagnostics go to `stderr`. The exit code is `0` for success, `1` for an execution
-or authorization failure, and `2` for invalid usage or JSON. `runCli` returns the
+or authorization failure, including a declared domain error, and `2` for invalid
+usage or JSON. `runCli` returns the
 exit code and does not terminate the process or mutate `process.exitCode`; the
 composition root owns that process-level decision. Errors are compact JSON with
 only `code`, `message`, and optional `publicDetails`. JSON is the default output
@@ -233,7 +254,9 @@ MUST fail closed if two keys map to the same tool name. Success returns
 error; all other capability errors return `isError: true`. Error serialization
 is atomic: if the adapter cannot safely read or serialize the structured
 `EngineError`, it MUST return the generic `EXECUTION_FAILED` tool error and MUST
-NOT let the SDK convert the failure into an internal protocol error. Generated
+NOT let the SDK convert the failure into an internal protocol error. A
+`DOMAIN_ERROR` is a capability error whose `publicDetails` carry the domain
+code, retry hint, and validated details. Generated
 profiles that include MCP MUST run the same catalog construction as a build-time
 preflight from their canonical check, without starting an adapter or invoking a
 capability.

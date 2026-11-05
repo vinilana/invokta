@@ -35,7 +35,7 @@ persistence, configuration field, or operational limit:
 | `AE-CTX-01`, `AE-PRINCIPAL-01` | Context contains only normative fields; identity is validated, snapshotted, and isolated |
 | `AE-ARCH-01..03` | Import-graph and inbound-adapter tests prove dependency direction, explicit injection, and the single invocation path |
 | `AE-CONNECTOR-00..03` | Public type and runtime tests prove inert connector definition, synchronous Standard Schema transformation, lossless configuration snapshots, opaque dependency identity, frozen named-port containers, sanitized configuration failures, and capability-only publication; representative network and filesystem connectors prove port-only injection, applicable access or operation deadlines, signal propagation, bounded work, domain response translation, sanitized failures, and canary-secret redaction |
-| `AE-PIPE-01`, `AE-ERR-01` | Tests instrument stage order, cancellation, timeout, seven codes, and sanitization |
+| `AE-PIPE-01`, `AE-ERR-01..02` | Tests instrument stage order, cancellation, timeout, eight codes, sanitization, and fail-closed declared domain errors |
 | `AE-OBS-01` | Three minimal events preserve order and contain no payloads or credentials |
 | `AE-CLI-01..04` | Integration covers commands, input channels, schema-derived flag decoding, collisions, input-only properties, help pages and their bounds, UTF-8 failure, writers, and exit codes |
 | `AE-MCP-01..04` | An official client lists and calls tools over stdio and HTTP; generated MCP engines preflight the published catalog; tests cover schemas, naming collisions, errors, cancellation boundaries, statelessness, boundary security, and the configured mount path with its path-suffix resource metadata |

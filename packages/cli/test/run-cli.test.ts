@@ -1,4 +1,9 @@
-import { createEngine, defineCapability, EngineError } from "@invokta/core";
+import {
+  CapabilityError,
+  createEngine,
+  defineCapability,
+  EngineError,
+} from "@invokta/core";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -277,6 +282,73 @@ describe("runCli", () => {
     });
     expect(output.stderr.join("")).not.toContain("secret database location");
     expect(output.stderr.join("")).not.toContain("stack");
+  });
+
+  it("returns exit code 1 with the domain code, retryable flag, and details of a declared domain error", async () => {
+    const engine = createEngine({
+      name: "scheduling-engine",
+      version: "0.1.0-test",
+      capabilities: {
+        "appointments.schedule": defineCapability({
+          description: "Schedule an appointment in a free slot.",
+          input: z.object({ slotId: z.string() }),
+          output: z.object({ confirmed: z.boolean() }),
+          access: "public",
+          errors: {
+            CALENDAR_BUSY: {
+              description: "The calendar is busy; retry the request later.",
+              details: z.object({ slotId: z.string() }),
+              retryable: true,
+            },
+          },
+          async run({ input }) {
+            throw new CapabilityError("CALENDAR_BUSY", {
+              details: { slotId: input.slotId },
+              cause: new Error("secret calendar endpoint"),
+            });
+          },
+        }),
+      },
+    });
+    const described = createIo();
+    const output = createIo();
+    const flagOutput = createIo();
+
+    await expect(
+      runCli(engine, {
+        argv: ["describe", "appointments.schedule"],
+        principal: null,
+        io: described.io,
+      }),
+    ).resolves.toBe(0);
+    const code = await runCli(engine, {
+      argv: ["run", "appointments.schedule", "--input", '{"slotId":"S-1"}'],
+      principal: null,
+      io: output.io,
+    });
+    const flagCode = await runCli(engine, {
+      argv: ["run", "appointments.schedule", "--slot-id", "S-1"],
+      principal: null,
+      io: flagOutput.io,
+    });
+
+    expect(JSON.parse(described.stdout.join("")).errors).toEqual([
+      {
+        code: "CALENDAR_BUSY",
+        description: "The calendar is busy; retry the request later.",
+        retryable: true,
+        detailsSchema: expect.objectContaining({ type: "object" }),
+      },
+    ]);
+    expect(code).toBe(1);
+    expect(output.stdout).toEqual([]);
+    expect(output.stderr).toEqual([
+      '{"error":{"code":"DOMAIN_ERROR","message":"The calendar is busy; retry the request later.","publicDetails":{"code":"CALENDAR_BUSY","retryable":true,"details":{"slotId":"S-1"}}}}\n',
+    ]);
+    expect(output.stderr.join("")).not.toContain("secret calendar endpoint");
+    expect(flagCode).toBe(1);
+    expect(flagOutput.stdout).toEqual([]);
+    expect(flagOutput.stderr).toEqual(output.stderr);
   });
 
   it("contains a throwing EngineError message accessor", async () => {
