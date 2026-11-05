@@ -8,6 +8,7 @@ flowchart LR
   CLI[CLI] --> INVOKE
   STDIO[MCP stdio] --> INVOKE
   HTTP[MCP HTTP] --> AUTHN[authenticate]
+  JSON[HTTP JSON] --> AUTHN
   AUTHN --> INVOKE
   INVOKE --> VALIDATE[Validate input]
   VALIDATE --> ACCESS[Enforce access]
@@ -35,6 +36,18 @@ authoring boundary.
 **AE-ARCH-03 — Single path.** No inbound adapter MAY call `run` or an outbound
 connector directly. All inbound adapters use `engine.invoke`. Authentication
 produces a `Principal`; authorization remains inside `invoke`.
+
+**AE-ARCH-04 — Runtime portability.** The core MUST NOT import a Node.js
+built-in module; it uses only ECMAScript and Web platform globals, and an
+architecture test enforces the import rule. The core reads `util.types` once
+through `process.getBuiltinModule` where the host provides it (Node.js, Deno,
+Bun) to recognize proxies and promises without running user code. A process
+that identifies as Node.js but cannot resolve it MUST fail to load the core.
+Other hosts use the documented fallback of ADR 0042: JSON values still reject
+proxies through structured cloning, while other defensive boundaries may
+invoke proxy traps. `@invokta/mcp/web` and the `@invokta/http` package root
+MUST NOT load a Node.js built-in module. Node.js is
+the runtime verified by tests; Fetch runtimes are supported by design.
 
 ## Outbound connectors
 
@@ -162,7 +175,7 @@ runtime becomes `CANCELLED`. A thrown `EngineError` is preserved only when its
 own `code` and `message` data properties form a stable public error. A proxy,
 accessor-backed property, missing message, or code outside the first seven codes
 of the taxonomy is treated as an unknown error without invoking the unsafe
-property.
+property; proxy recognition depends on host introspection (AE-ARCH-04).
 
 **AE-ERR-02 — Declared domain errors.** Only the runtime issues `DOMAIN_ERROR`.
 When `run` rejects with a `CapabilityError` created by the core's constructor,
@@ -190,11 +203,13 @@ boundary and always produce a sanitized `UNAUTHENTICATED` error. Failures while
 reading `signal` or setting up caller-signal state always produce a sanitized
 `EXECUTION_FAILED` error. An `EngineError` thrown by either caller-controlled
 boundary cannot select its public code, message, or details. `InvokeOptions.signal`
-must be a platform-branded `AbortSignal` from the supported runtime. The runtime
-rejects proxies without invoking their traps, then checks the platform brand with
-a captured intrinsic before it invokes any signal method. Structural, polyfilled,
+must be a platform-branded `AbortSignal` from the supported runtime. Where the
+host provides trap-free introspection (AE-ARCH-04), the runtime rejects proxies
+without invoking their traps; it then checks the platform brand with a captured
+intrinsic before it invokes any signal method. Structural, polyfilled,
 or proxy substitutes fail as `EXECUTION_FAILED` without executing their accessors,
-traps, or listener methods. Captured platform intrinsics also bypass hostile
+traps, or listener methods. Without that introspection, a forwarding proxy may
+pass a brand check that reads properties through `[[Get]]`, and its traps run. Captured platform intrinsics also bypass hostile
 own-property overrides. Authorization receives a runtime-owned, no-timeout signal
 view, while execution retains the caller signal identity when no timeout is
 configured. The capability timeout still starts only after authorization
@@ -222,6 +237,26 @@ capability timeout before invoking the completed hook.
 Capability middleware (AE-MIDDLEWARE-01) is composed into a capability's `run`
 before engine construction; it is not an engine hook and does not change this
 event stream.
+
+**AE-OBS-02 — OpenTelemetry instrumentation.** `@invokta/otel` provides
+`createOpenTelemetryEventHandler`, an `onEvent` hook built only on the
+OpenTelemetry API peer. It MUST NOT add an OpenTelemetry dependency to the core
+or another package, MUST NOT throw into the engine, and MUST treat error codes
+and sources as opaque strings. It starts one `INTERNAL` span named
+`invoke {capabilityId}` at the event's `startedAt` in the active context,
+correlates the terminal event by `requestId`, and ends the span after
+`durationMs` with an error status and code on failure, plus the declared
+`domainCode` of a `DOMAIN_ERROR`. It records the
+`invokta.invocations` and `invokta.invocation.failures` counters and the
+`invokta.invocation.duration` histogram with bounded attributes. Principal IDs
+are recorded only on explicit opt-in and never on metrics. Pending spans are
+capped and the oldest is evicted. Spans and `contextFor` are accurate only while
+request IDs are unique among concurrent invocations; when a running
+invocation's request ID is reused, the handler MUST NOT assign an outcome
+across the overlapping invocations within the `maxPendingSpans` bound. The invocation span is not active inside
+`access` or `run`; a capability nests its own spans through the injected
+`contextFor(requestId)` accessor. ADR 0050 defines the attribute names,
+metric units, and limits.
 
 ## CLI
 
@@ -334,6 +369,21 @@ mount path, `/mcp` by default; each request is independent. The default bind add
 validated. Unauthenticated mode requires an explicit development option whose
 name communicates the risk.
 
+One protocol implementation enforces this boundary for two host adapters
+(ADR 0042): `serveMcpHttp` owns a `node:http` listener, and
+`createMcpHttpHandler`, also exported by the portable `@invokta/mcp/web` entry
+point, serves a Fetch `Request` and returns a `Response`. The rules below apply
+to both. A Fetch host cannot reveal repeated raw header fields or an
+unnormalized request target, so the handler requires every authority it can
+observe, the `Host` header and the URL authority, to be allowed; it defaults to
+the loopback host names; it treats any comma in `Host`, and a comma outside a
+quoted string in `Content-Type`, as a repeated field; and it routes the host's
+normalized path, still rejecting a query, a fragment, and percent encoding. A
+merged `Authorization` value reaches the authenticator as one value. The
+handler cancels the request body stream when it stops reading, including when
+`request.signal` aborts, sets no hop-by-hop header, and leaves connections and
+shutdown to the host; `request.signal` is the request cancellation signal.
+
 The protocol endpoint accepts only `POST`. Each accepted POST creates a new MCP
 server and a new transport with sessions, resumption, event storage, and
 server-to-client SSE disabled. When OAuth Protected Resource Metadata is
@@ -394,11 +444,57 @@ is required; each authorization server uses HTTPS without credentials, query, or
 fragment. Authorization-server paths are allowed because OAuth issuer identifiers
 may use path components.
 
+## Plain HTTP JSON
+
+**AE-HTTP-01 — Web-standard handler.** `@invokta/http` exports
+`createHttpHandler(engine, options)`, a `(request: Request) => Promise<Response>`
+handler whose package-root modules import no Node.js built-in module
+(AE-ARCH-04), and
+`createHttpOpenApiDocument(engine, options?)`. Relative to a validated
+`basePath` (default `/`), `GET /capabilities` returns `{ capabilities }` from
+`engine.list()`, `GET /capabilities/{id}` returns `engine.describe(id)`,
+`POST /capabilities/{id}` returns the output of `engine.invoke(id, body)` with
+source `http`, and `GET /openapi.json` returns the generated document. `{id}`
+is one percent-encoded segment decoded once; construction rejects the
+unreachable keys `.` and `..`. The handler validates and snapshots its
+configuration and capability IDs at construction and never rejects. The
+optional `@invokta/http/node` subpath serves the same handler on `node:http`
+without adding routes, limits, or statuses, and rejects a duplicated `Host` or
+`Authorization` header and every request target that URL normalization would
+change, including dot-segment aliases (ADR 0048).
+
+**AE-HTTP-02 — Boundary.** Each request is checked in order: host allowlist
+(loopback names by default), `Origin` (rejected unless CORS lists it exactly),
+route, CORS preflight, method (405 with `Allow`), declared body size (413),
+authentication, capability ID (an ID outside the captured catalog is 404
+`CAPABILITY_NOT_FOUND` without reaching `engine.invoke`, emitting an event, or
+reading the body), `application/json` content type (415), streamed strict UTF-8
+body within the limit (default 1,048,576 bytes; 413), and JSON parsing
+(400 `INVALID_JSON`). `auth` is required and uses the same required or
+`dangerously-disabled-for-development` modes and the same structural
+`{ path, method, headers, signal }` request as MCP HTTP; required mode protects
+every route, including the OpenAPI document. `null` or a malformed principal is
+401 with `WWW-Authenticate: Bearer`; a thrown authenticator is a sanitized 500.
+`request.signal` reaches the authenticator and `engine.invoke`.
+
+**AE-HTTP-03 — Errors and export.** Every error body is
+`{ error: { code, message, publicDetails? } }` without causes or stacks.
+`INPUT_INVALID` is 400, `UNAUTHENTICATED` 401, `FORBIDDEN` 403,
+`CAPABILITY_NOT_FOUND` 404, `DOMAIN_ERROR` 422, `OUTPUT_INVALID` and
+`EXECUTION_FAILED` 500, and
+`CANCELLED` 503; an unstable or unserializable error is the generic
+`EXECUTION_FAILED` 500. The OpenAPI 3.1 document is derived only from `list`
+and `describe`, embeds each schema as a component with local references rebased
+onto it, uses the base path as a relative server URL, and declares Bearer
+security only when authentication is required. A JSON Schema `$id` or anchor
+that would occur twice in the document fails generation with a `TypeError`.
+
 ## Authentication and authorization
 
 **AE-SEC-01 — Hybrid model.** The core contains `Principal` and `AccessRule`, and
-enforces the access rule. MCP HTTP receives an `authenticate` hook. The custom
-engine decides domain authorization and may call any PDP through a function.
+enforces the access rule. MCP HTTP and plain HTTP receive an `authenticate`
+hook. The custom engine decides domain authorization and may call any PDP
+through a function.
 
 **AE-SEC-02 — Boundaries.** Identity never comes from the input. When HTTP
 authentication is required, a missing or failed identity produces a 401 before
@@ -412,6 +508,19 @@ gives `access` and `run` independent copies. Malformed or uncloneable identity i
 
 The framework does not issue tokens, perform login, store users, validate JWTs
 from a specific provider, or implement an Authorization Server/policy engine.
+
+**AE-SEC-03 — Optional JWT bearer helper.** `@invokta/auth-jwt` MAY supply the
+HTTP `authenticate` hook for signed JWT bearer tokens from one configured
+issuer (ADR 0049). It MUST require an exact issuer, an audience, an explicit
+asymmetric algorithm allowlist, one key source, `sub`, and `exp`; parse only a
+bounded `Bearer <compact JWS>` credential; resolve `null` for every invalid or
+insufficiently scoped credential without revealing the failed check, including
+a token without `kid` that none of at most eight matching keys verifies; reject
+with a fixed, causeless error when the key set cannot be fetched or used or the
+request is cancelled; not refetch a failing remote key set within a bounded
+window; and never pass the raw token to the principal mapper. It depends
+only on `jose`; the core and adapters do not depend on it, and claim mapping
+beyond its default remains host code.
 
 ## MCP client installation
 

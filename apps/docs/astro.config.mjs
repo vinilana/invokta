@@ -115,6 +115,7 @@ export default defineConfig({
             { slug: "guides/http-authentication" },
             { slug: "guides/capability-authorization" },
             { slug: "guides/deployment" },
+            { slug: "guides/web-standard-runtimes" },
           ],
         },
         {
@@ -129,6 +130,7 @@ export default defineConfig({
             { slug: "recipes/capability-middleware" },
             { slug: "recipes/mcp-stdio-consumer" },
             { slug: "recipes/external-provider" },
+            { slug: "recipes/opentelemetry" },
             {
               label: "Authentication",
               items: [
@@ -156,6 +158,9 @@ export default defineConfig({
             { slug: "reference/core" },
             { slug: "reference/cli" },
             { slug: "reference/mcp" },
+            { slug: "reference/http" },
+            { slug: "reference/auth-jwt" },
+            { slug: "reference/otel" },
             { slug: "reference/tooling" },
             { slug: "reference/devtools" },
             { slug: "reference/installer" },

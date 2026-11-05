@@ -29,7 +29,7 @@ discovery layer is new here.
 
    ```ts
    export interface AuthJwtBearerMcpHttpOptions {
-     readonly verifier: AccessTokenVerifier;
+     readonly authenticate: JwtBearerAuthenticator;
      readonly host?: string;
      readonly port?: number;
      readonly allowedHosts?: ReadonlyArray<string>;
@@ -54,7 +54,7 @@ discovery layer is new here.
      ...(options.port === undefined ? {} : { port: options.port }),
      auth: {
        mode: "required",
-       authenticate: createJwtBearerAuthenticate(options.verifier),
+       authenticate: options.authenticate,
        ...(options.resourceMetadata === undefined
          ? {}
          : { resourceMetadata: options.resourceMetadata }),
@@ -159,8 +159,8 @@ challenge, fetches the metadata document, picks an Authorization Server from
 `/.well-known/oauth-authorization-server`), optionally registers dynamically,
 and runs an OAuth 2.1 authorization code flow with PKCE. It sends the RFC 8707
 `resource` parameter set to this engine's canonical URI, so the token it
-receives is audience-bound to your engine — which is exactly what the verifier's
-`audience` check enforces on the way back in.
+receives is audience-bound to your engine — which is exactly what the
+authenticator's `audience` check enforces on the way back in.
 
 <Aside type="caution" title="Metadata is advertisement, not enforcement">
   Publishing `scopes_supported` tells a client what to ask for. It does not
@@ -206,6 +206,12 @@ client can act on.
 Omit them when the authentication policy cannot name a stable base set — for an
 engine whose capabilities require different scopes, the challenge would either
 over-ask or under-ask.
+
+When the [`@invokta/auth-jwt`](/reference/auth-jwt/) authenticator enforces
+`requiredScopes`, list the same scopes here. A token without them resolves
+`null`, so its holder receives this 401 challenge rather than an
+`insufficient_scope` 403 and learns which scopes to request. The example reads
+both lists from `AUTH_JWT_REQUIRED_SCOPES` and `AUTH_JWT_CHALLENGE_SCOPES`.
 
 ## Run it
 

@@ -1,5 +1,5 @@
+import type { VerifiedJwtClaims } from "@invokta/auth-jwt";
 import type { Principal } from "@invokta/core";
-import type { JWTPayload } from "jose";
 
 /**
  * Auth0 claims to `Principal`.
@@ -11,10 +11,11 @@ import type { JWTPayload } from "jose";
  * - `permissions`, present when the API has RBAC with "Add Permissions in the
  *   Access Token" enabled, becomes `attributes.permissions`.
  *
- * The raw token, the full claim set, and provider objects stay at the
- * composition root.
+ * `@invokta/auth-jwt` calls this mapper only after the token verified, and
+ * never hands it the raw token. The full claim set and provider objects stay
+ * at the composition root.
  */
-export function toAuth0Principal(claims: JWTPayload): Principal | null {
+export function toAuth0Principal(claims: VerifiedJwtClaims): Principal | null {
   const subject = typeof claims.sub === "string" ? claims.sub.trim() : "";
   if (subject === "") return null;
 

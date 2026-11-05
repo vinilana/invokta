@@ -26,6 +26,7 @@ while its own package owns ports, policies, limits, and outbound connectors.
 | Navigate local project knowledge progressively | `obsidian-context-engine` |
 | Publish and compose reusable capabilities | `community-capabilities` and `composed-engine` |
 | Authenticate engine callers with your identity provider | `auth-jwt-bearer-engine`, then the `auth-*` example for your provider |
+| Export invocation traces and metrics to OpenTelemetry | `observability-engine` |
 
 ## Choose by operational requirement
 
@@ -75,7 +76,7 @@ so review provider data handling and billing before running them.
   <Card title="Support Engine" icon="puzzle">
     Classify support tickets with injected repository, classifier, and
     permission ports. The example covers authorization, a declared domain
-    error, cancellation, and all four entry points.
+    error, cancellation, and five entry points, including plain HTTP JSON.
 
     [Open `support-engine`](https://github.com/vinilana/invokta/tree/main/examples/support-engine)
   </Card>
@@ -144,7 +145,7 @@ follows its shape. Each pairs with a page in the
 
 | Example | Shows |
 | --- | --- |
-| [`auth-jwt-bearer-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-jwt-bearer-engine) | Provider-neutral JWKS verification with `jose`, claims-to-`Principal` mapping, and Protected Resource Metadata for MCP OAuth discovery |
+| [`auth-jwt-bearer-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-jwt-bearer-engine) | Provider-neutral JWKS verification with `@invokta/auth-jwt`, claims-to-`Principal` mapping, required scopes, and Protected Resource Metadata for MCP OAuth discovery |
 | [`auth-self-hosted-oauth-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-self-hosted-oauth-engine) | Production-oriented self-hosted OAuth with PKCE, DCR, ES256 tokens, rotating refresh tokens, PostgreSQL, and Caddy or Traefik deployment assets |
 | [`auth-supabase-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-supabase-engine) | Supabase Auth asymmetric JWTs verified against the project JWKS |
 | [`auth-clerk-engine`](https://github.com/vinilana/invokta/tree/main/examples/auth-clerk-engine) | Clerk session tokens with authorized-party enforcement and organization claims |
@@ -168,7 +169,9 @@ follows its shape. Each pairs with a page in the
   </Card>
   <Card title="Observability Engine" icon="transfer">
     Collect bounded incident context from Sentry, Datadog, and New Relic through
-    one provider-independent capability and normalized domain result.
+    one provider-independent capability and normalized domain result. Its
+    composition root reports invocation spans and metrics through
+    `@invokta/otel`.
 
     [Open `observability-engine`](https://github.com/vinilana/invokta/tree/main/examples/observability-engine)
   </Card>

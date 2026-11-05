@@ -1,9 +1,8 @@
-import { types as nodeUtilTypes } from "node:util";
-
 import {
   isComposedCapabilities,
   markComposedCapabilities,
 } from "./composition.js";
+import { isProxy } from "./host-types.js";
 import type {
   AnyCapability,
   CapabilityMap,
@@ -115,7 +114,7 @@ function readCapabilityMap(value: unknown): object {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("A capability map must be an object.");
   }
-  if (nodeUtilTypes.isProxy(value)) {
+  if (isProxy(value)) {
     throw new TypeError("A capability map must not be a proxy.");
   }
   return value;
@@ -137,7 +136,7 @@ function readProperty(
 } {
   let current: object | null = target;
   while (current !== null) {
-    if (nodeUtilTypes.isProxy(current)) {
+    if (isProxy(current)) {
       throw new TypeError(`${description} must not be a proxy.`);
     }
     const descriptor = Object.getOwnPropertyDescriptor(current, key);
@@ -291,7 +290,7 @@ function wrapCapability(
   if (typeof capability !== "object" || capability === null) {
     throw new TypeError(`${description} must be an object.`);
   }
-  if (nodeUtilTypes.isProxy(capability)) {
+  if (isProxy(capability)) {
     throw new TypeError(`${description} must not be a proxy.`);
   }
 

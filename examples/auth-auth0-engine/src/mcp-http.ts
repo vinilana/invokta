@@ -1,51 +1,13 @@
 import { pathToFileURL } from "node:url";
 
-import type { Principal } from "@invokta/core";
-import {
-  type McpHttpAuthenticationRequest,
-  type McpHttpHeaderView,
-  type McpHttpServerHandle,
-  serveMcpHttp,
-} from "@invokta/mcp";
+import type { JwtKeySource } from "@invokta/auth-jwt";
+import { type McpHttpServerHandle, serveMcpHttp } from "@invokta/mcp";
 
 import { engine } from "./engine.js";
-import { toAuth0Principal } from "./identity/principal.js";
 import {
-  type Auth0AccessTokenVerifier,
   auth0Issuer,
-  createAuth0AccessTokenVerifier,
-} from "./identity/verifier.js";
-
-// RFC 9110 makes the authentication scheme case-insensitive.
-const bearerCredential = /^Bearer ([^\s]+)$/iu;
-
-/**
- * Reads the bearer credential. The adapter has already rejected a request
- * carrying more than one raw `Authorization` header, so there is never an
- * ambiguous credential to choose between here.
- */
-export function readBearerToken(headers: McpHttpHeaderView): string | null {
-  const authorization = headers.get("authorization");
-  if (authorization === null) return null;
-  return bearerCredential.exec(authorization)?.[1] ?? null;
-}
-
-/**
- * The `auth.authenticate` hook: `Principal` for a verified Auth0 access token,
- * `null` for every invalid or missing credential, and a rejection only when
- * the check itself could not run.
- */
-export function createAuth0Authenticate(
-  verifier: Auth0AccessTokenVerifier,
-): (request: McpHttpAuthenticationRequest) => Promise<Principal | null> {
-  return async (request) => {
-    const token = readBearerToken(request.headers);
-    if (token === null) return null;
-
-    const claims = await verifier.verify(token, { signal: request.signal });
-    return claims === null ? null : toAuth0Principal(claims);
-  };
-}
+  createAuth0Authenticator,
+} from "./identity/authenticator.js";
 
 export interface Auth0McpHttpOptions {
   /** Auth0 tenant or custom domain. */
@@ -53,7 +15,7 @@ export interface Auth0McpHttpOptions {
   /** The API identifier registered in Auth0. */
   readonly audience: string;
   /** Injected in tests; production wiring uses the tenant's remote JWKS. */
-  readonly verifier?: Auth0AccessTokenVerifier;
+  readonly keySource?: JwtKeySource;
   readonly host?: string;
   readonly port?: number;
   /** Public `/mcp` URL, published as Protected Resource Metadata. */
@@ -72,12 +34,13 @@ export interface Auth0McpHttpOptions {
 export async function startAuth0McpHttp(
   options: Auth0McpHttpOptions,
 ): Promise<McpHttpServerHandle> {
-  const verifier =
-    options.verifier ??
-    createAuth0AccessTokenVerifier({
-      domain: options.domain,
-      audience: options.audience,
-    });
+  const authenticate = createAuth0Authenticator({
+    domain: options.domain,
+    audience: options.audience,
+    ...(options.keySource === undefined
+      ? {}
+      : { keySource: options.keySource }),
+  });
   const authorizationServers: readonly [string, ...string[]] = [
     auth0Issuer(options.domain),
   ];
@@ -87,7 +50,7 @@ export async function startAuth0McpHttp(
     ...(options.port === undefined ? {} : { port: options.port }),
     auth: {
       mode: "required",
-      authenticate: createAuth0Authenticate(verifier),
+      authenticate,
       ...(options.resource === undefined
         ? {}
         : {

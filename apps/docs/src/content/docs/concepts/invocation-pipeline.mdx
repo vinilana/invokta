@@ -77,6 +77,8 @@ The optional `onEvent` hook receives a compact lifecycle stream:
 
 Events contain identifiers, timing, source, and error codes. Payloads and
 credentials are excluded. Delivery is best-effort and never blocks the result.
+[`@invokta/otel`](/reference/otel/) turns these events into OpenTelemetry
+spans and invocation metrics.
 
 Read the [error reference](/reference/errors/) for the normalized failure
 taxonomy.

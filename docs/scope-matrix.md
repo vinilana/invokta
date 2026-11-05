@@ -14,13 +14,14 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Direct execution | Run the common `engine.invoke` pipeline | Supply trusted principal, signal, and dependencies | Distributed executor or background jobs |
 | CLI | `list`, `describe`, `run`, JSON I/O, schema-derived run flags, capability help, and stable exit codes | Own the executable, local principal, and untrusted-input bounds | Login, actor flags, shell completion, or plugin discovery |
 | MCP | Map capabilities to tools over stdio and stateless HTTP | Own process composition and deployment | Resources, prompts, tasks, sessions, or resumption |
-| HTTP authentication | Run a required hook, issue a configured 401 Bearer challenge, and publish configured resource metadata | Verify credentials and return a minimal Principal | Identity provider, login, token lifecycle, or universal token verifier |
+| Plain HTTP JSON | Web-standard list, describe, invoke, and OpenAPI 3.1 routes over `engine.invoke` | Own mounting, exposure, TLS, and rate limits | Streaming, batches, sessions, or a web framework |
+| HTTP authentication | Run a required hook, issue a configured 401 Bearer challenge, and publish configured resource metadata; optionally verify one issuer's JWT bearer tokens with `@invokta/auth-jwt` | Verify credentials and return a minimal Principal, or configure the JWT bearer helper | Identity provider, login, token lifecycle, introspection, or universal token verifier |
 | Authorization | Enforce each capability's `access` rule before `run` | Encode domain policy or call a PDP | Policy language, role model, PDP adapter, or relationship graph |
 | HTTP security | Default to loopback; validate exact Host, Origin, route, media types, and body bounds | Configure TLS, proxy trust, allowlists, exposure, and secrets | API gateway, WAF, or certificate management |
 | Errors | Eight `EngineError` codes, contract-checked declared domain errors, and safe adapter mappings | Declare domain outcomes and keep public messages and details safe | Stack or cause disclosure and automatic recovery policy |
 | Cancellation | Propagate signals and optional capability timeout | Make downstream I/O observe signals | Scheduler or durable execution |
 | Retry, fallback, cache, routing | No automatic behavior; `applyMiddleware` composes engine-owned wrappers around `run` | Implement domain-specific policies behind a capability, port, or middleware | Framework-wide retry, model router, semantic cache, or bundled middleware |
-| Observability | Minimal payload-free `onEvent` hook | Connect logging, metrics, tracing, and domain measurements | Observability platform or economics envelope |
+| Observability | Minimal payload-free `onEvent` hook and `@invokta/otel` spans and invocation metrics through the OpenTelemetry API | Register the OpenTelemetry SDK and exporter; connect logging and domain measurements | Observability platform, OpenTelemetry SDK or exporter, or economics envelope |
 | AI implementation | Keep implementation replaceable | Own prompts, models, retrieval, tools, evidence, and risk controls | Provider SDKs, prompt registry, RAG abstraction, or memory |
 | Quality | Validate contracts and provide testable direct execution | Own fixtures, evals, regression suites, and human review | Eval runner, automated judge, or canary platform |
 | Capability reuse | Eager explicit composition with deterministic collision detection | Choose imports, effective IDs, and trusted dependencies | Runtime plugin marketplace or remote discovery |
@@ -30,16 +31,17 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 
 | Dimension | Limit |
 | --- | --- |
-| Framework runtime packages | 3 |
+| Framework runtime packages | 4 |
 | Supporting packages | 7 |
-| Official inbound adapters | 2: CLI and MCP |
+| Optional runtime helper packages | 2: auth-jwt and otel |
+| Official inbound adapters | 3: CLI, MCP, and plain HTTP JSON |
 | MCP transports | 2: stdio and stateless Streamable HTTP |
 | Core primitives | 5: Capability, Connector Definition, Engine, Context, Principal |
 | Required capability fields | 5 |
 | Runtime pipeline stages | 6 |
 | Invocation error codes | 8 |
 | Cross-cutting hooks | 1: `onEvent`; capability middleware is composed into `run` |
-| Authentication implementations | 0 |
+| Authentication implementations | 1: opt-in JWT bearer verification |
 | Directly supported policy engines | 0 |
 | Dependency containers | 0 |
 | Runtime plugin systems | 0 |
@@ -69,12 +71,12 @@ observable repetition, for example:
 
 | Candidate | Minimum evidence |
 | --- | --- |
-| Authentication package | Several engines repeat the same real identity integration |
+| Authentication package | Several engines repeat the same real identity integration; met for JWT bearer verification by ADR 0049 |
 | PDP adapter | Multiple engines repeat the same provider mapping |
 | Lifecycle | Multiple dependencies repeatedly require coordinated start and stop |
 | Concurrency control | An engine demonstrates saturation that its host cannot solve |
 | Eval runner | Multiple domains share a dataset and execution format |
-| Observability package | Minimal events prove insufficient across real engines |
+| Observability package beyond `@invokta/otel` | Event-based instrumentation proves insufficient across real engines |
 | Model router | Multiple capabilities repeat a selection or fallback policy |
 | Context compiler | Repeated context strategies cause measurable inconsistency |
 

@@ -19,7 +19,12 @@ yarn add @invokta/core zod
 ```
 
 Zod 4 is used by the examples, but it is not part of the core contract. The
-package is native ESM and requires Node.js 22.20.0 or later.
+package is native ESM and is verified on Node.js 22.20.0 or later. It imports no
+Node.js built-in module and uses only ECMAScript and Web platform APIs, so it
+also runs on Fetch runtimes such as Deno, Bun, and Cloudflare Workers by design.
+On Node.js it requires `process.getBuiltinModule`, which Node.js 22.3 and
+later provide, and refuses to load without it. On other hosts without it, proxy
+recognition uses the portable fallback of ADR 0042.
 
 ## API
 
@@ -317,7 +322,7 @@ interface InvokeOptions {
 
 `requestId` defaults to a generated UUID, `source` defaults to `direct`, and
 `principal` defaults to `null`. `source` is one of `direct`, `cli`, `mcp-stdio`,
-or `mcp-http`.
+`mcp-http`, or `http`.
 
 The optional signal must be a platform `AbortSignal`; structural substitutes
 and proxies are rejected safely. Caller cancellation and a capability timeout
@@ -414,7 +419,9 @@ capability factories.
 The runtime calls started and exactly one terminal event in pipeline order.
 Event promises are observed but not awaited, and hook or diagnostic-logger
 failures do not replace the invocation result. Events are best-effort and carry
-no business payload or credential by default.
+no business payload or credential by default. Use
+[`@invokta/otel`](/reference/otel/) to export them as OpenTelemetry spans and
+metrics.
 
 ## Capability composition
 

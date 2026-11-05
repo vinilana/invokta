@@ -1,5 +1,3 @@
-import { types as nodeUtilTypes } from "node:util";
-
 import {
   CapabilityCompositionError,
   type CapabilityCompositionIssue,
@@ -12,6 +10,7 @@ import type {
   RemappedEntries,
   SelectedEntries,
 } from "./composition-types.js";
+import { isProxy } from "./host-types.js";
 import type { AnyCapability, CapabilityMap } from "./types.js";
 
 const exportedCapabilityBrand: unique symbol = Symbol.for(
@@ -95,7 +94,7 @@ type ImportRecord =
   | LibraryImportRecord;
 
 function rejectProxy(value: object, description: string): void {
-  if (nodeUtilTypes.isProxy(value)) {
+  if (isProxy(value)) {
     throw new TypeError(`${description} must not be a proxy.`);
   }
 }
@@ -139,7 +138,7 @@ function readNonEmptyString(value: unknown, description: string): string {
 
 function hasBrand(value: unknown, brand: symbol): boolean {
   if (typeof value !== "object" || value === null) return false;
-  if (nodeUtilTypes.isProxy(value)) return false;
+  if (isProxy(value)) return false;
   const descriptor = Object.getOwnPropertyDescriptor(value, brand);
   return descriptor !== undefined && descriptor.value === true;
 }
