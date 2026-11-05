@@ -217,7 +217,8 @@ interface HttpHeaderView {
 
 `auth` is required. The authentication request has the same structure as
 `McpHttpAuthenticationRequest` from [`@invokta/mcp`](/reference/mcp/), so one
-authenticator serves both adapters. Returning a principal authenticates the
+authenticator serves both adapters, including `createJwtBearerAuthenticator`
+from [`@invokta/auth-jwt`](/reference/auth-jwt/). Returning a principal authenticates the
 request; returning `null` or a malformed principal produces 401; throwing
 produces a sanitized 500. The principal is deep-cloned and validated before the
 body is read. In required mode every route, including `openapi.json`, requires
