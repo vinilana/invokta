@@ -2,13 +2,14 @@
 
 ## Public packages
 
-**AE-SCOPE-01 — Ten packages with isolated roles.** Invokta publishes:
+**AE-SCOPE-01 — Eleven packages with isolated roles.** Invokta publishes:
 
 | Package | Responsibility |
 | --- | --- |
 | `@invokta/core` | Capability and connector authoring contracts, composition, execution, errors, and events |
 | `@invokta/cli` | `list`, `describe`, and `run` over `engine.invoke` |
 | `@invokta/mcp` | MCP server adapters and an isolated plain-type client facade over stdio and stateless Streamable HTTP |
+| `@invokta/http` | Web-standard plain HTTP JSON adapter over `engine.invoke`, OpenAPI 3.1 export, and a Node server entry point |
 | `@invokta/tooling` | Development-time validation of capability composition |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
@@ -26,8 +27,8 @@ not create another capability execution path.
 **AE-SCOPE-02 — Framework.** Invokta provides typed capability and connector
 definitions, runtime capability validation, synchronous private connector
 configuration validation, eager composition, direct execution, minimal context,
-access enforcement, events, CLI and MCP adapters, and narrowly scoped supporting
-tools.
+access enforcement, events, CLI, MCP, and plain HTTP JSON adapters, and
+narrowly scoped supporting tools.
 
 **AE-SCOPE-03 — Custom engine.** Capabilities, prompts, models, engine-owned
 ports, outbound connectors for model, data, and tool integrations, business rules,
@@ -50,9 +51,11 @@ while the example owns one replaceable Authorization Server implementation.
 
 | Dimension | Limit |
 | --- | --- |
-| Framework runtime packages | 3: core, CLI, and MCP |
+| Framework runtime packages | 4: core, CLI, MCP, and HTTP |
 | Supporting packages | 7: tooling, installer, deploy, devtools, and three project creators |
-| Official inbound adapters | CLI and MCP |
+| Official inbound adapters | CLI, MCP, and plain HTTP JSON |
+| Plain HTTP JSON routes | 4: list, describe, invoke, and OpenAPI document |
+| Plain HTTP JSON request body | 1,048,576 bytes by default, configurable |
 | MCP transports | stdio and stateless Streamable HTTP |
 | Core primitives | Capability, Connector Definition, Engine, Context, and Principal |
 | Required capability fields | 5 |

@@ -251,7 +251,7 @@ interface InvokeOptions {
 
 `requestId` defaults to a generated UUID, `source` defaults to `direct`, and
 `principal` defaults to `null`. `source` is one of `direct`, `cli`, `mcp-stdio`,
-or `mcp-http`.
+`mcp-http`, or `http`.
 
 The optional signal must be a platform `AbortSignal`; structural substitutes
 and proxies are rejected safely. Caller cancellation and a capability timeout

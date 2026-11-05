@@ -1,6 +1,6 @@
 # Releasing Invokta
 
-Invokta publishes its ten public packages from one protected GitHub Actions
+Invokta publishes its eleven public packages from one protected GitHub Actions
 workflow. Stable versions publish directly to the `latest` dist-tag. The
 versioned scripts under `scripts/release` contain the release rules; the
 workflow supplies the trusted environment and orchestration.
@@ -68,12 +68,12 @@ dry-runs. It does not require npm authentication and makes no registry change.
 npm can accept a package and report that it is still being processed for
 several minutes. After each publication, the script waits up to 10 minutes for
 the version and `gitHead` to become readable, backing off from 5 to 30 seconds
-between checks, so the publish job allows 60 minutes for all ten packages. If
+between checks, so the publish job allows 60 minutes for all eleven packages. If
 that wait still expires, wait until the version and `gitHead` are readable
 before rerunning the workflow: a version npm is still processing reads as
 missing, and publishing it again fails.
 
-npm package publication is irreversible and a ten-package release is not an
+npm package publication is irreversible and an eleven-package release is not an
 atomic registry operation. If a publish job stops after creating a partial
 release, rerun the failed GitHub Actions workflow. The publication script skips
 only a package version whose npm `gitHead` matches the release tag and whose

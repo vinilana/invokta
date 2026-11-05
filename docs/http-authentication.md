@@ -11,6 +11,12 @@ Use an identity library or trusted identity service already selected by the host
 application. Keep provider-specific request and response types outside the
 engine's capabilities.
 
+The plain HTTP JSON adapter in `@invokta/http` takes the same
+`{ mode: "required", authenticate }` option, and its `HttpAuthenticationRequest`
+has the same structure as `McpHttpAuthenticationRequest`, so one authenticator
+serves both adapters. It issues the same plain `Bearer` challenge and has no
+Protected Resource Metadata option (ADR 0048).
+
 ## Required authentication
 
 The authentication hook receives only request-boundary data: `method`, `path`,

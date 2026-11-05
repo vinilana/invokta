@@ -8,6 +8,7 @@ flowchart LR
   CLI[CLI] --> INVOKE
   STDIO[MCP stdio] --> INVOKE
   HTTP[MCP HTTP] --> AUTHN[authenticate]
+  JSON[HTTP JSON] --> AUTHN
   AUTHN --> INVOKE
   INVOKE --> VALIDATE[Validate input]
   VALIDATE --> ACCESS[Enforce access]
@@ -313,11 +314,49 @@ is required; each authorization server uses HTTPS without credentials, query, or
 fragment. Authorization-server paths are allowed because OAuth issuer identifiers
 may use path components.
 
+## Plain HTTP JSON
+
+**AE-HTTP-01 — Web-standard handler.** `@invokta/http` exports
+`createHttpHandler(engine, options)`, a `(request: Request) => Promise<Response>`
+handler whose package-root modules import no Node-only API, and
+`createHttpOpenApiDocument(engine, options?)`. Relative to a validated
+`basePath` (default `/`), `GET /capabilities` returns `{ capabilities }` from
+`engine.list()`, `GET /capabilities/{id}` returns `engine.describe(id)`,
+`POST /capabilities/{id}` returns the output of `engine.invoke(id, body)` with
+source `http`, and `GET /openapi.json` returns the generated document. `{id}`
+is one percent-encoded segment decoded once. The handler validates and
+snapshots its configuration at construction and never rejects. The optional
+`@invokta/http/node` subpath serves the same handler on `node:http` without
+adding routes, limits, or statuses (ADR 0048).
+
+**AE-HTTP-02 — Boundary.** Each request is checked in order: host allowlist
+(loopback names by default), `Origin` (rejected unless CORS lists it exactly),
+route, CORS preflight, method (405 with `Allow`), declared body size (413),
+authentication, `application/json` content type (415), streamed strict UTF-8
+body within the limit (default 1,048,576 bytes; 413), and JSON parsing
+(400 `INVALID_JSON`). `auth` is required and uses the same required or
+`dangerously-disabled-for-development` modes and the same structural
+`{ path, method, headers, signal }` request as MCP HTTP; required mode protects
+every route, including the OpenAPI document. `null` or a malformed principal is
+401 with `WWW-Authenticate: Bearer`; a thrown authenticator is a sanitized 500.
+`request.signal` reaches the authenticator and `engine.invoke`.
+
+**AE-HTTP-03 — Errors and export.** Every error body is
+`{ error: { code, message, publicDetails? } }` without causes or stacks.
+`INPUT_INVALID` is 400, `UNAUTHENTICATED` 401, `FORBIDDEN` 403,
+`CAPABILITY_NOT_FOUND` 404, `OUTPUT_INVALID` and `EXECUTION_FAILED` 500, and
+`CANCELLED` 503; an unstable or unserializable error is the generic
+`EXECUTION_FAILED` 500. The OpenAPI 3.1 document is derived only from `list`
+and `describe`, embeds each schema as a component with local references rebased
+onto it, uses the base path as a relative server URL, and declares Bearer
+security only when authentication is required.
+
 ## Authentication and authorization
 
 **AE-SEC-01 — Hybrid model.** The core contains `Principal` and `AccessRule`, and
-enforces the access rule. MCP HTTP receives an `authenticate` hook. The custom
-engine decides domain authorization and may call any PDP through a function.
+enforces the access rule. MCP HTTP and plain HTTP receive an `authenticate`
+hook. The custom engine decides domain authorization and may call any PDP
+through a function.
 
 **AE-SEC-02 — Boundaries.** Identity never comes from the input. When HTTP
 authentication is required, a missing or failed identity produces a 401 before

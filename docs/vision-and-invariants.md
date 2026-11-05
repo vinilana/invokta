@@ -113,8 +113,8 @@ when it returns `true`.
 
 **AE-CTX-01 — Minimal context.** `ExecutionContext` MUST contain only `requestId`,
 `source`, `principal`, `signal`, and `logger`. `source` is `direct`, `cli`,
-`mcp-stdio`, or `mcp-http`. The context MUST NOT contain a service locator, port
-registry, error factory, policy context, or mutable metadata bag.
+`mcp-stdio`, `mcp-http`, or `http`. The context MUST NOT contain a service
+locator, port registry, error factory, policy context, or mutable metadata bag.
 
 **AE-PRINCIPAL-01 — Minimal identity.** `Principal` MUST be a structured-cloneable
 record with a non-empty string `id` and MAY contain `attributes` as a

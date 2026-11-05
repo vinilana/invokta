@@ -144,6 +144,63 @@ describe("support engine entrypoints", () => {
     expect(stderr).toBe("");
   });
 
+  it("serves the plain HTTP JSON adapter through the Node entrypoint", async () => {
+    const token = "test-only-support-token";
+    const child = spawn(process.execPath, ["dist/http.js"], {
+      cwd: exampleRoot,
+      env: {
+        ...process.env,
+        SUPPORT_ENGINE_BEARER_TOKEN: token,
+        PORT: "0",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    try {
+      const port = await vi.waitFor(
+        () => {
+          const match = stderr.match(/host 127\.0\.0\.1, port (\d+)/u);
+          expect(match?.[1]).toBeDefined();
+          return Number(match?.[1]);
+        },
+        { timeout: 5_000 },
+      );
+      const url = `http://127.0.0.1:${port}/capabilities/${capabilityId}`;
+      const init = {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ticketId: "T-123" }),
+      };
+
+      const missing = await fetch(url, init);
+      expect(missing.status).toBe(401);
+      await missing.arrayBuffer();
+
+      const success = await fetch(url, {
+        ...init,
+        headers: { ...init.headers, authorization: `Bearer ${token}` },
+      });
+      expect(success.status).toBe(200);
+      expect(await success.json()).toMatchObject({
+        category: "billing",
+        confidence: 0.9,
+      });
+    } finally {
+      await stopProcess(child);
+    }
+
+    expect(stdout).toBe("");
+    expect(stderr).not.toContain(token);
+  });
+
   it("serves authenticated stateless HTTP and keeps authorization in the capability", async () => {
     const token = "test-only-support-token";
     const child = spawn(process.execPath, ["dist/mcp-http.js"], {

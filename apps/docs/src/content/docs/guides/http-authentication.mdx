@@ -13,6 +13,11 @@ Invokta acts as a Resource Server boundary. It does not issue or refresh tokens,
 perform login or consent, store users or sessions, or prescribe a JWT,
 introspection, or workload-identity provider.
 
+The same hook works with the plain HTTP JSON adapter in
+[`@invokta/http`](/reference/http/): its authentication request has the same
+`path`, `method`, header view, and signal, so one authenticator serves both
+adapters.
+
 ## Integrate a verifier
 
 <Steps>

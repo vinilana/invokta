@@ -1,9 +1,9 @@
 # Support engine example
 
 This example publishes one domain capability, `support.classify-ticket`, through
-the direct API, CLI, MCP stdio, and stateless MCP HTTP. The capability and its
-business rules are defined once; every adapter reaches them through
-`engine.invoke`.
+the direct API, CLI, MCP stdio, stateless MCP HTTP, and plain HTTP JSON. The
+capability and its business rules are defined once; every adapter reaches them
+through `engine.invoke`.
 
 The example is deterministic and makes no network or model-provider calls. Its
 rule-based classifier is an infrastructure adapter that can be replaced by a
@@ -12,7 +12,7 @@ model-backed adapter without changing the capability contract.
 ## Architecture
 
 ```text
-direct / CLI / MCP stdio / MCP HTTP
+direct / CLI / MCP stdio / MCP HTTP / HTTP JSON
                 |
                 v
            engine.invoke
@@ -31,8 +31,9 @@ direct / CLI / MCP stdio / MCP HTTP
 - `src/infrastructure/` contains deterministic adapters for local use.
 - `src/engine.ts` is the composition root. Dependencies enter through an
   explicit factory; there is no container or service locator.
-- `src/direct.ts`, `src/cli.ts`, `src/mcp-stdio.ts`, and `src/mcp-http.ts` are the
-  four inbound entrypoints.
+- `src/direct.ts`, `src/cli.ts`, `src/mcp-stdio.ts`, `src/mcp-http.ts`, and
+  `src/http.ts` are the five inbound entrypoints. `src/bearer-authentication.ts`
+  holds the one development authenticator both HTTP entrypoints share.
 
 The permission checker is intentionally a domain port. The access rule receives
 the validated ticket ID and the trusted `Principal`, then asks for the
@@ -77,12 +78,34 @@ SUPPORT_ENGINE_BEARER_TOKEN=development-only-token \
   node examples/support-engine/dist/mcp-http.js
 ```
 
-The HTTP entrypoint requires a bearer token and never reads identity from the
-tool input. Its literal token comparison is only a deterministic demonstration
-of the framework's authentication hook. A real deployment must replace it with
-the organization's existing IdP library, token introspection, or trusted
-identity proxy. The capability-level permission checker remains responsible for
-domain authorization.
+Start the plain HTTP JSON adapter, which defaults to port 3001 so it can run
+beside MCP HTTP:
+
+```sh
+SUPPORT_ENGINE_BEARER_TOKEN=development-only-token \
+  node examples/support-engine/dist/http.js
+```
+
+Then, from another terminal:
+
+```sh
+curl -sS http://127.0.0.1:3001/capabilities/support.classify-ticket \
+  -H 'authorization: Bearer development-only-token' \
+  -H 'content-type: application/json' \
+  -d '{"ticketId":"T-123"}'
+curl -sS http://127.0.0.1:3001/openapi.json \
+  -H 'authorization: Bearer development-only-token'
+```
+
+`createSupportHttpHandler` in `src/http.ts` returns the same routes as a
+Web-standard `fetch` handler for Deno, Bun, or a Workers runtime.
+
+Both HTTP entrypoints require a bearer token and never read identity from the
+tool input or request body. Their shared literal token comparison is only a
+deterministic demonstration of the framework's authentication hook. A real
+deployment must replace it with the organization's existing IdP library, token
+introspection, or trusted identity proxy. The capability-level permission
+checker remains responsible for domain authorization.
 
 ## Replace the deterministic adapters
 

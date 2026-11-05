@@ -34,6 +34,7 @@ const packageReferences = [
   ["core", "@invokta/core"],
   ["cli", "@invokta/cli"],
   ["mcp", "@invokta/mcp"],
+  ["http", "@invokta/http"],
   ["tooling", "@invokta/tooling"],
   ["devtools", "@invokta/devtools"],
   ["installer", "@invokta/installer"],

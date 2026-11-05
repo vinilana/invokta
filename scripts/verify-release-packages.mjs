@@ -693,6 +693,8 @@ try {
     const core = await import("@invokta/core");
     const cli = await import("@invokta/cli");
     const mcp = await import("@invokta/mcp");
+    const http = await import("@invokta/http");
+    const httpNode = await import("@invokta/http/node");
     const tooling = await import("@invokta/tooling");
     const deploy = await import("@invokta/deploy");
     const deployScaffold = await import("@invokta/deploy/scaffold");
@@ -700,6 +702,8 @@ try {
     if (typeof core.createEngine !== "function") throw new Error("core import failed");
     if (typeof cli.runCli !== "function") throw new Error("cli import failed");
     if (typeof mcp.serveMcpStdio !== "function") throw new Error("mcp import failed");
+    if (typeof http.createHttpHandler !== "function") throw new Error("http import failed");
+    if (typeof httpNode.serveHttp !== "function") throw new Error("http node import failed");
     if (typeof tooling.checkCapabilities !== "function") throw new Error("tooling import failed");
     if (typeof deploy.runDeployCli !== "function") throw new Error("deploy import failed");
     if (typeof deployScaffold.createMcpHttpScaffoldFiles !== "function") throw new Error("deploy scaffold import failed");

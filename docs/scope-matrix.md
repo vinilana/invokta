@@ -14,6 +14,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Direct execution | Run the common `engine.invoke` pipeline | Supply trusted principal, signal, and dependencies | Distributed executor or background jobs |
 | CLI | `list`, `describe`, `run`, JSON I/O, and stable exit codes | Own the executable, local principal, and untrusted-input bounds | Login, actor flags, or plugin discovery |
 | MCP | Map capabilities to tools over stdio and stateless HTTP | Own process composition and deployment | Resources, prompts, tasks, sessions, or resumption |
+| Plain HTTP JSON | Web-standard list, describe, invoke, and OpenAPI 3.1 routes over `engine.invoke` | Own mounting, exposure, TLS, and rate limits | Streaming, batches, sessions, or a web framework |
 | HTTP authentication | Run a required hook, issue a configured 401 Bearer challenge, and publish configured resource metadata | Verify credentials and return a minimal Principal | Identity provider, login, token lifecycle, or universal token verifier |
 | Authorization | Enforce each capability's `access` rule before `run` | Encode domain policy or call a PDP | Policy language, role model, PDP adapter, or relationship graph |
 | HTTP security | Default to loopback; validate exact Host, Origin, route, media types, and body bounds | Configure TLS, proxy trust, allowlists, exposure, and secrets | API gateway, WAF, or certificate management |
@@ -30,9 +31,9 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 
 | Dimension | Limit |
 | --- | --- |
-| Framework runtime packages | 3 |
+| Framework runtime packages | 4 |
 | Supporting packages | 7 |
-| Official inbound adapters | 2: CLI and MCP |
+| Official inbound adapters | 3: CLI, MCP, and plain HTTP JSON |
 | MCP transports | 2: stdio and stateless Streamable HTTP |
 | Core primitives | 5: Capability, Connector Definition, Engine, Context, Principal |
 | Required capability fields | 5 |
