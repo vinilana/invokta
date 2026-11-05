@@ -1,6 +1,6 @@
 ---
 title: '@invokta/mcp'
-description: Complete API and protocol reference for MCP tools over stdio and stateless Streamable HTTP.
+description: Complete API and protocol reference for MCP tools over stdio and stateless Streamable HTTP, from a Node.js listener or a Web-standard handler.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -18,8 +18,11 @@ pinned to `1.32.2` in the package manifest.
 yarn add @invokta/mcp
 ```
 
-The package is native ESM and requires Node.js 22.20.0 or later. SDK and
-transport types are not part of its public API.
+The package is native ESM. The package root requires Node.js 22.20.0 or later.
+The `@invokta/mcp/web` entry point imports no Node.js built-in module, so the
+same HTTP endpoint can run on Fetch runtimes (see
+[`createMcpHttpHandler`](#createmcphttphandler)). SDK and transport types are
+not part of the public API.
 
 ## API
 
@@ -27,12 +30,20 @@ The package root exports:
 
 - `serveMcpStdio` and `ServeMcpStdioOptions`;
 - `toMcpToolName`;
-- `validateMcpToolCatalog` and `McpToolNameCollisionError`;
+- `validateMcpToolCatalog`, `McpToolNameCollisionError`, and the
+  `McpToolCatalogReport`, `McpToolContentWarning`, and
+  `McpToolContentWarningCode` types;
 - `serveMcpHttp` and `ServeMcpHttpOptions`;
+- `createMcpHttpHandler`, `McpHttpHandler`, and `McpHttpHandlerOptions`;
 - `McpHttpAuthOptions`;
 - `McpHttpAuthenticationRequest` and `McpHttpHeaderView`;
 - `McpHttpProtectedResourceMetadata`; and
 - `McpHttpServerAddress` and `McpHttpServerHandle`.
+
+The portable `@invokta/mcp/web` subpath exports only `createMcpHttpHandler`,
+`McpHttpHandler`, `McpHttpHandlerOptions`, `McpHttpAuthOptions`,
+`McpHttpAuthenticationRequest`, `McpHttpHeaderView`,
+`McpHttpProtectedResourceMetadata`, and `McpToolNameCollisionError`.
 
 ## Tool mapping
 
@@ -83,12 +94,16 @@ Build tooling can call `validateMcpToolCatalog(engine)` to construct this exact
 catalog without starting stdio or HTTP. A collision throws
 `McpToolNameCollisionError`, a `TypeError` with code
 `MCP_TOOL_NAME_COLLISION`, the derived `toolName`, and the two
-`capabilityIds`.
+`capabilityIds`. Otherwise it returns a frozen report whose `contentWarnings`
+explain annotated output properties that will not produce
+[rich content blocks](#rich-tool-results).
 
 A successful call returns the validated result as `structuredContent` plus a
-JSON text fallback. Invocation failures return `isError: true` with one safe JSON
-text error and no `structuredContent`. A declared domain error keeps its domain
-code, retry hint, and validated details in `publicDetails`:
+JSON text fallback. An output contract can also add native image, audio, and
+resource-link blocks; see [rich tool results](#rich-tool-results). Invocation
+failures return `isError: true` with one safe JSON text error and no
+`structuredContent`. A declared domain error keeps its domain code, retry hint,
+and validated details in `publicDetails`:
 
 ```json
 {"code":"DOMAIN_ERROR","message":"The requested ticket does not exist.","publicDetails":{"code":"TICKET_NOT_FOUND","retryable":false,"details":{"ticketId":"T-404"}}}
@@ -110,6 +125,70 @@ request.
   with the published aliases. Direct calls, CLI commands, composition, access
   rules, and events continue to use the original dotted capability IDs.
 </Aside>
+
+## Rich tool results
+
+The adapter reads the capability's output JSON Schema and maps annotated
+top-level properties to MCP content blocks (ADR 0044). The mapping is derived
+once per tool when the catalog is built, so stdio and HTTP present the same
+result. No adapter option exists; the output contract is the only declaration,
+and every form needs an explicit content keyword.
+
+| Top-level property schema (or its array `items`) | Generated block |
+| --- | --- |
+| String with `contentEncoding: "base64"` and an allowlisted `contentMediaType` | `image` or `audio` with that media type |
+| Object with a `mimeType` whose `enum` or `const` lists only allowlisted types, plus exactly one base64 string property | `image` or `audio` with the value's `mimeType` |
+| Object whose `uri` string declares `contentMediaType: "text/uri-list"`, with a string `name` and an optional string `mimeType` | `resource_link` |
+
+Allowlisted media types are `image/png`, `image/jpeg`, `image/gif`,
+`image/webp`, `audio/wav`, `audio/mpeg`, `audio/ogg`, `audio/webm`,
+`audio/flac`, and `audio/aac`, spelled exactly in lowercase. Other annotations,
+`$ref`, unions, nested properties, and nested arrays are ignored; an object
+shaped like `{ uri, name }` without the marker stays plain JSON.
+
+`structuredContent` is always the complete output. The text block comes first
+and keeps the output's structure: each base64 string carried by a block is
+replaced by `[content N: <media type>]`, where `N` is that block's index in
+`content`. Resource links stay unchanged in the text. Blocks follow the
+schema's property order and each array's index order.
+
+| Rule | Behavior |
+| --- | --- |
+| Base64 data | Non-empty, padded RFC 4648 standard alphabet |
+| Resource-link `uri` | `http://` or `https://` in any case, a non-empty authority without `@`, no whitespace, control character, or backslash; the block carries the normalized URL, at most 8,192 RFC 3986 characters |
+| Resource-link `name` | Non-empty, at most 1,024 UTF-8 bytes |
+| Resource-link `mimeType` | Optional RFC 9110 media type, parameters allowed, at most 255 characters |
+| Protocol revision | `image` always; `audio` from `2025-03-26`; `resource_link` from `2025-06-18` |
+| Invalid or unsupported value | No block; the value stays in the text block, and other values are unaffected |
+| Absent optional property or empty array | Contributes nothing |
+| No block, or more than 16 planned values | The unchanged structured result and full JSON text fallback |
+
+Over stdio, the revision is the one `initialize` negotiated. Over HTTP, through
+`serveMcpHttp` or `createMcpHttpHandler`, it is the request's
+`MCP-Protocol-Version` header, or `2025-03-26` when the header is absent. A fallback is not an error result. A capability without a recognized
+form returns exactly what earlier versions returned. The adapter does not serve
+linked URIs through `resources/read` and produces no embedded resources or
+content annotations.
+
+`validateMcpToolCatalog` reports, without reading any value, the properties
+whose annotations come close but will not map:
+
+| Warning code | Cause |
+| --- | --- |
+| `UNSUPPORTED_MEDIA_TYPE` | An `image/` or `audio/` type outside the exact allowlist, such as `image/jpg`, `Image/PNG`, or SVG |
+| `MEDIA_WITHOUT_BASE64` | An allowlisted media type whose declared `contentEncoding` is not `base64` |
+| `AMBIGUOUS_MEDIA_OBJECT` | More than one base64 property in a media object |
+| `INCOMPLETE_RESOURCE_LINK` | A `text/uri-list` marker in another spelling, outside a link object, or without string `uri` and `name` |
+| `UNSUPPORTED_POSITION` | A content annotation in a union, type array, nested object, or nested array |
+| `CONTENT_BLOCK_LIMIT` | The contract permits more than 16 planned values, such as an array without `maxItems` |
+
+A media type or a `mimeType` enum warns only together with a `contentEncoding`
+keyword, so media metadata without encoded data and inline text such as SVG
+markup stay silent. Warnings never fail validation. Later minor releases may
+add warning codes; treat an unknown code as a warning.
+
+Follow the [rich content recipe](/recipes/mcp-rich-content/) for Zod 4
+authoring.
 
 ## `serveMcpStdio`
 
@@ -152,13 +231,17 @@ belong on standard error.
 ## `serveMcpHttp`
 
 ```ts
-interface ServeMcpHttpOptions {
-  readonly host?: string;
-  readonly port?: number;
+interface McpHttpHandlerOptions {
+  readonly path?: string;
   readonly allowedHosts?: ReadonlyArray<string>;
   readonly allowedOrigins?: ReadonlyArray<string>;
   readonly maxRequestBodyBytes?: number;
   readonly auth: McpHttpAuthOptions;
+}
+
+interface ServeMcpHttpOptions extends McpHttpHandlerOptions {
+  readonly host?: string;
+  readonly port?: number;
 }
 
 interface McpHttpServerHandle {
@@ -241,6 +324,77 @@ incremental UTF-8.
 | `415` | Missing, duplicated, or unsupported content type |
 | `500` | Authentication infrastructure or internal boundary failure |
 
+## `createMcpHttpHandler`
+
+```ts
+type McpHttpHandler = (request: Request) => Promise<Response>;
+
+function createMcpHttpHandler<Capabilities extends CapabilityMap>(
+  engine: Engine<Capabilities>,
+  options: McpHttpHandlerOptions,
+): McpHttpHandler;
+```
+
+```ts
+import { createMcpHttpHandler } from "@invokta/mcp/web";
+
+const handler = createMcpHttpHandler(engine, {
+  allowedHosts: ["engine.example.com"],
+  auth: { mode: "required", authenticate },
+});
+
+const response = await handler(request);
+```
+
+The handler serves the same stateless endpoint as `serveMcpHttp` from a Fetch
+`Request`, so an engine can be mounted in a host-owned server or deployed to a
+Fetch runtime. Both share one protocol implementation: the same options,
+validation, status codes, authentication, principal snapshot, media types, body
+limit, JSON-RPC rules, Protected Resource Metadata, and `engine.invoke` path
+with `source: "mcp-http"`. The
+[Web-standard runtimes guide](/guides/web-standard-runtimes/) mounts it in a
+Node.js server, Hono, and a Cloudflare Worker.
+
+Options are validated when the handler is created, which throws a `TypeError`
+for an invalid value or `McpToolNameCollisionError` for an ambiguous catalog.
+The returned function never rejects; a request object it cannot read produces a
+sanitized 500. Pass the request with its body unread.
+
+A Fetch request does not expose everything a Node.js listener sees, so the
+boundary maps to it as follows:
+
+- Without `allowedHosts`, only `127.0.0.1`, `localhost`, and `[::1]` are
+  allowed. List the public host names of a deployed handler. The `Host` header,
+  when present, and the request URL's authority must each be allowed.
+- The URL's path must equal the mount path. A query, including an empty one, a
+  fragment, and percent encoding are rejected. The host has already resolved
+  dot segments, so the handler routes the path the host routes.
+- Fetch joins repeated header fields with `, `. Any comma in `Host`, and a
+  comma outside a quoted parameter value in `Content-Type`, counts as a
+  repeated field and is rejected; `application/json; profile="a,b"` is
+  accepted. A joined `Authorization` value reaches the authenticator as one
+  value, which a Bearer authenticator must reject.
+- The body is read incrementally from `request.body`, and the stream is
+  cancelled as soon as the limit is crossed, UTF-8 is malformed, or
+  `request.signal` aborts. A declared `Content-Length` above the limit is
+  rejected before authentication when the host exposes it.
+- `request.signal` is the cancellation signal for authentication, body
+  reading, and the invocation. The host owns connections and shutdown; the
+  handler sets no hop-by-hop header.
+
+<Aside type="note" title="Verified and supported runtimes">
+  Node.js is verified by tests, including a run that approximates a Web-only
+  isolate: every Node.js built-in module blocked, no
+  `process.getBuiltinModule`, a non-Node.js user agent, and code generation
+  from strings disallowed. Deno, Bun, Cloudflare Workers, Vercel Edge, and Node.js
+  frameworks such as Hono and Next.js route handlers are supported by design:
+  they provide the Fetch API, Web Streams, `TextDecoder`, `structuredClone`,
+  `crypto.randomUUID`, and `AbortSignal.any` that the handler and the core use,
+  but they are not run in CI. On Node.js the core refuses to load without
+  `process.getBuiltinModule`; see ADR 0042 for its behavior on other hosts
+  without it.
+</Aside>
+
 ## HTTP authentication
 
 ```ts
@@ -266,7 +420,9 @@ adapter validates and deep-snapshots the principal before `engine.invoke`.
 
 Domain authorization stays in the capability access rule. Read the
 [HTTP authentication guide](/guides/http-authentication/) for verifier mapping,
-Protected Resource Metadata, proxy boundaries, and secret handling.
+Protected Resource Metadata, proxy boundaries, and secret handling. The optional
+[`@invokta/auth-jwt`](/reference/auth-jwt/) authenticator is a ready-made hook
+for one issuer's JWT bearer tokens.
 
 ### Development mode
 

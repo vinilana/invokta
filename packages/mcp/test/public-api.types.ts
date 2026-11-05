@@ -4,6 +4,7 @@ import { expectTypeOf } from "vitest";
 import {
   beginMcpOAuthAuthorization,
   connectMcpClient,
+  createMcpHttpHandler,
   inspectMcpOAuth,
   isForbiddenMcpClientHeader,
   type McpClientConnection,
@@ -15,6 +16,8 @@ import {
   type McpClientToolPage,
   type McpClientToolResult,
   type McpHttpAuthenticationRequest,
+  type McpHttpHandler,
+  type McpHttpHandlerOptions,
   type McpHttpServerHandle,
   type McpJsonValue,
   type McpOAuthAuthorization,
@@ -23,6 +26,9 @@ import {
   type McpOAuthInspection,
   type McpOAuthStep,
   type McpOAuthStepName,
+  type McpToolCatalogReport,
+  type McpToolContentWarning,
+  type McpToolContentWarningCode,
   McpToolNameCollisionError,
   type ServeMcpHttpOptions,
   type ServeMcpStdioOptions,
@@ -31,12 +37,32 @@ import {
   toMcpToolName,
   validateMcpToolCatalog,
 } from "../src/index.js";
+import * as web from "../src/web.js";
 
 expectTypeOf(toMcpToolName("support.classify-ticket")).toEqualTypeOf<string>();
 expectTypeOf(isForbiddenMcpClientHeader("X-API-Key")).toEqualTypeOf<boolean>();
 
 declare const catalogEngine: Engine;
-expectTypeOf(validateMcpToolCatalog(catalogEngine)).toEqualTypeOf<void>();
+expectTypeOf(
+  validateMcpToolCatalog(catalogEngine),
+).toEqualTypeOf<McpToolCatalogReport>();
+expectTypeOf<McpToolCatalogReport["contentWarnings"]>().toEqualTypeOf<
+  ReadonlyArray<McpToolContentWarning>
+>();
+expectTypeOf<McpToolContentWarning>().toEqualTypeOf<{
+  readonly capabilityId: string;
+  readonly toolName: string;
+  readonly property: string;
+  readonly code: McpToolContentWarningCode;
+}>();
+expectTypeOf<McpToolContentWarningCode>().toEqualTypeOf<
+  | "UNSUPPORTED_MEDIA_TYPE"
+  | "MEDIA_WITHOUT_BASE64"
+  | "AMBIGUOUS_MEDIA_OBJECT"
+  | "INCOMPLETE_RESOURCE_LINK"
+  | "UNSUPPORTED_POSITION"
+  | "CONTENT_BLOCK_LIMIT"
+>();
 const collision = new McpToolNameCollisionError(
   ["support.echo", "support_echo"],
   "support_echo",
@@ -226,3 +252,34 @@ serveMcpHttp(engine, {
     resourceMetadata: { resource: "https://engine.example.com/mcp" },
   },
 });
+
+const handlerOptions: McpHttpHandlerOptions = {
+  path: "/e/orders/mcp",
+  allowedHosts: ["engine.example.com"],
+  allowedOrigins: ["https://console.example.com"],
+  maxRequestBodyBytes: 1024,
+  auth: { mode: "required", authenticate: () => principal },
+};
+expectTypeOf(
+  createMcpHttpHandler(engine, handlerOptions),
+).toEqualTypeOf<McpHttpHandler>();
+expectTypeOf<McpHttpHandler>().toEqualTypeOf<
+  (request: Request) => Promise<Response>
+>();
+expectTypeOf(web.createMcpHttpHandler).toEqualTypeOf(createMcpHttpHandler);
+expectTypeOf<web.McpHttpHandlerOptions>().toEqualTypeOf<McpHttpHandlerOptions>();
+expectTypeOf<ServeMcpHttpOptions>().toExtend<McpHttpHandlerOptions>();
+
+createMcpHttpHandler(engine, {
+  // @ts-expect-error A Web handler does not bind a listener.
+  port: 3000,
+  auth: { mode: "dangerously-disabled-for-development" },
+});
+
+createMcpHttpHandler(engine, {
+  // @ts-expect-error Authentication cannot be omitted implicitly.
+  auth: undefined,
+});
+
+// @ts-expect-error The portable entry point does not include the Node.js listener.
+web.serveMcpHttp;

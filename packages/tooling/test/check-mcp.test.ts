@@ -77,6 +77,24 @@ issue: code="MCP_TOOL_NAME_COLLISION" toolName="support_echo" capabilityIds=2
 `);
   });
 
+  it("reports content annotations that will not produce blocks without failing", () => {
+    const result = runCommand(
+      "check-mcp",
+      fixture("content-warning-engine.js"),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("");
+    expect(
+      result.stderr,
+    ).toBe(`invokta: the MCP tool catalog has content warnings.
+module: "${fixture("content-warning-engine.js")}"
+export: "engine"
+warning: code="UNSUPPORTED_MEDIA_TYPE" toolName="media_render" capabilityId="media.render" property="chart"
+warning: code="CONTENT_BLOCK_LIMIT" toolName="media_render" capabilityId="media.render" property="frames"
+`);
+  });
+
   it("supports a non-default engine export", async () => {
     const run = runCheck(
       "check-mcp",

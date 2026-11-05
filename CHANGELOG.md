@@ -9,6 +9,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- `@invokta/mcp/web` is a portable entry point whose
+  `createMcpHttpHandler(engine, options)` returns a Web-standard
+  `(request: Request) => Promise<Response>` handler for the stateless MCP
+  Streamable HTTP endpoint, so an engine can be mounted in Hono, a Next.js route
+  handler, or a Node.js server that accepts a Fetch handler, and deployed to
+  Cloudflare Workers, Deno, Bun, or Vercel Edge. It enforces the same
+  authentication, Host and Origin allowlists, body limit, mount path,
+  protected resource metadata, and JSON-RPC rules as `serveMcpHttp` and calls
+  every capability through `engine.invoke`; without `allowedHosts` it accepts
+  only loopback host names. The package root also exports the function, and
+  `McpHttpHandler` and `McpHttpHandlerOptions` describe it (ADR 0042).
 - `@invokta/cli` derives `run` flags from the top-level properties of a
   capability's published input schema, so
   `engine run onboarding.create-welcome-message --name Ada` builds
@@ -38,6 +49,108 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   JSON Schema, `invocation.failed` events carry the `domainCode`, and the CLI
   (exit code `1`) and MCP tool errors include the domain code, retry hint, and
   details (ADR 0045).
+- `@invokta/http` is a new runtime package for consumers that do not speak MCP
+  (ADR 0048). `createHttpHandler(engine, options)` returns a Web-standard
+  `(request: Request) => Promise<Response>` handler with no Node-only imports
+  that serves `GET /capabilities`, `GET /capabilities/{id}`,
+  `POST /capabilities/{id}`, and `GET /openapi.json` below a validated base
+  path. Capability IDs are resolved against the catalog first, so an unknown ID
+  is a 404 that never reaches `engine.invoke` or its events; every invocation
+  runs through `engine.invoke` with source `http` and the request signal.
+  Errors keep the sanitized `code`, `message`, and optional `publicDetails`
+  and map to HTTP statuses, with a declared `DOMAIN_ERROR` as 422 (documented
+  per capability in the OpenAPI document) and `CANCELLED` as 503. Required or
+  explicitly disabled authentication uses the same structural request as MCP
+  HTTP, so `createJwtBearerAuthenticator` from `@invokta/auth-jwt` plugs in
+  directly; the loopback host allowlist, Origin rejection without an explicit
+  CORS allowlist, and a 1,048,576-byte default body limit match the MCP HTTP
+  defaults. `createHttpOpenApiDocument` generates the OpenAPI 3.1 document from
+  `list` and `describe` only and fails closed on a JSON Schema identifier that
+  would occur twice. `@invokta/http/node` adds `serveHttp` for Node, rejecting
+  dot-segment targets and duplicated `Host` or `Authorization` headers.
+  Configure an npm trusted publisher for the package before the next release
+  tag.
+- The `support-engine` example adds a plain HTTP JSON entrypoint that shares one
+  development authenticator with its MCP HTTP entrypoint.
+- `@invokta/auth-jwt` provides `createJwtBearerAuthenticator`, an optional JWT
+  bearer authenticator usable directly as the `serveMcpHttp` `authenticate`
+  hook or with any adapter exposing `headers.get` and an optional `signal`
+  (ADR 0049). It verifies one configured issuer's signed access tokens with
+  `jose` 6.2.12, its only runtime dependency, against a remote HTTPS JWKS URL
+  or a local key set. It requires an exact issuer, an audience, an explicit
+  asymmetric algorithm allowlist, `sub`, and `exp`, and supports a clock
+  tolerance of at most 300 seconds, required scopes, a token length bound of
+  8,192 characters by default and 16,384 at most, and a claims-to-principal
+  mapper that never receives the raw token. Invalid, expired, not-yet-valid,
+  wrongly issued or addressed, unknown-key, disallowed-algorithm, and
+  insufficient-scope credentials resolve `null`. A token without `kid` that
+  fits several published keys is tried against at most eight of them and
+  resolves `null` when none verifies it. Key-set outages and cancellation
+  reject with a fixed, causeless `JwtVerificationUnavailableError`, which the
+  MCP adapter answers with its sanitized 500. A remote key set is cached for 10
+  minutes, refetched for an unknown key at most every 30 seconds, and not
+  refetched for 5 monotonic seconds after a failed fetch; meanwhile a fresh
+  cache keeps answering and a `kid` missing from it resolves `null`.
+- `@invokta/otel` instruments an engine through its existing `onEvent` hook.
+  `createOpenTelemetryEventHandler` records one `INTERNAL` span per invocation,
+  started at the event's `startedAt` in the caller's active context and ended
+  with the measured duration, plus the `invokta.invocations` and
+  `invokta.invocation.failures` counters and the `invokta.invocation.duration`
+  histogram. Attribute names are stable, principal IDs are recorded only on
+  opt-in, error codes are opaque strings, a `DOMAIN_ERROR` records its
+  declared domain code on the span and the failures counter, metric attributes
+  are bounded, and
+  pending spans are capped with eviction. Invocations that reuse a running
+  invocation's request ID end their spans early without an outcome instead of
+  receiving another invocation's result. `contextFor(requestId)` lets a
+  capability nest its own spans under the invocation span. The package depends
+  on the exact `@invokta/core` release for types and on the
+  `@opentelemetry/api` peer (`^1.9.0`); the core and the other packages gain no
+  OpenTelemetry dependency (ADR 0050).
+- The `observability-engine` example's provider-backed composition root reports
+  invocation spans and metrics to the OpenTelemetry SDK its host registers.
+- `@invokta/core` exports `applyMiddleware(capabilities, ...middleware)` with
+  the `CapabilityMiddleware` and `CapabilityMiddlewareArgs` types. It returns a
+  new frozen capability map whose `run` functions execute the middleware, first
+  listed outermost, around the original handler, while every own capability
+  property and contract field is kept by identity. Input validation and
+  `access` still run before the chain, the timeout and cancellation signal
+  cover it, its final result is validated against the output schema, and
+  middleware errors, including `CapabilityError` domain errors, are normalized
+  like `run` errors. `next()` takes no arguments and starts the next layer at
+  most once. A started layer always settles before the invocation does, so no
+  part of the chain outlives it. Middleware reads a lazily taken, deep-frozen
+  input snapshot, and must not mutate `context.principal`, which it shares with
+  `run`. Composed maps keep their composition provenance, so
+  `invokta check-capabilities` accepts wrapped compositions. The engine, its
+  six stages, and its single `onEvent` hook are unchanged; a new recipe shows
+  audit logging, rate limiting, and caching middleware with their limits
+  (ADR 0051).
+- `@invokta/mcp` returns native MCP `image`, `audio`, and `resource_link`
+  content blocks, over both stdio and HTTP, for top-level output properties
+  that declare standard JSON Schema content keywords (ADR 0044). The forms are:
+  - a base64 string with an allowlisted image or audio `contentMediaType`;
+  - a media object with an enumerated `mimeType` and one
+    `contentEncoding: "base64"` property; or
+  - a link object whose `uri` declares `contentMediaType: "text/uri-list"`.
+
+  Each form can be used directly or as array items. `structuredContent`
+  remains the complete validated output, and the JSON text block keeps its
+  structure while replacing each mapped base64 value with a
+  `[content N: <media type>]` placeholder. Each value maps independently: an
+  invalid value, or a block type that the negotiated protocol revision does
+  not define (audio before `2025-03-26`, resource links before `2025-06-18`),
+  stays in the text block. More than 16 planned values fall back to the
+  unchanged JSON result. Capabilities without these annotations are presented
+  byte for byte as before, and the core, CLI, and direct results are
+  unchanged.
+- `validateMcpToolCatalog` returns a frozen `McpToolCatalogReport` whose
+  `contentWarnings` name annotated output properties that will not produce
+  content blocks, and `invokta check-mcp` prints them as `warning:` lines
+  while still exiting `0`.
+- The private `image-engine` example annotates its generated assets, so MCP
+  clients receive each image as a native `image` block. A new documentation
+  recipe shows the Zod 4 authoring pattern.
 - The [stability policy](./docs/stability-policy.md) defines each package's
   public API, Semantic Versioning before and after 1.0, the deprecation process
   and window, supported Node.js versions, the MCP baseline update rules, how
@@ -48,17 +161,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   lengths at engine construction and published by `list()` and `describe()`.
   The CLI prints it in `list`, `describe`, and capability help, and MCP tool
   listings prefix the description with the notice and expose it as
-  `_meta["dev.invokta/deprecated"]`. Invocation does not change; the engine logger receives one warning per deprecated capability
-  on its first invocation (ADR 0046).
+  `_meta["dev.invokta/deprecated"]`. Invocation does not change; the engine
+  logger receives one warning per deprecated capability on its first
+  invocation (ADR 0046).
 - `describe()` publishes the access rule kind as `access`: `public`,
   `authenticated`, or `function`. New `CapabilityDeprecation` and
   `CapabilityAccessKind` types are exported from `@invokta/core`.
 - `invokta contract snapshot <esm-module>` writes a deterministic JSON snapshot
   of an engine's public contract, including declared domain errors, and
   `invokta contract diff <previous> <next>` classifies the changes as breaking,
-  potentially breaking, or compatible,
-  prints a report, and exits `1` on breaking changes (or potentially breaking
-  ones with `--fail-on-potentially-breaking`). `@invokta/tooling` also exports
+  potentially breaking, or compatible, prints a report, and exits `1` on
+  breaking changes (or potentially breaking ones with
+  `--fail-on-potentially-breaking`). `@invokta/tooling` also exports
   `runContractCommand`, `createContractSnapshot`, `serializeContractSnapshot`,
   and `diffContractSnapshots` (ADR 0046).
 
@@ -78,6 +192,40 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The `support-engine` example reports a missing ticket as the declared
   `TICKET_NOT_FOUND` domain error instead of `EXECUTION_FAILED`, and its local
   operator may access the missing ticket `T-404` to demonstrate it.
+- `ExecutionSource` adds `"http"`. Code that switches exhaustively over
+  invocation sources must handle the new member.
+- `@invokta/core` no longer imports Node.js built-in modules. It uses
+  `globalThis.crypto.randomUUID()` and `globalThis.performance.now()`, and reads
+  `util.types` through `process.getBuiltinModule` where the host provides it,
+  which keeps proxy and promise detection unchanged on Node.js, Deno, and Bun.
+  A Node.js process without it refuses to load the core instead of weakening
+  those checks; other hosts without it use a documented fallback that still
+  rejects proxied JSON values (ADR 0042).
+- `serveMcpHttp` is now a Node.js adapter over the same protocol implementation
+  as `createMcpHttpHandler`; its options, status codes, and connection handling
+  are unchanged, and `ServeMcpHttpOptions` extends `McpHttpHandlerOptions`.
+  Portable MCP tool names use a bundled SHA-256 implementation instead of
+  `node:crypto`, with identical results.
+- AE-LIMIT-04 is amended for the optional JWT bearer helper. Invokta still
+  provides no identity provider, token issuer, introspection client, OpenID
+  Connect discovery, DPoP, mTLS, policy language, PDP adapter, or session
+  binding.
+- The private `auth-jwt-bearer-engine` and `auth-auth0-engine` examples use
+  `@invokta/auth-jwt` instead of their own `jose` verifiers. Their exported
+  helpers change accordingly: `startAuthJwtBearerMcpHttp` takes an
+  `authenticate` function instead of a `verifier`, and `startAuth0McpHttp` a
+  `keySource` instead of a `verifier`; `createAuth0Authenticator` replaces
+  `createAuth0AccessTokenVerifier` and `createAuth0Authenticate`. Bearer
+  parsing now requires exactly one space and a compact JWS, the JWT bearer
+  example's `AUTH_JWT_ALGORITHMS` accepts only asymmetric algorithms, and its
+  new optional `AUTH_JWT_REQUIRED_SCOPES` names scopes every token must grant.
+- A capability whose output schema already declared one of the ADR 0044 forms
+  now receives content blocks after its MCP text block, and that text block
+  carries placeholders instead of the mapped base64 values. MCP consumers that
+  parsed the text block for that data must read `structuredContent`.
+- `validateMcpToolCatalog` returns a report instead of `undefined`, and
+  `invokta check-mcp` is no longer silent when the catalog has content
+  warnings. Its exit codes are unchanged.
 - `engine.describe()` results, and therefore CLI `describe` output, include the
   new required `access` field. Tests that compare a whole description for exact
   equality must add it, and hand-written `Engine` implementations must return
@@ -85,6 +233,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- The private `image-engine` example validates base64 images with a linear
+  scan. Its regular expression exhausted the stack on images of about 4 MiB,
+  well below its 32 MiB limit.
 - Release publication waits up to 10 minutes, with checks backing off from 5 to
   30 seconds, for npm to make each published version readable. It previously
   failed after about one minute while npm was still processing the first

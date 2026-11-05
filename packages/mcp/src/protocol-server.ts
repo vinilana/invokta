@@ -9,7 +9,7 @@ import {
   type ExecutionSource,
   type Principal,
 } from "@invokta/core";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
   ErrorCode,
@@ -17,6 +17,15 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { ProtocolVersionServer } from "./protocol-version.js";
+import {
+  createMcpToolCatalogReport,
+  createMcpToolResult,
+  type McpToolCallResult,
+  type McpToolCatalogReport,
+  type McpToolContentPlan,
+  planMcpToolContent,
+} from "./tool-content.js";
 import { toMcpToolName } from "./tool-name.js";
 
 interface McpServerOptions {
@@ -147,6 +156,11 @@ export interface McpToolCatalog<Capabilities extends CapabilityMap> {
   capabilityIdForToolName(
     toolName: string,
   ): Extract<keyof Capabilities, string> | undefined;
+  toolResult(
+    capabilityId: string,
+    output: Readonly<Record<string, unknown>>,
+    protocolVersion: string,
+  ): McpToolCallResult;
 }
 
 export class McpToolNameCollisionError extends TypeError {
@@ -173,6 +187,7 @@ export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
 ): McpToolCatalog<Capabilities> {
   type CapabilityId = Extract<keyof Capabilities, string>;
   const capabilityIdByToolName = new Map<string, CapabilityId>();
+  const contentPlanByCapabilityId = new Map<string, McpToolContentPlan>();
   const tools = engine.list().map((summary) => {
     const capabilityId = summary.id as CapabilityId;
     const toolName = toMcpToolName(capabilityId);
@@ -194,6 +209,10 @@ export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
     capabilityIdByToolName.set(toolName, capabilityId);
 
     const description = engine.describe(capabilityId);
+    contentPlanByCapabilityId.set(
+      capabilityId,
+      planMcpToolContent(description.outputSchema),
+    );
     const annotations = mapAnnotations(description.annotations);
     return Object.freeze({
       name: toolName,
@@ -216,14 +235,34 @@ export function createMcpToolCatalog<Capabilities extends CapabilityMap>(
     tools: frozenTools,
     capabilityIdForToolName: (toolName: string) =>
       capabilityIdByToolName.get(toolName),
+    toolResult: (
+      capabilityId: string,
+      output: Readonly<Record<string, unknown>>,
+      protocolVersion: string,
+    ) =>
+      createMcpToolResult(
+        contentPlanByCapabilityId.get(capabilityId) ?? [],
+        output,
+        protocolVersion,
+      ),
   });
 }
 
-/** Validates the exact MCP tool catalog without starting an adapter. */
+/**
+ * Validates the exact MCP tool catalog without starting an adapter and reports
+ * annotated output properties that will not produce content blocks.
+ */
 export function validateMcpToolCatalog<Capabilities extends CapabilityMap>(
   engine: Engine<Capabilities>,
-): void {
-  createMcpToolCatalog(engine);
+): McpToolCatalogReport {
+  const catalog = createMcpToolCatalog(engine);
+  return createMcpToolCatalogReport(
+    catalog.tools.map((tool) => ({
+      capabilityId: catalog.capabilityIdForToolName(tool.name) as string,
+      toolName: tool.name,
+      outputSchema: tool.outputSchema,
+    })),
+  );
 }
 
 export function createMcpServer<Capabilities extends CapabilityMap>(
@@ -231,7 +270,7 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
   options: McpServerOptions,
   catalog: McpToolCatalog<Capabilities> = createMcpToolCatalog(engine),
 ): Server {
-  const server = new Server(
+  const server = new ProtocolVersionServer(
     { name: engine.name, version: engine.version },
     { capabilities: { tools: {} } },
   );
@@ -261,16 +300,11 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
               : AbortSignal.any([extra.signal, options.requestSignal]),
         },
       );
-      const structuredContent = result as Readonly<Record<string, unknown>>;
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(structuredContent),
-          },
-        ],
-        structuredContent,
-      };
+      return catalog.toolResult(
+        capabilityId,
+        result as Readonly<Record<string, unknown>>,
+        server.protocolVersionFor(extra),
+      );
     } catch (error) {
       return errorResult(error);
     }

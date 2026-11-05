@@ -1,0 +1,187 @@
+---
+title: Return images, audio, and links over MCP
+description: Annotate an output contract so MCP clients receive native image, audio, and resource-link content blocks.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An MCP client can render an image or play audio when the tool result contains a
+native content block. Invokta derives those blocks from standard JSON Schema
+content keywords in the capability's output contract, so the handler, direct
+calls, and the CLI keep returning the same validated JSON.
+
+This recipe follows `image-engine`, whose generated assets reach MCP clients as
+`image` blocks over both stdio and HTTP.
+
+## Annotate the output contract
+
+<Steps>
+
+1. Validate base64 without a regular expression
+
+   ```ts
+   export function isBoundedBase64(value: string, maximumBytes: number) {
+     const length = value.length;
+     if (length === 0 || length % 4 !== 0) return false;
+     let end = length;
+     if (value.charCodeAt(end - 1) === 61) end -= 1;
+     if (value.charCodeAt(end - 1) === 61) end -= 1;
+     if ((length / 4) * 3 - (length - end) > maximumBytes) return false;
+     for (let index = 0; index < end; index += 1) {
+       if (!isBase64Code(value.charCodeAt(index))) return false;
+     }
+     return true;
+   }
+   ```
+
+   `isBase64Code` accepts `A-Z`, `a-z`, `0-9`, `+`, and `/`. Avoid
+   `z.base64()` and regular-expression patterns for media: the JSON Schema
+   `pattern` that `z.base64()` publishes makes AJV-based MCP clients, including
+   the official TypeScript client, exhaust the stack at about 4 MiB.
+
+2. Mark the base64 property of the asset
+
+   ```ts
+   function boundedBase64Schema(maximumBytes: number) {
+     return z
+       .string()
+       .max(Math.ceil(maximumBytes / 3) * 4)
+       .refine((value) => isBoundedBase64(value, maximumBytes));
+   }
+
+   export const imageAssetSchema = z.object({
+     mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+     base64Data: boundedBase64Schema(maximumGeneratedImageBytes).meta({
+       contentEncoding: "base64",
+     }),
+   });
+   ```
+
+   An object with an enumerated `mimeType` and exactly one property annotated
+   with `contentEncoding: "base64"` is a media object. Each value becomes one
+   block whose media type is the value's own `mimeType`.
+
+3. Use the asset at the top level of the output
+
+   ```ts
+   output: z.object({ images: z.array(imageAssetSchema).min(2).max(4) }),
+   ```
+
+   Only top-level properties and the items of top-level arrays are read. Bound
+   every annotated array with `.max()`: a result with more than 16 planned
+   values falls back to plain JSON. The handler still returns
+   `{ images: [{ mimeType, base64Data }, ...] }`; it does not know about MCP.
+
+4. Pick another form when it fits better
+
+   ```ts
+   output: z.object({
+     // A fixed media type: one image block.
+     chart: boundedBase64Schema(maximumChartBytes).meta({
+       contentEncoding: "base64",
+       contentMediaType: "image/png",
+     }),
+     // An explicit link: one resource_link block per item.
+     sources: z
+       .array(
+         z.object({
+           uri: z.httpUrl().meta({ contentMediaType: "text/uri-list" }),
+           name: z.string().min(1).max(256),
+           mimeType: z.string().optional(),
+         }),
+       )
+       .max(10),
+   }),
+   ```
+
+   The `text/uri-list` media type on `uri` is the opt-in; an ordinary
+   `{ uri, name }` object stays plain JSON. `z.httpUrl()` matches the
+   adapter's `http` and `https` rule; a link that also carries user
+   information, a backslash, or an empty authority is never linked.
+
+</Steps>
+
+Media types must be one of `image/png`, `image/jpeg`, `image/gif`,
+`image/webp`, `audio/wav`, `audio/mpeg`, `audio/ogg`, `audio/webm`,
+`audio/flac`, or `audio/aac`, spelled exactly in lowercase. Anything else,
+including `image/jpg` and SVG, stays an ordinary JSON property, and
+`invokta check-mcp` reports it as a warning.
+
+## What the MCP client receives
+
+`structuredContent` is always the complete validated output. The content array
+starts with the JSON text block, which keeps the output's structure and replaces
+each base64 value with a placeholder that names its block, followed by the
+blocks in schema and array order. A two-image campaign series returns:
+
+```json
+[
+  {
+    "type": "text",
+    "text": "{\"images\":[{\"mimeType\":\"image/png\",\"base64Data\":\"[content 1: image/png]\"},{\"mimeType\":\"image/png\",\"base64Data\":\"[content 2: image/png]\"}]}"
+  },
+  { "type": "image", "data": "<first base64>", "mimeType": "image/png" },
+  { "type": "image", "data": "<second base64>", "mimeType": "image/png" }
+]
+```
+
+<Aside type="note" title="Each value falls back on its own">
+  An invalid value, such as malformed base64 or a `mailto:` link, produces no
+  block and stays in the text block; every other value still maps. A client on
+  an older protocol revision receives only the block types its revision
+  defines: audio from `2025-03-26` and resource links from `2025-06-18`. Only
+  a result with more than 16 planned values returns the plain JSON result as a
+  whole.
+</Aside>
+
+Links must have a host and at most 8,192 characters, and the block carries the
+normalized URL; names must be non-empty and within 1,024 UTF-8 bytes. The
+adapter does not serve linked URIs through `resources/read`.
+
+## Run it
+
+Export the three provider credentials that the
+[`image-engine` README](https://github.com/vinilana/invokta/tree/main/examples/image-engine#configure)
+lists, build the repository, and start the authenticated MCP HTTP adapter:
+
+```sh
+yarn build
+IMAGE_ENGINE_BEARER_TOKEN='development-only-token' \
+  node examples/image-engine/dist/mcp-http.js
+```
+
+From another terminal, render one poster:
+
+```sh
+curl -s http://127.0.0.1:3000/mcp \
+  -H 'authorization: Bearer development-only-token' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  -H 'mcp-protocol-version: 2025-11-25' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"image_render-text-asset","arguments":{"prompt":"A restrained launch poster.","requiredText":"SHIP THE RIGHT THING"}}}'
+```
+
+The response's `result.content` holds the text block and one `image` block, and
+`result.structuredContent` holds the complete asset. The direct and CLI
+entry points return the same JSON as before.
+
+## Verify it
+
+The image-engine tests use local provider stubs, call the tools through the
+official MCP client over stdio and HTTP, and assert the exact `image` blocks:
+
+```sh
+yarn workspace @invokta/example-image test
+```
+
+Check your own engine's contract after its build; the command lists any
+annotation that will not map:
+
+```sh
+npx invokta check-mcp ./dist/engine.js
+```
+
+Read the [MCP reference](/reference/mcp/#rich-tool-results) for the complete
+mapping rules and the
+[`image-engine`](https://github.com/vinilana/invokta/tree/main/examples/image-engine)
+example for the annotated contract.

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   type AnyCapability,
+  applyMiddleware,
   createEngine,
   defineCapability,
   type EngineEvent,
@@ -360,6 +361,50 @@ describe("capability deprecation metadata", () => {
     } finally {
       process.off("unhandledRejection", unhandled);
     }
+  });
+});
+
+describe("deprecation through capability middleware", () => {
+  it("keeps the notice and the one warning for a wrapped capability", async () => {
+    const logger = createLogger();
+    const calls: string[] = [];
+    const capabilities = applyMiddleware(
+      {
+        legacy: capability({
+          deprecated: { reason: "Retired.", since: "1.0.0" },
+        }),
+      },
+      async ({ capabilityId, next }) => {
+        calls.push(capabilityId);
+        return next();
+      },
+    );
+    const engine = createEngine({
+      name: "middleware-deprecation-engine",
+      version: "1.0.0",
+      logger,
+      capabilities,
+    });
+
+    expect(engine.describe("legacy").deprecated).toEqual({
+      reason: "Retired.",
+      since: "1.0.0",
+    });
+    expect(engine.list()[0]?.deprecated).toEqual({
+      reason: "Retired.",
+      since: "1.0.0",
+    });
+    await expect(engine.invoke("legacy", { value: "a" })).resolves.toEqual({
+      result: "a",
+    });
+    await engine.invoke("legacy", { value: "b" }, { requestId: "second" });
+
+    expect(calls).toEqual(["legacy", "legacy"]);
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Deprecated capability invoked.",
+      expect.objectContaining({ capabilityId: "legacy", since: "1.0.0" }),
+    );
   });
 });
 

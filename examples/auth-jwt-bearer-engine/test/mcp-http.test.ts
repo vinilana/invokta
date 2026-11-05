@@ -1,19 +1,21 @@
+import { createJwtBearerAuthenticator } from "@invokta/auth-jwt";
 import type { McpHttpServerHandle } from "@invokta/mcp";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
-  createLocalJWKSet,
   exportJWK,
   generateKeyPair,
+  type JSONWebKeySet,
   type JWK,
-  type JWTVerifyGetKey,
   SignJWT,
 } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createAccessTokenVerifier } from "../src/identity/verifier.js";
-import { startAuthJwtBearerMcpHttp } from "../src/mcp-http.js";
+import {
+  defaultSignatureAlgorithms,
+  startAuthJwtBearerMcpHttp,
+} from "../src/mcp-http.js";
 
 const issuer = "https://identity.example.com";
 const signingKeyId = "test-signing-key";
@@ -22,7 +24,7 @@ let server: McpHttpServerHandle;
 let endpoint: URL;
 let resource: string;
 let signingKey: CryptoKey;
-let getKey: JWTVerifyGetKey;
+let jwks: JSONWebKeySet;
 
 async function mintToken(scope: string): Promise<string> {
   return new SignJWT({ scope })
@@ -44,7 +46,7 @@ beforeAll(async () => {
     alg: "RS256",
     use: "sig",
   };
-  getKey = createLocalJWKSet({ keys: [jwk] });
+  jwks = { keys: [jwk] };
 
   // The resource identifier must be known before the adapter starts, so an
   // ephemeral port is claimed first and reused for the real server. A
@@ -53,13 +55,23 @@ beforeAll(async () => {
   endpoint = new URL(resource);
 });
 
+// The challenge below names the same scope, so a client whose token lacks it
+// learns what to request instead of retrying the same credential.
+const requiredScopes = ["engine:invoke"];
+
+function authenticatorFor(audience: string) {
+  return createJwtBearerAuthenticator({
+    issuer,
+    audience,
+    algorithms: defaultSignatureAlgorithms,
+    jwks,
+    requiredScopes,
+  });
+}
+
 async function claimEphemeralPort(): Promise<number> {
   const probe = await startAuthJwtBearerMcpHttp({
-    verifier: createAccessTokenVerifier({
-      issuer,
-      audience: "https://placeholder.invalid/mcp",
-      getKey,
-    }),
+    authenticate: authenticatorFor("https://placeholder.invalid/mcp"),
     port: 0,
   });
   const { port } = probe.address();
@@ -74,18 +86,14 @@ async function bindWithKnownResource(
   const candidate = `http://127.0.0.1:${port}/mcp`;
   try {
     const handle = await startAuthJwtBearerMcpHttp({
-      verifier: createAccessTokenVerifier({
-        issuer,
-        audience: candidate,
-        getKey,
-      }),
+      authenticate: authenticatorFor(candidate),
       port,
       resourceMetadata: {
         resource: candidate,
         authorizationServers: [issuer],
         scopesSupported: ["engine:invoke"],
       },
-      challengeScopes: ["engine:invoke"],
+      challengeScopes: requiredScopes,
     });
     resource = candidate;
     return handle;
@@ -166,6 +174,31 @@ describe("authenticated MCP HTTP requests", () => {
     } finally {
       await client.close().catch(() => undefined);
     }
+  });
+
+  it("challenges a token that lacks the required scope", async () => {
+    const token = await mintToken("reports:read");
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "missing-scope",
+        method: "tools/call",
+        params: { name: "identity_whoami", arguments: {} },
+      }),
+    });
+    await response.arrayBuffer();
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toContain(
+      'scope="engine:invoke"',
+    );
   });
 
   it("rejects a token minted for another audience", async () => {

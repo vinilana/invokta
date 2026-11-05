@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256Hex } from "./sha256.js";
 
 const MAX_MCP_TOOL_NAME_LENGTH = 64;
 const MCP_TOOL_NAME_HASH_LENGTH = 12;
@@ -13,9 +13,6 @@ export function toMcpToolName(capabilityId: string): string {
   const portable = capabilityId.replace(/[^a-zA-Z0-9_-]/gu, "_") || "_";
   if (portable.length <= MAX_MCP_TOOL_NAME_LENGTH) return portable;
 
-  const hash = createHash("sha256")
-    .update(capabilityId, "utf8")
-    .digest("hex")
-    .slice(0, MCP_TOOL_NAME_HASH_LENGTH);
+  const hash = sha256Hex(capabilityId).slice(0, MCP_TOOL_NAME_HASH_LENGTH);
   return `${portable.slice(0, MCP_TOOL_NAME_PREFIX_LENGTH)}_${hash}`;
 }

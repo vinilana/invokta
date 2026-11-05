@@ -32,6 +32,7 @@ export {
 export {
   type McpHttpAuthenticationRequest,
   type McpHttpAuthOptions,
+  type McpHttpHandlerOptions,
   type McpHttpHeaderView,
   type McpHttpProtectedResourceMetadata,
   type McpHttpServerAddress,
@@ -39,11 +40,17 @@ export {
   type ServeMcpHttpOptions,
   serveMcpHttp,
 } from "./http.js";
+export { createMcpHttpHandler, type McpHttpHandler } from "./web.js";
 export { toMcpToolName } from "./tool-name.js";
 export {
   McpToolNameCollisionError,
   validateMcpToolCatalog,
 } from "./protocol-server.js";
+export type {
+  McpToolCatalogReport,
+  McpToolContentWarning,
+  McpToolContentWarningCode,
+} from "./tool-content.js";
 
 import { createMcpServer } from "./protocol-server.js";
 import { preserveFalsyRequestIds } from "./request-id-transport.js";
