@@ -166,6 +166,7 @@ interface HttpErrorBody {
 | `405` | `METHOD_NOT_ALLOWED`, with `Allow` |
 | `413` | `PAYLOAD_TOO_LARGE` |
 | `415` | `UNSUPPORTED_MEDIA_TYPE` |
+| `422` | `DOMAIN_ERROR`, a declared domain error with `publicDetails` `{ code, retryable, details? }` |
 | `500` | `OUTPUT_INVALID`, `EXECUTION_FAILED`, `INTERNAL_ERROR` |
 | `503` | `CANCELLED` |
 
@@ -173,7 +174,12 @@ interface HttpErrorBody {
 capability timeout, server shutdown, or dependency cancellation rather than by
 its own disconnect. The adapter uses neither the non-standard 499 nor 408
 Request Timeout, which describes a slow client and which some user agents
-retry automatically. `publicDetails` appears only when the
+retry automatically.
+
+`DOMAIN_ERROR` is 422 because the request was well-formed and authorized and
+the capability reported one of its declared domain outcomes. The status is the
+same for every domain code; branch on `publicDetails.code` and read
+`publicDetails.retryable` for the retry hint. `publicDetails` appears only when the
 `EngineError` provides it, and causes and stacks never appear. An unknown error,
 or one whose public fields cannot be serialized, becomes:
 
@@ -298,6 +304,7 @@ the relative base path, so no host is named.
 | Request body | `#/components/schemas/<name>.Input`, the input JSON Schema |
 | `200` response | `#/components/schemas/<name>.Output`, the output JSON Schema |
 | Error responses | The shared `Error` schema; 401 also documents `WWW-Authenticate` |
+| `422` response | Only for a capability with declared `errors`: a `oneOf` with one branch per domain code, fixing the code and retry hint, and `#/components/schemas/<name>.Error.<CODE>` for its details schema |
 | `security: "bearer"` (default) | An HTTP Bearer scheme required by every operation |
 
 `<name>` is the capability key with every character outside `A-Z`, `a-z`,

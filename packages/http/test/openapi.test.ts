@@ -244,6 +244,113 @@ describe("createHttpOpenApiDocument", () => {
     expect(JSON.stringify(document)).not.toMatch(/"(?:access|run)"/u);
   });
 
+  it("documents declared domain errors as a 422 response", () => {
+    const engine = createEngine({
+      name: "domain-engine",
+      version: "1.0.0",
+      capabilities: {
+        "seats.reserve": defineCapability({
+          description: "Reserves a seat.",
+          input: z.object({ seat: z.string() }),
+          output: z.object({ reserved: z.boolean() }),
+          access: "public",
+          errors: {
+            SEAT_TAKEN: {
+              description: "The seat is already reserved.",
+              details: z.object({ seat: z.string() }),
+            },
+            SALES_CLOSED: {
+              description: "Sales are closed for this event.",
+              retryable: true,
+            },
+          },
+          async run() {
+            return { reserved: true };
+          },
+        }),
+        "seats.list": defineCapability({
+          description: "Lists seats.",
+          input: z.object({}),
+          output: z.object({}),
+          access: "public",
+          async run() {
+            return {};
+          },
+        }),
+      },
+    });
+    const document = createHttpOpenApiDocument(engine);
+    const declared = engine.describe("seats.reserve").errors ?? [];
+    expect(declared).toHaveLength(2);
+
+    const invoke = operation(document, "/capabilities/seats.reserve", "post");
+    const response = invoke.responses["422"] as unknown as {
+      readonly description: string;
+      readonly content: {
+        readonly "application/json": {
+          readonly schema: {
+            readonly oneOf: ReadonlyArray<{
+              readonly title: string;
+              readonly description: string;
+              readonly properties: {
+                readonly error: {
+                  readonly required: ReadonlyArray<string>;
+                  readonly properties: {
+                    readonly code: unknown;
+                    readonly publicDetails: {
+                      readonly required: ReadonlyArray<string>;
+                      readonly properties: Readonly<Record<string, unknown>>;
+                    };
+                  };
+                };
+              };
+            }>;
+          };
+        };
+      };
+    };
+    expect(response.description).toContain("SEAT_TAKEN");
+    expect(response.description).toContain("SALES_CLOSED");
+    const branches = response.content["application/json"].schema.oneOf;
+    expect(branches.map((branch) => branch.title)).toEqual(
+      declared.map((error) => error.code),
+    );
+    for (const [index, error] of declared.entries()) {
+      const branch = branches[index];
+      expect(branch?.description).toBe(error.description);
+      const envelope = branch?.properties.error;
+      expect(envelope?.properties.code).toEqual({ const: "DOMAIN_ERROR" });
+      expect(envelope?.required).toContain("publicDetails");
+      const details = envelope?.properties.publicDetails;
+      expect(details?.required).toEqual(["code", "retryable"]);
+      expect(details?.properties.code).toEqual({ const: error.code });
+      expect(details?.properties.retryable).toEqual({
+        const: error.retryable,
+      });
+      const detailsSchema = details?.properties.details as
+        | { readonly $ref: string }
+        | undefined;
+      if (error.detailsSchema === undefined) {
+        expect(detailsSchema).toBeUndefined();
+      } else {
+        expect(resolvePointer(document, detailsSchema?.$ref ?? "")).toEqual(
+          error.detailsSchema,
+        );
+      }
+    }
+    expect(
+      Object.keys(
+        operation(document, "/capabilities/seats.list", "post").responses,
+      ),
+    ).not.toContain("422");
+    for (const reference of collectReferences(document)) {
+      expect(resolvePointer(document, reference)).toBeDefined();
+    }
+    for (const name of Object.keys(document.components.schemas as object)) {
+      expect(name).toMatch(componentName);
+    }
+  });
+
   it("declares bearer security by default and none on request", () => {
     const engine = createCatalogEngine();
 

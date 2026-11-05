@@ -98,18 +98,21 @@ export interface HttpErrorBody {
   };
 }
 
-const engineErrorStatus: ReadonlyMap<string, number> = new Map<
-  EngineErrorCode,
-  number
->([
-  ["INPUT_INVALID", 400],
-  ["UNAUTHENTICATED", 401],
-  ["FORBIDDEN", 403],
-  ["CAPABILITY_NOT_FOUND", 404],
-  ["OUTPUT_INVALID", 500],
-  ["EXECUTION_FAILED", 500],
-  ["CANCELLED", 503],
-]);
+// `satisfies` makes a new engine error code a compile error until it has a
+// status; the Map keeps lookups of caller-influenced strings prototype-free.
+const engineErrorStatuses = {
+  INPUT_INVALID: 400,
+  UNAUTHENTICATED: 401,
+  FORBIDDEN: 403,
+  CAPABILITY_NOT_FOUND: 404,
+  DOMAIN_ERROR: 422,
+  OUTPUT_INVALID: 500,
+  EXECUTION_FAILED: 500,
+  CANCELLED: 503,
+} as const satisfies Record<EngineErrorCode, number>;
+const engineErrorStatus: ReadonlyMap<string, number> = new Map(
+  Object.entries(engineErrorStatuses),
+);
 
 const adapterErrorMessages: Readonly<Record<HttpAdapterErrorCode, string>> =
   Object.freeze({

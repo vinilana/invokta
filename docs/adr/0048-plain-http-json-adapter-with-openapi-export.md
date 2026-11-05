@@ -106,6 +106,7 @@ becomes the generic `EXECUTION_FAILED` 500 body.
 | `405` | `METHOD_NOT_ALLOWED`, with `Allow` |
 | `413` | `PAYLOAD_TOO_LARGE` |
 | `415` | `UNSUPPORTED_MEDIA_TYPE` |
+| `422` | `DOMAIN_ERROR` |
 | `500` | `OUTPUT_INVALID`, `EXECUTION_FAILED`, `INTERNAL_ERROR` |
 | `503` | `CANCELLED` |
 
@@ -120,9 +121,22 @@ automatically, which is unsafe for a non-idempotent invocation. 504 describes a
 gateway's upstream timeout and does not cover shutdown. A 503 without
 `Retry-After` makes no promise about when a retry could succeed.
 
+`DOMAIN_ERROR` (ADR 0045) maps to 422 Unprocessable Content with the same body,
+whose `publicDetails` is `{ code, retryable, details? }`. The request was
+well-formed, authenticated, and authorized, its input satisfied the contract,
+and the capability reported one of its declared domain outcomes. 400 stays
+reserved for contract violations (`INPUT_INVALID`, malformed JSON), so a client
+can tell a malformed request from a domain rejection. 409 Conflict and 404 Not
+Found carry specific semantics that the adapter cannot infer from a domain
+code, and a 5xx status would report a declared, expected outcome as a server
+failure. The status does not vary with the domain code or `retryable`; clients
+branch on `publicDetails.code` and read the retry hint from the body.
+
 The adapter-only codes are a closed set exported as `HttpAdapterErrorCode`;
-`HttpErrorCode` is their union with `EngineErrorCode`. An `EngineError` code
-outside the seven-code taxonomy fails closed as the generic 500. Every response
+`HttpErrorCode` is their union with `EngineErrorCode`. The status table is
+typed against `EngineErrorCode`, so a future framework code fails to compile
+until it has a status, and a code outside the taxonomy fails closed as the
+generic 500. Every response
 carries `Content-Type: application/json` (except a preflight's empty 204),
 `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`.
 
@@ -197,8 +211,19 @@ the side, and the identifier, rather than publishing an ambiguous document.
 Anchors scoped inside a subschema with its own `$id` are checked through that
 `$id`. Engines whose schemas carry no such identifiers, which is the default
 output of common converters, are unaffected. The MCP adapter embeds each schema
-in its own tool definition and is not subject to this rule. Errors reference one shared `Error` schema; 401 also documents
-`WWW-Authenticate`. When authentication is required, the document declares an
+in its own tool definition and is not subject to this rule.
+
+Errors reference one shared `Error` schema; 401 also documents
+`WWW-Authenticate`. A capability that declares domain errors also gets a 422
+response whose schema is a `oneOf` with one branch per declared code, in
+declaration order. Each branch is titled with the code, carries its public
+description, and fixes `error.code` to `DOMAIN_ERROR`,
+`publicDetails.code` to the domain code, and `publicDetails.retryable` to its
+hint. A declared details schema is embedded as
+`#/components/schemas/<name>.Error.<CODE>` and referenced from
+`publicDetails.details`, under the same rebasing and identifier rules as input
+and output schemas. A capability without declarations has no 422 response,
+because it cannot produce `DOMAIN_ERROR`. When authentication is required, the document declares an
 HTTP Bearer security scheme matching the challenge; with authentication
 disabled it declares none. Each call returns a new plain object that a host may
 post-process, for example to describe another credential scheme, before

@@ -53,6 +53,7 @@ without causes or stacks:
 | 405 | `METHOD_NOT_ALLOWED` with `Allow` |
 | 413 | `PAYLOAD_TOO_LARGE` |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` |
+| 422 | `DOMAIN_ERROR` (a declared domain error) |
 | 500 | `OUTPUT_INVALID`, `EXECUTION_FAILED`, `INTERNAL_ERROR` |
 | 503 | `CANCELLED` |
 

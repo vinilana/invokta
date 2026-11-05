@@ -85,6 +85,23 @@ describe("support engine plain HTTP handler", () => {
     expect(text).not.toContain("attacker");
   });
 
+  it("returns the declared domain error as 422", async () => {
+    const response = await handler(classify({ ticketId: "T-404" }));
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "DOMAIN_ERROR",
+        message: "The requested ticket does not exist.",
+        publicDetails: {
+          code: "TICKET_NOT_FOUND",
+          retryable: false,
+          details: { ticketId: "T-404" },
+        },
+      },
+    });
+  });
+
   it("publishes the capability contract as OpenAPI", async () => {
     const response = await handler(request("/openapi.json", { token }));
     const document = (await response.json()) as {
@@ -100,5 +117,12 @@ describe("support engine plain HTTP handler", () => {
     expect(
       document.components.schemas["support.classify-ticket.Input"],
     ).toEqual(engine.describe("support.classify-ticket").inputSchema);
+    expect(
+      document.components.schemas[
+        "support.classify-ticket.Error.TICKET_NOT_FOUND"
+      ],
+    ).toEqual(
+      engine.describe("support.classify-ticket").errors?.[0]?.detailsSchema,
+    );
   });
 });

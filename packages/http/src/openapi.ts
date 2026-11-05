@@ -301,6 +301,19 @@ function fixedSchemas() {
         inputSchema: { type: "object" },
         outputSchema: { type: "object" },
         timeoutMs: { type: "integer", minimum: 1, maximum: 2_147_483_647 },
+        errors: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["code", "description", "retryable"],
+            properties: {
+              code: { type: "string" },
+              description: { type: "string" },
+              retryable: { type: "boolean" },
+              detailsSchema: { type: "object" },
+            },
+          },
+        },
       },
     },
     CapabilityList: {
@@ -342,6 +355,70 @@ function schemaComponent(
     { pointer: `${COMPONENT_SCHEMAS}${name}`, owner, identifiers },
     true,
   ) as Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Documents a capability's declared domain errors as its 422 response: one
+ * `oneOf` branch per declared code, in declaration order, fixing the domain
+ * code and retry hint and referencing the details schema as its own component.
+ * A capability without declarations cannot produce `DOMAIN_ERROR`, so it gets
+ * no 422 response.
+ */
+function domainErrorResponse(
+  description: CapabilityDescription,
+  name: string,
+  owner: string,
+  schemas: Record<string, unknown>,
+  identifiers: Map<string, string>,
+): Record<string, unknown> {
+  const declared = description.errors ?? [];
+  if (declared.length === 0) return {};
+  const branches = declared.map((error) => {
+    let details: Record<string, unknown> = {};
+    if (error.detailsSchema !== undefined) {
+      const detailsName = `${name}.Error.${error.code}`;
+      schemas[detailsName] = schemaComponent(
+        error.detailsSchema,
+        detailsName,
+        `${owner} ${error.code} details schema`,
+        identifiers,
+      );
+      details = { details: { $ref: `${COMPONENT_SCHEMAS}${detailsName}` } };
+    }
+    return {
+      title: error.code,
+      description: error.description,
+      type: "object",
+      required: ["error"],
+      properties: {
+        error: {
+          type: "object",
+          required: ["code", "message", "publicDetails"],
+          properties: {
+            code: { const: "DOMAIN_ERROR" },
+            message: { type: "string" },
+            publicDetails: {
+              type: "object",
+              required: ["code", "retryable"],
+              properties: {
+                code: { const: error.code },
+                retryable: { const: error.retryable },
+                ...details,
+              },
+            },
+          },
+        },
+      },
+    };
+  });
+  return {
+    "422": {
+      description: `A declared domain error: ${declared
+        .map((error) => error.code)
+        .join(", ")}.`,
+      content: { "application/json": { schema: { oneOf: branches } } },
+    },
+  };
 }
 
 /**
@@ -436,6 +513,13 @@ export function createHttpOpenApiDocument<Capabilities extends CapabilityMap>(
             content: jsonContent(outputName),
           },
           ...errorResponses(invokeErrors),
+          ...domainErrorResponse(
+            description,
+            name,
+            owner,
+            schemas,
+            identifiers,
+          ),
         },
       },
     };

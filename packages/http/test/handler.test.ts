@@ -1,4 +1,5 @@
 import {
+  CapabilityError,
   createEngine,
   defineCapability,
   type Engine,
@@ -133,6 +134,27 @@ function createTestEngine(
             code: "FORBIDDEN",
             message: "Denied with unsafe details.",
             publicDetails: { amount: 1n },
+          });
+        },
+      }),
+      "support.reserve": defineCapability({
+        description: "Reserves a seat or reports a declared domain error.",
+        input: z.object({ seat: z.string() }),
+        output: z.object({ reserved: z.boolean() }),
+        access: "public",
+        errors: {
+          SEAT_TAKEN: {
+            description: "The seat is already reserved.",
+            details: z.object({ seat: z.string() }),
+            retryable: false,
+          },
+        },
+        async run({ input }) {
+          if (input.seat === "undeclared") {
+            throw new CapabilityError("NOT_DECLARED");
+          }
+          throw new CapabilityError("SEAT_TAKEN", {
+            details: { seat: input.seat },
           });
         },
       }),
@@ -600,6 +622,7 @@ describe("createHttpHandler error mapping", () => {
     ["support.bad-output", {}, 500, "OUTPUT_INVALID"],
     ["support.broken", {}, 500, "EXECUTION_FAILED"],
     ["support.slow", {}, 503, "CANCELLED"],
+    ["support.reserve", { seat: "12A" }, 422, "DOMAIN_ERROR"],
   ] as const;
 
   it.each(cases)(
@@ -634,6 +657,30 @@ describe("createHttpHandler error mapping", () => {
       expect(text).not.toContain("cause");
     },
   );
+
+  it("maps a declared domain error to 422 with its public details", async () => {
+    const handler = handlerFor(createTestEngine());
+
+    const declared = await handler(
+      post("/capabilities/support.reserve", { seat: "12A" }),
+    );
+    expect(declared.status).toBe(422);
+    expect(await errorOf(declared)).toEqual({
+      code: "DOMAIN_ERROR",
+      message: "The seat is already reserved.",
+      publicDetails: {
+        code: "SEAT_TAKEN",
+        retryable: false,
+        details: { seat: "12A" },
+      },
+    });
+
+    const undeclared = await handler(
+      post("/capabilities/support.reserve", { seat: "undeclared" }),
+    );
+    expect(undeclared.status).toBe(500);
+    expect((await errorOf(undeclared)).code).toBe("EXECUTION_FAILED");
+  });
 
   it("issues a Bearer challenge for every 401", async () => {
     const response = await handlerFor(createTestEngine())(

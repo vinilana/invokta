@@ -396,7 +396,8 @@ every route, including the OpenAPI document. `null` or a malformed principal is
 **AE-HTTP-03 — Errors and export.** Every error body is
 `{ error: { code, message, publicDetails? } }` without causes or stacks.
 `INPUT_INVALID` is 400, `UNAUTHENTICATED` 401, `FORBIDDEN` 403,
-`CAPABILITY_NOT_FOUND` 404, `OUTPUT_INVALID` and `EXECUTION_FAILED` 500, and
+`CAPABILITY_NOT_FOUND` 404, `DOMAIN_ERROR` 422, `OUTPUT_INVALID` and
+`EXECUTION_FAILED` 500, and
 `CANCELLED` 503; an unstable or unserializable error is the generic
 `EXECUTION_FAILED` 500. The OpenAPI 3.1 document is derived only from `list`
 and `describe`, embeds each schema as a component with local references rebased

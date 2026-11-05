@@ -47,7 +47,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   is a 404 that never reaches `engine.invoke` or its events; every invocation
   runs through `engine.invoke` with source `http` and the request signal.
   Errors keep the sanitized `code`, `message`, and optional
-  `publicDetails` and map to HTTP statuses, with `CANCELLED` as 503. Required
+  `publicDetails` and map to HTTP statuses, with a declared `DOMAIN_ERROR` as
+  422 (documented per capability in the OpenAPI document) and `CANCELLED` as
+  503. Required
   or explicitly disabled authentication uses the same structural request as
   MCP HTTP; the loopback host allowlist, Origin rejection without an explicit
   CORS allowlist, and a 1,048,576-byte default body limit match the MCP HTTP
