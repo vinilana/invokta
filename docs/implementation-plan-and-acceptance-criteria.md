@@ -40,6 +40,7 @@ persistence, configuration field, or operational limit:
 | `AE-OBS-01` | Three minimal events preserve order and contain no payloads or credentials |
 | `AE-CLI-01..04` | Integration covers commands, input channels, schema-derived flag decoding, collisions, input-only properties, help pages and their bounds, UTF-8 failure, writers, and exit codes |
 | `AE-MCP-01..04` | An official client lists and calls tools over stdio and HTTP; generated MCP engines preflight the published catalog; tests cover schemas, naming collisions, errors, cancellation boundaries, statelessness, boundary security, and the configured mount path with its path-suffix resource metadata; plain Fetch `Request` fixtures cover the same boundary through the Web handler |
+| `AE-HTTP-01..03` | Plain `Request` tests cover every route, base path, status mapping, sanitized bodies, both auth modes, the structural authentication request, host and CORS boundaries with preflight, declared and streamed body limits, strict UTF-8, client cancellation, and the `http` source, and unknown capability IDs that never reach `invoke`, events, or body reading; OpenAPI tests prove structure, resolvable references, schemas equal to `describe()` including `__proto__` properties, fail-closed duplicate identifiers, and rejected dot-segment keys; a Node server test covers request-target aliases and duplicate headers, and an example engine entrypoint invokes through `engine.invoke`; a cross-package type test proves the authentication request equals MCP HTTP's; a source test keeps package-root modules free of Node-only imports |
 | `AE-MCP-CLIENT-01..03` | Public type tests prove SDK isolation; stdio and HTTP fixtures cover exact descriptors, initialization, pagination, manual calls, cancellation, closure, secure URLs, authentication, and byte limits |
 | `AE-SEC-01..02` | Authentication occurs before `invoke`; authorization occurs before `run`; insecure authentication requires explicit opt-in |
 | `AE-SEC-03` | Locally generated keys and loopback JWKS fixtures cover every rejection class as `null`, required scopes, default and custom principal mapping, inclusive token-length and clock-tolerance bounds, configuration validation and snapshots, key-set outages, redirects, malformed key sets, tokens without `kid` among several keys including the eight-candidate bound, cancellation, cache and cooldown reuse, the failed-fetch window under a fake clock, an MCP HTTP 401 for a forged token without `kid`, and a sanitized MCP HTTP 500 |
@@ -68,8 +69,10 @@ tarball passes an isolated consumer smoke test.
 - Documentation distinguishes prompts, rules, skills, loops, graphs, harnesses,
   the Invokta framework, and the shared Action Engine category.
 - The core public API remains small, with required schemas and access rules.
-- The same capability works directly, through CLI, MCP stdio, and MCP HTTP.
-- CLI and MCP call only `engine.invoke`; the official MCP SDK remains isolated.
+- The same capability works directly, through CLI, MCP stdio, MCP HTTP, and
+  plain HTTP JSON.
+- CLI, MCP, and plain HTTP call only `engine.invoke`; the official MCP SDK
+  remains isolated.
 - Protected HTTP authenticates before `invoke`; authorization occurs before
   `run`; credentials never appear in logs or events.
 - Typecheck, lint, formatting, unit and integration tests, build, dependency

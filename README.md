@@ -12,8 +12,9 @@ means the capability can be called without forcing the user through your UI or
 into a proprietary agent.
 
 Define the domain contract, access rule, tools, and validation once. Publish the
-same implementation through application code, the CLI, MCP stdio, or stateless
-MCP Streamable HTTP. Your product continues to own the action while users keep
+same implementation through application code, the CLI, MCP stdio, stateless
+MCP Streamable HTTP, or plain HTTP JSON with a generated OpenAPI description.
+Your product continues to own the action while users keep
 the agent and interface they prefer.
 
 For example, a calendar API can create an event. An Appointment Scheduling
@@ -99,7 +100,8 @@ This boundary gives the action:
 - tests that do not require a complete agent session; and
 - independent ownership and versioning as its internals evolve.
 
-CLI and MCP adapters always reach capability execution through `engine.invoke`.
+CLI, MCP, and HTTP adapters always reach capability execution through
+`engine.invoke`.
 Business rules do not move into transport handlers.
 
 ## From MCP access to an owned product capability
@@ -152,7 +154,7 @@ sales, healthcare, recruiting, support, and operations.
 | Runtime input and output validation | Prompts, models, tools, scripts, and templates |
 | Access enforcement and structured errors | Authentication and domain authorization integrations |
 | Cancellation and minimal invocation events | Provider clients, data stores, and outbound connectors |
-| Direct, CLI, MCP stdio, and stateless MCP HTTP entry points | Evaluations, metrics, and outcome-quality rules |
+| Direct, CLI, MCP stdio, stateless MCP HTTP, and plain HTTP JSON entry points | Evaluations, metrics, and outcome-quality rules |
 | Composition checks, devtools, installation, and deployment helpers | Deployment configuration and dependency lifecycle |
 
 Invokta is deliberately not an identity provider, model router, agent harness,
@@ -170,8 +172,10 @@ turning the framework into a service container.
 - `@invokta/mcp` publishes capabilities as tools over stdio and secure,
   stateless Streamable HTTP, from its own Node.js listener or a Web-standard
   `Request` handler for servers and Fetch runtimes you operate.
+- `@invokta/http` publishes capabilities as plain HTTP JSON routes from a
+  Web-standard handler and generates their OpenAPI 3.1 description.
 - `@invokta/auth-jwt` optionally verifies one issuer's JWT bearer access
-  tokens as the MCP HTTP authentication hook.
+  tokens as the MCP HTTP or plain HTTP authentication hook.
 - `@invokta/tooling` validates composed capabilities and final MCP tool names.
 - `@invokta/devtools` provides an engine inspector plus MCP and CLI
   workbenches.
@@ -218,8 +222,8 @@ for profile contents, automation flags, GitHub imports, and OpenAPI limits.
 
 - [`hello-engine`](./examples/hello-engine/) is the shortest complete path.
 - [`support-engine`](./examples/support-engine/) demonstrates dependency
-  injection, authorization, a declared domain error, and all four execution
-  channels.
+  injection, authorization, a declared domain error, and five execution
+  channels, including plain HTTP JSON.
 - [`crawl-engine`](./examples/crawl-engine/) puts Firecrawl behind an
   engine-owned `WebCrawler` port.
 - [`composed-engine`](./examples/composed-engine/) combines local, atomic, and

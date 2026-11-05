@@ -15,6 +15,11 @@ introspection, or workload-identity provider. For signed JWT access tokens from
 one issuer, the optional [`@invokta/auth-jwt`](/reference/auth-jwt/) package
 provides a ready-made hook.
 
+The same hook works with the plain HTTP JSON adapter in
+[`@invokta/http`](/reference/http/): its authentication request has the same
+`path`, `method`, header view, and signal, so one authenticator serves both
+adapters.
+
 ## Integrate a verifier
 
 <Steps>

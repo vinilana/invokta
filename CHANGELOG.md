@@ -49,6 +49,29 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   JSON Schema, `invocation.failed` events carry the `domainCode`, and the CLI
   (exit code `1`) and MCP tool errors include the domain code, retry hint, and
   details (ADR 0045).
+- `@invokta/http` is a new runtime package for consumers that do not speak MCP
+  (ADR 0048). `createHttpHandler(engine, options)` returns a Web-standard
+  `(request: Request) => Promise<Response>` handler with no Node-only imports
+  that serves `GET /capabilities`, `GET /capabilities/{id}`,
+  `POST /capabilities/{id}`, and `GET /openapi.json` below a validated base
+  path. Capability IDs are resolved against the catalog first, so an unknown ID
+  is a 404 that never reaches `engine.invoke` or its events; every invocation
+  runs through `engine.invoke` with source `http` and the request signal.
+  Errors keep the sanitized `code`, `message`, and optional `publicDetails`
+  and map to HTTP statuses, with a declared `DOMAIN_ERROR` as 422 (documented
+  per capability in the OpenAPI document) and `CANCELLED` as 503. Required or
+  explicitly disabled authentication uses the same structural request as MCP
+  HTTP, so `createJwtBearerAuthenticator` from `@invokta/auth-jwt` plugs in
+  directly; the loopback host allowlist, Origin rejection without an explicit
+  CORS allowlist, and a 1,048,576-byte default body limit match the MCP HTTP
+  defaults. `createHttpOpenApiDocument` generates the OpenAPI 3.1 document from
+  `list` and `describe` only and fails closed on a JSON Schema identifier that
+  would occur twice. `@invokta/http/node` adds `serveHttp` for Node, rejecting
+  dot-segment targets and duplicated `Host` or `Authorization` headers.
+  Configure an npm trusted publisher for the package before the next release
+  tag.
+- The `support-engine` example adds a plain HTTP JSON entrypoint that shares one
+  development authenticator with its MCP HTTP entrypoint.
 - `@invokta/auth-jwt` provides `createJwtBearerAuthenticator`, an optional JWT
   bearer authenticator usable directly as the `serveMcpHttp` `authenticate`
   hook or with any adapter exposing `headers.get` and an optional `signal`
@@ -85,6 +108,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The `support-engine` example reports a missing ticket as the declared
   `TICKET_NOT_FOUND` domain error instead of `EXECUTION_FAILED`, and its local
   operator may access the missing ticket `T-404` to demonstrate it.
+- `ExecutionSource` adds `"http"`. Code that switches exhaustively over
+  invocation sources must handle the new member.
 - `@invokta/core` no longer imports Node.js built-in modules. It uses
   `globalThis.crypto.randomUUID()` and `globalThis.performance.now()`, and reads
   `util.types` through `process.getBuiltinModule` where the host provides it,

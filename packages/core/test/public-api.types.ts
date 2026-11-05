@@ -86,7 +86,7 @@ const access: AccessRule<{ value: number }> = ({
   }> | null>();
   expectTypeOf(input).toEqualTypeOf<{ value: number }>();
   expectTypeOf(context.source).toEqualTypeOf<
-    "direct" | "cli" | "mcp-stdio" | "mcp-http"
+    "direct" | "cli" | "mcp-stdio" | "mcp-http" | "http"
   >();
   expectTypeOf(capabilityId).toEqualTypeOf<string>();
   return true;

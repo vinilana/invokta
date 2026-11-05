@@ -1,6 +1,6 @@
 ---
 title: Execution channels
-description: Publish the same capability through direct calls, CLI, MCP stdio, and MCP HTTP.
+description: Publish the same capability through direct calls, CLI, MCP stdio, MCP HTTP, and plain HTTP JSON.
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
@@ -162,6 +162,75 @@ To serve the same endpoint from a server or runtime you already operate, mount
 `createMcpHttpHandler` from `@invokta/mcp/web` as described in the
 [Web-standard runtimes guide](/guides/web-standard-runtimes/).
 
+## Plain HTTP JSON
+
+Use [`@invokta/http`](/reference/http/) when a remote application, gateway, or
+automation needs HTTP without MCP. Its handler is a Web-standard
+`(request: Request) => Promise<Response>` function. Like `@invokta/core` and
+`@invokta/mcp/web`, it imports no Node.js built-in module, so the same
+composition root runs on Node.js, Deno, Bun, Cloudflare Workers, or inside a web
+framework. Node.js is the runtime verified by tests; see the
+[Web-standard runtimes guide](/guides/web-standard-runtimes/) for the others:
+
+```ts
+import { createHttpHandler } from "@invokta/http";
+
+import { authenticate } from "./http-auth.js";
+import { engine } from "./engine.js";
+
+export const handler = createHttpHandler(engine, {
+  allowedHosts: ["engine.example"],
+  auth: { mode: "required", authenticate },
+});
+```
+
+On Node, `serveHttp` from `@invokta/http/node` serves that handler on
+`127.0.0.1:3000` by default:
+
+```ts
+import { serveHttp } from "@invokta/http/node";
+
+const server = await serveHttp(engine, {
+  auth: { mode: "required", authenticate },
+});
+```
+
+<Tabs>
+  <TabItem label="List">
+    ```sh
+    curl -sS http://127.0.0.1:3000/capabilities \
+      -H 'authorization: Bearer <token>'
+    ```
+  </TabItem>
+  <TabItem label="Describe">
+    ```sh
+    curl -sS http://127.0.0.1:3000/capabilities/onboarding.create-welcome-message \
+      -H 'authorization: Bearer <token>'
+    ```
+  </TabItem>
+  <TabItem label="Invoke">
+    ```sh
+    curl -sS http://127.0.0.1:3000/capabilities/onboarding.create-welcome-message \
+      -H 'authorization: Bearer <token>' \
+      -H 'content-type: application/json' \
+      -d '{"name":"Ada"}'
+    ```
+  </TabItem>
+  <TabItem label="OpenAPI">
+    ```sh
+    curl -sS http://127.0.0.1:3000/openapi.json \
+      -H 'authorization: Bearer <token>'
+    ```
+  </TabItem>
+</Tabs>
+
+Each capability is one `POST` route whose JSON body is the capability input and
+whose `200` body is its validated output. Errors map to HTTP statuses with the
+same `code`, `message`, and optional `publicDetails` the other adapters
+publish. The authentication hook receives the same request shape as MCP HTTP,
+so one authenticator serves both, and `openapi.json` describes every route from
+`engine.list()` and `engine.describe()`.
+
 ## What stays consistent
 
 | Concern | Owner |
@@ -173,5 +242,6 @@ To serve the same endpoint from a server or runtime you already operate, mount
 | Domain execution | Capability `run` |
 | Normalized errors and events | `engine.invoke` |
 
-Use the [`@invokta/cli` reference](/reference/cli/) or
-[`@invokta/mcp` reference](/reference/mcp/) for boundary-specific options.
+Use the [`@invokta/cli` reference](/reference/cli/),
+[`@invokta/mcp` reference](/reference/mcp/), or
+[`@invokta/http` reference](/reference/http/) for boundary-specific options.

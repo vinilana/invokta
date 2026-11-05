@@ -55,7 +55,8 @@ interface JwtPrincipal {
 }
 ```
 
-The request view is structural. The MCP HTTP authentication request, a Web
+The request view is structural. The MCP HTTP and plain HTTP
+([`@invokta/http`](/reference/http/)) authentication requests, a Web
 `Request`, and any adapter exposing the same header lookup fit without
 conversion. `JwtPrincipal` is structurally identical to the core `Principal`.
 

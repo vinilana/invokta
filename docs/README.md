@@ -2,8 +2,8 @@
 
 Invokta is a TypeScript framework for building agent-ready software without
 coupling domain capabilities to one agent harness. Define a capability once and
-execute the same implementation through a direct call, the CLI, MCP stdio, or
-stateless MCP Streamable HTTP.
+execute the same implementation through a direct call, the CLI, MCP stdio,
+stateless MCP Streamable HTTP, or plain HTTP JSON with an OpenAPI description.
 
 An Action Engine is the headless capability boundary behind those channels. A
 customer can use an MCP-compatible agent, an internal team can change harnesses,
