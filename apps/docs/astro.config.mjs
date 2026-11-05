@@ -128,6 +128,7 @@ export default defineConfig({
             { slug: "recipes/capability-composition" },
             { slug: "recipes/mcp-stdio-consumer" },
             { slug: "recipes/external-provider" },
+            { slug: "recipes/long-running-progress" },
             {
               label: "Authentication",
               items: [

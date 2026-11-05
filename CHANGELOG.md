@@ -7,6 +7,43 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Capabilities can report advisory progress with
+  `context.reportProgress({ progress, total?, message? })` (ADR 0043). Direct
+  callers observe frozen snapshots through the new `InvokeOptions.onProgress`
+  callback, and `@invokta/core` exports the `ProgressReport` type. Reports are
+  validated (finite `progress` of at least zero, positive `total`, messages of
+  at most 1,024 UTF-16 code units), non-increasing reports are dropped, and
+  delivery happens only while `run` is pending and stops at settlement,
+  cancellation, or timeout. Reporting never throws, never waits for the sink,
+  and never changes the invocation; sink failures are contained and logged once
+  per invocation without payloads.
+- MCP stdio and HTTP forward progress as `notifications/progress` when a
+  `tools/call` request carries `_meta.progressToken` (a string of at most 256
+  UTF-16 code units or a safe integer), echoing the token and sending at most
+  one notification per 100 ms per request. Stateless MCP HTTP answers such a
+  request with a request-scoped `text/event-stream` response that carries its
+  notifications and then its result; every other request keeps the JSON
+  response and all request bounds are unchanged.
+- `runCli` in the `human` format writes each progress report as one
+  `progress <progress>[/<total>][: <message>]` line to stderr, escaping
+  terminal-active characters. The default `json` format ignores progress.
+- The `image-engine` example reports liveness immediately and every 15 seconds
+  while each provider request is pending, with a progress recipe in the
+  documentation site.
+
+### Changed
+
+- `ExecutionContext` gains the required `reportProgress` member, amending
+  `AE-CTX-01` to six fields. Code that builds an `ExecutionContext` by hand,
+  such as a unit test that calls `run` directly, must now provide it, for
+  example `reportProgress: () => undefined`. An `InvokeOptions.onProgress`
+  value that is not a function fails the invocation as `EXECUTION_FAILED`.
+- `AE-LIMIT-01` and `AE-LIMIT-05` no longer exclude progress. MCP Tasks,
+  streaming partial results, resumption, and persisted progress remain out of
+  scope.
+
 ### Fixed
 
 - Release publication waits up to 10 minutes, with checks backing off from 5 to

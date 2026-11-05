@@ -16,6 +16,7 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { createProgressForwarder, readProgressToken } from "./progress.js";
 import { toMcpToolName } from "./tool-name.js";
 
 interface McpServerOptions {
@@ -218,6 +219,16 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
         `Tool ${request.params.name} not found`,
       );
     }
+    const progressToken = readProgressToken(request.params);
+    const progress =
+      progressToken === undefined
+        ? undefined
+        : createProgressForwarder(progressToken, (params) =>
+            extra.sendNotification({
+              method: "notifications/progress",
+              params,
+            }),
+          );
     try {
       const result = await engine.invoke(
         capabilityId,
@@ -229,6 +240,7 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
             options.requestSignal === undefined
               ? extra.signal
               : AbortSignal.any([extra.signal, options.requestSignal]),
+          ...(progress === undefined ? {} : { onProgress: progress.report }),
         },
       );
       const structuredContent = result as Readonly<Record<string, unknown>>;
@@ -243,6 +255,8 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
       };
     } catch (error) {
       return errorResult(error);
+    } finally {
+      progress?.close();
     }
   });
 

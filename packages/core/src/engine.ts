@@ -20,6 +20,7 @@ import type {
   ExecutionContext,
   InvokeOptions,
   Principal,
+  ProgressReport,
 } from "./types.js";
 
 type CapabilityInput<Capability extends AnyCapability> = InferSchemaInput<
@@ -60,6 +61,8 @@ const noOpLogger: EngineLogger = Object.freeze({
 });
 
 const maximumTimeoutMs = 2_147_483_647;
+const maximumProgressMessageLength = 1_024;
+const ignoreProgress = (): void => undefined;
 const abortSignalAbortedGetter = Object.getOwnPropertyDescriptor(
   AbortSignal.prototype,
   "aborted",
@@ -337,6 +340,101 @@ function clonePrincipal(snapshot: Principal | null): Principal | null {
   return snapshot === null ? null : structuredClone(snapshot);
 }
 
+type ProgressCallback = NonNullable<InvokeOptions["onProgress"]>;
+
+interface ProgressReporter {
+  readonly report: ExecutionContext["reportProgress"];
+  close(): void;
+}
+
+const inactiveProgressReporter: ProgressReporter = Object.freeze({
+  report: ignoreProgress,
+  close: ignoreProgress,
+});
+
+function snapshotProgressReport(value: unknown): ProgressReport | undefined {
+  if (typeof value !== "object" || value === null || isProxy(value)) {
+    return undefined;
+  }
+  let progress: unknown;
+  let total: unknown;
+  let message: unknown;
+  try {
+    const report = value as Readonly<Record<string, unknown>>;
+    progress = report.progress;
+    total = report.total;
+    message = report.message;
+  } catch {
+    return undefined;
+  }
+  if (
+    typeof progress !== "number" ||
+    !Number.isFinite(progress) ||
+    progress < 0 ||
+    (total !== undefined &&
+      (typeof total !== "number" || !Number.isFinite(total) || total <= 0)) ||
+    (message !== undefined &&
+      (typeof message !== "string" ||
+        message.length > maximumProgressMessageLength))
+  ) {
+    return undefined;
+  }
+  return Object.freeze({
+    // Normalizes negative zero into the lossless JSON data model.
+    progress: progress === 0 ? 0 : progress,
+    ...(total === undefined ? {} : { total }),
+    ...(message === undefined ? {} : { message }),
+  });
+}
+
+/**
+ * Delivers validated, strictly increasing progress snapshots while `run` is
+ * active. Delivery is synchronous and best-effort: sink failures and returned
+ * promises are contained and never reach the capability.
+ */
+function createProgressReporter(
+  onProgress: ProgressCallback | undefined,
+  signal: AbortSignal,
+  reportFailure: () => void,
+): ProgressReporter {
+  if (onProgress === undefined) return inactiveProgressReporter;
+  let active = true;
+  let lastProgress = Number.NEGATIVE_INFINITY;
+  let failureReported = false;
+  const fail = (): void => {
+    if (failureReported) return;
+    failureReported = true;
+    reportFailure();
+  };
+  const close = (): void => {
+    active = false;
+  };
+  return Object.freeze({
+    report(value: ProgressReport): void {
+      if (!active) return;
+      try {
+        if (readSignalAborted(signal)) {
+          close();
+          return;
+        }
+      } catch {
+        close();
+        return;
+      }
+      const report = snapshotProgressReport(value);
+      if (report === undefined || report.progress <= lastProgress) return;
+      lastProgress = report.progress;
+      try {
+        const delivery: unknown = onProgress(report);
+        if (delivery !== undefined) void Promise.resolve(delivery).catch(fail);
+      } catch {
+        fail();
+      }
+    },
+    close,
+  });
+}
+
 async function raceWithCancellation<Value>(
   work: Promise<Value>,
   signal: AbortSignal,
@@ -482,6 +580,18 @@ export function createEngine<const Capabilities extends CapabilityMap>(
     }
   };
 
+  const reportProgressCallbackFailure = (requestId: string): void => {
+    try {
+      const diagnosticResult: unknown = logger.error(
+        "Invocation progress callback failed.",
+        { requestId },
+      );
+      void Promise.resolve(diagnosticResult).catch(() => undefined);
+    } catch {
+      // Progress sinks must not change invocation behavior.
+    }
+  };
+
   const emit = (event: EngineEvent): void => {
     if (onEvent === undefined) return;
     try {
@@ -510,12 +620,21 @@ export function createEngine<const Capabilities extends CapabilityMap>(
     async invoke(capabilityId, rawInput, options) {
       let requestId: string = randomUUID();
       let source: ExecutionContext["source"] = "direct";
+      let onProgress: ProgressCallback | undefined;
       let optionsError: EngineError | undefined;
       try {
         const configuredRequestId = options?.requestId;
         const configuredSource = options?.source;
+        const configuredOnProgress = options?.onProgress;
+        if (
+          configuredOnProgress !== undefined &&
+          typeof configuredOnProgress !== "function"
+        ) {
+          throw new TypeError("onProgress must be a function.");
+        }
         requestId = configuredRequestId ?? requestId;
         source = configuredSource ?? source;
+        onProgress = configuredOnProgress;
       } catch (cause) {
         optionsError = executionFailed(cause);
       }
@@ -598,6 +717,7 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           principal: accessPrincipal,
           signal: accessSignalState?.signal ?? callerSignal,
           logger,
+          reportProgress: ignoreProgress,
         });
         let accessFailed = false;
         let accessFailure: unknown;
@@ -629,12 +749,18 @@ export function createEngine<const Capabilities extends CapabilityMap>(
         } catch (cause) {
           throw executionFailed(cause);
         }
+        const progress = createProgressReporter(
+          onProgress,
+          signalState.signal,
+          () => reportProgressCallbackFailure(requestId),
+        );
         const context: ExecutionContext = Object.freeze({
           requestId,
           source,
           principal,
           signal: signalState.signal,
           logger,
+          reportProgress: progress.report,
         });
         if (readSignalAborted(context.signal)) {
           throw abortedSignalError(context.signal);
@@ -644,10 +770,15 @@ export function createEngine<const Capabilities extends CapabilityMap>(
           input: unknown;
           context: ExecutionContext;
         }) => Promise<unknown>;
-        const rawOutput = await raceWithCancellation(
-          Promise.resolve().then(() => run({ input, context })),
-          context.signal,
-        );
+        let rawOutput: unknown;
+        try {
+          rawOutput = await raceWithCancellation(
+            Promise.resolve().then(() => run({ input, context })),
+            context.signal,
+          );
+        } finally {
+          progress.close();
+        }
         const output = await raceWithCancellation(
           validateSchema(capability.output, rawOutput, {
             code: "OUTPUT_INVALID",

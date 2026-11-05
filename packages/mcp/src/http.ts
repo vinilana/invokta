@@ -7,6 +7,7 @@ import type { WebStandardStreamableHTTPServerTransportOptions } from "@modelcont
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { OAuthProtectedResourceMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
 
+import { requestsProgressNotifications } from "./progress.js";
 import { createMcpServer, createMcpToolCatalog } from "./protocol-server.js";
 import { preserveFalsyRequestIds } from "./request-id-transport.js";
 
@@ -700,6 +701,20 @@ function sendProtocolError(
   });
 }
 
+function waitForDrainOrClose(
+  target: import("node:http").ServerResponse,
+): Promise<void> {
+  return new Promise((resolve) => {
+    const settle = (): void => {
+      target.off("drain", settle);
+      target.off("close", settle);
+      resolve();
+    };
+    target.once("drain", settle);
+    target.once("close", settle);
+  });
+}
+
 async function writeWebResponse(
   target: import("node:http").ServerResponse,
   source: Response,
@@ -708,9 +723,39 @@ async function writeWebResponse(
   source.headers.forEach((value, key) => {
     headers[key] = value;
   });
-  const body = Buffer.from(await source.arrayBuffer());
-  target.writeHead(source.status, headers);
-  target.end(body);
+  const contentType = source.headers.get("content-type");
+  if (
+    source.body === null ||
+    contentType?.split(";", 1)[0]?.trim().toLowerCase() !== "text/event-stream"
+  ) {
+    const body = Buffer.from(await source.arrayBuffer());
+    target.writeHead(source.status, headers);
+    target.end(body);
+    return;
+  }
+  // A progress stream is relayed event by event, honoring socket backpressure.
+  const reader = source.body.getReader();
+  const cancel = (): void => {
+    void reader.cancel().catch(() => undefined);
+  };
+  target.once("close", cancel);
+  try {
+    target.writeHead(source.status, headers);
+    target.flushHeaders();
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done || target.destroyed) break;
+      if (!target.write(chunk.value)) await waitForDrainOrClose(target);
+    }
+    if (!target.destroyed) target.end();
+  } catch (error) {
+    // Before headers the caller still answers 500; a broken stream is closed.
+    if (!target.headersSent) throw error;
+    target.destroy();
+  } finally {
+    target.off("close", cancel);
+    cancel();
+  }
 }
 
 export async function serveMcpHttp<Capabilities extends CapabilityMap>(
@@ -934,13 +979,6 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
         },
         toolCatalog,
       );
-      const statelessTransportOptions: WebStandardStreamableHTTPServerTransportOptions =
-        {
-          enableJsonResponse: true,
-        };
-      const transport = new WebStandardStreamableHTTPServerTransport(
-        statelessTransportOptions,
-      );
       let consumedBody = false;
       try {
         const bodyResult = await readBody(request, maxRequestBodyBytes);
@@ -976,6 +1014,15 @@ export async function serveMcpHttp<Capabilities extends CapabilityMap>(
           );
           return;
         }
+        // Only a tools/call carrying a progress token needs a request-scoped
+        // SSE response; every other message keeps the single JSON response.
+        const statelessTransportOptions: WebStandardStreamableHTTPServerTransportOptions =
+          {
+            enableJsonResponse: !requestsProgressNotifications(parsedBody),
+          };
+        const transport = new WebStandardStreamableHTTPServerTransport(
+          statelessTransportOptions,
+        );
         const webHeaders = toWebHeaders(request.headers);
         webHeaders.set("accept", "application/json, text/event-stream");
         webHeaders.set("content-type", "application/json");

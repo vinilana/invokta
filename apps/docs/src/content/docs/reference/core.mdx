@@ -31,7 +31,7 @@ The package root exposes these public groups:
 | Connector | `defineConnector`, `ConnectorConfigSchema`, `ConnectorDefinition`, `ConnectorFactory`, `ConnectorInstance`, `ConnectorPorts`, `InferConnectorConfigInput`, `InferConnectorConfigOutput` |
 | Engine | `createEngine`, `Engine`, `EngineDefinition`, `InvokeOptions`, `CapabilitySummary`, `CapabilityDescription` |
 | Schema | `EngineSchema`, `EngineJsonSchema`, `InferSchemaInput`, `InferSchemaOutput` |
-| Identity and context | `Principal`, `ExecutionContext`, `ExecutionSource`, `EngineLogger` |
+| Identity and context | `Principal`, `ExecutionContext`, `ExecutionSource`, `EngineLogger`, `ProgressReport` |
 | Events | `EngineEvent` |
 | Invocation errors | `EngineError`, `EngineErrorCode` |
 | Composition values | `ExportedCapability`, `CapabilityLibrary`, `CapabilityImport`, `AnyCapabilityImport`, `ComposedCapabilities`, `CapabilitySource` |
@@ -246,12 +246,22 @@ interface InvokeOptions {
   readonly source?: ExecutionSource;
   readonly principal?: Principal | null;
   readonly signal?: AbortSignal;
+  readonly onProgress?: (
+    report: ProgressReport,
+  ) => void | Promise<void>;
 }
 ```
 
 `requestId` defaults to a generated UUID, `source` defaults to `direct`, and
 `principal` defaults to `null`. `source` is one of `direct`, `cli`, `mcp-stdio`,
 or `mcp-http`.
+
+`onProgress` receives a fresh, frozen snapshot of every progress report the
+capability delivers while `run` is pending. It is called synchronously; a
+returned promise is observed but never awaited, and a thrown error or rejection
+never changes the invocation. An `onProgress` value that is not a function, or
+an accessor that throws, fails the invocation as `EXECUTION_FAILED` before
+input validation. See [progress](#progress).
 
 The optional signal must be a platform `AbortSignal`; structural substitutes
 and proxies are rejected safely. Caller cancellation and a capability timeout
@@ -316,6 +326,7 @@ interface ExecutionContext {
   readonly principal: Principal | null;
   readonly signal: AbortSignal;
   readonly logger: EngineLogger;
+  readonly reportProgress: (report: ProgressReport) => void;
 }
 ```
 
@@ -323,6 +334,51 @@ interface ExecutionContext {
 a message plus optional read-only details. Context carries request state, not a
 dependency registry. Inject repositories, providers, and model clients through
 capability factories.
+
+### Progress
+
+```ts
+interface ProgressReport {
+  readonly progress: number;
+  readonly total?: number;
+  readonly message?: string;
+}
+```
+
+`context.reportProgress` sends advisory progress to the caller's progress sink:
+`InvokeOptions.onProgress` for a direct call, a `notifications/progress`
+notification for an MCP client that sent a progress token, or a stderr line
+for the CLI in the `human` format. It returns nothing and never throws.
+
+| Rule | Behavior |
+| --- | --- |
+| `progress` | Finite number of at least `0`; negative zero is delivered as `0` |
+| `total` | Optional finite positive number; it may change between reports |
+| `message` | Optional string of at most 1,024 UTF-16 code units |
+| Order | A report whose `progress` is not greater than the last delivered value is dropped |
+| Invalid report | Dropped, including proxies and objects with throwing accessors |
+| Without a sink | No-op |
+| Access rule | Its context carries a no-op reporter; progress starts with `run` |
+| Lifetime | Delivery stops when `run` settles or the invocation is cancelled or times out |
+| Sink failure | Contained; the first failure of an invocation logs `Invocation progress callback failed.` with only the `requestId` |
+
+```ts
+async run({ input, context }) {
+  for (const [index, frame] of input.frames.entries()) {
+    await renderFrame(frame, { signal: context.signal });
+    context.reportProgress({
+      progress: index + 1,
+      total: input.frames.length,
+      message: `Rendered frame ${index + 1}.`,
+    });
+  }
+  return { rendered: input.frames.length };
+}
+```
+
+Progress adds no engine event, pipeline stage, or error code. Code that builds
+an `ExecutionContext` by hand, such as a unit test that calls `run` directly,
+must provide `reportProgress`, for example `() => undefined`.
 
 `EngineEvent` is a union of:
 

@@ -57,4 +57,5 @@ export type {
   ExecutionSource,
   InvokeOptions,
   Principal,
+  ProgressReport,
 } from "./types.js";

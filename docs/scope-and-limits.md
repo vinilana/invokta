@@ -78,10 +78,15 @@ while the example owns one replaceable Authorization Server implementation.
 | Generated OpenAPI runtime URL | 8,192 UTF-8 bytes |
 | Generated OpenAPI runtime request body | 10 MiB serialized JSON |
 | Generated OpenAPI runtime response body | 10 MiB streamed bytes |
+| Progress message | 1,024 UTF-16 code units |
+| MCP progress notifications | 1 per 100 ms per request, latest report wins |
+| Honored MCP progress token | String of at most 256 UTF-16 code units, or a safe integer |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,
-scheduling, arbitrary streaming, or a progress API.
+scheduling, or arbitrary streaming. Progress is limited to the advisory,
+per-invocation reporter of ADR 0043: Invokta does not persist, replay, or
+guarantee delivery of progress, and does not stream partial results.
 
 **AE-LIMIT-02 — Architecture.** Invokta does not provide a dependency
 container, service locator, runtime plugin discovery, remote registry, or
@@ -100,7 +105,9 @@ language, relationship graph, PDP adapter, or session binding.
 
 **AE-LIMIT-05 — MCP.** Invokta does not provide MCP resources, prompts,
 sampling, elicitation, tasks, stateful sessions, resumption, or server-to-client
-requests.
+requests. It sends `notifications/progress` only for a `tools/call` request
+that carries a progress token, and over HTTP only on that request's own
+response stream (ADR 0043).
 
 **AE-LIMIT-06 — Installed MCP inspection.** Devtools may initialize, list tools
 from, and manually call one explicitly configured stdio or Streamable HTTP MCP

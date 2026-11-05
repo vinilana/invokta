@@ -9,6 +9,7 @@ import {
   promptSchema,
   resolutionSchema,
 } from "./image-contract.js";
+import { reportWhileProviderWorks } from "./provider-progress-contract.js";
 
 export function createGenerateCampaignSeries(
   generator: CampaignImageGenerator,
@@ -28,9 +29,11 @@ export function createGenerateCampaignSeries(
     timeoutMs: 180_000,
     annotations: generativeAnnotations,
     async run({ input, context }) {
-      const images = await generator.generateSeries(input, {
-        signal: context.signal,
-      });
+      const images = await reportWhileProviderWorks(
+        context,
+        `Generating ${String(input.count)} campaign images.`,
+        () => generator.generateSeries(input, { signal: context.signal }),
+      );
       if (images.length !== input.count) {
         throw new EngineError({
           code: "EXECUTION_FAILED",

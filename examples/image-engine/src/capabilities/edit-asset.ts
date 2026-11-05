@@ -9,6 +9,7 @@ import {
   referenceImageSchema,
   singleImageOutputSchema,
 } from "./image-contract.js";
+import { reportWhileProviderWorks } from "./provider-progress-contract.js";
 
 export function createEditAsset(editor: ImageEditor) {
   return defineCapability({
@@ -26,7 +27,11 @@ export function createEditAsset(editor: ImageEditor) {
     annotations: generativeAnnotations,
     async run({ input, context }) {
       return {
-        image: await editor.edit(input, { signal: context.signal }),
+        image: await reportWhileProviderWorks(
+          context,
+          "Editing the image asset.",
+          () => editor.edit(input, { signal: context.signal }),
+        ),
       };
     },
   });

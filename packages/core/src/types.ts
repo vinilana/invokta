@@ -20,12 +20,29 @@ export interface EngineLogger {
   error(message: string, details?: Readonly<Record<string, unknown>>): void;
 }
 
+/**
+ * One advisory progress report. `progress` is a finite number of at least
+ * zero that increases with every delivered report; `total` is a finite
+ * positive number when known; `message` has at most 1,024 UTF-16 code units.
+ */
+export interface ProgressReport {
+  readonly progress: number;
+  readonly total?: number;
+  readonly message?: string;
+}
+
 export interface ExecutionContext {
   readonly requestId: string;
   readonly source: ExecutionSource;
   readonly principal: Principal | null;
   readonly signal: AbortSignal;
   readonly logger: EngineLogger;
+  /**
+   * Reports advisory progress to the caller's progress sink, if any. It never
+   * throws, never waits for the sink, and drops invalid, non-increasing, or
+   * late reports. Reports from an access rule are ignored.
+   */
+  readonly reportProgress: (report: ProgressReport) => void;
 }
 
 export type AccessRule<Input> =
@@ -119,4 +136,9 @@ export interface InvokeOptions {
   readonly source?: ExecutionSource;
   readonly principal?: Principal | null;
   readonly signal?: AbortSignal;
+  /**
+   * Receives a frozen snapshot of every accepted progress report while `run`
+   * is active. Failures and returned promises never change the invocation.
+   */
+  readonly onProgress?: (report: ProgressReport) => void | Promise<void>;
 }

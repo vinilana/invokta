@@ -16,6 +16,7 @@ const requiredRecipeRoutes = [
   "/recipes/capability-composition/",
   "/recipes/mcp-stdio-consumer/",
   "/recipes/external-provider/",
+  "/recipes/long-running-progress/",
   "/recipes/auth/jwt-bearer/",
   "/recipes/auth/supabase/",
   "/recipes/auth/clerk/",

@@ -1,0 +1,146 @@
+---
+title: Report progress from a long-running capability
+description: Keep direct, MCP, and CLI callers informed while one capability waits on slow work.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Use this pattern when a capability can run longer than a caller's patience or
+its client timeout. Many MCP clients abandon a silent tool call after about a
+minute, while an image or report generator may legitimately need several.
+
+This recipe follows the repository's `image-engine` example. Each of its
+capabilities waits on a single provider request with a 150- to 180-second
+timeout, so it reports liveness while that request is pending.
+
+## Report from the capability
+
+<Steps>
+
+1. Wrap the slow request
+
+   Create `src/capabilities/provider-progress-contract.ts`:
+
+   ```ts
+   import type { ExecutionContext } from "@invokta/core";
+
+   export const providerProgressIntervalMs = 15_000;
+
+   export async function reportWhileProviderWorks<Value>(
+     context: ExecutionContext,
+     message: string,
+     work: () => Promise<Value>,
+   ): Promise<Value> {
+     let elapsedSeconds = 0;
+     context.reportProgress({ progress: elapsedSeconds, message });
+     const heartbeat = setInterval(() => {
+       elapsedSeconds += providerProgressIntervalMs / 1_000;
+       context.reportProgress({ progress: elapsedSeconds, message });
+     }, providerProgressIntervalMs);
+     try {
+       return await work();
+     } finally {
+       clearInterval(heartbeat);
+     }
+   }
+   ```
+
+   The provider exposes no completion percentage, so `progress` counts elapsed
+   seconds and omits `total`. When the work has countable steps, report the
+   step number with a `total` instead.
+
+2. Use it inside `run`
+
+   ```ts
+   async run({ input, context }) {
+     const images = await reportWhileProviderWorks(
+       context,
+       `Generating ${String(input.count)} campaign images.`,
+       () => generator.generateSeries(input, { signal: context.signal }),
+     );
+     return { images };
+   }
+   ```
+
+   The capability does not know which channel invoked it. Without a listening
+   caller, `reportProgress` is a no-op.
+
+</Steps>
+
+<Aside type="caution" title="Progress must increase">
+  A report whose `progress` is not greater than the previous one is dropped,
+  as the MCP protocol requires. To change only the message, also increase
+  `progress`. Messages are limited to 1,024 UTF-16 code units.
+</Aside>
+
+## Observe it from each channel
+
+Direct callers pass a sink in the invocation options:
+
+```ts
+await engine.invoke(
+  "image.generate-campaign-series",
+  { prompt: "A coherent launch series.", count: 3 },
+  {
+    principal,
+    onProgress: ({ progress, message }) => {
+      console.error(`${progress}s ${message ?? ""}`);
+    },
+  },
+);
+```
+
+An MCP client sends a progress token with `tools/call`; the official SDK client
+does that when the call supplies `onprogress`. Ask it to reset its own timeout
+on progress so a long call keeps waiting:
+
+```ts
+await client.callTool(
+  { name: "image_generate-campaign-series", arguments },
+  undefined,
+  {
+    onprogress: (progress) => console.error(progress),
+    resetTimeoutOnProgress: true,
+    maxTotalTimeout: 200_000,
+  },
+);
+```
+
+Over MCP HTTP, that one request is answered with a `text/event-stream`
+response that carries its notifications and then its result. A CLI composed
+with `format: "human"` writes one `progress <progress>[/<total>][: <message>]`
+line per report to standard error; the default JSON format ignores progress.
+
+## Run it
+
+From the repository root, build the example and start its stdio adapter from
+an MCP host whose client sends a progress token, such as the official SDK
+client call above:
+
+```sh
+yarn build
+export OPENAI_API_KEY='sk-...'
+export ARK_API_KEY='...'
+export GEMINI_API_KEY='...'
+node examples/image-engine/dist/mcp-stdio.js
+```
+
+The first notification arrives as soon as the provider request starts, and one
+more follows every 15 seconds until the image is returned.
+
+## Verify it
+
+The example tests the heartbeat with fake timers, its end after the provider
+request settles, and delivery through the built stdio and HTTP adapters with
+local provider stubs:
+
+```sh
+yarn workspace @invokta/example-image test
+```
+
+Read the [`@invokta/core` progress reference](/reference/core/#progress) for
+validation and lifetime rules, the
+[MCP progress reference](/reference/mcp/#progress-notifications) for tokens,
+rate limiting, and the HTTP response stream, and the complete
+[`image-engine`](https://github.com/vinilana/invokta/tree/main/examples/image-engine)
+example for the capabilities and their tests.

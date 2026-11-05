@@ -3,6 +3,7 @@ import {
   type Engine,
   EngineError,
   type Principal,
+  type ProgressReport,
 } from "@invokta/core";
 
 import { InvalidUtf8Error, readUtf8 } from "./stdin.js";
@@ -120,6 +121,32 @@ function serialize(value: unknown, format: "json" | "human" = "json"): string {
   return `${JSON.stringify(value, null, format === "human" ? 2 : undefined)}\n`;
 }
 
+const unsafeTerminalCharacterPattern = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+
+function escapeTerminalCharacter(character: string): string {
+  const codePoint = character.codePointAt(0) ?? 0;
+  return codePoint <= 0xffff
+    ? `\\u${codePoint.toString(16).padStart(4, "0")}`
+    : `\\u{${codePoint.toString(16)}}`;
+}
+
+function escapeTerminalText(text: string): string {
+  return text.replace(unsafeTerminalCharacterPattern, escapeTerminalCharacter);
+}
+
+/** Renders one progress report as a single human-readable diagnostic line. */
+function renderProgress(report: ProgressReport): string {
+  const amount =
+    report.total === undefined
+      ? String(report.progress)
+      : `${String(report.progress)}/${String(report.total)}`;
+  const message =
+    report.message === undefined || report.message === ""
+      ? ""
+      : `: ${escapeTerminalText(report.message)}`;
+  return `progress ${amount}${message}\n`;
+}
+
 const genericExecutionError =
   '{"error":{"code":"EXECUTION_FAILED","message":"CLI execution failed."}}\n';
 
@@ -214,6 +241,14 @@ async function execute<Capabilities extends CapabilityMap>(
     source: "cli",
     principal: options.principal,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
+    // Progress is a human diagnostic: stderr only, never awaited.
+    ...(options.format === "human"
+      ? {
+          onProgress(report: ProgressReport) {
+            void writeStderr(io, renderProgress(report));
+          },
+        }
+      : {}),
   });
   await writeStdout(io, serialize(result, options.format));
 }

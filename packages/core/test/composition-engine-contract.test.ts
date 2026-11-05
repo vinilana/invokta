@@ -487,6 +487,7 @@ describe("effective IDs in access rules and events", () => {
         "principal",
         "signal",
         "logger",
+        "reportProgress",
       ]);
       expect(
         JSON.stringify({

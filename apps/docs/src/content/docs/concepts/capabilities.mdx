@@ -119,11 +119,15 @@ interface ExecutionContext {
   principal: Principal | null;
   signal: AbortSignal;
   logger: EngineLogger;
+  reportProgress: (report: ProgressReport) => void;
 }
 ```
 
-Dependencies such as repositories, model clients, and data providers should be
-injected through a factory or closure. The context is not a service container.
+`reportProgress` sends advisory `{ progress, total?, message? }` reports to the
+caller while `run` is pending; it is a safe no-op when the caller is not
+listening. Dependencies such as repositories, model clients, and data providers
+should be injected through a factory or closure. The context is not a service
+container.
 
 See the [invocation pipeline](/concepts/invocation-pipeline/) for the order in
 which Invokta applies these fields, or the
