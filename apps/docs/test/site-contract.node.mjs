@@ -475,7 +475,10 @@ test("the middleware recipe matches its executable copies", async () => {
     ),
   );
 
-  const documented = fencedBlocks(recipe, "ts");
+  // Every JavaScript or TypeScript block needs an executable copy.
+  const documented = ["ts", "tsx", "js", "mjs"].flatMap((language) =>
+    fencedBlocks(recipe, language),
+  );
   // Each marked block restores its commented imports, so imports are compared too.
   const executableBlocks = [
     ...executable.matchAll(
@@ -487,16 +490,32 @@ test("the middleware recipe matches its executable copies", async () => {
   assert.deepEqual([...documented].sort(), [...executableBlocks].sort());
 
   const importLine = /^import (?:type )?\{ ([^}]+) \} from "([^"]+)";$/u;
+  const coreExports = new Set(
+    [...coreIndex.matchAll(/export (?:type )?\{([^}]*)\}/gu)].flatMap(
+      ([, names]) =>
+        names
+          .split(",")
+          .map((name) => name.trim())
+          .filter(Boolean),
+    ),
+  );
   for (const block of documented) {
-    for (const line of block
-      .split("\n")
-      .filter((text) => /^import\b/u.test(text))) {
+    const lines = block.split("\n");
+    const code = lines.filter((text) => !/^import\b/u.test(text)).join("\n");
+    const imported = new Set();
+    for (const line of lines.filter((text) => /^import\b/u.test(text))) {
       const match = importLine.exec(line);
       assert.ok(match, `unsupported import form: ${line}`);
       const [, names, specifier] = match;
       for (const name of names
         .split(",")
         .map((entry) => entry.trim().replace(/^type /u, ""))) {
+        imported.add(name);
+        assert.match(
+          code,
+          new RegExp(`\\b${name}\\b`, "u"),
+          `unused import ${name}`,
+        );
         if (specifier === "@invokta/core") {
           assert.match(
             coreIndex,
@@ -511,6 +530,11 @@ test("the middleware recipe matches its executable copies", async () => {
         } else {
           assert.fail(`unexpected import specifier ${specifier}`);
         }
+      }
+    }
+    for (const name of coreExports) {
+      if (new RegExp(`\\b${name}\\b`, "u").test(code)) {
+        assert.ok(imported.has(name), `${name} is used but not imported`);
       }
     }
   }

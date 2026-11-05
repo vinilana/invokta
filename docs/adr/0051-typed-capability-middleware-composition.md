@@ -37,13 +37,16 @@ and each capability's top-level fields exactly once, validates that every
 middleware is a function and every capability is a non-proxy object with a
 `run` function, and returns a new frozen map with the same keys in the same
 order. Each wrapped capability is a frozen copy that replaces only `run`. It
-keeps by identity every other property that plain property access reaches on
-the source: own and inherited, enumerable or not, and string or symbol keyed,
-except what every object inherits from `Object.prototype`. That covers schemas,
-`access`, `title`, `description`, `annotations`, `timeoutMs`, and fields other
-contracts add later, however the capability object was built. Inherited fields
-become own fields of the copy, and each keeps its enumerability. It performs no
-I/O and calls no middleware, access rule, or handler.
+keeps by identity every own property of the source, whether enumerable or not
+and whether string or symbol keyed. It also keeps the contract fields that
+`createEngine` and the contracts built on it read through the prototype chain:
+`title`, `description`, `input`, `output`, `access`, `timeoutMs`,
+`annotations`, `errors`, `deprecated`, and `run`. Inherited contract fields
+become own fields of the copy, and each field keeps its enumerability. No other
+inherited member is invoked or copied, so a class-based capability's
+`constructor`, methods, lazy getters, and inherited symbols stay untouched,
+just as `createEngine` leaves them. It performs no I/O and calls no middleware,
+access rule, or handler.
 Undefined map entries are skipped, as `createEngine` skips them. With no
 middleware, the result is a frozen copy holding the original capabilities.
 Invalid arguments throw `TypeError` before any engine exists.
@@ -79,7 +82,8 @@ wrapped capabilities places the new chain outside the earlier one.
 `next()` takes no arguments, so a middleware cannot pass a different input or
 context object to the next layer. It resolves to the next layer's unvalidated
 result and may be called at most once while its middleware is pending. A
-repeated call, or a call after the middleware settled, rejects with `TypeError`
+repeated call, including a re-entrant call from the synchronous start of the
+next layer, or a call after the middleware settled, rejects with `TypeError`
 without starting the next layer; if that rejection propagates, the invocation
 fails as `EXECUTION_FAILED`. A call after the invocation signal aborted rejects with the
 signal reason without starting the next layer, matching the engine's check
@@ -114,7 +118,8 @@ first read after `next()` reflects any change `run` made to its input, so a
 middleware that needs the value as validated reads it before calling `next()`.
 A wrapped `run` called directly outside the engine accepts the same inputs as
 the original until a middleware reads `input`, which then requires a
-structured-cloneable value.
+structured-cloneable value. The snapshot is memoized per `run` arguments
+object, so such a direct caller passes a fresh arguments object to each call.
 
 The context object is the engine's frozen `ExecutionContext`, shared by
 identity with `run` so that fields other contracts add keep working. Its

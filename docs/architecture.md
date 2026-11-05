@@ -119,8 +119,8 @@ construction with `TypeError`; they never reach the host timer implementation.
 `applyMiddleware(capabilities, ...middleware)` MAY wrap the `run` of every
 capability in an explicit map before `createEngine`. It is pure, eager, and
 synchronous. It returns a new frozen map with the same keys. Each capability
-is copied with every property that property access reaches kept by identity,
-and only `run` is replaced. It registers nothing and invokes no middleware,
+is copied with its own properties and its possibly inherited contract fields
+kept by identity, and only `run` is replaced. It registers nothing and invokes no middleware,
 access rule, or handler. The chain therefore executes
 inside stage 5: input validation and `access` complete before the first
 middleware, the capability timeout and caller cancellation cover the whole

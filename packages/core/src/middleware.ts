@@ -130,7 +130,11 @@ function readProperty(
   target: object,
   key: PropertyKey,
   description: string,
-): { readonly value: unknown; readonly enumerable: boolean } {
+): {
+  readonly found: boolean;
+  readonly value: unknown;
+  readonly enumerable: boolean;
+} {
   let current: object | null = target;
   while (current !== null) {
     if (nodeUtilTypes.isProxy(current)) {
@@ -139,9 +143,12 @@ function readProperty(
     const descriptor = Object.getOwnPropertyDescriptor(current, key);
     if (descriptor !== undefined) {
       const enumerable = descriptor.enumerable === true;
-      if ("value" in descriptor) return { value: descriptor.value, enumerable };
+      if ("value" in descriptor) {
+        return { found: true, value: descriptor.value, enumerable };
+      }
       const getter = descriptor.get;
       return {
+        found: true,
         value:
           getter === undefined ? undefined : Reflect.apply(getter, target, []),
         enumerable,
@@ -149,29 +156,39 @@ function readProperty(
     }
     current = Object.getPrototypeOf(current);
   }
-  return { value: undefined, enumerable: false };
+  return { found: false, value: undefined, enumerable: false };
 }
 
 /**
- * Every key that plain property access can reach on a capability, except the
- * keys every object inherits from `Object.prototype`. Copying all of them keeps
- * fields the engine or a later contract reads, whether own, inherited, or
- * non-enumerable.
+ * The capability contract fields read through the prototype chain, as
+ * `createEngine` and the contracts built on it read them. Other inherited
+ * members, such as class methods, lazy getters, `constructor`, and symbols, are
+ * neither invoked nor copied.
  */
-function reachableKeys(
-  capability: object,
-  description: string,
-): readonly PropertyKey[] {
-  const keys = new Set<PropertyKey>();
-  let current: object | null = capability;
-  while (current !== null && current !== Object.prototype) {
-    if (nodeUtilTypes.isProxy(current)) {
-      throw new TypeError(`${description} must not be a proxy.`);
-    }
-    for (const key of Reflect.ownKeys(current)) keys.add(key);
-    current = Object.getPrototypeOf(current);
-  }
-  return [...keys];
+const contractFields = [
+  "title",
+  "description",
+  "input",
+  "output",
+  "access",
+  "timeoutMs",
+  "annotations",
+  "errors",
+  "deprecated",
+  "run",
+] as const;
+
+/**
+ * Every own key of the capability, of any kind, plus the contract fields,
+ * which may also be inherited.
+ */
+function capabilityKeys(capability: object): readonly PropertyKey[] {
+  return [
+    ...new Set<PropertyKey>([
+      ...Reflect.ownKeys(capability),
+      ...contractFields,
+    ]),
+  ];
 }
 
 function defineField(
@@ -219,6 +236,9 @@ function createChain(
             ),
           );
         } else {
+          // Claim the single call before dispatching, so that a re-entrant
+          // call from the synchronous start of the next layer is refused.
+          started = Promise.resolve();
           try {
             const aborted = abortReason(context.signal);
             pending =
@@ -278,8 +298,13 @@ function wrapCapability(
   const wrapped: Record<PropertyKey, unknown> = {};
   let run: unknown;
   let runEnumerable = true;
-  for (const key of reachableKeys(capability, description)) {
-    const { value, enumerable } = readProperty(capability, key, description);
+  for (const key of capabilityKeys(capability)) {
+    const { found, value, enumerable } = readProperty(
+      capability,
+      key,
+      description,
+    );
+    if (!found) continue;
     if (key === "run") {
       run = value;
       runEnumerable = enumerable;

@@ -655,6 +655,31 @@ describe("applyMiddleware next()", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
+  it("treats a re-entrant next() from the next layer as a repeated call", async () => {
+    let storedNext: (() => Promise<unknown>) | undefined;
+    let reentrant: Promise<unknown> | undefined;
+    const run = vi.fn<TicketRun>(async ({ input }) => {
+      // The synchronous start of run re-enters the outer middleware's next().
+      reentrant = storedNext?.();
+      return { category: input.ticketId };
+    });
+    const capabilities = applyMiddleware(
+      { "support.classify": classifyCapability(run) },
+      async ({ next }) => {
+        storedNext = next;
+        return next();
+      },
+    );
+
+    await expect(
+      engineFor(capabilities).invoke("support.classify", { ticketId: "T-1" }),
+    ).resolves.toEqual({ category: "T-1", priority: 3 });
+    expect(run).toHaveBeenCalledOnce();
+    await expect(reentrant).rejects.toThrow(
+      new TypeError("Capability middleware called next() more than once."),
+    );
+  });
+
   it("rejects next() after the middleware has settled without running the handler", async () => {
     const run = vi.fn<TicketRun>(async () => ({ category: "late" }));
     let lateNext: (() => Promise<unknown>) | undefined;
@@ -910,53 +935,95 @@ describe("applyMiddleware capability contract", () => {
     expect(access).not.toHaveBeenCalled();
   });
 
-  it("keeps every property that plain property access reaches, including inherited and non-enumerable ones", () => {
-    const marker = Symbol("capability.marker");
+  it("keeps every own property and the inherited contract fields by identity", () => {
+    const ownMarker = Symbol("capability.own");
+    const inheritedMarker = Symbol("capability.inherited");
     const base = {
       errors: { TICKET_NOT_FOUND: { message: "Ticket not found." } },
       deprecated: { since: "1.2.0" },
+      inheritedHelper: "not part of the capability contract",
+      [inheritedMarker]: true,
     };
     const original = Object.create(base, {
       ...Object.getOwnPropertyDescriptors(classifyCapability()),
       stability: { value: "experimental", enumerable: false },
-      [marker]: { value: "symbol-field", enumerable: true },
+      [ownMarker]: { value: "symbol-field", enumerable: true },
     }) as AnyCapability;
     const wrapped = applyMiddleware(
       { "support.classify": original },
       async ({ next }) => next(),
     )["support.classify"] as AnyCapability;
-    const reachableKeys = (value: object): PropertyKey[] => {
-      const keys = new Set<PropertyKey>();
-      for (
-        let current: object | null = value;
-        current !== null && current !== Object.prototype;
-        current = Object.getPrototypeOf(current)
-      ) {
-        for (const key of Reflect.ownKeys(current)) keys.add(key);
-      }
-      return [...keys];
-    };
-    const enumerableKeys = (value: object): string[] => {
-      const keys: string[] = [];
-      for (const key in value) keys.push(key);
-      return keys.sort();
-    };
     const read = (value: object, key: PropertyKey): unknown =>
       Reflect.get(value, key);
 
-    for (const key of reachableKeys(original)) {
+    for (const key of Reflect.ownKeys(original)) {
       if (key === "run") continue;
       expect(read(wrapped, key), String(key)).toBe(read(original, key));
     }
-    expect(enumerableKeys(wrapped)).toEqual(enumerableKeys(original));
+    for (const key of ["errors", "deprecated"]) {
+      expect(Object.hasOwn(wrapped, key), key).toBe(true);
+      expect(read(wrapped, key), key).toBe(read(original, key));
+    }
     expect(Object.getOwnPropertyDescriptor(wrapped, "stability")).toMatchObject(
       { value: "experimental", enumerable: false },
     );
+    expect(Reflect.has(wrapped, "inheritedHelper")).toBe(false);
+    expect(Reflect.has(wrapped, inheritedMarker)).toBe(false);
     expect(
       engineFor({ "support.classify": wrapped }).describe("support.classify"),
     ).toEqual(
       engineFor({ "support.classify": original }).describe("support.classify"),
     );
+  });
+
+  it("wraps a class instance without invoking or flattening unrelated members", async () => {
+    let clientReads = 0;
+    class ClassifyTicket {
+      readonly description = "Classify a support ticket.";
+      readonly input = ticketInput;
+      readonly output = ticketOutput;
+      readonly access = "public";
+
+      get title(): string {
+        return "Classify ticket";
+      }
+
+      get client(): never {
+        clientReads += 1;
+        throw new Error("client not configured yet");
+      }
+
+      helper(): string {
+        return "helper";
+      }
+
+      async run({ input }: { readonly input: { ticketId: string } }) {
+        return { category: input.ticketId };
+      }
+    }
+    const instance = new ClassifyTicket() as unknown as AnyCapability;
+    const unwrapped = engineFor({ "support.classify": instance });
+    const wrapped = applyMiddleware(
+      { "support.classify": instance },
+      async ({ next }) => next(),
+    )["support.classify"] as AnyCapability;
+
+    expect(clientReads).toBe(0);
+    expect(Object.getOwnPropertyDescriptor(wrapped, "title")).toMatchObject({
+      value: "Classify ticket",
+    });
+    expect(Object.hasOwn(wrapped, "constructor")).toBe(false);
+    expect(Reflect.has(wrapped, "client")).toBe(false);
+    expect(Reflect.has(wrapped, "helper")).toBe(false);
+
+    const engine = engineFor({ "support.classify": wrapped });
+    expect(engine.describe("support.classify")).toEqual(
+      unwrapped.describe("support.classify"),
+    );
+    await expect(
+      engine.invoke("support.classify", { ticketId: "T-1" }),
+    ).resolves.toEqual({ category: "T-1", priority: 3 });
+    expect(clientReads).toBe(0);
   });
 
   it("publishes the same list and describe contracts as the unwrapped map", () => {

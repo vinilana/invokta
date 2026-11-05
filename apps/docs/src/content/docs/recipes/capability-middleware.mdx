@@ -307,8 +307,8 @@ export function createResultCache(
 `assertPositiveInteger` is the helper from the rate-limit example. List only
 capabilities whose result is safe to reuse, typically those annotated
 `readOnly`. The key includes the principal ID and reads `input` before
-`next()`; if a result depends on principal attributes such as a tenant,
-include them in the key.
+`next()`, because the parameter list destructures it. If a result depends on
+principal attributes such as a tenant, include them in the key.
 
 Production limits:
 

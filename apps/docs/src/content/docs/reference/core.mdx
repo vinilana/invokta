@@ -407,10 +407,12 @@ function applyMiddleware<Capabilities extends CapabilityMap>(
 
 `applyMiddleware` returns a new frozen map with the same keys, in the same
 order, and the same static type. Each capability is a frozen copy that replaces
-only `run` with the middleware chain. It keeps by identity every other property
-that property access reaches, whether own, inherited, or non-enumerable. That
-includes schemas, `access`, `title`, `description`, `annotations`, `timeoutMs`,
-and fields added by other contracts. The function is eager and synchronous: it
+only `run` with the middleware chain. It keeps by identity every own property,
+enumerable or not, and the contract fields `title`, `description`, `input`,
+`output`, `access`, `timeoutMs`, `annotations`, `errors`, `deprecated`, and
+`run` even when they are inherited. Other inherited members of a class-based
+capability, such as methods and lazy getters, are neither invoked nor copied.
+The function is eager and synchronous: it
 reads each field once, registers nothing, performs no I/O, and calls no
 middleware, access rule, or handler. With no middleware it returns a frozen copy
 holding the original capabilities.
@@ -452,8 +454,9 @@ exactly like a `run` error.
 | `next` | Runs the rest of the chain and `run`, resolving to the unvalidated result |
 
 `next()` accepts no replacement input or context. A middleware may call it at
-most once while it is pending. A repeated call or a call after the middleware
-settled rejects with `TypeError` without running the next layer, and becomes
+most once while it is pending. A repeated call, including a re-entrant one from
+the next layer, or a call after the middleware settled rejects with `TypeError`
+without running the next layer, and becomes
 `EXECUTION_FAILED` if it propagates. A call after the invocation signal aborted
 rejects with the abort reason without running the next layer. A layer started
 with `next()` always settles before the calling middleware's result is
@@ -465,7 +468,8 @@ owns its copy and may change it before a later first read. Identity decisions
 belong in `access`, not in middleware. A middleware that never reads `input`
 adds no copy of the payload. A wrapped `run` called directly outside the engine
 needs a platform `AbortSignal` in its context and accepts the same inputs as the
-original until a middleware reads `input`.
+original until a middleware reads `input`. The snapshot is memoized per `run`
+arguments object, so pass a fresh arguments object to each direct call.
 
 When the source map is a composed map, the result keeps its composition
 provenance and `isComposedCapabilities` returns `true`; a plain map never gains
