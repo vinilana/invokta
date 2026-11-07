@@ -53,6 +53,9 @@ an architecture decision.
 - [Connector brokers and request-time credentials](./connector-brokers.md) —
   integrating Vercel Connect or another connector broker without extending the
   core
+- [Action Engine gateway](./action-engine-gateway.md) — serving several
+  Action Engines and MCP servers behind one endpoint with configurable
+  authentication and authorization, with a private proof of concept
 
 ## Guides and examples
 

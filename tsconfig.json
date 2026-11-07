@@ -14,6 +14,7 @@
     { "path": "./packages/otel" },
     { "path": "./packages/tooling" },
     { "path": "./packages/auth-jwt" },
+    { "path": "./packages/gateway" },
     { "path": "./examples/auth-api-key-engine" },
     { "path": "./examples/auth-auth0-engine" },
     { "path": "./examples/auth-authjs-engine" },
