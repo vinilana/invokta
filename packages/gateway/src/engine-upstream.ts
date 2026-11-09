@@ -79,6 +79,8 @@ export function engineUpstream(
       upstream: name,
       kind: "engine",
       upstreamCapabilityId: upstreamId,
+      // The host composes engine upstreams, so their annotations are trusted.
+      readOnly: described.annotations?.readOnly === true,
     });
     const errors = redeclareErrors(described.errors);
     return Object.freeze({

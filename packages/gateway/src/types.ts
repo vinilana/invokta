@@ -21,6 +21,13 @@ export interface GatewayUpstreamRoute {
   readonly kind: GatewayUpstreamKind;
   /** The upstream capability ID, or the MCP tool name. */
   readonly upstreamCapabilityId: string;
+  /**
+   * Whether the operation is trusted to be read-only: an engine upstream's
+   * `readOnly` annotation, or an MCP tool the operator vouched for with
+   * `trustAnnotations` or `readOnlyTools`. An MCP server's own hint alone
+   * never makes this `true`.
+   */
+  readonly readOnly: boolean;
 }
 
 /** A gateway route together with the name of the rule that governs it. */

@@ -93,7 +93,6 @@ describe("mcpUpstream", () => {
         id: "docs.search",
         title: "Search documents",
         description: "Search the document index.",
-        annotations: { readOnly: true, openWorld: false },
       },
       {
         id: "docs.fetch-page",
@@ -130,12 +129,14 @@ describe("mcpUpstream", () => {
         upstream: "docs",
         kind: "mcp",
         upstreamCapabilityId: "search",
+        readOnly: false,
       },
       {
         capabilityId: "knowledge.fetch-page",
         upstream: "docs",
         kind: "mcp",
         upstreamCapabilityId: "fetch-page",
+        readOnly: false,
       },
     ]);
     await expect(
@@ -165,6 +166,109 @@ describe("mcpUpstream", () => {
         connection: fakeConnection([[searchTool, searchTool]]),
       }),
     ).rejects.toThrow("MCP upstream docs lists tool search twice.");
+  });
+
+  it("republishes untrusted hints only when they make a tool look riskier", async () => {
+    const hinted: GatewayMcpTool = {
+      name: "hinted",
+      inputSchema: { type: "object" },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    };
+    const cautious: GatewayMcpTool = {
+      name: "cautious",
+      inputSchema: { type: "object" },
+      annotations: { destructiveHint: true, idempotentHint: false },
+    };
+    const untrusted = await mcpUpstream({
+      name: "docs",
+      connection: fakeConnection([[searchTool, hinted, cautious]]),
+    });
+    const summaries = createEngine({
+      name: "gateway",
+      version: "0.1.0",
+      capabilities: createGateway({
+        upstreams: [untrusted],
+        rules: [{ match: "*", access: "public" }],
+      }).capabilities,
+    }).list();
+
+    expect(summaries.map((summary) => summary.annotations)).toEqual([
+      undefined,
+      { readOnly: false, openWorld: true },
+      { destructive: true, idempotent: false },
+    ]);
+    expect(untrusted.routes.map((route) => route.readOnly)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it("trusts read-only status only when the operator vouches for it", async () => {
+    const trusted = await mcpUpstream({
+      name: "docs",
+      connection: fakeConnection([[searchTool, deleteTool]]),
+      trustAnnotations: true,
+    });
+    const vouched = await mcpUpstream({
+      name: "docs",
+      connection: fakeConnection([[fetchTool, deleteTool]]),
+      readOnlyTools: ["fetch-page"],
+    });
+    const engine = createEngine({
+      name: "gateway",
+      version: "0.1.0",
+      capabilities: createGateway({
+        upstreams: [
+          trusted,
+          await mcpUpstream({
+            name: "kb",
+            connection: fakeConnection([[fetchTool, deleteTool]]),
+            readOnlyTools: ["fetch-page"],
+          }),
+        ],
+        rules: [{ match: "*", access: "public" }],
+      }).capabilities,
+    });
+
+    expect(trusted.routes.map((route) => route.readOnly)).toEqual([
+      true,
+      false,
+    ]);
+    expect(engine.describe("docs.search").annotations).toEqual({
+      readOnly: true,
+      openWorld: false,
+    });
+    expect(vouched.routes.map((route) => route.readOnly)).toEqual([
+      true,
+      false,
+    ]);
+    expect(engine.describe("kb.fetch-page").annotations).toEqual({
+      readOnly: true,
+    });
+    await expect(
+      mcpUpstream({
+        name: "docs",
+        connection: fakeConnection([[fetchTool]]),
+        readOnlyTools: ["fetch"],
+      }),
+    ).rejects.toThrow(
+      new TypeError(
+        "MCP upstream docs readOnlyTools names unknown tool fetch.",
+      ),
+    );
+    await expect(
+      mcpUpstream({
+        name: "docs",
+        connection: fakeConnection([[fetchTool]]),
+        trustAnnotations: "yes" as unknown as boolean,
+      }),
+    ).rejects.toThrow(TypeError);
   });
 
   it("pins the catalog fingerprint against silent tool changes", async () => {

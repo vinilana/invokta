@@ -65,6 +65,11 @@ describe("createGateway with engine upstreams", () => {
       annotations: { readOnly: true },
       access: "function",
     });
+    expect(
+      gateway.routes.find(
+        (route) => route.capabilityId === "support.classify-ticket",
+      )?.readOnly,
+    ).toBe(true);
     expect(described.inputSchema).toMatchObject({
       type: "object",
       properties: { ticketId: { type: "string", minLength: 1 } },
@@ -75,6 +80,7 @@ describe("createGateway with engine upstreams", () => {
       upstream: "billing",
       kind: "engine",
       upstreamCapabilityId: "billing.refund",
+      readOnly: false,
       rule: "rules[0]",
     });
   });

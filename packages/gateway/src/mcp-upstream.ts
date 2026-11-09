@@ -58,6 +58,14 @@ export interface McpUpstreamOptions {
   readonly maxTools?: number;
   /** Expected catalog fingerprint; discovery fails when the catalog differs. */
   readonly pin?: string;
+  /**
+   * Trust every annotation hint of this server. Defaults to `false`: an
+   * untrusted hint is republished only when it makes a tool look riskier,
+   * and it never makes a tool read-only.
+   */
+  readonly trustAnnotations?: boolean;
+  /** Tool names the operator vouches are read-only, whatever their hints. */
+  readonly readOnlyTools?: ReadonlyArray<string>;
   /** Cancels catalog discovery. */
   readonly signal?: AbortSignal;
 }
@@ -100,11 +108,12 @@ const UPSTREAM_TOOL_ERROR = Object.freeze({
   }),
 });
 
+/** MCP hint, core annotation, and the value that signals more caution. */
 const ANNOTATION_HINTS = Object.freeze([
-  ["readOnlyHint", "readOnly"],
-  ["destructiveHint", "destructive"],
-  ["idempotentHint", "idempotent"],
-  ["openWorldHint", "openWorld"],
+  ["readOnlyHint", "readOnly", false],
+  ["destructiveHint", "destructive", true],
+  ["idempotentHint", "idempotent", false],
+  ["openWorldHint", "openWorld", true],
 ] as const);
 
 /**
@@ -141,6 +150,11 @@ export async function mcpUpstream(
     );
   }
   const connection = options.connection;
+  const trustAnnotations = options.trustAnnotations ?? false;
+  if (typeof trustAnnotations !== "boolean") {
+    throw new TypeError(`Upstream ${name} trustAnnotations must be a boolean.`);
+  }
+  const readOnlyTools = snapshotToolNames(options.readOnlyTools, name);
 
   const listed = await listAllTools(connection, name, maxTools, options.signal);
   const byName = new Map(listed.map((tool) => [tool.name, tool]));
@@ -149,6 +163,13 @@ export async function mcpUpstream(
     options.include,
     name,
   ).map((toolName) => byName.get(toolName) as GatewayMcpTool);
+  for (const toolName of readOnlyTools) {
+    if (!selected.some((tool) => tool.name === toolName)) {
+      throw new TypeError(
+        `MCP upstream ${name} readOnlyTools names unknown tool ${toolName}.`,
+      );
+    }
+  }
   const fingerprint = await fingerprintTools(selected);
   if (options.pin !== undefined && options.pin !== fingerprint) {
     throw new Error(
@@ -157,11 +178,18 @@ export async function mcpUpstream(
   }
 
   const capabilities = selected.map((tool): GatewayUpstreamCapability => {
+    const vouched = readOnlyTools.has(tool.name);
+    const annotations = mapAnnotations(
+      tool.annotations,
+      trustAnnotations,
+      vouched,
+    );
     const route: GatewayUpstreamRoute = Object.freeze({
       capabilityId: `${namespace}.${tool.name}`,
       upstream: name,
       kind: "mcp",
       upstreamCapabilityId: tool.name,
+      readOnly: annotations?.readOnly === true,
     });
     if (tool.inputSchema.type !== "object") {
       throw new TypeError(
@@ -177,7 +205,6 @@ export async function mcpUpstream(
       );
     }
     const structured = tool.outputSchema !== undefined;
-    const annotations = mapAnnotations(tool.annotations);
     return Object.freeze({
       route,
       ...(tool.title === undefined ? {} : { title: tool.title }),
@@ -253,18 +280,46 @@ async function listAllTools(
   );
 }
 
+/**
+ * Maps MCP hints to core annotations. MCP clients must treat hints from an
+ * untrusted server as untrusted, so without trust only values that make a
+ * tool look riskier survive; a tool the operator vouches for is read-only.
+ */
 function mapAnnotations(
   hints: JsonObject | undefined,
+  trusted: boolean,
+  vouchedReadOnly: boolean,
 ): CapabilityAnnotations | undefined {
-  if (hints === undefined) return undefined;
   const annotations: Record<string, boolean> = {};
-  for (const [hint, annotation] of ANNOTATION_HINTS) {
-    const value = hints[hint];
-    if (typeof value === "boolean") annotations[annotation] = value;
+  for (const [hint, annotation, cautious] of ANNOTATION_HINTS) {
+    const value = hints?.[hint];
+    if (typeof value === "boolean" && (trusted || value === cautious)) {
+      annotations[annotation] = value;
+    }
+  }
+  if (vouchedReadOnly) {
+    annotations.readOnly = true;
+    delete annotations.destructive;
   }
   return Object.keys(annotations).length === 0
     ? undefined
     : Object.freeze(annotations);
+}
+
+function snapshotToolNames(
+  value: unknown,
+  upstream: string,
+): ReadonlySet<string> {
+  if (value === undefined) return new Set();
+  if (
+    !Array.isArray(value) ||
+    value.some((entry) => typeof entry !== "string" || entry === "")
+  ) {
+    throw new TypeError(
+      `Upstream ${upstream} readOnlyTools must list tool names.`,
+    );
+  }
+  return new Set(value as string[]);
 }
 
 function errorMessage(content: unknown): string {
