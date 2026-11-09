@@ -134,6 +134,10 @@ tools.
 - [`gateway-discovery-engine`](../../examples/gateway-discovery-engine/): a
   vendor's 200-tool MCP server served as a per-caller catalog and as
   search-based discovery, with a host-owned Portuguese glossary ranker.
+- [`gateway-jev-engine`](../../examples/gateway-jev-engine/): TypeSafe's Jev
+  as the `rank` port, deciding which visible tools a task needs.
+- [`gateway-semantic-search-engine`](../../examples/gateway-semantic-search-engine/):
+  an embeddings index prepared at startup as the `rank` port.
 
 ## Run the demo
 

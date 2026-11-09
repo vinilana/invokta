@@ -31,6 +31,8 @@
     { "path": "./examples/crawl-engine" },
     { "path": "./examples/gateway-discovery-engine" },
     { "path": "./examples/gateway-engine" },
+    { "path": "./examples/gateway-jev-engine" },
+    { "path": "./examples/gateway-semantic-search-engine" },
     { "path": "./examples/cursor-agent-routing-engine" },
     { "path": "./examples/agent-session-engine" },
     { "path": "./examples/hello-engine" },

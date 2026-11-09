@@ -28,6 +28,7 @@ while its own package owns ports, policies, limits, and outbound connectors.
 | Authenticate engine callers with your identity provider | `auth-jwt-bearer-engine`, then the `auth-*` example for your provider |
 | Export invocation traces and metrics to OpenTelemetry | `observability-engine` |
 | Serve several engines and MCP servers behind one authenticated gateway | `gateway-engine`, then `gateway-discovery-engine` for catalogs of hundreds of tools |
+| Let a model choose the tools a task needs, or search tools by meaning | `gateway-jev-engine` for TypeSafe Jev decisions, `gateway-semantic-search-engine` for embeddings |
 
 ## Choose by operational requirement
 
@@ -42,6 +43,7 @@ while its own package owns ports, policies, limits, and outbound connectors.
 | `parallel-search` | Network access to Parallel's public search MCP server for live commands; no API key, and its tests use a local fixture |
 | `auth-*` examples | Nothing for the tests, which verify locally generated credentials offline; each README lists the issuer, audience, or key variables its HTTP entry point needs against a real provider project |
 | `gateway-engine`, `gateway-discovery-engine` | Nothing external: each starts its upstream MCP server on loopback. They depend on the private `@invokta/gateway` proof of concept, so they run only inside this repository |
+| `gateway-jev-engine`, `gateway-semantic-search-engine` | Nothing for the tests, which use loopback stand-ins for TypeSafe and for an embeddings API; a live run needs `TYPESAFE_API_KEY`, or an OpenAI-compatible embeddings service such as OpenAI or a local Ollama. Like the other gateway examples, they run only inside this repository |
 
 The HTTP entry points use example-specific bearer-token environment variables in
 addition to the requirements above. Every linked README gives the exact variable
@@ -208,6 +210,21 @@ call still goes through `engine.invoke`.
     invocation, and a host-owned Portuguese glossary ranker.
 
     [Open `gateway-discovery-engine`](https://github.com/vinilana/invokta/tree/main/examples/gateway-discovery-engine)
+  </Card>
+  <Card title="Gateway Jev Engine" icon="approve-check">
+    Let TypeSafe's Jev decide which of the caller's visible tools a task
+    needs: one calibrated yes/no question per tool, batched and bounded,
+    with abstention, a lexical fallback, and invocation through the gateway
+    rules.
+
+    [Open `gateway-jev-engine`](https://github.com/vinilana/invokta/tree/main/examples/gateway-jev-engine)
+  </Card>
+  <Card title="Gateway Semantic Search Engine" icon="magnifier">
+    Embed the published catalog once at startup through any OpenAI-compatible
+    embeddings API, then rank the caller's visible tools by cosine similarity
+    so a Portuguese sentence finds an English tool.
+
+    [Open `gateway-semantic-search-engine`](https://github.com/vinilana/invokta/tree/main/examples/gateway-semantic-search-engine)
   </Card>
 </CardGrid>
 

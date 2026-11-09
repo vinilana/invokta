@@ -483,9 +483,10 @@ and ten Portuguese queries against the 200-tool fixture:
 | English, with plural folding | 1.0 | 10 of 10 |
 | Portuguese | 0.0 | 0 of 10 |
 
-A host MAY inject a `rank` port, for example embedding search or a
-glossary that expands the query before the exported `createSearchIndex`
-runs, as `(query, candidates, { signal }) => Promise<string[]>` with a
+A host MAY inject a `rank` port, for example embedding search, a decision
+model that judges which tools a task needs, or a glossary that expands the
+query before the exported `createSearchIndex` runs, as
+`(query, candidates, { signal }) => Promise<string[]>` with a
 finite timeout. Its result is intersected with the visible candidate IDs, so
 a ranker can reorder or drop tools but never add one; a failing or timed-out
 ranker falls back to the lexical result. Invokta provides no embedding or
@@ -710,6 +711,17 @@ phases 2 and 3 records them as accepted.
   about 117 KB against 3.6 KB for the discovery endpoint, and Portuguese
   recall@8 of 0.0 with lexical search against 1.0 with a host-owned glossary
   ranker that reuses the exported `createSearchIndex`.
+- [`examples/gateway-jev-engine`](../examples/gateway-jev-engine/) puts
+  TypeSafe's Jev in the `rank` port: one `noul` question per visible tool,
+  batched and bounded, keeps the tools a task needs and abstains when none
+  is likely. Its connector follows the `systemOne` contract of the official
+  `@typesafe-ai/sdk` 0.7.0 and is tested against a loopback stand-in; the
+  live API was not reachable from the build environment.
+- [`examples/gateway-semantic-search-engine`](../examples/gateway-semantic-search-engine/)
+  embeds the frozen catalog once at startup through an OpenAI-compatible
+  `/embeddings` route and ranks visible tools by cosine similarity. Both
+  examples set `queryGuidance` so agents send the whole task, and both fall
+  back to lexical search when their service fails.
 - `yarn run check` on the branch with phases 2 and 3 prototyped: 254 test
   files, 4,115 tests, typecheck, lint, formatting, build, and 19 example
   gates pass.

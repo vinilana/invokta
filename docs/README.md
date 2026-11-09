@@ -90,6 +90,8 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [`composed-engine`: local, atomic, and library capability composition](../examples/composed-engine/)
 - [`gateway-engine`: engines and an MCP server behind one authenticated gateway (proof of concept)](../examples/gateway-engine/)
 - [`gateway-discovery-engine`: a 200-tool MCP server through per-caller visibility and search-based discovery (proof of concept)](../examples/gateway-discovery-engine/)
+- [`gateway-jev-engine`: TypeSafe Jev decides which tools a task needs behind the gateway (proof of concept)](../examples/gateway-jev-engine/)
+- [`gateway-semantic-search-engine`: embedding search over the gateway's tool catalog (proof of concept)](../examples/gateway-semantic-search-engine/)
 
 ## Normative language
 
