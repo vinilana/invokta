@@ -2,20 +2,81 @@ import type { EngineSchema } from "@invokta/core";
 
 export type JsonObject = Readonly<Record<string, unknown>>;
 
+/** One failed check reported by a JSON Schema validator. */
+export interface JsonSchemaIssue {
+  readonly message: string;
+  readonly path?: ReadonlyArray<string | number>;
+}
+
+/**
+ * Validates a JSON value against a JSON Schema document, for example with
+ * Ajv. It returns the failed checks, or `undefined` or an empty list when the
+ * value is valid. The gateway passes the same frozen document object on every
+ * call, so a validator may compile it once and cache it by identity.
+ */
+export type JsonSchemaValidator = (
+  schema: JsonObject,
+  value: JsonObject,
+) =>
+  | ReadonlyArray<JsonSchemaIssue>
+  | undefined
+  | Promise<ReadonlyArray<JsonSchemaIssue> | undefined>;
+
 const notAnObjectIssues = Object.freeze([
   Object.freeze({ message: "Expected a JSON object." }),
 ]);
+const unvalidatedIssues = Object.freeze([
+  Object.freeze({ message: "The value could not be validated." }),
+]);
+const MAX_ISSUES = 100;
+const MAX_ISSUE_MESSAGE_LENGTH = 512;
+
+/** Copies at most 100 issues with bounded messages; anything else fails closed. */
+function snapshotIssues(
+  issues: unknown,
+): ReadonlyArray<JsonSchemaIssue> | undefined {
+  if (issues === undefined) return undefined;
+  if (!Array.isArray(issues)) return unvalidatedIssues;
+  if (issues.length === 0) return undefined;
+  return Object.freeze(
+    issues.slice(0, MAX_ISSUES).map((issue: unknown) => {
+      const { message, path } = (issue ?? {}) as {
+        readonly message?: unknown;
+        readonly path?: unknown;
+      };
+      const validPath =
+        Array.isArray(path) &&
+        path.every(
+          (segment) =>
+            typeof segment === "string" ||
+            (typeof segment === "number" && Number.isInteger(segment)),
+        );
+      return Object.freeze({
+        message:
+          typeof message === "string" && message !== ""
+            ? message.slice(0, MAX_ISSUE_MESSAGE_LENGTH)
+            : "The value does not match the schema.",
+        ...(validPath
+          ? { path: Object.freeze([...(path as (string | number)[])]) }
+          : {}),
+      });
+    }),
+  );
+}
 
 /**
  * Wraps a JSON Schema document published by an upstream as an engine schema.
  *
- * The gateway does not own the upstream contract: it republishes the document
- * unchanged and checks only that the value is a JSON object. The upstream
- * engine or MCP server remains the authoritative validator, and the core still
- * enforces the lossless JSON data model on every value.
+ * The gateway republishes the document unchanged. It always checks that the
+ * value is a JSON object; with a `validator`, it also validates the value
+ * against the document, so invalid input fails as `INPUT_INVALID` before the
+ * upstream is called and an invalid result fails as `OUTPUT_INVALID`. A
+ * validator that throws fails closed. The core still enforces the lossless
+ * JSON data model on every value.
  */
 export function jsonSchemaContract(
   document: JsonObject,
+  validator?: JsonSchemaValidator,
 ): EngineSchema<JsonObject> {
   if (document.type !== "object") {
     throw new TypeError("A gateway schema contract must have an object root.");
@@ -30,7 +91,17 @@ export function jsonSchemaContract(
       version: 1 as const,
       vendor: "invokta-gateway",
       validate(value: unknown) {
-        return isJsonObject(value) ? { value } : { issues: notAnObjectIssues };
+        if (!isJsonObject(value)) return { issues: notAnObjectIssues };
+        if (validator === undefined) return { value };
+        return (async () => {
+          let issues: ReadonlyArray<JsonSchemaIssue> | undefined;
+          try {
+            issues = snapshotIssues(await validator(snapshot, value));
+          } catch {
+            issues = unvalidatedIssues;
+          }
+          return issues === undefined ? { value } : { issues };
+        })();
       },
       jsonSchema: converter,
     }),

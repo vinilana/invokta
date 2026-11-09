@@ -3,6 +3,7 @@ import { type CapabilityAnnotations, CapabilityError } from "@invokta/core";
 import {
   isJsonObject,
   type JsonObject,
+  type JsonSchemaValidator,
   jsonSchemaContract,
 } from "./json-schema-contract.js";
 import { assertName, selectIncluded } from "./patterns.js";
@@ -66,6 +67,13 @@ export interface McpUpstreamOptions {
   readonly trustAnnotations?: boolean;
   /** Tool names the operator vouches are read-only, whatever their hints. */
   readonly readOnlyTools?: ReadonlyArray<string>;
+  /**
+   * Validates input and structured results against each tool's schemas, so
+   * invalid input fails as `INPUT_INVALID` before the call. Without one, the
+   * gateway checks only that values are JSON objects and the MCP server
+   * validates its own input.
+   */
+  readonly validator?: JsonSchemaValidator;
   /** Cancels catalog discovery. */
   readonly signal?: AbortSignal;
 }
@@ -155,6 +163,10 @@ export async function mcpUpstream(
     throw new TypeError(`Upstream ${name} trustAnnotations must be a boolean.`);
   }
   const readOnlyTools = snapshotToolNames(options.readOnlyTools, name);
+  const validator = options.validator;
+  if (validator !== undefined && typeof validator !== "function") {
+    throw new TypeError(`Upstream ${name} validator must be a function.`);
+  }
 
   const listed = await listAllTools(connection, name, maxTools, options.signal);
   const byName = new Map(listed.map((tool) => [tool.name, tool]));
@@ -212,8 +224,11 @@ export async function mcpUpstream(
         tool.description === undefined || tool.description.trim() === ""
           ? `Tool ${tool.name} published by the ${name} MCP upstream.`
           : tool.description,
-      input: jsonSchemaContract(tool.inputSchema),
-      output: jsonSchemaContract(tool.outputSchema ?? CONTENT_OUTPUT_SCHEMA),
+      input: jsonSchemaContract(tool.inputSchema, validator),
+      output: jsonSchemaContract(
+        tool.outputSchema ?? CONTENT_OUTPUT_SCHEMA,
+        validator,
+      ),
       timeoutMs,
       ...(annotations === undefined ? {} : { annotations }),
       errors: Object.freeze({ UPSTREAM_TOOL_ERROR }),

@@ -21,6 +21,11 @@ export {
   engineUpstream,
 } from "./engine-upstream.js";
 export { createGateway, type Gateway } from "./gateway.js";
+export type {
+  JsonObject,
+  JsonSchemaIssue,
+  JsonSchemaValidator,
+} from "./json-schema-contract.js";
 export {
   createSearchIndex,
   type SearchDocument,
