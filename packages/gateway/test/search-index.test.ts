@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createSearchIndex, tokenize } from "../src/search-index.js";
+import { createSearchIndex, tokenize } from "../src/index.js";
 
 describe("tokenize", () => {
   it("splits IDs, separators, and camelCase, lowercases, and folds diacritics", () => {

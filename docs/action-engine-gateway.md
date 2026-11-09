@@ -349,9 +349,11 @@ type CapabilityVisibility = (args: {
   principal, `deny` to nobody, and `requireScopes` to principals holding the
   scopes. An access function may depend on input, which a listing does not
   have, so a rule with a custom function MAY declare
-  `visible?: (principal) => boolean`. Without it, the capability is visible to
-  every authenticated caller: a listing grants nothing, and the access rule
-  still decides every call.
+  `visible?: (principal, route) => boolean`. The route lets one rule show
+  reads and writes to different callers; the predicate stays synchronous and
+  never sees input. Without it, the capability is visible to every
+  authenticated caller: a listing grants nothing, and the access rule still
+  decides every call.
 
 **Rules.**
 
@@ -481,8 +483,9 @@ and ten Portuguese queries against the 200-tool fixture:
 | English, with plural folding | 1.0 | 10 of 10 |
 | Portuguese | 0.0 | 0 of 10 |
 
-A host MAY inject a `rank` port for semantic search, for example with
-embeddings, as `(query, candidates, { signal }) => Promise<string[]>` with a
+A host MAY inject a `rank` port, for example embedding search or a
+glossary that expands the query before the exported `createSearchIndex`
+runs, as `(query, candidates, { signal }) => Promise<string[]>` with a
 finite timeout. Its result is intersected with the visible candidate IDs, so
 a ranker can reorder or drop tools but never add one; a failing or timed-out
 ranker falls back to the lexical result. Invokta provides no embedding or

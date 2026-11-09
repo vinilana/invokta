@@ -83,10 +83,14 @@ export interface GatewayRule {
    * Who sees the governed capabilities in listings and search. Defaults to
    * the access itself for `public`, `authenticated`, `deny`, and
    * `requireScopes`, and to every authenticated caller for other functions,
-   * which may depend on input a listing does not have. Visibility never
-   * grants access.
+   * which may depend on input a listing does not have. It receives the
+   * capability's route, so one rule can show reads and writes to different
+   * callers. It must be synchronous. Visibility never grants access.
    */
-  readonly visible?: (principal: Principal | null) => boolean;
+  readonly visible?: (
+    principal: Principal | null,
+    route: GatewayUpstreamRoute,
+  ) => boolean;
 }
 
 /**

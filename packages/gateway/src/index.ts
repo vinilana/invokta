@@ -22,6 +22,12 @@ export {
 } from "./engine-upstream.js";
 export { createGateway, type Gateway } from "./gateway.js";
 export {
+  createSearchIndex,
+  type SearchDocument,
+  type SearchIndex,
+  tokenize,
+} from "./search-index.js";
+export {
   type GatewayMcpConnection,
   type GatewayMcpTool,
   type McpGatewayUpstream,

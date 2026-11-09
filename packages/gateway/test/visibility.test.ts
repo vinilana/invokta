@@ -97,6 +97,22 @@ describe("gateway.visibility", () => {
     ]);
   });
 
+  it("passes the route to a visible predicate so one rule can split reads and writes", () => {
+    const canUse = (principal: Principal | null, readOnly: boolean) =>
+      readOnly ? principal !== null : principal?.attributes?.team === "support";
+    const gateway = gatewayWith([
+      {
+        name: "by-risk",
+        match: "*",
+        access: ({ principal, route }) => canUse(principal, route.readOnly),
+        visible: (principal, route) => canUse(principal, route.readOnly),
+      },
+    ]);
+
+    expect(visibleIds(gateway, reader)).toEqual(["support.classify-ticket"]);
+    expect(visibleIds(gateway, agent)).toHaveLength(5);
+  });
+
   it("hides deny-by-default capabilities and unknown IDs", () => {
     const denied = gatewayWith([
       { match: "billing.get-invoice", access: "public" },

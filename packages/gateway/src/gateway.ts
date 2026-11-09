@@ -44,8 +44,13 @@ interface CompiledRule {
     readonly matches: Matcher;
   }>;
   readonly access: GatewayAccess;
-  readonly visible: (principal: Principal | null) => boolean;
+  readonly visible: VisiblePredicate;
 }
+
+type VisiblePredicate = (
+  principal: Principal | null,
+  route: GatewayUpstreamRoute,
+) => boolean;
 
 /**
  * Builds the capability map of a gateway over explicitly configured
@@ -101,7 +106,7 @@ export function createGateway(options: GatewayOptions): Gateway {
   const routes: GatewayRoute[] = [];
   const visibleById = new Map<
     string,
-    (principal: Principal | null) => boolean
+    { readonly visible: VisiblePredicate; readonly route: GatewayUpstreamRoute }
   >();
   for (const entry of entries) {
     const { capabilityId } = entry.route;
@@ -125,7 +130,10 @@ export function createGateway(options: GatewayOptions): Gateway {
       }) as unknown as AnyCapability,
     });
     routes.push(Object.freeze({ ...route, rule: ruleName }));
-    visibleById.set(capabilityId, rule?.visible ?? defaultVisible);
+    visibleById.set(capabilityId, {
+      visible: rule?.visible ?? defaultVisible,
+      route,
+    });
   }
   for (const rule of rules) {
     if (usedRules.has(rule)) continue;
@@ -140,10 +148,10 @@ export function createGateway(options: GatewayOptions): Gateway {
   }
 
   const visibility: GatewayVisibility = ({ principal, capabilityId }) => {
-    const visible = visibleById.get(capabilityId);
-    if (visible === undefined) return false;
+    const bound = visibleById.get(capabilityId);
+    if (bound === undefined) return false;
     try {
-      return visible(principal) === true;
+      return bound.visible(principal, bound.route) === true;
     } catch {
       return false;
     }
@@ -160,10 +168,8 @@ export function createGateway(options: GatewayOptions): Gateway {
 function visibleFor(
   access: GatewayAccess,
   declared: unknown,
-): (principal: Principal | null) => boolean {
-  if (declared !== undefined) {
-    return declared as (principal: Principal | null) => boolean;
-  }
+): VisiblePredicate {
+  if (declared !== undefined) return declared as VisiblePredicate;
   switch (access) {
     case "public":
       return () => true;
