@@ -48,3 +48,29 @@ function deepFreeze<Value>(value: Value): Value {
   }
   return value;
 }
+
+/**
+ * A gateway-owned contract that validates its own input: `check` returns an
+ * issue message, or `undefined` when the object is valid.
+ */
+export function checkedContract(
+  document: JsonObject,
+  check: (value: JsonObject) => string | undefined,
+): EngineSchema<JsonObject> {
+  const published = jsonSchemaContract(document);
+  const standard = published["~standard"];
+  return Object.freeze({
+    "~standard": Object.freeze({
+      version: 1 as const,
+      vendor: standard.vendor,
+      validate(value: unknown) {
+        if (!isJsonObject(value)) return { issues: notAnObjectIssues };
+        const issue = check(value);
+        return issue === undefined
+          ? { value }
+          : { issues: Object.freeze([Object.freeze({ message: issue })]) };
+      },
+      jsonSchema: standard.jsonSchema,
+    }),
+  }) as EngineSchema<JsonObject>;
+}

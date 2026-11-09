@@ -179,6 +179,8 @@ await serveMcpHttp(engine, {
 | `chainAuthenticators` | Try several `authenticate` hooks in order |
 | `apiKeyAuthenticator`, `hashApiKey` | Static service keys stored as SHA-256 digests |
 | `requireScopes` | Access function over `principal.attributes.scopes`, the `@invokta/auth-jwt` default mapping |
+| `gateway.visibility` | Per-caller visibility derived from the rules, for the adapters' `visibility` option ([D](#d--per-caller-visibility)) |
+| `createDiscovery` | Search-based discovery: `search-tools`, `invoke-read-tool`, `invoke-tool`, and `alwaysList` over the gateway ([C](#c--search-based-discovery)) |
 
 ## Authentication
 
@@ -379,24 +381,32 @@ document contains only its visible operations.
 
 ### C — Search-based discovery
 
+> Prototyped on this branch: `createDiscovery` in `@invokta/gateway`, with
+> annotation trust in `mcpUpstream`.
+
 **Goal.** A client sees a small, constant number of tools whatever the
 catalog size, and discovers the rest on demand without losing per-tool
 authorization.
 
-**Shape.** `createDiscoveryCapabilities(gatewayEngine, options)` in
-`@invokta/gateway` returns a capability map that the host serves as a
-separate engine:
+**Shape.** `createDiscovery({ gateway, … })` in `@invokta/gateway` returns
+`{ capabilities, visibility, gatewayEngine }`. The host serves
+`capabilities` as a separate engine with `visibility` as its adapter option:
 
 | Capability | Annotations | Contract |
 | --- | --- | --- |
 | `<prefix>.search-tools` | `readOnly` | Input `{ query, limit? }`: a query of 1 to 256 characters and 1 to 20 results, 8 by default. Output `{ tools, truncated }`: each entry has the ID, title, description, input and output schemas, annotations, and deprecation of one visible capability |
 | `<prefix>.invoke-read-tool` | `readOnly` | Input `{ tool, arguments }`; accepts only targets whose read-only status is trusted |
-| `<prefix>.invoke-tool` | `destructive`, `openWorld` | Input `{ tool, arguments }`; accepts every other visible target |
+| `<prefix>.invoke-tool` | `destructive`, `openWorld` | Input `{ tool, arguments }`; accepts every visible target |
 
 Splitting invocation by risk class keeps client confirmation meaningful. A
 client that asks before destructive tools asks before every `invoke-tool`
 call and never before a read. A single generic tool would either prompt for
-every read or never prompt for a deletion.
+every read or never prompt for a deletion. A read sent to `invoke-tool` is
+accepted: it costs a confirmation, never a bypass.
+
+The discovery tools have no authority of their own: their access is
+`public`, they are visible to every caller, and every decision is delegated
+to `gateway.visibility` and to the target's gateway rule.
 
 **Annotation trust.** MCP tool annotations are hints that the upstream
 server chooses, and the MCP specification tells clients to treat them as
@@ -427,6 +437,12 @@ validation (phase 1), upstream access, timeout, events, and authorization
 decision apply exactly as for a direct call. The path stays single: outer
 adapter, discovery engine `invoke`, gateway engine `invoke`, upstream.
 
+`createDiscovery` builds that gateway engine itself from
+`gateway.capabilities` and returns it as `gatewayEngine`; the host can name
+it, attach `onEvent` and `logger`, and serve it as the full catalog. It does
+not accept an engine from the host: an engine built from the upstreams
+instead of the gateway would let `invoke-tool` bypass every gateway rule.
+
 **Errors.**
 
 | Situation | Result |
@@ -445,15 +461,25 @@ same query always returns the same tools, so results can be tested.
   model can fetch the schema of a tool it already knows.
 - Tokens are split on `.`, `-`, `_`, whitespace, and camelCase boundaries,
   lowercased, and folded to remove diacritics, so `cobrança` matches
-  `cobranca`. There is no stemming, synonym list, or translation.
+  `cobranca`.
+- Regular plurals are folded to the singular on both sides: `tickets`,
+  `addresses`, `matches`, `categories`, and `pedidos` match their singular.
+  Without it the prototype missed `search tickets by keyword`, and
+  `list meetings` hit only through the ID tie-break. There is no other
+  stemming, no synonym list, and no translation.
 - The `search-tools` description tells the model to search with the action
   and the object in the catalog's language, for example `refund invoice`.
   The language is configurable and defaults to English.
 
 Lexical search does not cross languages: a Portuguese query does not find an
-English description. The phase 3 suite therefore records recall@8 for a
-fixed query set in English and Portuguese against the 200-tool fixture,
-documenting both the coverage and that limit.
+English description. The prototype suite records recall@8 for ten English
+and ten Portuguese queries against the 200-tool fixture:
+
+| Query set | recall@8 | Expected tool first |
+| --- | --- | --- |
+| English, without plural folding | 0.9 | — |
+| English, with plural folding | 1.0 | 10 of 10 |
+| Portuguese | 0.0 | 0 of 10 |
 
 A host MAY inject a `rank` port for semantic search, for example with
 embeddings, as `(query, candidates, { signal }) => Promise<string[]>` with a
@@ -465,10 +491,11 @@ host-owned.
 
 **Bounds and audit.** At most 20 results and a 64 KiB response budget:
 results that would exceed it are dropped from the tail and `truncated` is
-`true`; a schema is returned whole or not at all. A search is recorded with
-the request ID, principal ID, and result count, never the query text, which
-may contain sensitive data. Each invocation produces the target's normal
-gateway decision.
+`true`; a schema is returned whole or not at all. `onSearch` records a
+search with the request ID, principal ID, result count, `truncated`, and
+the ranker used (`lexical`, `custom`, or `lexical-fallback`), never the
+query text, which may contain sensitive data. Each invocation produces the
+target's normal gateway decision.
 
 **Where to serve it.** A host may publish the full, visibility-filtered
 catalog at `/mcp` for clients with native tool search, and the discovery
@@ -499,7 +526,9 @@ visible tools with their schemas. `invoke-read-tool` with a destructive
 target fails as `TOOL_NOT_READ_ONLY`, and so does an MCP tool whose only
 read-only evidence is an untrusted hint. A hidden target and an unknown
 target produce identical `TOOL_NOT_FOUND` errors. Every invocation produces the same
-gateway decision and upstream result as a direct call of the target.
+gateway decision and upstream result as a direct call of the target. The
+prototype meets this criterion; see
+[Proof-of-concept validation](#proof-of-concept-validation).
 
 ## Security model
 
@@ -515,9 +544,9 @@ gateway decision and upstream result as a direct call of the target.
 | Audit leaks payloads or secrets | `onDecision` carries IDs, rule name, and outcome only; failures in the sink are contained |
 | Static key disclosure from configuration | Only SHA-256 digests are configured |
 
-Planned controls for tool discovery (phases 2 and 3):
+Controls for tool discovery, prototyped for phases 2 and 3:
 
-| Threat | Planned control |
+| Threat | Control |
 | --- | --- |
 | A caller enumerates capabilities it cannot use | Hidden capabilities are absent from `tools/list`, HTTP listing, OpenAPI, and search, and answer exactly like nonexistent ones |
 | A generic invoke tool widens access | `invoke-*` calls the target through the gateway `engine.invoke`, so the target's rule, validation, and upstream access apply |
@@ -555,12 +584,21 @@ Planned controls for tool discovery (phases 2 and 3):
   of phase 1 rejects invalid input before the call, as `INPUT_INVALID`.
 - **Rules that read `input` see unvalidated data.** Until the validator port
   exists, a rule must treat `input` as untrusted.
-- **The catalog is not filtered per caller.** `engine.list()` has no principal,
-  so every authenticated caller sees every published tool, including ones it
-  cannot call. Phase 2 (option D) adds per-caller visibility.
-- **Every caller receives the whole catalog.** 200 small tools already cost
-  about 24,000 tokens in one `tools/list`. Phase 3 (option C) adds
-  search-based discovery.
+- **Per-caller visibility is an unaccepted adapter change.** The prototype
+  adds `visibility` to `@invokta/mcp` and `@invokta/http`; it needs its ADR
+  before merging. MCP stdio accepts and validates the option and shares the
+  filtered protocol server with HTTP, but no test drives a stdio session with
+  it yet.
+- **`gateway.visibility` hides every capability the gateway did not
+  create.** A host that mixes gateway and local capabilities in one engine
+  composes its own predicate.
+- **Discovery cannot wrap the gateway engine in middleware.**
+  `createDiscovery` builds the gateway engine from `gateway.capabilities` so
+  `invoke-tool` cannot bypass the rules; `applyMiddleware`, for example a
+  rate limit per target, is not available on that engine yet.
+- **`invoke-*` results are generic.** The output is `{ result }`; the
+  target's typed `structuredContent` and rich content blocks are not
+  reproduced at the protocol surface.
 - **Rich MCP content is not reconstructed.** A proxied tool without an output
   schema returns `{ content }` as structured data; images and audio are not
   re-emitted as content blocks.
@@ -581,6 +619,12 @@ Planned controls for tool discovery (phases 2 and 3):
 | MCP tool call timeout | 30,000 ms by default; 1 through 2,147,483,647 ms |
 | Upstream tool error message | 1,024 characters |
 | Presented API key | 1,024 characters |
+| `search-tools` query and results | 256 characters; 1 to 20 results, 8 by default |
+| `search-tools` response | 64 KiB; a tool entry is returned whole or not at all |
+| `invoke-*` tool ID | 256 characters |
+| `alwaysList` | 32 capabilities after pattern expansion |
+| Host ranker deadline | 2,000 ms by default; 1 through 60,000 ms |
+| HTTP OpenAPI documents cached per visible set | 64; the oldest is evicted |
 
 ## Delivery plan
 
@@ -591,8 +635,8 @@ criterion.
 | --- | --- | --- |
 | 0 — Proof of concept | Private `packages/gateway`, tests, runnable demo, this note | Engine and MCP upstreams are served through MCP HTTP and HTTP JSON with chained authentication, first-match rules, default deny, decision audit, and pinned MCP catalogs; repository gates pass |
 | 1 — Contract hardening | JSON Schema validator port injected by the host; ADR; package public API types test; architecture and portability tests; recipe and docs-site reference | Invalid input to any upstream fails as `INPUT_INVALID` before `run`; the ADR resolves every tension above |
-| 2 — Per-caller visibility (D) | Optional synchronous `visibility` option in `@invokta/mcp` and `@invokta/http`; `gateway.visibility` compiled from the rules, with optional `visible` on custom function rules; ADR for the adapter change | The [D acceptance criterion](#d--per-caller-visibility) |
-| 3 — Search-based discovery (C) | `createDiscoveryCapabilities` with `search-tools`, `invoke-read-tool`, `invoke-tool`, bounded `alwaysList`, BM25 ranking, annotation trust, and the optional `rank` port | The [C acceptance criterion](#c--search-based-discovery) |
+| 2 — Per-caller visibility (D) | **Prototyped.** Optional synchronous `visibility` option in `@invokta/mcp` and `@invokta/http`; `gateway.visibility` compiled from the rules, with optional `visible` on custom function rules. Remaining: ADR for the adapter change, adapter references, stdio session test | The [D acceptance criterion](#d--per-caller-visibility) |
+| 3 — Search-based discovery (C) | **Prototyped.** `createDiscovery` with `search-tools`, `invoke-read-tool`, `invoke-tool`, bounded `alwaysList`, BM25 ranking with plural folding, annotation trust, and the optional `rank` port. Remaining: middleware on the gateway engine, ADR | The [C acceptance criterion](#c--search-based-discovery) |
 | 4 — Catalog lock | `invokta gateway lock` in `@invokta/tooling`: write the MCP catalog snapshot and fingerprints to a committed file; the gateway verifies it at startup | A changed upstream tool fails startup and `yarn check` with a reviewable diff |
 | 5 — Mounting router | Web-standard router that serves several MCP and HTTP handlers, each with its own mount path, authenticator, and Protected Resource Metadata | One origin serves `/e/<engine>/mcp` per engine and passes the installer's mounted-URL tests |
 | 6 — Delegated credentials | Per-principal upstream credentials through the connector-broker `CredentialSource` port, including RFC 8693 token exchange | A user-subject upstream call receives a credential minted for that user and audience; a missing grant is a declared domain error |
@@ -603,16 +647,16 @@ Phase 3 may ship in the first release or later; it depends on phase 2.
 
 ## Decisions
 
-Tool discovery decisions taken on 2026-11-08. The ADR of phases 2 and 3
-records them as accepted.
+Tool discovery decisions taken on 2026-11-08 and 2026-11-09. The ADR of
+phases 2 and 3 records them as accepted.
 
 | Question | Decision | Status |
 | --- | --- | --- |
 | Visibility of a custom function rule without `visible` | Visible to every authenticated caller; the access rule still decides each call | Decided by the team |
 | Synchronous visibility, or an asynchronous PDP-backed predicate | Synchronous and principal-only; PDP or directory entitlements enter once per request through `authenticate` and `principal.attributes` | Delegated by the team; decided as recommended |
-| Default `search-tools` ranking | Deterministic lexical BM25 with weighted fields, exact-ID lookup, and diacritic folding; semantic ranking only through the host-owned `rank` port, with lexical fallback | Recommended; pending team confirmation |
-| One invoke tool or two | Two, split by risk class, with read-only status trusted only for engine upstreams or operator-vouched MCP tools | Recommended; pending team confirmation |
-| How `alwaysList` is chosen | Configuration only, at most 32 capabilities, subject to visibility; usage metrics inform reviewed changes but never change the list automatically | Recommended; pending team confirmation |
+| Default `search-tools` ranking | Deterministic lexical BM25 with weighted fields, exact-ID lookup, diacritic folding, and regular plural folding; semantic ranking only through the host-owned `rank` port, with lexical fallback | Recommended, then accepted when the team asked to implement it; plural folding added on prototype evidence |
+| One invoke tool or two | Two, split by risk class, with read-only status trusted only for engine upstreams or operator-vouched MCP tools | Recommended, then accepted when the team asked to implement it |
+| How `alwaysList` is chosen | Configuration only, at most 32 capabilities, subject to visibility; usage metrics inform reviewed changes but never change the list automatically | Recommended, then accepted when the team asked to implement it |
 
 ## Open decisions
 
@@ -630,14 +674,32 @@ records them as accepted.
 
 ## Proof-of-concept validation
 
-- `yarn vitest run packages/gateway`: 39 tests covering engine and MCP
+- `yarn vitest run packages/gateway`: 69 tests covering engine and MCP
   upstreams, rule semantics, defaults, fail-closed rules, audit, domain error
   republication, progress, cancellation, timeouts, pinning, bounds,
-  authentication methods, and an end-to-end path from an MCP client through
-  the gateway to an authenticated upstream MCP server.
+  authentication methods, annotation trust, per-caller visibility,
+  search-based discovery over a 200-tool fixture including the recall
+  measurement, and end-to-end paths from an MCP client through the gateway
+  to an authenticated upstream MCP server.
+- `packages/mcp/test/visibility.test.ts` (7) and
+  `packages/http/test/visibility.test.ts` (6): the adapter option, hidden
+  equals nonexistent, no invocation for hidden capabilities, per-principal
+  OpenAPI, fail-closed predicates, and option forwarding by `serveHttp`.
 - `node packages/gateway/demo/serve.mjs` after `yarn build`: starts an
   upstream MCP engine that only the gateway's service token can reach and the
   gateway over MCP HTTP and HTTP JSON. Observed: 401 without a key, 403 for a
   missing scope or a deny-by-default capability, 422 for a republished domain
   error, 200 for allowed calls, 401 when calling the upstream directly without
   the service token, and one audit line per decision.
+- The same demo with visibility and discovery: on `/mcp` the reader lists
+  one tool and the agent three, and the reader's call of a hidden tool gets
+  the unknown-tool protocol error; on `/search/mcp` both list three
+  discovery tools, the same search returns two tools to the agent and one to
+  the reader, `invoke-read-tool` refuses `billing.refund` as
+  `TOOL_NOT_READ_ONLY`, `invoke-tool` refunds it for the agent, and a vouched
+  MCP tool runs through `invoke-read-tool`. This run found that `serveHttp`
+  dropped the `visibility` option; a regression test and fix are on the
+  branch.
+- `yarn run check` on the branch with phases 2 and 3 prototyped: 254 test
+  files, 4,115 tests, typecheck, lint, formatting, build, and 19 example
+  gates pass.

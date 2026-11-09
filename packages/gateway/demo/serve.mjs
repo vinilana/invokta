@@ -1,11 +1,14 @@
 // Runnable proof of concept. Build the workspace first (`yarn build`), then run
 // `node packages/gateway/demo/serve.mjs` from the repository root.
 //
-// It starts three loopback listeners:
+// It starts four loopback listeners:
 //   - an upstream "docs" Action Engine over MCP HTTP, reachable only with a
 //     service token that only the gateway holds;
-//   - the gateway over MCP HTTP, for agent clients; and
-//   - the same gateway over plain HTTP JSON, for applications and curl.
+//   - the gateway over MCP HTTP, for agent clients, listing only the tools
+//     each caller may see;
+//   - the same gateway over plain HTTP JSON, for applications and curl; and
+//   - search-based discovery over MCP HTTP at /search/mcp, for clients that
+//     should see three tools instead of the whole catalog.
 // A local "billing" engine is aggregated in-process next to the MCP upstream.
 import { randomBytes } from "node:crypto";
 import process from "node:process";
@@ -18,6 +21,7 @@ import { z } from "zod";
 import {
   apiKeyAuthenticator,
   chainAuthenticators,
+  createDiscovery,
   createGateway,
   engineUpstream,
   hashApiKey,
@@ -100,6 +104,8 @@ const docs = await mcpUpstream({
   name: "docs",
   namespace: "kb",
   connection: docsConnection,
+  // The operator vouches for this tool; the server's own hint is not trusted.
+  readOnlyTools: ["docs_search"],
 });
 
 const gateway = createGateway({
@@ -118,10 +124,19 @@ const gateway = createGateway({
   },
 });
 
-const engine = createEngine({
-  name: "acme-gateway",
+const discovery = createDiscovery({
+  gateway,
+  gatewayEngine: { name: "acme-gateway", version: "0.0.0-poc" },
+  onSearch(event) {
+    process.stderr.write(`search ${JSON.stringify(event)}\n`);
+  },
+});
+// One engine serves the full catalog; discovery invokes through the same one.
+const engine = discovery.gatewayEngine;
+const discoveryEngine = createEngine({
+  name: "acme-gateway-discovery",
   version: "0.0.0-poc",
-  capabilities: gateway.capabilities,
+  capabilities: discovery.capabilities,
 });
 
 const auth = {
@@ -139,8 +154,15 @@ const auth = {
     }),
   ),
 };
-const mcpServer = await serveMcpHttp(engine, { port: 3100, auth });
-const httpServer = await serveHttp(engine, { port: 3102, auth });
+const visibility = gateway.visibility;
+const mcpServer = await serveMcpHttp(engine, { port: 3100, auth, visibility });
+const httpServer = await serveHttp(engine, { port: 3102, auth, visibility });
+const discoveryServer = await serveMcpHttp(discoveryEngine, {
+  port: 3103,
+  path: "/search/mcp",
+  auth,
+  visibility: discovery.visibility,
+});
 
 process.stdout.write(
   [
@@ -156,13 +178,15 @@ process.stdout.write(
     `Agent key (kb:read, billing:refund): ${agentKey}`,
     `Reader key (no scopes):              ${readerKey}`,
     "",
-    "MCP endpoint:  http://127.0.0.1:3100/mcp   (send the key as x-api-key)",
-    "HTTP endpoint: http://127.0.0.1:3102/capabilities",
+    "MCP endpoint:       http://127.0.0.1:3100/mcp         (send the key as x-api-key)",
+    "HTTP endpoint:      http://127.0.0.1:3102/capabilities",
+    "Discovery endpoint: http://127.0.0.1:3103/search/mcp  (3 tools: search, invoke-read, invoke)",
     "",
     "Try:",
     `  curl -s -H 'x-api-key: ${readerKey}' http://127.0.0.1:3102/capabilities`,
     `  curl -s -X POST -H 'x-api-key: ${agentKey}' -H 'content-type: application/json' -d '{"query":"gateway"}' http://127.0.0.1:3102/capabilities/kb.docs_search`,
     `  curl -s -X POST -H 'x-api-key: ${readerKey}' -H 'content-type: application/json' -d '{"invoiceId":"I-1"}' http://127.0.0.1:3102/capabilities/billing.refund`,
+    `  curl -s -X POST -H 'x-api-key: ${agentKey}' -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"gateway_search-tools","arguments":{"query":"refund invoice"}}}' http://127.0.0.1:3103/search/mcp`,
     "",
     "Press Ctrl+C to stop.",
     "",
@@ -173,6 +197,7 @@ const stop = async () => {
   await Promise.allSettled([
     mcpServer.close(),
     httpServer.close(),
+    discoveryServer.close(),
     docsConnection.close(),
   ]);
   await upstreamServer.close();

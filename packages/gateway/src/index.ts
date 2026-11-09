@@ -9,6 +9,14 @@ export {
 } from "./authentication.js";
 export { requireScopes } from "./access.js";
 export {
+  createDiscovery,
+  type Discovery,
+  type DiscoveryCandidate,
+  type DiscoveryOptions,
+  type DiscoveryRanker,
+  type DiscoverySearchEvent,
+} from "./discovery.js";
+export {
   type EngineUpstreamOptions,
   engineUpstream,
 } from "./engine-upstream.js";
