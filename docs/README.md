@@ -88,6 +88,8 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [`agent-session-engine`: durable cross-harness sessions and CLI-backed hooks](../examples/agent-session-engine/)
 - [`community-capabilities`: atomic and library capability publication fixture](../examples/community-capabilities/)
 - [`composed-engine`: local, atomic, and library capability composition](../examples/composed-engine/)
+- [`gateway-engine`: engines and an MCP server behind one authenticated gateway (proof of concept)](../examples/gateway-engine/)
+- [`gateway-discovery-engine`: a 200-tool MCP server through per-caller visibility and search-based discovery (proof of concept)](../examples/gateway-discovery-engine/)
 
 ## Normative language
 

@@ -1,0 +1,28 @@
+{
+  "name": "@invokta/example-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false --noEmit",
+    "test": "vitest run test",
+    "hash-key": "node dist/hash-key.js",
+    "upstream:docs": "node dist/docs-mcp-http.js",
+    "gateway": "node dist/gateway-http.js"
+  },
+  "dependencies": {
+    "@invokta/auth-jwt": "0.10.0",
+    "@invokta/core": "0.10.0",
+    "@invokta/gateway": "0.0.0-poc",
+    "@invokta/http": "0.10.0",
+    "@invokta/mcp": "0.10.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "jose": "^6.2.12"
+  }
+}

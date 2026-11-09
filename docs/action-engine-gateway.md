@@ -703,6 +703,13 @@ phases 2 and 3 records them as accepted.
   MCP tool runs through `invoke-read-tool`. This run found that `serveHttp`
   dropped the `visibility` option; a regression test and fix are on the
   branch.
+- [`examples/gateway-engine`](../examples/gateway-engine/) and
+  [`examples/gateway-discovery-engine`](../examples/gateway-discovery-engine/)
+  apply the prototype to two scenarios with their own tests and runnable
+  READMEs. The discovery example measures a 180-tool per-caller catalog at
+  about 117 KB against 3.6 KB for the discovery endpoint, and Portuguese
+  recall@8 of 0.0 with lexical search against 1.0 with a host-owned glossary
+  ranker that reuses the exported `createSearchIndex`.
 - `yarn run check` on the branch with phases 2 and 3 prototyped: 254 test
   files, 4,115 tests, typecheck, lint, formatting, build, and 19 example
   gates pass.

@@ -126,6 +126,15 @@ write descriptions and queries in the same language, or inject a `rank`
 port for semantic search, whose result can only reorder or drop visible
 tools.
 
+## Examples
+
+- [`gateway-engine`](../../examples/gateway-engine/): two in-process engines
+  and another team's MCP server behind API-key and JWT authentication,
+  first-match rules, per-caller visibility, and audit.
+- [`gateway-discovery-engine`](../../examples/gateway-discovery-engine/): a
+  vendor's 200-tool MCP server served as a per-caller catalog and as
+  search-based discovery, with a host-owned Portuguese glossary ranker.
+
 ## Run the demo
 
 ```sh

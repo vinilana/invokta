@@ -27,6 +27,7 @@ while its own package owns ports, policies, limits, and outbound connectors.
 | Publish and compose reusable capabilities | `community-capabilities` and `composed-engine` |
 | Authenticate engine callers with your identity provider | `auth-jwt-bearer-engine`, then the `auth-*` example for your provider |
 | Export invocation traces and metrics to OpenTelemetry | `observability-engine` |
+| Serve several engines and MCP servers behind one authenticated gateway | `gateway-engine`, then `gateway-discovery-engine` for catalogs of hundreds of tools |
 
 ## Choose by operational requirement
 
@@ -40,6 +41,7 @@ while its own package owns ports, policies, limits, and outbound connectors.
 | `observability-engine` | Sentry, Datadog, and New Relic credentials plus their organization or account identifiers |
 | `parallel-search` | Network access to Parallel's public search MCP server for live commands; no API key, and its tests use a local fixture |
 | `auth-*` examples | Nothing for the tests, which verify locally generated credentials offline; each README lists the issuer, audience, or key variables its HTTP entry point needs against a real provider project |
+| `gateway-engine`, `gateway-discovery-engine` | Nothing external: each starts its upstream MCP server on loopback. They depend on the private `@invokta/gateway` proof of concept, so they run only inside this repository |
 
 The HTTP entry points use example-specific bearer-token environment variables in
 addition to the requirements above. Every linked README gives the exact variable
@@ -184,6 +186,31 @@ follows its shape. Each pairs with a page in the
   </Card>
 </CardGrid>
 
+## Serve engines behind a gateway
+
+These examples use the private `@invokta/gateway` proof of concept described
+in the [Action Engine gateway design note](https://github.com/vinilana/invokta/blob/main/docs/action-engine-gateway.md).
+The gateway is a capability map served by the existing adapters, so every
+call still goes through `engine.invoke`.
+
+<CardGrid>
+  <Card title="Gateway Engine" icon="setting">
+    Publish two in-process Action Engines and another team's MCP server as one
+    engine. API keys and JWTs share one authentication chain, first-match
+    rules deny by default, each caller lists only what it can call, and every
+    decision is audited without payloads.
+
+    [Open `gateway-engine`](https://github.com/vinilana/invokta/tree/main/examples/gateway-engine)
+  </Card>
+  <Card title="Gateway Discovery Engine" icon="magnifier">
+    Serve a vendor's 200-tool MCP server as a per-caller catalog and as three
+    search-based discovery tools, with reviewed annotations, risk-class
+    invocation, and a host-owned Portuguese glossary ranker.
+
+    [Open `gateway-discovery-engine`](https://github.com/vinilana/invokta/tree/main/examples/gateway-discovery-engine)
+  </Card>
+</CardGrid>
+
 ## Publish and compose capabilities
 
 <CardGrid>
@@ -241,7 +268,10 @@ deployment configuration to compose, so they publish no constructed engine for
 `check-mcp` to import. They gate their portable tool names in their own tests
 and ship `devtools:verify`, which runs initialization and the complete
 `tools/list` against the built stdio adapter without calling a tool.
-`support-harness` verifies the engine it consumes the same way.
+`support-harness` verifies the engine it consumes the same way. The gateway
+examples discover their MCP upstreams at startup, so they also publish no
+constructed engine; their tests serve the composed engines through the MCP
+and HTTP adapters, which build and check the same tool catalog.
 
 The MCP stdio and CLI emulations can also run the project's own built entry
 point instead of the DevTools child, so the composition root that decides the

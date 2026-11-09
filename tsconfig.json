@@ -29,6 +29,8 @@
     { "path": "./examples/community-capabilities" },
     { "path": "./examples/composed-engine" },
     { "path": "./examples/crawl-engine" },
+    { "path": "./examples/gateway-discovery-engine" },
+    { "path": "./examples/gateway-engine" },
     { "path": "./examples/cursor-agent-routing-engine" },
     { "path": "./examples/agent-session-engine" },
     { "path": "./examples/hello-engine" },
