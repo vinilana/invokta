@@ -582,7 +582,8 @@ export function createHttpHandler<Capabilities extends CapabilityMap>(
   const visibleOpenApiBodies = new Map<string, string>();
   const openApiBodyFor = (visible: (id: string) => boolean): string => {
     const summaries = engine.list().filter((summary) => visible(summary.id));
-    const key = summaries.map((summary) => summary.id).join("\n");
+    // JSON keeps the key unambiguous for IDs that contain any separator.
+    const key = JSON.stringify(summaries.map((summary) => summary.id));
     const cached = visibleOpenApiBodies.get(key);
     if (cached !== undefined) return cached;
     const view = {

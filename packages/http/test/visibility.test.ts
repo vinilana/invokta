@@ -175,6 +175,170 @@ describe("HTTP capability visibility", () => {
     }
   });
 
+  it("never serves one principal's OpenAPI document to another", async () => {
+    const capability = defineCapability({
+      description: "One capability.",
+      input: z.object({}),
+      output: z.object({ ok: z.boolean() }),
+      access: "public",
+      async run() {
+        return { ok: true };
+      },
+    });
+    // "a\nb" would collide with ["a", "b"] under a newline-joined key.
+    const handler = createHttpHandler(
+      createEngine({
+        name: "collision-engine",
+        version: "0.1.0",
+        capabilities: { a: capability, b: capability, "a\nb": capability },
+      }),
+      {
+        visibility: ({ principal, capabilityId }) =>
+          principal?.id === "one"
+            ? capabilityId === "a\nb"
+            : capabilityId !== "a\nb",
+        auth: {
+          mode: "required",
+          authenticate: ({ headers }) => ({ id: headers.get("x-user") ?? "" }),
+        },
+      },
+    );
+    const paths = async (user: string) =>
+      Object.keys(
+        (
+          (await (await handler(get(user, "/openapi.json"))).json()) as {
+            paths: Record<string, unknown>;
+          }
+        ).paths,
+      );
+
+    expect(await paths("one")).toEqual([
+      "/capabilities",
+      "/capabilities/a%0Ab",
+    ]);
+    expect(await paths("two")).toEqual([
+      "/capabilities",
+      "/capabilities/a",
+      "/capabilities/b",
+    ]);
+  });
+
+  it("caches at most 64 OpenAPI documents and evicts the first inserted", async () => {
+    const capability = defineCapability({
+      description: "One capability.",
+      input: z.object({}),
+      output: z.object({ ok: z.boolean() }),
+      access: "public",
+      async run() {
+        return { ok: true };
+      },
+    });
+    // Seven capabilities give 127 distinct non-empty visible sets.
+    const ids = ["c0", "c1", "c2", "c3", "c4", "c5", "c6"] as const;
+    const engine = createEngine({
+      name: "cache-engine",
+      version: "0.1.0",
+      capabilities: Object.fromEntries(ids.map((id) => [id, capability])),
+    });
+    let describes = 0;
+    const counted = {
+      name: engine.name,
+      version: engine.version,
+      invoke: engine.invoke,
+      list: engine.list,
+      describe: (id: string) => {
+        describes += 1;
+        return engine.describe(id);
+      },
+    } as unknown as typeof engine;
+    // Principal "m<n>" sees capability i when bit i of n is set.
+    const handler = createHttpHandler(counted, {
+      visibility: ({ principal, capabilityId }) =>
+        ((Number(principal?.id.slice(1)) >>
+          ids.indexOf(capabilityId as never)) &
+          1) ===
+        1,
+      auth: {
+        mode: "required",
+        authenticate: ({ headers }) => ({ id: headers.get("x-user") ?? "" }),
+      },
+    });
+    const document = (mask: number) =>
+      handler(get(`m${String(mask)}`, "/openapi.json"));
+
+    for (let mask = 1; mask <= 65; mask += 1) await document(mask);
+    const filled = describes;
+    await document(65);
+    expect(describes).toBe(filled);
+    await document(2);
+    expect(describes).toBe(filled);
+    // Mask 1 was inserted first and evicted by the 65th distinct set.
+    await document(1);
+    expect(describes).toBeGreaterThan(filled);
+  });
+
+  it("answers a hidden ID with 404 before checking the media type or reading the body", async () => {
+    const handler = handlerFor({ visibility });
+    let pulled = false;
+    // highWaterMark 0: the stream is pulled only when someone reads it.
+    const body = new ReadableStream(
+      {
+        pull(controller) {
+          pulled = true;
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/capabilities/billing.refund", {
+        method: "POST",
+        headers: { "x-user": "reader", "content-type": "text/plain" },
+        body,
+        duplex: "half",
+      } as RequestInit),
+    );
+
+    expect(response.status).toBe(404);
+    expect(pulled).toBe(false);
+  });
+
+  it("applies visibility to the null principal when authentication is disabled", async () => {
+    const seen: Array<Principal | null> = [];
+    const handler = createHttpHandler(createVisibilityEngine(), {
+      visibility: ({ principal, capabilityId }) => {
+        seen.push(principal);
+        return capabilityId === "billing.get-invoice";
+      },
+      auth: { mode: "dangerously-disabled-for-development" },
+    });
+
+    const listed = (await (
+      await handler(new Request("http://127.0.0.1/capabilities"))
+    ).json()) as { capabilities: { id: string }[] };
+
+    expect(listed.capabilities.map((capability) => capability.id)).toEqual([
+      "billing.get-invoice",
+    ]);
+    expect(seen.every((principal) => principal === null)).toBe(true);
+  });
+
+  it("passes the predicate a deep-frozen principal", async () => {
+    const seen: Array<Principal | null> = [];
+    const handler = handlerFor({
+      visibility: (({ principal }) => {
+        seen.push(principal);
+        return true;
+      }) satisfies HttpCapabilityVisibility,
+    });
+
+    await handler(get("admin", "/capabilities"));
+    expect(seen[0]).toEqual(principals.admin);
+    expect(Object.isFrozen(seen[0])).toBe(true);
+    expect(Object.isFrozen(seen[0]?.attributes)).toBe(true);
+  });
+
   it("rejects an invalid visibility option at construction", () => {
     expect(() => handlerFor({ visibility: true })).toThrow(
       new TypeError("visibility must be a function."),
