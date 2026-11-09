@@ -597,6 +597,38 @@ describe("createDiscovery", () => {
     ]);
   });
 
+  it("wraps every target in the host's middleware, through discovery and directly", async () => {
+    const calls: string[] = [];
+    const { discovery, engine } = setup({
+      gatewayEngine: {
+        middleware: [
+          async ({ capabilityId, next }) => {
+            calls.push(capabilityId);
+            return next();
+          },
+        ],
+      },
+    });
+
+    await engine.invoke(
+      "gateway.invoke-read-tool",
+      { tool: "orders.get-order" },
+      { principal: reader },
+    );
+    await discovery.gatewayEngine.invoke(
+      "crm.get-account",
+      {},
+      { principal: reader },
+    );
+
+    expect(calls).toEqual(["orders.get-order", "crm.get-account"]);
+    expect(() =>
+      setup({
+        gatewayEngine: { middleware: ["rate-limit" as never] },
+      }),
+    ).toThrow(TypeError);
+  });
+
   it("invokes targets only through its own engine over the gateway capabilities", async () => {
     const events: string[] = [];
     const { gateway, discovery } = setup({

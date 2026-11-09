@@ -1,6 +1,8 @@
 import {
   type AnyCapability,
+  applyMiddleware,
   CapabilityError,
+  type CapabilityMiddleware,
   type CapabilityMap,
   createEngine,
   type DomainErrorPublicDetails,
@@ -76,6 +78,11 @@ export interface DiscoveryOptions {
     readonly version?: string;
     readonly logger?: EngineLogger;
     readonly onEvent?: (event: EngineEvent) => void | Promise<void>;
+    /**
+     * Middleware applied to every gateway capability, for example a rate
+     * limit per target, so it runs for direct and discovered calls alike.
+     */
+    readonly middleware?: ReadonlyArray<CapabilityMiddleware>;
   };
 }
 
@@ -309,10 +316,17 @@ export function createDiscovery(options: DiscoveryOptions): Discovery {
   }
 
   const definition = options.gatewayEngine ?? {};
+  const middleware = definition.middleware ?? [];
+  if (!Array.isArray(middleware)) {
+    throw new TypeError("Discovery gatewayEngine.middleware must be an array.");
+  }
   const inner = createEngine({
     name: definition.name ?? "gateway",
     version: definition.version ?? "0.0.0",
-    capabilities: gateway.capabilities,
+    capabilities:
+      middleware.length === 0
+        ? gateway.capabilities
+        : applyMiddleware(gateway.capabilities, ...middleware),
     ...(definition.logger === undefined ? {} : { logger: definition.logger }),
     ...(definition.onEvent === undefined
       ? {}
