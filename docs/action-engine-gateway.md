@@ -1,11 +1,15 @@
 # Action Engine gateway
 
-- Status: Proposal with a private proof of concept in
-  [`packages/gateway`](../packages/gateway/). Not delivered behavior. Promote
-  to an ADR before publishing the package or changing any normative contract.
-- Date: 2026-11-07
-- Applies to: a new `@invokta/gateway` package; no change to `@invokta/core`,
-  `@invokta/mcp`, or `@invokta/http`
+- Status: Accepted through [ADR 0052](./adr/0052-per-caller-capability-visibility.md),
+  [ADR 0053](./adr/0053-action-engine-gateway-package.md), and
+  [ADR 0054](./adr/0054-search-based-tool-discovery.md). This note keeps the
+  design rationale, measurements, and prototype history. The normative
+  contract is AE-VIS-01 and AE-GATEWAY-01..06 in
+  [architecture and contracts](./architecture.md); where this note differs, the
+  contract and the ADRs win.
+- Date: 2026-11-07, accepted 2026-11-09
+- Applies to: `@invokta/gateway`; the optional `visibility` option of
+  `@invokta/mcp` and `@invokta/http`; no change to `@invokta/core`
 
 An **Action Engine gateway** publishes the capabilities of several Action
 Engines and MCP servers through one endpoint and enforces the authentication
@@ -646,8 +650,11 @@ criterion.
 | 6 — Delegated credentials | Per-principal upstream credentials through the connector-broker `CredentialSource` port, including RFC 8693 token exchange | A user-subject upstream call receives a credential minted for that user and audience; a missing grant is a declared domain error |
 | 7 — Operations | Recipes, not framework features: rate limits and quotas with `applyMiddleware`, upstream health and reconnection owned by the host, OpenTelemetry correlation across gateway and upstream engines | Each recipe is backed by an executable test |
 
-Publishing `@invokta/gateway` requires phases 1, 2, and 4 and an accepted ADR.
-Phase 3 may ship in the first release or later; it depends on phase 2.
+Status on acceptance: phases 0 to 4 are delivered. Phase 1's validator is
+the `validator` option of `mcpUpstream`; phase 4's lock is the `lock` option and
+`upstream.lock`, without a separate tooling command; phase 7's rate limits are
+capability middleware, which `createDiscovery` also applies to its gateway
+engine. Phases 5 and 6 remain future work and need their own decisions.
 
 ## Decisions
 
@@ -662,19 +669,20 @@ phases 2 and 3 records them as accepted.
 | One invoke tool or two | Two, split by risk class, with read-only status trusted only for engine upstreams or operator-vouched MCP tools | Recommended, then accepted when the team asked to implement it |
 | How `alwaysList` is chosen | Configuration only, at most 32 capabilities, subject to visibility; usage metrics inform reviewed changes but never change the list automatically | Recommended, then accepted when the team asked to implement it |
 
-## Open decisions
+## Decisions taken on acceptance
 
-1. Is startup tool discovery acceptable, or must MCP catalogs always come from
-   a committed lock file (phase 4)?
-2. Should rules also match on upstream name or annotations, for example "deny
-   every `destructive` capability unless the caller has `admin`"? The current
-   design keeps one dimension, the capability ID, and leaves the rest to
-   functions.
-3. Should an upstream Invokta engine's structured MCP error (`INPUT_INVALID`,
-   `FORBIDDEN`) be mapped back to the same framework code, accepting that an
-   upstream could choose the code the gateway reports?
-4. Does the gateway ship as an optional runtime helper next to `auth-jwt` and
-   `otel`, or as an official example until the evidence threshold is met?
+ADR 0053 resolved the remaining questions on 2026-11-09:
+
+1. Startup discovery is explicit composition; a committed `lock` is
+   available but optional, and `pin` remains for a single fingerprint.
+2. Rule patterns match only the capability ID. Functions receive the route,
+   including its upstream and trusted read-only status, for anything else.
+3. An upstream MCP server's tool error stays `UPSTREAM_TOOL_ERROR`: the gateway
+   does not let an upstream choose a framework code. A `validator` reports
+   invalid input as `INPUT_INVALID` before the call instead.
+4. The gateway ships as an optional runtime helper package next to
+   `@invokta/auth-jwt` and `@invokta/otel`, promoted without production
+   deployments by the maintainers' decision.
 
 ## Proof-of-concept validation
 

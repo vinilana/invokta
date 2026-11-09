@@ -2,7 +2,7 @@
 
 ## Public packages
 
-**AE-SCOPE-01 — Thirteen packages with isolated roles.** Invokta publishes:
+**AE-SCOPE-01 — Fourteen packages with isolated roles.** Invokta publishes:
 
 | Package | Responsibility |
 | --- | --- |
@@ -12,6 +12,7 @@
 | `@invokta/http` | Web-standard plain HTTP JSON adapter over `engine.invoke`, OpenAPI 3.1 export, and a Node server entry point |
 | `@invokta/auth-jwt` | Optional JWT bearer authenticator for one configured issuer, usable as the HTTP `authenticate` hook |
 | `@invokta/otel` | Optional OpenTelemetry spans and metrics built from engine events through the OpenTelemetry API |
+| `@invokta/gateway` | Optional gateway capabilities over engine and MCP upstreams, with first-match rules, per-caller visibility, authentication helpers, and search-based tool discovery |
 | `@invokta/tooling` | Development-time validation of capability composition and MCP catalogs, and capability contract snapshots and diffs |
 | `@invokta/installer` | End-user configuration of supported local MCP clients |
 | `@invokta/deploy` | Development-time HTTP engine scaffolding, packaging, health probing, and read-only OAuth discovery inspection |
@@ -25,7 +26,9 @@ adapters depend only on the core's public API, and supporting applications do
 not create another capability execution path. `@invokta/auth-jwt` depends only
 on `jose`; no core or adapter package depends on it. `@invokta/otel` depends
 only on core types and the `@opentelemetry/api` peer; no other package depends
-on OpenTelemetry (ADR 0050).
+on OpenTelemetry (ADR 0050). `@invokta/gateway` depends only on
+`@invokta/core`; it does not depend on an adapter or the MCP SDK, and no other
+package depends on it (ADR 0053).
 
 ## Ownership
 
@@ -62,7 +65,7 @@ while the example owns one replaceable Authorization Server implementation.
 | --- | --- |
 | Framework runtime packages | 4: core, CLI, MCP, and HTTP |
 | Supporting packages | 7: tooling, installer, deploy, devtools, and three project creators |
-| Optional runtime helper packages | 2: auth-jwt and otel |
+| Optional runtime helper packages | 3: auth-jwt, otel, and gateway |
 | Official inbound adapters | CLI, MCP, and plain HTTP JSON |
 | Plain HTTP JSON routes | 4: list, describe, invoke, and OpenAPI document |
 | Plain HTTP JSON request body | 1,048,576 bytes by default, configurable |
@@ -77,7 +80,7 @@ while the example owns one replaceable Authorization Server implementation.
 | OpenTelemetry signals | 1 span per invocation and 3 metric instruments |
 | Pending OpenTelemetry invocation spans | 10,000 by default, configurable; the oldest is evicted, and the same cap bounds evicted-invocation bookkeeping |
 | OpenTelemetry attribute values | 256 characters on spans and metrics; 256 distinct per metric attribute by default, configurable |
-| Auth or PDP implementations | 1: the opt-in `@invokta/auth-jwt` JWT bearer authenticator; no PDP |
+| Auth or PDP implementations | 2: the opt-in `@invokta/auth-jwt` JWT bearer authenticator and the `@invokta/gateway` static API-key authenticator; no PDP |
 | Containers or runtime plugin systems | 0 |
 | Devtools workbenches served together | 2: MCP and CLI, each idle until Connect |
 | Concurrent attached devtools targets | 1 per workbench |
@@ -111,6 +114,18 @@ while the example owns one replaceable Authorization Server implementation.
 | MCP progress notifications | 1 per 100 ms per request; at most 1 unwritten and 1 held, latest wins |
 | Honored MCP progress token | String of at most 256 UTF-16 code units, or a safe integer |
 | Plain HTTP OpenAPI documents cached for visibility | 64 distinct visible sets; the oldest is evicted |
+| Gateway upstream name and namespace | 1-64 lowercase letters, digits, or inner hyphens |
+| Gateway rule pattern | `*`, an exact capability ID, or `prefix.*` |
+| Gateway MCP tools per upstream | 256 by default, at most 4,096; at most 64 `tools/list` pages |
+| Gateway MCP tool call timeout | 30,000 ms by default; 1 through 2,147,483,647 ms |
+| Gateway upstream tool error text | 1,024 characters |
+| Gateway validator issues | 100 per value, 512-character messages |
+| Gateway catalog lock names per message | 20 per kind of change |
+| Gateway API key | 1,024 characters |
+| Gateway `search-tools` query and results | 256 characters; 1 to 20 results, 8 by default, within 64 KiB |
+| Gateway `invoke-*` tool ID | 256 characters |
+| Gateway `alwaysList` | 32 capabilities after pattern expansion |
+| Gateway host ranker deadline | 2,000 ms by default; 1 through 60,000 ms |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,
@@ -123,7 +138,11 @@ container, service locator, runtime plugin discovery, remote registry, or
 mutable module lifecycle. Capability composition is explicit, eager, and based
 on values imported by the application. Capability middleware is a pure function
 the application applies to an explicit capability map; the engine does not
-register, discover, or order it.
+register, discover, or order it. A gateway's MCP upstream lists its server's
+tools once, at the composition root, as explicit composition the host awaits
+before serving; the catalog is then frozen, never re-listed, and can be pinned
+or locked (ADR 0053). Invokta still provides no registry or runtime discovery
+of upstreams.
 
 **AE-LIMIT-03 — AI and quality.** Invokta does not provide a model router,
 context compiler, memory, RAG abstraction, prompt registry, official provider
@@ -144,6 +163,12 @@ optional `@invokta/auth-jwt` package verifies signed JWT bearer access tokens
 from one configured issuer against an explicit JWKS URL or local key set; it
 does not accept opaque, encrypted, or shared-secret tokens, several issuers,
 or sender-constrained tokens, and it is not a universal token verifier.
+A gateway's rules are a first-match routing table that assigns a core access
+kind or a host function to each capability ID; they hold no roles, scopes,
+conditions, or expressions, and are not a policy language. The gateway's API-key
+authenticator verifies static keys against configured SHA-256 digests only; it
+does not issue, rotate, or store keys. A gateway never forwards a caller's
+credential to an upstream.
 
 **AE-LIMIT-05 — MCP.** Invokta does not provide MCP resources, prompts,
 sampling, elicitation, tasks, stateful sessions, resumption, or server-to-client
