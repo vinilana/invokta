@@ -136,15 +136,20 @@ export function createGateway(options: GatewayOptions): Gateway {
     });
   }
   for (const rule of rules) {
-    if (usedRules.has(rule)) continue;
-    const reachable = entries.some(({ route }) =>
-      rule.patterns.some(({ matches }) => matches(route.capabilityId)),
-    );
-    throw new TypeError(
-      reachable
-        ? `Gateway rule ${rule.name} is shadowed by earlier rules.`
-        : `Gateway rule ${rule.name} matches no capability.`,
-    );
+    // Every pattern must select something, so a typo cannot silently drop
+    // part of a rule, such as one entry of a deny list.
+    for (const { pattern, matches } of rule.patterns) {
+      if (!entries.some(({ route }) => matches(route.capabilityId))) {
+        throw new TypeError(
+          `Gateway rule ${rule.name} pattern ${pattern} matches no capability.`,
+        );
+      }
+    }
+    if (!usedRules.has(rule)) {
+      throw new TypeError(
+        `Gateway rule ${rule.name} is shadowed by earlier rules.`,
+      );
+    }
   }
 
   const visibility: GatewayVisibility = ({ principal, capabilityId }) => {
@@ -157,11 +162,20 @@ export function createGateway(options: GatewayOptions): Gateway {
     }
   };
 
-  return Object.freeze({
+  const gateway: Gateway = Object.freeze({
     capabilities: Object.freeze(capabilities),
     routes: Object.freeze(routes),
     visibility,
   });
+  createdGateways.add(gateway);
+  return gateway;
+}
+
+const createdGateways = new WeakSet<Gateway>();
+
+/** Whether a value is a gateway returned by `createGateway`. */
+export function isCreatedGateway(value: unknown): value is Gateway {
+  return createdGateways.has(value as Gateway);
 }
 
 /** The listing counterpart of an access value, which a listing can evaluate without input. */

@@ -15,7 +15,7 @@ import {
 } from "@invokta/core";
 
 import { engineUpstream } from "./engine-upstream.js";
-import type { Gateway } from "./gateway.js";
+import { type Gateway, isCreatedGateway } from "./gateway.js";
 import {
   checkedContract,
   isJsonObject,
@@ -111,6 +111,7 @@ const MAX_ALWAYS_LIST = 32;
 const MAX_QUERY_LENGTH = 256;
 const MAX_TOOL_ID_LENGTH = 256;
 const MAX_RESULTS = 20;
+const MAX_RANKED_IDS = 4_096;
 const DEFAULT_RESULTS = 8;
 const RESPONSE_BUDGET_BYTES = 65_536;
 const RESPONSE_ENVELOPE_BYTES = 32;
@@ -267,12 +268,7 @@ const invokeOutput = jsonSchemaContract({
  */
 export function createDiscovery(options: DiscoveryOptions): Discovery {
   const { gateway } = options;
-  if (
-    typeof gateway !== "object" ||
-    gateway === null ||
-    typeof gateway.visibility !== "function" ||
-    !Array.isArray(gateway.routes)
-  ) {
+  if (!isCreatedGateway(gateway)) {
     throw new TypeError(
       "createDiscovery needs the value createGateway returned.",
     );
@@ -443,7 +439,9 @@ export function createDiscovery(options: DiscoveryOptions): Discovery {
       const selected: string[] = [];
       const exact = query.trim();
       if (candidateIds.has(exact)) selected.push(exact);
-      for (const id of ordered) {
+      // A ranker's list is read only up to a bound, whatever its length.
+      for (const id of ordered.slice(0, MAX_RANKED_IDS)) {
+        if (selected.length >= limit) break;
         if (candidateIds.has(id) && !selected.includes(id)) selected.push(id);
       }
 

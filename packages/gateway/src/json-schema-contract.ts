@@ -10,17 +10,15 @@ export interface JsonSchemaIssue {
 
 /**
  * Validates a JSON value against a JSON Schema document, for example with
- * Ajv. It returns the failed checks, or `undefined` or an empty list when the
- * value is valid. The gateway passes the same frozen document object on every
- * call, so a validator may compile it once and cache it by identity.
+ * Ajv. It is synchronous and returns the failed checks, or `undefined` or an
+ * empty list when the value is valid; a returned promise fails closed. The
+ * gateway passes the same frozen document object on every call, so a
+ * validator may compile it once and cache it by identity.
  */
 export type JsonSchemaValidator = (
   schema: JsonObject,
   value: JsonObject,
-) =>
-  | ReadonlyArray<JsonSchemaIssue>
-  | undefined
-  | Promise<ReadonlyArray<JsonSchemaIssue> | undefined>;
+) => ReadonlyArray<JsonSchemaIssue> | undefined;
 
 const notAnObjectIssues = Object.freeze([
   Object.freeze({ message: "Expected a JSON object." }),
@@ -36,6 +34,7 @@ function snapshotIssues(
   issues: unknown,
 ): ReadonlyArray<JsonSchemaIssue> | undefined {
   if (issues === undefined) return undefined;
+  // A promise or any other non-list cannot prove the value valid.
   if (!Array.isArray(issues)) return unvalidatedIssues;
   if (issues.length === 0) return undefined;
   return Object.freeze(
@@ -93,15 +92,13 @@ export function jsonSchemaContract(
       validate(value: unknown) {
         if (!isJsonObject(value)) return { issues: notAnObjectIssues };
         if (validator === undefined) return { value };
-        return (async () => {
-          let issues: ReadonlyArray<JsonSchemaIssue> | undefined;
-          try {
-            issues = snapshotIssues(await validator(snapshot, value));
-          } catch {
-            issues = unvalidatedIssues;
-          }
-          return issues === undefined ? { value } : { issues };
-        })();
+        let issues: ReadonlyArray<JsonSchemaIssue> | undefined;
+        try {
+          issues = snapshotIssues(validator(snapshot, value));
+        } catch {
+          issues = unvalidatedIssues;
+        }
+        return issues === undefined ? { value } : { issues };
       },
       jsonSchema: converter,
     }),

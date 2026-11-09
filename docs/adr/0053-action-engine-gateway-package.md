@@ -42,43 +42,55 @@ status. `visibility` is the adapter option of ADR 0052.
 
 ### Upstreams
 
-- `engineUpstream({ name, engine, namespace?, include?, principal? })` reads
-  an in-process engine's catalog once through `list` and `describe` and
-  republishes each contract unchanged. Each capability forwards to the
+- `engineUpstream({ name, engine, namespace?, include?, principal?,
+  validator? })` reads an in-process engine's catalog once through `list` and
+  `describe` and republishes each contract unchanged. Each capability forwards to the
   upstream `engine.invoke` with the request ID, source, mapped principal,
   signal, and progress sink, so the upstream's validation, access rule,
-  timeout, and events still apply. An upstream `DOMAIN_ERROR` is redeclared and
-  raised again as the same `CapabilityError`.
-- `mcpUpstream({ name, connection, namespace?, include?, timeoutMs?,
-  maxTools?, pin?, lock?, trustAnnotations?, readOnlyTools?, validator?,
-  signal? })` lists a connected MCP server's tools once, at the composition
-  root, through a structural `listTools`/`callTool` interface that
-  `McpClientConnection` satisfies. Discovery reads at most 64 pages and
-  `maxTools` tools (256 by default, at most 4,096) and fails on a duplicate
-  name or a schema without an object root. Each tool is published as
-  `<namespace>.<tool>`, calls the server with a finite timeout (30,000 ms by
-  default) and the invocation signal, returns `structuredContent` when the
-  tool has an output schema and `{ content }` otherwise, and turns a tool
-  error into the declared domain error `UPSTREAM_TOOL_ERROR` with the first
-  text block bounded to 1,024 characters.
+  timeout, and events still apply, and the upstream `timeoutMs` is
+  republished. An upstream `DOMAIN_ERROR` is redeclared and raised again as
+  the same `CapabilityError`.
+- `mcpUpstream({ name, connection, validator, namespace?, include?,
+  timeoutMs?, maxTools?, maxToolBytes?, discoveryTimeoutMs?, pin?, lock?,
+  trustAnnotations?, readOnlyTools?, forwardToolErrors?, signal? })` lists a
+  connected MCP server's tools once, at the composition root, through a
+  structural `listTools`/`callTool` interface that `McpClientConnection`
+  satisfies. Discovery has one total deadline (30,000 ms by default, at most
+  300,000) that also settles when a client ignores the signal, reads at most
+  64 pages and `maxTools` tools (256 by default, at most 4,096), and fails on
+  a duplicate name or a schema without an object root. Every published tool
+  must have a name of 1 to 128 characters from `A-Z`, `a-z`, `0-9`, `.`,
+  `_`, and `-`, and a canonical definition within `maxToolBytes` (65,536 by
+  default, at most 1,048,576). Each tool is published as `<namespace>.<tool>`,
+  calls the server with a finite timeout (30,000 ms by default) and the
+  invocation signal, and returns `structuredContent` when the tool has an
+  output schema and `{ content }` otherwise. A tool error is the declared
+  domain error `UPSTREAM_TOOL_ERROR` without details: upstream text may hold
+  internal details, so its first text block, bounded to 1,024 characters, is
+  published only with `forwardToolErrors: true` (AE-CONNECTOR-03).
 - Names and namespaces are 1 to 64 lowercase letters, digits, or inner
   hyphens; two upstreams may not share a name or publish the same capability
   ID.
 
 ### Validation
 
-`mcpUpstream` accepts an optional host-injected `JsonSchemaValidator`. With
-it, input is validated against the tool's input schema before the access rule
-and the call, failing as `INPUT_INVALID`, and a structured result against the
-output schema, failing as `OUTPUT_INVALID`. The same frozen schema object is
-passed on every call so validators can cache compiled schemas. A throwing
-validator fails closed, and at most 100 issues with 512-character messages
-reach public details. Without a validator the gateway checks the object shape
-and the lossless JSON model, and the MCP server validates its own input.
-Engine upstreams need no validator: the upstream `engine.invoke` validates and
-its framework codes pass through. This satisfies AE-SCHEMA-02 by delegation
-and, with a validator, at the gateway boundary; the package bundles no schema
-library.
+Every `mcpUpstream` makes an explicit validation choice: a host-injected,
+synchronous `JsonSchemaValidator`, such as Ajv, or `"delegate-to-upstream"`.
+With a validator, input is validated against the tool's input schema before
+the access rule and the call, failing as `INPUT_INVALID`, so gateway rules
+read validated input, and a structured result against the output schema,
+failing as `OUTPUT_INVALID`. The same frozen schema object is passed on every
+call so validators can cache compiled schemas. A validator that throws or
+returns anything but a list or `undefined`, including a promise, fails closed,
+and at most 100 issues with 512-character messages reach public details.
+`"delegate-to-upstream"` names the trade-off: the gateway checks only the
+object shape and the lossless JSON model, rules read unvalidated input, and the
+server's rejection of invalid input is an `UPSTREAM_TOOL_ERROR`.
+`engineUpstream` accepts the same validator optionally; without one, the
+upstream `engine.invoke` validates after the gateway rule and its framework
+codes pass through. This satisfies AE-SCHEMA-02 through the port or an
+explicit delegation; the package bundles no schema library, and a synchronous
+validator cannot hold an invocation outside its timeout.
 
 ### Discovery at startup, locked catalogs
 
@@ -106,8 +118,9 @@ function of `{ principal, input, context, route }` that allows only on `true`.
 
 - The first matching rule governs a capability, bound once at construction;
   unmatched capabilities get `defaultAccess`, which is `deny` by default.
-- A rule or include pattern that matches nothing, and a rule shadowed by
-  earlier rules, fails construction.
+- Every pattern of a rule, and every include pattern, must match at least one
+  capability, and a rule shadowed by earlier rules fails construction, so a
+  typo cannot silently drop part of a rule.
 - A throwing or rejecting access function denies; the decision is reported as
   `failed` and a payload-free warning is logged.
 - `visible(principal, route)` is synchronous and never sees input. It
@@ -119,16 +132,21 @@ Decisions remain core access kinds or host functions that may call any PDP, as
 in [capability authorization](../capability-authorization.md); there are no
 roles, scopes, conditions, or expressions in the table itself, so it is not
 the policy language that AE-LIMIT-04 excludes. Upstream engines still enforce
-their own access rules, so a gateway can only narrow access.
+their own access rules against the mapped principal, so for them a gateway
+can only narrow access. An MCP upstream sees only the gateway's service
+credential, so every caller the gateway allows acts with that credential's
+authority; the gateway's rules are then the only per-caller control, and the
+service credential should carry no more authority than the rules allow.
 
 ### Authentication helpers and credentials
 
 Authentication stays the adapters' `authenticate` hook (ADR 0007).
 `chainAuthenticators` tries several hooks in order and returns the first
-principal; a hook that throws stops the chain. `apiKeyAuthenticator` accepts
-one header (`x-api-key` by default), keeps only SHA-256 digests in
-configuration, bounds presented keys to 1,024 characters, and compares against
-every digest. `hashApiKey` prints a digest. `requireScopes` reads
+principal other than `null` or `undefined`; a hook that throws stops the
+chain, and a request whose signal is aborted stops before the next hook.
+`apiKeyAuthenticator` accepts one header (`x-api-key` by default), keeps only
+SHA-256 digests in configuration, bounds presented keys to 1,024 characters,
+and compares against every digest. `hashApiKey` prints a digest. `requireScopes` reads
 `principal.attributes.scopes`, the `@invokta/auth-jwt` default mapping.
 
 The gateway never forwards a caller's credential to an upstream. Each MCP
@@ -139,8 +157,9 @@ credentials remain the connector-broker pattern.
 
 `onDecision` receives one frozen decision per authorization: request ID,
 capability, upstream, rule, outcome, and principal ID; never input, output, or
-credentials. A failing sink is contained. It is a gateway option, not an
-engine hook, so AE-OBS-01 is unchanged.
+credentials. A failing sink is contained. `onDecision` and the discovery's
+`onSearch` are package options, not engine hooks: AE-OBS-01 keeps one
+cross-cutting hook, `onEvent`, and the gateway engine emits it unchanged.
 
 ## Consequences
 

@@ -7,7 +7,11 @@ import {
   type Principal,
 } from "@invokta/core";
 
-import { isJsonObject, jsonSchemaContract } from "./json-schema-contract.js";
+import {
+  isJsonObject,
+  type JsonSchemaValidator,
+  jsonSchemaContract,
+} from "./json-schema-contract.js";
 import { assertName, selectIncluded } from "./patterns.js";
 import type {
   GatewayUpstream,
@@ -33,6 +37,12 @@ export interface EngineUpstreamOptions {
     principal: Principal | null,
     route: GatewayUpstreamRoute,
   ) => Principal | null;
+  /**
+   * Validates input against the upstream's published schema before the
+   * gateway rule reads it, and the result after the call. Without one, the
+   * upstream engine validates input after the gateway rule runs.
+   */
+  readonly validator?: JsonSchemaValidator;
 }
 
 interface UpstreamInvoker {
@@ -63,6 +73,10 @@ export function engineUpstream(
   if (typeof mapPrincipal !== "function") {
     throw new TypeError(`Upstream ${name} principal must be a function.`);
   }
+  const validator = options.validator;
+  if (validator !== undefined && typeof validator !== "function") {
+    throw new TypeError(`Upstream ${name} validator must be a function.`);
+  }
   const engine = options.engine;
   const invoker = engine as unknown as UpstreamInvoker;
   const ids = selectIncluded(
@@ -87,8 +101,11 @@ export function engineUpstream(
       route,
       ...(described.title === undefined ? {} : { title: described.title }),
       description: described.description,
-      input: jsonSchemaContract(described.inputSchema),
-      output: jsonSchemaContract(described.outputSchema),
+      input: jsonSchemaContract(described.inputSchema, validator),
+      output: jsonSchemaContract(described.outputSchema, validator),
+      ...(described.timeoutMs === undefined
+        ? {}
+        : { timeoutMs: described.timeoutMs }),
       ...(described.annotations === undefined
         ? {}
         : { annotations: described.annotations }),

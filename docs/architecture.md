@@ -608,11 +608,16 @@ same declared domain error. `mcpUpstream` lists a connected MCP server's tools
 once at the composition root through a structural client interface, reading at
 most 64 pages and `maxTools` tools (256 by default, at most 4,096), failing on
 duplicate names and non-object schemas, and publishing `<namespace>.<tool>`.
-Each tool call has a finite timeout (30,000 ms by default) and the invocation
-signal; a tool error is the declared domain error `UPSTREAM_TOOL_ERROR` with at
-most 1,024 characters of text. A host-injected JSON Schema validator makes
-invalid input `INPUT_INVALID` before the call and an invalid structured result
-`OUTPUT_INVALID`; a throwing validator fails closed. `pin` and `lock` turn any
+Discovery has one total deadline (30,000 ms by default), and every published
+tool needs a name of 1 to 128 `A-Za-z0-9._-` characters and a canonical
+definition within `maxToolBytes` (65,536 by default). Each tool call has a
+finite timeout (30,000 ms by default) and the invocation signal; a tool error
+is the declared domain error `UPSTREAM_TOOL_ERROR`, whose upstream text is
+published only with `forwardToolErrors`. Every MCP upstream chooses a
+synchronous JSON Schema validator, which makes invalid input `INPUT_INVALID`
+before the gateway rule and an invalid structured result `OUTPUT_INVALID` and
+fails closed, or `"delegate-to-upstream"`; engine upstreams accept the same
+validator optionally. `pin` and `lock` turn any
 catalog change into a startup failure, and a lock failure names every added,
 removed, and changed tool. Untrusted MCP hints are republished only when they
 make a tool look riskier; `trustAnnotations` and `readOnlyTools` vouch for
@@ -620,14 +625,16 @@ them.
 
 **AE-GATEWAY-03 — Rules.** The first rule whose `match` (an exact ID,
 `prefix.*`, or `*`) covers a capability governs it, bound at construction;
-unmatched capabilities get `defaultAccess`, `deny` by default. A rule or
-include pattern that matches nothing, and a rule shadowed by earlier rules,
-fail construction. `access` is `public`, `authenticated`, `deny`, or a function
+unmatched capabilities get `defaultAccess`, `deny` by default. Every rule
+pattern and include pattern must match at least one capability, and a rule
+shadowed by earlier rules fails construction. `access` is `public`, `authenticated`, `deny`, or a function
 of `{ principal, input, context, route }` that allows only on `true`; a
 throwing or rejecting function denies. `visible(principal, route)` is
 synchronous; without it, visibility follows the core access kinds and
 `requireScopes`, and other functions are visible to every authenticated
-caller. Upstream engines still enforce their own access rules.
+caller. Upstream engines still enforce their own access rules; an MCP upstream
+sees only the gateway's service credential, so the rules are its only
+per-caller control.
 
 **AE-GATEWAY-04 — Credentials.** The gateway never forwards a caller's
 credential to an upstream; each MCP connection holds the host's service

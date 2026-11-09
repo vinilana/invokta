@@ -16,7 +16,8 @@ cannot rely on every client doing so.
 ## Decision
 
 `@invokta/gateway` exports `createDiscovery(options)`, which returns a frozen
-`{ capabilities, visibility, gatewayEngine }`. The host serves `capabilities`
+`{ capabilities, visibility, gatewayEngine }`. It accepts only a gateway
+created by `createGateway`, recognized by identity, not by shape. The host serves `capabilities`
 as its own engine, normally at a mount path such as `/search/mcp`, with
 `visibility` as the adapter option, and may serve `gatewayEngine`, the full
 catalog, to clients that search on their own.
@@ -73,9 +74,12 @@ no other stemming, no synonym list, and no translation. `createSearchIndex` and
 A host MAY inject `rank(query, candidates, { signal })`, for example
 embeddings or a decision model. It receives only the caller's visible tools;
 its result is deduplicated and intersected with them, so it can reorder or
-drop tools but never reveal one. A ranker that fails, returns non-string IDs,
-or misses its deadline (2,000 ms by default, at most 60,000) falls back to the
-lexical ranking; caller cancellation still cancels the search.
+drop tools but never reveal one, and at most 4,096 of its IDs are read. A
+ranker that fails, returns non-string IDs, or misses its deadline (2,000 ms by
+default, at most 60,000) falls back to the lexical ranking; its signal is
+aborted at the deadline, and a ranker that ignores the signal keeps running in
+the background but no longer affects the result. Caller cancellation still
+cancels the search.
 `queryGuidance` replaces the default "a few keywords" instruction for rankers
 that understand whole tasks, and `queryLanguage` names the catalog's
 language. Invokta provides no embedding or retrieval abstraction
@@ -83,9 +87,11 @@ language. Invokta provides no embedding or retrieval abstraction
 
 ### Bounds and audit
 
-Results stay within a 64 KiB response budget: entries that would exceed it
-are dropped from the tail, `truncated` is `true`, and a schema is returned
-whole or not at all. `alwaysList` publishes at most 32 capabilities directly,
+Results stay within a 64 KiB budget of structured content: entries that would
+exceed it are dropped from the tail, `truncated` is `true`, and a schema is
+returned whole or not at all, so a single tool entry larger than the budget is
+never returned. MCP adapters also repeat the structured content in a text
+block, so a search response on the wire can be about twice the budget. `alwaysList` publishes at most 32 capabilities directly,
 next to the three tools, chosen by configuration only; every pattern must
 match and each entry stays subject to the caller's visibility. `onSearch`
 receives the request ID, principal ID, result count, `truncated`, and the

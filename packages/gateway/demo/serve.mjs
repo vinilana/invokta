@@ -101,6 +101,7 @@ const docsConnection = await connectMcpClient({
 });
 
 const docs = await mcpUpstream({
+  validator: "delegate-to-upstream",
   name: "docs",
   namespace: "kb",
   connection: docsConnection,

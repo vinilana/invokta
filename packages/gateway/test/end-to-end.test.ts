@@ -79,7 +79,12 @@ async function createGatewayEngine() {
   const gateway = createGateway({
     upstreams: [
       engineUpstream({ name: "billing", engine: createBillingEngine() }),
-      await mcpUpstream({ name: "docs", namespace: "kb", connection }),
+      await mcpUpstream({
+        validator: "delegate-to-upstream",
+        name: "docs",
+        namespace: "kb",
+        connection,
+      }),
     ],
     rules: [
       { name: "kb-read", match: "kb.*", access: requireScopes("kb:read") },

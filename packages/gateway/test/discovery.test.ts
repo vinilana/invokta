@@ -295,7 +295,13 @@ describe("createDiscovery", () => {
       },
     };
     const gateway = createGateway({
-      upstreams: [await mcpUpstream({ name: "remote", connection })],
+      upstreams: [
+        await mcpUpstream({
+          validator: "delegate-to-upstream",
+          name: "remote",
+          connection,
+        }),
+      ],
       rules: [{ match: "*", access: "authenticated" }],
     });
     const engine = createEngine({
@@ -511,7 +517,13 @@ describe("createDiscovery", () => {
       },
     };
     const gateway = createGateway({
-      upstreams: [await mcpUpstream({ name: "remote", connection })],
+      upstreams: [
+        await mcpUpstream({
+          validator: "delegate-to-upstream",
+          name: "remote",
+          connection,
+        }),
+      ],
       rules: [{ match: "*", access: "authenticated" }],
     });
     const engine = createEngine({
@@ -530,7 +542,7 @@ describe("createDiscovery", () => {
     expect(result.truncated).toBe(true);
     expect(
       new TextEncoder().encode(JSON.stringify(result)).length,
-    ).toBeLessThan(65_536 + 64);
+    ).toBeLessThanOrEqual(65_536);
   });
 
   it("lets a host ranker reorder or drop, but never add, tools", async () => {

@@ -35,6 +35,7 @@ export interface CrmGatewayOptions {
  */
 export async function createCrmGateway(options: CrmGatewayOptions) {
   const crm = await mcpUpstream({
+    validator: "delegate-to-upstream",
     name: "crm",
     connection: options.crm,
     // The team reviewed the vendor's annotations and pins the catalog, so a

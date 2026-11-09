@@ -38,8 +38,13 @@ function connection(
 }
 
 async function lockOf(tools: ReadonlyArray<GatewayMcpTool>) {
-  return (await mcpUpstream({ name: "docs", connection: connection(tools) }))
-    .lock;
+  return (
+    await mcpUpstream({
+      validator: "delegate-to-upstream",
+      name: "docs",
+      connection: connection(tools),
+    })
+  ).lock;
 }
 
 async function lockFailure(
@@ -48,6 +53,7 @@ async function lockFailure(
 ): Promise<McpCatalogLockError> {
   try {
     await mcpUpstream({
+      validator: "delegate-to-upstream",
       name: "docs",
       connection: connection(tools),
       lock: locked,
@@ -77,6 +83,7 @@ describe("MCP catalog lock", () => {
     // A lock survives a JSON round trip, which is how hosts commit it.
     await expect(
       mcpUpstream({
+        validator: "delegate-to-upstream",
         name: "docs",
         connection: connection([fetchPage, search]),
         lock: JSON.parse(JSON.stringify(lock)) as McpCatalogLock,
@@ -104,6 +111,7 @@ describe("MCP catalog lock", () => {
   it("covers only the tools the upstream publishes", async () => {
     const lock = (
       await mcpUpstream({
+        validator: "delegate-to-upstream",
         name: "docs",
         connection: connection([search, fetchPage]),
         include: ["search"],
@@ -113,6 +121,7 @@ describe("MCP catalog lock", () => {
     expect(Object.keys(lock.tools)).toEqual(["search"]);
     await expect(
       mcpUpstream({
+        validator: "delegate-to-upstream",
         name: "docs",
         connection: connection([search, { ...fetchPage, description: "x" }]),
         include: ["search"],
@@ -150,6 +159,7 @@ describe("MCP catalog lock", () => {
   ])("rejects a malformed lock %#", async (lock) => {
     await expect(
       mcpUpstream({
+        validator: "delegate-to-upstream",
         name: "docs",
         connection: connection([search]),
         lock: lock as unknown as McpCatalogLock,

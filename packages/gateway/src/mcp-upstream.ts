@@ -74,12 +74,28 @@ export interface McpUpstreamOptions {
   /** Tool names the operator vouches are read-only, whatever their hints. */
   readonly readOnlyTools?: ReadonlyArray<string>;
   /**
-   * Validates input and structured results against each tool's schemas, so
-   * invalid input fails as `INPUT_INVALID` before the call. Without one, the
-   * gateway checks only that values are JSON objects and the MCP server
-   * validates its own input.
+   * Required choice. A validator checks input and structured results against
+   * each tool's schemas, so invalid input fails as `INPUT_INVALID` before the
+   * call and gateway rules read validated input. `"delegate-to-upstream"`
+   * leaves validation to the MCP server: the gateway then checks only that
+   * values are JSON objects, rules read unvalidated input, and the server's
+   * rejection of invalid input is an `UPSTREAM_TOOL_ERROR`.
    */
-  readonly validator?: JsonSchemaValidator;
+  readonly validator: JsonSchemaValidator | "delegate-to-upstream";
+  /**
+   * Forward the first text block of a tool error, at most 1,024 characters,
+   * as public `UPSTREAM_TOOL_ERROR` details. Defaults to `false`: upstream
+   * text may hold internal details, so it is never published unless the host
+   * trusts it.
+   */
+  readonly forwardToolErrors?: boolean;
+  /** Deadline of the whole discovery. Defaults to 30,000 ms, at most 300,000. */
+  readonly discoveryTimeoutMs?: number;
+  /**
+   * Maximum UTF-8 size of one published tool's canonical definition.
+   * Defaults to 65,536 bytes, at most 1,048,576.
+   */
+  readonly maxToolBytes?: number;
   /** Cancels catalog discovery. */
   readonly signal?: AbortSignal;
 }
@@ -124,7 +140,7 @@ export class McpCatalogLockError extends Error {
       ...(changed.length === 0 ? [] : [listedNames("changed", changed)]),
     ];
     super(
-      `MCP upstream ${upstream} tool catalog differs from its lock: ${parts.join("; ")}.`,
+      `MCP upstream ${upstream} tool catalog differs from its lock: ${parts.length === 0 ? "the fingerprint differs" : parts.join("; ")}.`,
     );
     this.name = "McpCatalogLockError";
     this.upstream = upstream;
@@ -147,6 +163,12 @@ const MAXIMUM_TIMEOUT_MS = 2_147_483_647;
 const DEFAULT_MAX_TOOLS = 256;
 const MAXIMUM_MAX_TOOLS = 4_096;
 const MAXIMUM_PAGES = 64;
+const DEFAULT_DISCOVERY_TIMEOUT_MS = 30_000;
+const MAXIMUM_DISCOVERY_TIMEOUT_MS = 300_000;
+const DEFAULT_MAX_TOOL_BYTES = 65_536;
+const MAXIMUM_MAX_TOOL_BYTES = 1_048_576;
+/** The tool-name characters MCP recommends, with a bounded length. */
+const TOOL_NAME = /^[A-Za-z0-9._-]{1,128}$/u;
 const MAXIMUM_ERROR_MESSAGE_LENGTH = 1_024;
 const FINGERPRINT = /^[0-9a-f]{64}$/u;
 
@@ -166,6 +188,9 @@ const CONTENT_OUTPUT_SCHEMA = Object.freeze({
 const UPSTREAM_TOOL_ERROR = Object.freeze({
   description: "The upstream MCP tool reported an error.",
   retryable: false,
+});
+const FORWARDED_UPSTREAM_TOOL_ERROR = Object.freeze({
+  ...UPSTREAM_TOOL_ERROR,
   details: jsonSchemaContract({
     type: "object",
     properties: { message: { type: "string", maxLength: 1_024 } },
@@ -221,18 +246,62 @@ export async function mcpUpstream(
     throw new TypeError(`Upstream ${name} trustAnnotations must be a boolean.`);
   }
   const readOnlyTools = snapshotToolNames(options.readOnlyTools, name);
-  const validator = options.validator;
-  if (validator !== undefined && typeof validator !== "function") {
-    throw new TypeError(`Upstream ${name} validator must be a function.`);
+  const validation = options.validator;
+  if (
+    typeof validation !== "function" &&
+    validation !== "delegate-to-upstream"
+  ) {
+    throw new TypeError(
+      `Upstream ${name} validator must be a function or "delegate-to-upstream".`,
+    );
   }
+  const validator = typeof validation === "function" ? validation : undefined;
+  const forwardToolErrors = options.forwardToolErrors ?? false;
+  if (typeof forwardToolErrors !== "boolean") {
+    throw new TypeError(
+      `Upstream ${name} forwardToolErrors must be a boolean.`,
+    );
+  }
+  const discoveryTimeoutMs = boundedInteger(
+    options.discoveryTimeoutMs ?? DEFAULT_DISCOVERY_TIMEOUT_MS,
+    1,
+    MAXIMUM_DISCOVERY_TIMEOUT_MS,
+    `Upstream ${name} discoveryTimeoutMs`,
+  );
+  const maxToolBytes = boundedInteger(
+    options.maxToolBytes ?? DEFAULT_MAX_TOOL_BYTES,
+    1,
+    MAXIMUM_MAX_TOOL_BYTES,
+    `Upstream ${name} maxToolBytes`,
+  );
 
-  const listed = await listAllTools(connection, name, maxTools, options.signal);
+  const listed = await withDiscoveryDeadline(
+    (signal) => listAllTools(connection, name, maxTools, signal),
+    options.signal,
+    discoveryTimeoutMs,
+    name,
+  );
   const byName = new Map(listed.map((tool) => [tool.name, tool]));
   const selected = selectIncluded(
     [...byName.keys()],
     options.include,
     name,
   ).map((toolName) => byName.get(toolName) as GatewayMcpTool);
+  const encoder = new TextEncoder();
+  for (const tool of selected) {
+    if (!TOOL_NAME.test(tool.name)) {
+      throw new TypeError(
+        `MCP upstream ${name} lists the invalid tool name ${JSON.stringify(tool.name)}.`,
+      );
+    }
+    if (
+      encoder.encode(canonicalJson(canonicalTool(tool))).length > maxToolBytes
+    ) {
+      throw new TypeError(
+        `MCP upstream ${name} tool ${tool.name} exceeds the ${String(maxToolBytes)}-byte definition limit.`,
+      );
+    }
+  }
   for (const toolName of readOnlyTools) {
     if (!selected.some((tool) => tool.name === toolName)) {
       throw new TypeError(
@@ -293,15 +362,21 @@ export async function mcpUpstream(
       ),
       timeoutMs,
       ...(annotations === undefined ? {} : { annotations }),
-      errors: Object.freeze({ UPSTREAM_TOOL_ERROR }),
+      errors: Object.freeze({
+        UPSTREAM_TOOL_ERROR: forwardToolErrors
+          ? FORWARDED_UPSTREAM_TOOL_ERROR
+          : UPSTREAM_TOOL_ERROR,
+      }),
       async run({ input, context }) {
         const { response } = await connection.callTool(tool.name, input, {
           signal: context.signal,
         });
         if (response.isError === true) {
-          throw new CapabilityError("UPSTREAM_TOOL_ERROR", {
-            details: { message: errorMessage(response.content) },
-          });
+          throw forwardToolErrors
+            ? new CapabilityError("UPSTREAM_TOOL_ERROR", {
+                details: { message: errorMessage(response.content) },
+              })
+            : new CapabilityError("UPSTREAM_TOOL_ERROR");
         }
         if (structured) {
           if (!isJsonObject(response.structuredContent)) {
@@ -322,6 +397,39 @@ export async function mcpUpstream(
     fingerprint,
     lock,
   }) as McpGatewayUpstream;
+}
+
+/**
+ * Runs discovery under one total deadline and the caller's signal. The race
+ * also settles when a structural client ignores the signal.
+ */
+async function withDiscoveryDeadline<Value>(
+  discover: (signal: AbortSignal) => Promise<Value>,
+  callerSignal: AbortSignal | undefined,
+  timeoutMs: number,
+  upstream: string,
+): Promise<Value> {
+  const deadline = new AbortController();
+  const signal =
+    callerSignal === undefined
+      ? deadline.signal
+      : AbortSignal.any([callerSignal, deadline.signal]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      deadline.abort();
+      reject(
+        new Error(
+          `MCP upstream ${upstream} did not list its tools within ${String(timeoutMs)} ms.`,
+        ),
+      );
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([discover(signal), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function listAllTools(
@@ -534,6 +642,13 @@ function verifyLock(expected: McpCatalogLock, actual: McpCatalogLock): void {
   const changed = [...current.keys()].filter(
     (name) => locked.has(name) && locked.get(name) !== current.get(name),
   );
+  // Identical digests with a different fingerprint mean a hand-edited lock.
+  if (
+    added.length + removed.length + changed.length === 0 &&
+    expected.fingerprint !== actual.fingerprint
+  ) {
+    throw new McpCatalogLockError(actual.upstream, [], [], []);
+  }
   const sort = (names: string[]) => names.sort();
   if (added.length + removed.length + changed.length > 0) {
     throw new McpCatalogLockError(

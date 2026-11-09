@@ -45,8 +45,10 @@ export function chainAuthenticators(
   const chain = Object.freeze([...authenticators]);
   return async (request) => {
     for (const authenticate of chain) {
+      // A disconnected request stops before the next method runs.
+      if (request.signal.aborted) throw request.signal.reason;
       const principal = await authenticate(request);
-      if (principal !== null) return principal;
+      if (principal !== null && principal !== undefined) return principal;
     }
     return null;
   };

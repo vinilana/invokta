@@ -74,7 +74,12 @@ async function engineFor(
     version: "0.1.0",
     capabilities: createGateway({
       upstreams: [
-        await mcpUpstream({ name: "docs", connection: docs, ...options }),
+        await mcpUpstream({
+          validator: "delegate-to-upstream",
+          name: "docs",
+          connection: docs,
+          ...options,
+        }),
       ],
       rules: [{ match: "*", access: "public" }],
     }).capabilities,
@@ -165,7 +170,9 @@ describe("JSON Schema validation of MCP upstream contracts", () => {
         validator: "ajv" as unknown as JsonSchemaValidator,
       }),
     ).rejects.toThrow(
-      new TypeError("Upstream docs validator must be a function."),
+      new TypeError(
+        'Upstream docs validator must be a function or "delegate-to-upstream".',
+      ),
     );
   });
 });

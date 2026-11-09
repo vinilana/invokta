@@ -25,6 +25,7 @@ export interface AcmeGatewayOptions {
  */
 export async function createAcmeGateway(options: AcmeGatewayOptions) {
   const docs = await mcpUpstream({
+    validator: "delegate-to-upstream",
     name: "docs",
     namespace: "kb",
     connection: options.docs,

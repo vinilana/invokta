@@ -418,7 +418,11 @@ describe("createGateway configuration", () => {
         upstreams: [upstream],
         rules: [{ name: "typo", match: "biling.*", access: "deny" }],
       }),
-    ).toThrow(new TypeError("Gateway rule typo matches no capability."));
+    ).toThrow(
+      new TypeError(
+        "Gateway rule typo pattern biling.* matches no capability.",
+      ),
+    );
     expect(() =>
       createGateway({
         upstreams: [upstream],
