@@ -72,6 +72,11 @@ without causes or stacks:
   `cors.allowedOrigins` lists it exactly. Preflights are answered before
   authentication.
 - Bodies are bounded, and every response is `no-store` and `nosniff`.
+- An optional synchronous `visibility({ principal, capabilityId })` predicate
+  limits listing, description, OpenAPI, and invocation to the capabilities
+  visible to the caller; a hidden ID answers exactly like an unknown one, 404
+  `CAPABILITY_NOT_FOUND`, before the body is read. Visibility never grants
+  access; the access rule still runs on every invocation.
 
 ## OpenAPI export
 

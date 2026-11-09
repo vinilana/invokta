@@ -110,6 +110,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Progress message | 1,024 UTF-16 code units |
 | MCP progress notifications | 1 per 100 ms per request; at most 1 unwritten and 1 held, latest wins |
 | Honored MCP progress token | String of at most 256 UTF-16 code units, or a safe integer |
+| Plain HTTP OpenAPI documents cached for visibility | 64 distinct visible sets; the oldest is evicted |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,

@@ -58,3 +58,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0049](0049-jwt-bearer-authentication-helper.md) | JWT bearer authentication helper | Accepted | 2026-11-05 |
 | [0050](0050-opentelemetry-instrumentation-from-engine-events.md) | OpenTelemetry instrumentation from engine events | Accepted | 2026-11-05 |
 | [0051](0051-typed-capability-middleware-composition.md) | Typed capability middleware composition | Accepted | 2026-11-05 |
+| [0052](0052-per-caller-capability-visibility.md) | Per-caller capability visibility in adapters | Accepted | 2026-11-09 |

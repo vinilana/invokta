@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `serveMcpStdio`, `serveMcpHttp`, `createMcpHttpHandler`, `createHttpHandler`,
+  and `serveHttp` accept an optional synchronous
+  `visibility({ principal, capabilityId })` predicate, exported as
+  `McpCapabilityVisibility` and `HttpCapabilityVisibility`. A caller lists,
+  describes, and sees in the OpenAPI document only the capabilities the
+  predicate shows it; a hidden capability answers exactly like an unknown one,
+  without reaching `engine.invoke` or emitting an event. The predicate receives
+  a deep-frozen principal, anything but `true` hides the capability, and
+  visibility never grants access. Without the option, every adapter behaves as
+  before (ADR 0052).
+
 ## [0.10.0] - 2026-11-05
 
 ### Added

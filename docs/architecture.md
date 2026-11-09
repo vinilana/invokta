@@ -361,7 +361,8 @@ MUST fail closed if two keys map to the same tool name. A deprecated capability
 keeps its tool; its description starts with the deprecation notice and the same
 notice is published as `_meta["dev.invokta/deprecated"]` (AE-EVOLVE-01).
 Success returns
-`structuredContent` and a JSON text fallback. A nonexistent tool is a protocol
+`structuredContent` and a JSON text fallback. A nonexistent tool, including one
+hidden by visibility (AE-VIS-01), is a protocol
 error; all other capability errors return `isError: true`. Error serialization
 is atomic: if the adapter cannot safely read or serialize the structured
 `EngineError`, it MUST return the generic `EXECUTION_FAILED` tool error and MUST
@@ -539,9 +540,9 @@ change, including dot-segment aliases (ADR 0048).
 **AE-HTTP-02 — Boundary.** Each request is checked in order: host allowlist
 (loopback names by default), `Origin` (rejected unless CORS lists it exactly),
 route, CORS preflight, method (405 with `Allow`), declared body size (413),
-authentication, capability ID (an ID outside the captured catalog is 404
-`CAPABILITY_NOT_FOUND` without reaching `engine.invoke`, emitting an event, or
-reading the body), `application/json` content type (415), streamed strict UTF-8
+authentication, capability ID (an ID outside the captured catalog, or hidden
+from the principal by visibility (AE-VIS-01), is 404 `CAPABILITY_NOT_FOUND`
+without reaching `engine.invoke`, emitting an event, or reading the body), `application/json` content type (415), streamed strict UTF-8
 body within the limit (default 1,048,576 bytes; 413), and JSON parsing
 (400 `INVALID_JSON`). `auth` is required and uses the same required or
 `dangerously-disabled-for-development` modes and the same structural
@@ -561,6 +562,27 @@ and `describe`, embeds each schema as a component with local references rebased
 onto it, uses the base path as a relative server URL, and declares Bearer
 security only when authentication is required. A JSON Schema `$id` or anchor
 that would occur twice in the document fails generation with a `TypeError`.
+
+## Capability visibility
+
+**AE-VIS-01 — Per-caller listing.** `serveMcpStdio`, `serveMcpHttp`,
+`createMcpHttpHandler`, `createHttpHandler`, and `serveHttp` MAY receive an
+optional `visibility({ principal, capabilityId })` predicate, validated as a
+function before the adapter serves. It is evaluated with the request's
+snapshotted principal over HTTP and the configured principal over stdio, and it
+receives a deep-frozen copy of that principal. Only a returned `true` makes a
+capability visible; any other result, including a throw, hides it. A hidden
+capability is indistinguishable from one outside the catalog: MCP omits it from
+`tools/list` and answers `tools/call` with the unknown-tool protocol error, and
+plain HTTP omits it from `GET /capabilities`, answers `GET` and `POST
+/capabilities/{id}` with 404 `CAPABILITY_NOT_FOUND` before reading the body,
+and generates `GET /openapi.json` from the visible set, caching at most 64
+distinct documents. Neither adapter calls `engine.invoke` or emits an event for
+a hidden capability. Visibility never grants access: the access rule still runs
+on every invocation. The core `list` and `describe` stay principal-free, and
+the MCP catalog preflight and tool-name collision check always cover the
+complete catalog. Without the option, every adapter behaves as before. ADR 0052
+defines the boundary.
 
 ## Authentication and authorization
 
