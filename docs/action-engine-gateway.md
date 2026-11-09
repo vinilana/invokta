@@ -309,6 +309,10 @@ capability the caller cannot see.
 
 ### D — Per-caller visibility
 
+> Prototyped on this branch: `visibility` in `@invokta/mcp` and
+> `@invokta/http`, and `gateway.visibility`. The adapter change still needs
+> its ADR before it can merge.
+
 **Goal.** A caller lists, describes, searches, and calls only the
 capabilities that its gateway rules could allow. A hidden capability is
 indistinguishable from a nonexistent one.
@@ -359,8 +363,9 @@ type CapabilityVisibility = (args: {
   with the request signal, and mapped into compact `principal.attributes`
   such as scopes or roles. Visibility reads them synchronously; the access
   rule may still ask the PDP when a call is made.
-- A throwing predicate hides the capability and logs one payload-free
-  warning.
+- The predicate receives a deep-frozen copy of the principal, so it cannot
+  change the identity that reaches `invoke`. Anything but a returned `true`,
+  including a throw, hides the capability.
 - MCP clients cache tool lists. A change to a caller's scopes appears the
   next time the client lists tools; stateless HTTP sends no
   `notifications/tools/list_changed` (AE-LIMIT-05).

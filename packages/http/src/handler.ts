@@ -71,6 +71,62 @@ export interface HttpHandlerOptions {
   /** Request body limit in bytes. Defaults to 1,048,576. */
   readonly maxRequestBodyBytes?: number;
   readonly auth: HttpAuthOptions;
+  /**
+   * Lists, describes, documents, and invokes only the capabilities this
+   * predicate shows to the authenticated principal. A hidden capability
+   * answers like an ID outside the catalog. Defaults to every capability.
+   */
+  readonly visibility?: HttpCapabilityVisibility;
+}
+
+/**
+ * Decides whether one capability is visible to the authenticated principal.
+ * It is synchronous and reads only its arguments. Visibility never grants
+ * access: the capability's access rule still runs on every invocation.
+ */
+export type HttpCapabilityVisibility = (args: {
+  readonly principal: Principal | null;
+  readonly capabilityId: string;
+}) => boolean;
+
+const MAX_CACHED_OPENAPI_DOCUMENTS = 64;
+
+function snapshotVisibility(
+  value: unknown,
+): HttpCapabilityVisibility | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "function") {
+    throw new TypeError("visibility must be a function.");
+  }
+  return value as HttpCapabilityVisibility;
+}
+
+/**
+ * Binds the visibility option to one request's principal. The predicate sees
+ * a deep-frozen copy and anything but a returned `true`, including a throw,
+ * hides the capability.
+ */
+function bindVisibility(
+  visibility: HttpCapabilityVisibility,
+  principal: Principal | null,
+): (capabilityId: string) => boolean {
+  const frozen =
+    principal === null ? null : deepFreeze(structuredClone(principal));
+  return (capabilityId) => {
+    try {
+      return visibility({ principal: frozen, capabilityId }) === true;
+    } catch {
+      return false;
+    }
+  };
+}
+
+function deepFreeze<Value>(value: Value): Value {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    for (const nested of Object.values(value)) deepFreeze(nested);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 export type HttpHandler = (request: Request) => Promise<Response>;
@@ -513,12 +569,39 @@ export function createHttpHandler<Capabilities extends CapabilityMap>(
   if (!Number.isSafeInteger(maxRequestBodyBytes) || maxRequestBodyBytes <= 0) {
     throw new TypeError("maxRequestBodyBytes must be a positive safe integer.");
   }
+  const visibility = snapshotVisibility(options.visibility);
+  const openApiOptions = {
+    basePath,
+    security: auth.mode === "required" ? "bearer" : "none",
+  } as const;
   const openApiBody = JSON.stringify(
-    createHttpOpenApiDocument(engine, {
-      basePath,
-      security: auth.mode === "required" ? "bearer" : "none",
-    }),
+    createHttpOpenApiDocument(engine, openApiOptions),
   );
+  // One document per distinct visible set, bounded so varied principals
+  // cannot grow the cache without limit.
+  const visibleOpenApiBodies = new Map<string, string>();
+  const openApiBodyFor = (visible: (id: string) => boolean): string => {
+    const summaries = engine.list().filter((summary) => visible(summary.id));
+    const key = summaries.map((summary) => summary.id).join("\n");
+    const cached = visibleOpenApiBodies.get(key);
+    if (cached !== undefined) return cached;
+    const view = {
+      name: engine.name,
+      version: engine.version,
+      invoke: engine.invoke,
+      list: () => summaries,
+      describe: engine.describe,
+    } as Engine<Capabilities>;
+    const body = JSON.stringify(
+      createHttpOpenApiDocument(view, openApiOptions),
+    );
+    if (visibleOpenApiBodies.size >= MAX_CACHED_OPENAPI_DOCUMENTS) {
+      const oldest = visibleOpenApiBodies.keys().next().value as string;
+      visibleOpenApiBodies.delete(oldest);
+    }
+    visibleOpenApiBodies.set(key, body);
+    return body;
+  };
   // The catalog is fixed by createEngine, so a caller-chosen ID that is not in
   // it never reaches engine.invoke or its events.
   const capabilityIds: ReadonlySet<string> = new Set(
@@ -614,16 +697,29 @@ export function createHttpHandler<Capabilities extends CapabilityMap>(
       }
     }
 
+    const visible =
+      visibility === undefined
+        ? undefined
+        : bindVisibility(visibility, principal);
     if (route.kind !== "capability") {
+      if (route.kind === "list") {
+        const capabilities =
+          visible === undefined
+            ? engine.list()
+            : engine.list().filter((summary) => visible(summary.id));
+        return jsonResponse(200, JSON.stringify({ capabilities }), headers);
+      }
       return jsonResponse(
         200,
-        route.kind === "list"
-          ? JSON.stringify({ capabilities: engine.list() })
-          : openApiBody,
+        visible === undefined ? openApiBody : openApiBodyFor(visible),
         headers,
       );
     }
-    if (!capabilityIds.has(route.capabilityId)) {
+    // A hidden capability is indistinguishable from an ID outside the catalog.
+    if (
+      !capabilityIds.has(route.capabilityId) ||
+      (visible !== undefined && !visible(route.capabilityId))
+    ) {
       return engineErrorResponse(
         new EngineError({
           code: "CAPABILITY_NOT_FOUND",

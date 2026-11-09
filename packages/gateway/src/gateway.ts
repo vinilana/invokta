@@ -6,6 +6,7 @@ import type {
   Principal,
 } from "@invokta/core";
 
+import { principalPredicate } from "./access.js";
 import type { JsonObject } from "./json-schema-contract.js";
 import { compilePatterns, type Matcher } from "./patterns.js";
 import type {
@@ -15,6 +16,7 @@ import type {
   GatewayRoute,
   GatewayUpstreamCapability,
   GatewayUpstreamRoute,
+  GatewayVisibility,
 } from "./types.js";
 import { upstreamCapabilities } from "./upstream-registry.js";
 
@@ -27,6 +29,12 @@ export interface Gateway {
   readonly capabilities: CapabilityMap;
   /** Every published capability, its upstream, and the rule governing it. */
   readonly routes: ReadonlyArray<GatewayRoute>;
+  /**
+   * Per-caller visibility derived from the rules, for the `visibility`
+   * option of the MCP and HTTP adapters. Capabilities the gateway did not
+   * create are hidden.
+   */
+  readonly visibility: GatewayVisibility;
 }
 
 interface CompiledRule {
@@ -36,6 +44,7 @@ interface CompiledRule {
     readonly matches: Matcher;
   }>;
   readonly access: GatewayAccess;
+  readonly visible: (principal: Principal | null) => boolean;
 }
 
 /**
@@ -61,6 +70,7 @@ export function createGateway(options: GatewayOptions): Gateway {
     options.defaultAccess ?? "deny",
     "Gateway defaultAccess",
   );
+  const defaultVisible = visibleFor(defaultAccess, undefined);
 
   const entries: GatewayUpstreamCapability[] = [];
   const owners = new Map<string, string>();
@@ -89,6 +99,10 @@ export function createGateway(options: GatewayOptions): Gateway {
   const usedRules = new Set<CompiledRule>();
   const capabilities: Record<string, AnyCapability> = {};
   const routes: GatewayRoute[] = [];
+  const visibleById = new Map<
+    string,
+    (principal: Principal | null) => boolean
+  >();
   for (const entry of entries) {
     const { capabilityId } = entry.route;
     const rule = rules.find(({ patterns }) =>
@@ -111,6 +125,7 @@ export function createGateway(options: GatewayOptions): Gateway {
       }) as unknown as AnyCapability,
     });
     routes.push(Object.freeze({ ...route, rule: ruleName }));
+    visibleById.set(capabilityId, rule?.visible ?? defaultVisible);
   }
   for (const rule of rules) {
     if (usedRules.has(rule)) continue;
@@ -124,10 +139,41 @@ export function createGateway(options: GatewayOptions): Gateway {
     );
   }
 
+  const visibility: GatewayVisibility = ({ principal, capabilityId }) => {
+    const visible = visibleById.get(capabilityId);
+    if (visible === undefined) return false;
+    try {
+      return visible(principal) === true;
+    } catch {
+      return false;
+    }
+  };
+
   return Object.freeze({
     capabilities: Object.freeze(capabilities),
     routes: Object.freeze(routes),
+    visibility,
   });
+}
+
+/** The listing counterpart of an access value, which a listing can evaluate without input. */
+function visibleFor(
+  access: GatewayAccess,
+  declared: unknown,
+): (principal: Principal | null) => boolean {
+  if (declared !== undefined) {
+    return declared as (principal: Principal | null) => boolean;
+  }
+  switch (access) {
+    case "public":
+      return () => true;
+    case "authenticated":
+      return (principal) => principal !== null;
+    case "deny":
+      return () => false;
+    default:
+      return principalPredicate(access) ?? ((principal) => principal !== null);
+  }
 }
 
 function compileRules(
@@ -143,10 +189,15 @@ function compileRules(
       throw new TypeError(`Gateway rule ${name} must have a unique name.`);
     }
     names.add(name);
+    if (rule.visible !== undefined && typeof rule.visible !== "function") {
+      throw new TypeError(`Gateway rule ${name} visible must be a function.`);
+    }
+    const access = assertAccess(rule.access, `Gateway rule ${name} access`);
     return Object.freeze({
       name,
       patterns: compilePatterns(rule.match, `Gateway rule ${name} match`),
-      access: assertAccess(rule.access, `Gateway rule ${name} access`),
+      access,
+      visible: visibleFor(access, rule.visible),
     });
   });
 }

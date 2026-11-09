@@ -72,7 +72,24 @@ export interface GatewayRule {
    */
   readonly match: string | ReadonlyArray<string>;
   readonly access: GatewayAccess;
+  /**
+   * Who sees the governed capabilities in listings and search. Defaults to
+   * the access itself for `public`, `authenticated`, `deny`, and
+   * `requireScopes`, and to every authenticated caller for other functions,
+   * which may depend on input a listing does not have. Visibility never
+   * grants access.
+   */
+  readonly visible?: (principal: Principal | null) => boolean;
 }
+
+/**
+ * The visibility option of `@invokta/mcp` and `@invokta/http`: whether one
+ * capability is listed for, and callable by, the authenticated principal.
+ */
+export type GatewayVisibility = (args: {
+  readonly principal: Principal | null;
+  readonly capabilityId: string;
+}) => boolean;
 
 /** One authorization decision, free of input, output, and credentials. */
 export interface GatewayDecision {

@@ -31,4 +31,5 @@ export type {
   GatewayUpstream,
   GatewayUpstreamKind,
   GatewayUpstreamRoute,
+  GatewayVisibility,
 } from "./types.js";

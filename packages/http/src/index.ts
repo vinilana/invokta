@@ -2,6 +2,7 @@ export type {
   HttpAdapterErrorCode,
   HttpAuthenticationRequest,
   HttpAuthOptions,
+  HttpCapabilityVisibility,
   HttpCorsOptions,
   HttpErrorBody,
   HttpErrorCode,
