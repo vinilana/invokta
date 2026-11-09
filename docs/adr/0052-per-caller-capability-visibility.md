@@ -37,18 +37,23 @@ predicate serves every adapter.
 - The option is validated as a function before an adapter serves; any other
   value is a `TypeError`.
 - The predicate is synchronous and reads only its arguments. It is evaluated
-  with the request's snapshotted principal over HTTP and with the configured
-  principal over stdio, and it receives a deep-frozen copy of that principal
-  so it cannot change the identity that reaches `engine.invoke`.
+  with the request's snapshotted principal over HTTP. Over stdio it is
+  evaluated with the configured principal, cloned once when the server starts;
+  a principal that cannot be structured-cloned rejects startup. It receives a
+  structured clone frozen recursively through plain objects and arrays, so it
+  cannot change the identity that reaches `engine.invoke`; the entries of a
+  `Map` or `Set` attribute are copied but not frozen.
 - Only a returned `true` makes a capability visible. Any other value,
-  including a thrown error, hides it: visibility fails closed.
+  including a thrown error and a returned promise, hides it: visibility fails
+  closed.
 - A hidden capability is indistinguishable from one outside the catalog.
   MCP omits it from `tools/list` and answers `tools/call` with the same
   unknown-tool protocol error. Plain HTTP omits it from `GET /capabilities`,
   answers `GET` and `POST /capabilities/{id}` with the same 404
   `CAPABILITY_NOT_FOUND` before reading the body, and generates
-  `GET /openapi.json` from the visible set, caching at most 64 distinct
-  documents with the oldest evicted. No adapter calls `engine.invoke` or emits
+  `GET /openapi.json` from the visible set. Documents are cached by the JSON
+  array of visible IDs, which no capability ID can make ambiguous, for at most
+  64 distinct sets; when full, the first inserted entry is evicted. No adapter calls `engine.invoke` or emits
   an event for a hidden capability.
 - Visibility never grants access. A visible capability still runs its access
   rule on every invocation, so a predicate that is wider than the access rule
@@ -64,7 +69,9 @@ not fail because a policy service is slow. Entitlements that need a directory
 or a Policy Decision Point are resolved once per request by the `authenticate`
 hook, which already performs asynchronous I/O with the request signal, and
 carried in `principal.attributes`. The CLI is not covered: its principal is
-chosen by the composition root, which can compose a narrower engine.
+chosen by the composition root, which can compose a narrower engine. The
+devtools emulations do not apply a visibility predicate; they inspect the
+complete engine.
 
 ## Consequences
 
@@ -75,7 +82,10 @@ chosen by the composition root, which can compose a narrower engine.
   `notifications/tools/list_changed` (AE-LIMIT-05).
 - A predicate that depends on more than the principal and the capability ID,
   such as input, cannot be expressed; such a rule belongs in the access rule.
-- Tests cover MCP HTTP, the Web handler, a stdio child process, plain HTTP,
-  the Node.js `serveHttp` forwarding, per-principal OpenAPI, frozen
-  principals, fail-closed predicates, option validation, and the absence of
-  invocation and events for hidden capabilities.
+- Tests cover the Web handler, the `serveMcpHttp` listener, a stdio child
+  process compared message by message at the JSON-RPC level, plain HTTP, the
+  `serveHttp` forwarding, per-principal OpenAPI with a collision-free key and
+  first-inserted eviction, the null principal of a development handler, a
+  hidden ID answered before the media-type check without reading the body,
+  frozen principals, fail-closed predicates, option validation, and the
+  absence of invocation and events for hidden capabilities.

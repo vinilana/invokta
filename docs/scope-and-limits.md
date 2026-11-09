@@ -113,7 +113,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Progress message | 1,024 UTF-16 code units |
 | MCP progress notifications | 1 per 100 ms per request; at most 1 unwritten and 1 held, latest wins |
 | Honored MCP progress token | String of at most 256 UTF-16 code units, or a safe integer |
-| Plain HTTP OpenAPI documents cached for visibility | 64 distinct visible sets; the oldest is evicted |
+| Plain HTTP OpenAPI documents cached for visibility | 64 distinct visible sets; the first inserted is evicted |
 | Gateway upstream name and namespace | 1-64 lowercase letters, digits, or inner hyphens |
 | Gateway rule pattern | `*`, an exact capability ID, or `prefix.*` |
 | Gateway MCP tools per upstream | 256 by default, at most 4,096; at most 64 `tools/list` pages |

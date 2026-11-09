@@ -577,8 +577,10 @@ capability is indistinguishable from one outside the catalog: MCP omits it from
 plain HTTP omits it from `GET /capabilities`, answers `GET` and `POST
 /capabilities/{id}` with 404 `CAPABILITY_NOT_FOUND` before reading the body,
 and generates `GET /openapi.json` from the visible set, caching at most 64
-distinct documents. Neither adapter calls `engine.invoke` or emits an event for
-a hidden capability. Visibility never grants access: the access rule still runs
+distinct documents keyed by the JSON array of visible IDs and evicting the
+first inserted. A returned promise hides a capability like any non-`true`
+result. Over stdio the configured principal is cloned once at startup. Neither
+adapter calls `engine.invoke` or emits an event for a hidden capability. Visibility never grants access: the access rule still runs
 on every invocation. The core `list` and `describe` stay principal-free, and
 the MCP catalog preflight and tool-name collision check always cover the
 complete catalog. Without the option, every adapter behaves as before. ADR 0052

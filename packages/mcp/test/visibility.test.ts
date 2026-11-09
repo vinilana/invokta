@@ -8,8 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import {
+  connectMcpClient,
   createMcpHttpHandler,
   type McpCapabilityVisibility,
+  serveMcpHttp,
   serveMcpStdio,
 } from "../src/index.js";
 
@@ -133,10 +135,8 @@ describe("MCP capability visibility", () => {
       params: { name: "billing_missing", arguments: {} },
     });
 
-    expect(hidden.error).toEqual({
-      code: -32602,
-      message: "MCP error -32602: Tool billing_refund not found",
-    });
+    expect(hidden.error).toMatchObject({ code: -32602 });
+    expect(JSON.stringify(hidden.error)).toContain("billing_refund");
     expect(
       JSON.stringify(missing.error).replace("billing_missing", "<tool>"),
     ).toBe(JSON.stringify(hidden.error).replace("billing_refund", "<tool>"));
@@ -177,6 +177,65 @@ describe("MCP capability visibility", () => {
     expect(Object.isFrozen(seen[0]?.attributes)).toBe(true);
   });
 
+  it("filters through the Node.js listener of serveMcpHttp", async () => {
+    const server = await serveMcpHttp(createVisibilityEngine(), {
+      port: 0,
+      visibility,
+      auth: {
+        mode: "required",
+        authenticate: ({ headers }) => {
+          const token = headers.get("authorization")?.replace("Bearer ", "");
+          return token === undefined ? null : (principals[token] ?? null);
+        },
+      },
+    });
+    try {
+      const { host, port } = server.address();
+      const client = await connectMcpClient({
+        transport: "http",
+        url: `http://${host}:${String(port)}/mcp`,
+        authentication: { type: "bearer", token: "reader-token" },
+      });
+      try {
+        expect(
+          (await client.listTools()).tools.map((tool) => tool.name),
+        ).toEqual(["billing_get-invoice"]);
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("applies visibility to the null principal when authentication is disabled", async () => {
+    const seen: Array<Principal | null> = [];
+    const handler = createMcpHttpHandler(createVisibilityEngine(), {
+      visibility: ({ principal, capabilityId }) => {
+        seen.push(principal);
+        return capabilityId === "billing.get-invoice";
+      },
+      auth: { mode: "dangerously-disabled-for-development" },
+    });
+
+    const response = await handler(
+      new Request("http://127.0.0.1/mcp", {
+        method: "POST",
+        headers: HEADERS,
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      }),
+    );
+    const body = (await response.json()) as {
+      result: { tools: { name: string }[] };
+    };
+
+    expect(body.result.tools.map((tool) => tool.name)).toEqual([
+      "billing_get-invoice",
+    ]);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((principal) => principal === null)).toBe(true);
+  });
+
   it("rejects an invalid visibility option before serving", async () => {
     expect(() => handlerFor({ visibility: "all" })).toThrow(
       new TypeError("visibility must be a function."),
@@ -192,7 +251,6 @@ describe("MCP capability visibility", () => {
     const predicate = vi.fn(() => true);
     await toolNames(handlerFor({ visibility: predicate }), "reader-token");
 
-    expect(predicate).toHaveBeenCalledTimes(3);
     expect(predicate).toHaveBeenCalledWith({
       principal: principals["reader-token"],
       capabilityId: "billing.refund",

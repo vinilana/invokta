@@ -138,7 +138,8 @@ principal and a capability ID. With it, `GET /capabilities` lists only visible
 capabilities, `GET` and `POST /capabilities/{id}` answer a hidden ID with the
 same 404 `CAPABILITY_NOT_FOUND` as an unknown one before the body is read, and
 `GET /openapi.json` describes only the visible operations; at most 64 distinct
-documents are cached. The predicate receives a deep-frozen principal, and
+documents are cached, keyed by the visible IDs, and the first inserted is
+evicted. The predicate receives a deep-frozen principal, and
 anything but `true`, including a throw, hides the capability. Visibility never
 grants access. `serveHttp` forwards the option unchanged.
 
