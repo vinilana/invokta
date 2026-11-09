@@ -132,6 +132,21 @@ describe("createDiscovery", () => {
     );
   });
 
+  it("lets the host replace the query guidance for semantic rankers", () => {
+    const { engine } = setup({
+      queryGuidance:
+        "Describe the user's whole task in one sentence, in any language.",
+    });
+    const description = engine.describe("gateway.search-tools").description;
+
+    expect(description).toContain(
+      "Describe the user's whole task in one sentence, in any language.",
+    );
+    expect(description).not.toContain("keywords");
+    expect(() => setup({ queryGuidance: "" })).toThrow(TypeError);
+    expect(() => setup({ queryGuidance: "x".repeat(501) })).toThrow(TypeError);
+  });
+
   it("returns ranked, visible tools with their schemas", async () => {
     const { engine } = setup();
 

@@ -59,6 +59,12 @@ export interface DiscoveryOptions {
   readonly alwaysList?: ReadonlyArray<string>;
   /** Language the model should search in. Defaults to `English`. */
   readonly queryLanguage?: string;
+  /**
+   * Replaces the default "a few keywords" instruction in the
+   * `search-tools` description, for rankers that understand whole tasks,
+   * such as embedding search or a decision model. 1-500 characters.
+   */
+  readonly queryGuidance?: string;
   readonly rank?: DiscoveryRanker;
   /** Ranker deadline before falling back to lexical search. Defaults to 2,000 ms. */
   readonly rankTimeoutMs?: number;
@@ -273,6 +279,16 @@ export function createDiscovery(options: DiscoveryOptions): Discovery {
   ) {
     throw new TypeError("Discovery queryLanguage must be 1-64 characters.");
   }
+  const guidance =
+    options.queryGuidance ??
+    `Write the query as a few keywords for the action and the object in ${language}${language === "English" ? ', for example "cancel order"' : ""}.`;
+  if (
+    typeof guidance !== "string" ||
+    guidance.trim() === "" ||
+    guidance.length > 500
+  ) {
+    throw new TypeError("Discovery queryGuidance must be 1-500 characters.");
+  }
   const rank = options.rank;
   if (rank !== undefined && typeof rank !== "function") {
     throw new TypeError("Discovery rank must be a function.");
@@ -360,7 +376,7 @@ export function createDiscovery(options: DiscoveryOptions): Discovery {
     title: "Search tools",
     description: [
       `Search the gateway's tool catalog and return the matching tools with their input and output schemas.`,
-      `Write the query as a few keywords for the action and the object in ${language}${language === "English" ? ', for example "cancel order"' : ""}.`,
+      guidance,
       `Then call a read-only tool with ${ids.invokeRead} and any other tool with ${ids.invoke}.`,
     ].join(" "),
     input: searchInput,
