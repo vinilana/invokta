@@ -156,9 +156,14 @@ export const validator: JsonSchemaValidator = (schema, value) => {
   let validate = compiled.get(schema);
   if (validate === undefined) {
     validate = ajv.compile(schema);
+    // An upstream schema with "$async": true compiles to a validator that
+    // returns a promise, which is always truthy: refuse it.
+    if ("$async" in validate) {
+      throw new TypeError("Asynchronous schemas are not supported.");
+    }
     compiled.set(schema, validate);
   }
-  if (validate(value)) return undefined;
+  if (validate(value) === true) return undefined;
   return (validate.errors ?? []).map((error) => ({
     message: error.message ?? "Invalid value.",
     path: error.instancePath.split("/").slice(1),
@@ -168,7 +173,19 @@ export const validator: JsonSchemaValidator = (schema, value) => {
 
 The validator is synchronous, and the gateway passes the same frozen schema on
 every call so it can be compiled once. A validator that throws or returns
-anything but a list or `undefined` fails closed.
+anything but a list or `undefined`, including a promise, fails closed.
+
+MCP schemas are chosen by the upstream server, so treat them as untrusted
+input to the validator:
+
+- Refuse asynchronous schemas, as above; compare `validate(value)` with `true`.
+- A `pattern` keyword runs a regular expression the server chose. Use Ajv's
+  `code: { regExp }` option with a linear-time engine such as RE2, or reject
+  schemas with patterns you have not reviewed; `lock` makes such a review
+  stick.
+- Do not enable options that change the value, such as `useDefaults`,
+  `coerceTypes`, or `removeAdditional`. The gateway does not support mutating
+  validators: the value a validator receives is the caller's input.
 
 `"delegate-to-upstream"` names the trade-off: the gateway checks only that
 values are JSON objects, rules read unvalidated input, and the server's

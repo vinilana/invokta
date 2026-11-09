@@ -422,10 +422,12 @@ export function createDiscovery(options: DiscoveryOptions): Discovery {
             context.signal,
             rankTimeoutMs,
           );
-          if (
-            !Array.isArray(ordered) ||
-            ordered.some((id) => typeof id !== "string")
-          ) {
+          // A ranker's list is read only up to a bound, whatever its length.
+          if (!Array.isArray(ordered)) {
+            throw new TypeError("The ranker did not return a list.");
+          }
+          ordered = ordered.slice(0, MAX_RANKED_IDS);
+          if (ordered.some((id) => typeof id !== "string")) {
             throw new TypeError("The ranker returned a non-string ID.");
           }
           ranker = "custom";
@@ -439,7 +441,6 @@ export function createDiscovery(options: DiscoveryOptions): Discovery {
       const selected: string[] = [];
       const exact = query.trim();
       if (candidateIds.has(exact)) selected.push(exact);
-      // A ranker's list is read only up to a bound, whatever its length.
       for (const id of ordered.slice(0, MAX_RANKED_IDS)) {
         if (selected.length >= limit) break;
         if (candidateIds.has(id) && !selected.includes(id)) selected.push(id);

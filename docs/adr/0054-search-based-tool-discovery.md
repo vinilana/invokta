@@ -69,13 +69,16 @@ split on camelCase and every non-letter, non-digit character, lowercased,
 folded to remove diacritics, and folded from regular plurals (`-s`, `-es`,
 `-ies`) to the singular, the same way for the catalog and the query; there is
 no other stemming, no synonym list, and no translation. `createSearchIndex` and
-`tokenize` are exported for host rankers.
+`tokenize` are exported for host rankers. The same query over the same catalog
+always returns the same order, and an exact ID always comes first, but the
+weights, the folding rules, and therefore the order may change in any release
+to improve recall: ranking order is not public API.
 
 A host MAY inject `rank(query, candidates, { signal })`, for example
 embeddings or a decision model. It receives only the caller's visible tools;
 its result is deduplicated and intersected with them, so it can reorder or
-drop tools but never reveal one, and at most 4,096 of its IDs are read. A
-ranker that fails, returns non-string IDs, or misses its deadline (2,000 ms by
+drop tools but never reveal one, and only its first 4,096 IDs are read or
+checked. A ranker that fails, returns non-string IDs among those, or misses its deadline (2,000 ms by
 default, at most 60,000) falls back to the lexical ranking; its signal is
 aborted at the deadline, and a ranker that ignores the signal keeps running in
 the background but no longer affects the result. Caller cancellation still

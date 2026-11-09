@@ -48,7 +48,8 @@ status. `visibility` is the adapter option of ADR 0052.
   upstream `engine.invoke` with the request ID, source, mapped principal,
   signal, and progress sink, so the upstream's validation, access rule,
   timeout, and events still apply, and the upstream `timeoutMs` is
-  republished. An upstream `DOMAIN_ERROR` is redeclared and raised again as
+  republished. The gateway's timer also covers its own validation and rule,
+  so a call near the limit times out at the gateway first. An upstream `DOMAIN_ERROR` is redeclared and raised again as
   the same `CapabilityError`.
 - `mcpUpstream({ name, connection, validator, namespace?, include?,
   timeoutMs?, maxTools?, maxToolBytes?, discoveryTimeoutMs?, pin?, lock?,
@@ -56,7 +57,8 @@ status. `visibility` is the adapter option of ADR 0052.
   connected MCP server's tools once, at the composition root, through a
   structural `listTools`/`callTool` interface that `McpClientConnection`
   satisfies. Discovery has one total deadline (30,000 ms by default, at most
-  300,000) that also settles when a client ignores the signal, reads at most
+  300,000); the deadline and the caller's `signal` settle it even when a client
+  ignores the signal. It reads at most
   64 pages and `maxTools` tools (256 by default, at most 4,096), and fails on
   a duplicate name or a schema without an object root. Every published tool
   must have a name of 1 to 128 characters from `A-Z`, `a-z`, `0-9`, `.`,
@@ -81,8 +83,14 @@ the access rule and the call, failing as `INPUT_INVALID`, so gateway rules
 read validated input, and a structured result against the output schema,
 failing as `OUTPUT_INVALID`. The same frozen schema object is passed on every
 call so validators can cache compiled schemas. A validator that throws or
-returns anything but a list or `undefined`, including a promise, fails closed,
-and at most 100 issues with 512-character messages reach public details.
+returns anything but a list or `undefined`, including a promise, fails closed;
+a returned promise's rejection is observed so it cannot crash the host. At most
+100 issues with 512-character messages reach public details. The validator
+receives the caller's value, so mutating validators, such as Ajv with
+`useDefaults`, `coerceTypes`, or `removeAdditional`, are not supported. MCP
+schemas are chosen by the server: the documented Ajv recipe refuses
+asynchronous schemas, and hosts should run `pattern` keywords on a linear-time
+regular expression engine or review them through a `lock`.
 `"delegate-to-upstream"` names the trade-off: the gateway checks only the
 object shape and the lossless JSON model, rules read unvalidated input, and the
 server's rejection of invalid input is an `UPSTREAM_TOOL_ERROR`.

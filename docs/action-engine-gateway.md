@@ -147,6 +147,7 @@ const gateway = createGateway({
       name: "docs",
       namespace: "kb",
       connection: await connectMcpClient(docsTarget),
+      validator: "delegate-to-upstream",
       include: ["search", "fetch"],
       pin: process.env.DOCS_CATALOG_FINGERPRINT,
       timeoutMs: 10_000,

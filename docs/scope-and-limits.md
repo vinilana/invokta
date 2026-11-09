@@ -129,6 +129,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Gateway `invoke-*` tool ID | 256 characters |
 | Gateway `alwaysList` | 32 capabilities after pattern expansion |
 | Gateway host ranker deadline | 2,000 ms by default; 1 through 60,000 ms |
+| Gateway host ranker IDs read | 4,096 per search |
 
 **AE-LIMIT-01 — Runtime.** Invokta does not provide universal lifecycle,
 queues, concurrency control, automatic retries, distributed execution, jobs,

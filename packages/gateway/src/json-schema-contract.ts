@@ -13,7 +13,10 @@ export interface JsonSchemaIssue {
  * Ajv. It is synchronous and returns the failed checks, or `undefined` or an
  * empty list when the value is valid; a returned promise fails closed. The
  * gateway passes the same frozen document object on every call, so a
- * validator may compile it once and cache it by identity.
+ * validator may compile it once and cache it by identity. It must not change
+ * the value, which is the caller's input. MCP schemas are chosen by the
+ * server: refuse asynchronous schemas and run `pattern` keywords on a
+ * linear-time regular expression engine.
  */
 export type JsonSchemaValidator = (
   schema: JsonObject,
@@ -70,7 +73,8 @@ function snapshotIssues(
  * value is a JSON object; with a `validator`, it also validates the value
  * against the document, so invalid input fails as `INPUT_INVALID` before the
  * upstream is called and an invalid result fails as `OUTPUT_INVALID`. A
- * validator that throws fails closed. The core still enforces the lossless
+ * validator that throws or returns anything but a list or `undefined`,
+ * including a promise, fails closed. The core still enforces the lossless
  * JSON data model on every value.
  */
 export function jsonSchemaContract(
@@ -94,7 +98,15 @@ export function jsonSchemaContract(
         if (validator === undefined) return { value };
         let issues: ReadonlyArray<JsonSchemaIssue> | undefined;
         try {
-          issues = snapshotIssues(validator(snapshot, value));
+          const result: unknown = validator(snapshot, value);
+          if (isThenable(result)) {
+            // A promise cannot prove the value valid. Observe its rejection so
+            // it cannot surface as an unhandled rejection, then fail closed.
+            result.then(undefined, () => undefined);
+            issues = unvalidatedIssues;
+          } else {
+            issues = snapshotIssues(result);
+          }
         } catch {
           issues = unvalidatedIssues;
         }
@@ -103,6 +115,23 @@ export function jsonSchemaContract(
       jsonSchema: converter,
     }),
   }) as EngineSchema<JsonObject>;
+}
+
+function isThenable(
+  value: unknown,
+): value is { then(onFulfilled: undefined, onRejected: () => void): unknown } {
+  if (
+    (typeof value !== "object" && typeof value !== "function") ||
+    value === null
+  ) {
+    return false;
+  }
+  try {
+    return typeof (value as { readonly then?: unknown }).then === "function";
+  } catch {
+    // A throwing `then` getter is not a usable promise; it still fails closed.
+    return false;
+  }
 }
 
 export function isJsonObject(value: unknown): value is JsonObject {

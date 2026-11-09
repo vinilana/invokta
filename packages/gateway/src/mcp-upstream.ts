@@ -415,6 +415,19 @@ async function withDiscoveryDeadline<Value>(
       ? deadline.signal
       : AbortSignal.any([callerSignal, deadline.signal]);
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopListening = (): void => undefined;
+  // A client that ignores the signal still cannot hold discovery past the
+  // caller's cancellation or the deadline.
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    if (callerSignal === undefined) return;
+    if (callerSignal.aborted) {
+      reject(callerSignal.reason);
+      return;
+    }
+    const onAbort = (): void => reject(callerSignal.reason);
+    callerSignal.addEventListener("abort", onAbort, { once: true });
+    stopListening = () => callerSignal.removeEventListener("abort", onAbort);
+  });
   const expired = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
       deadline.abort();
@@ -426,9 +439,10 @@ async function withDiscoveryDeadline<Value>(
     }, timeoutMs);
   });
   try {
-    return await Promise.race([discover(signal), expired]);
+    return await Promise.race([discover(signal), expired, cancelled]);
   } finally {
     clearTimeout(timer);
+    stopListening();
   }
 }
 

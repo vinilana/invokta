@@ -114,7 +114,9 @@ The catalog is read once. Each capability forwards to the upstream
 `engine.invoke` with the request ID, source, mapped principal, signal, and
 progress sink, so the upstream's validation, access rule, timeout, and events
 still apply. The upstream `timeoutMs` is republished, and an upstream
-`DOMAIN_ERROR` is raised again with the same code.
+`DOMAIN_ERROR` is raised again with the same code. The gateway's timer also
+covers its own validation and rule, so a call near the limit times out at the
+gateway first.
 
 ### MCP upstreams
 
@@ -147,7 +149,8 @@ interface McpGatewayUpstream extends GatewayUpstream {
 | `signal` | None | Cancels discovery |
 
 Tools are listed once, at the composition root; the gateway never re-lists
-them. Discovery fails on a duplicate name, a schema without an object root, a
+them. The deadline and `signal` settle discovery even when the client ignores
+the signal. Discovery fails on a duplicate name, a schema without an object root, a
 tool name outside 1 to 128 characters of `A-Za-z0-9._-`, a definition over
 `maxToolBytes`, or the deadline. Each tool is published as
 `<namespace>.<tool>` and returns `structuredContent` when it has an output
@@ -185,6 +188,40 @@ It is synchronous; the gateway passes the same frozen schema on every call so
 it can be compiled once. A validator that throws or returns anything but a
 list or `undefined`, including a promise, fails closed. At most 100 issues
 with 512-character messages reach public details.
+
+```ts
+import { Ajv, type ValidateFunction } from "ajv";
+import type { JsonSchemaValidator } from "@invokta/gateway";
+
+const ajv = new Ajv({ strict: false });
+const compiled = new WeakMap<object, ValidateFunction>();
+
+export const validator: JsonSchemaValidator = (schema, value) => {
+  let validate = compiled.get(schema);
+  if (validate === undefined) {
+    validate = ajv.compile(schema);
+    // An upstream schema with "$async": true compiles to a validator that
+    // returns a promise, which is always truthy: refuse it.
+    if ("$async" in validate) {
+      throw new TypeError("Asynchronous schemas are not supported.");
+    }
+    compiled.set(schema, validate);
+  }
+  if (validate(value) === true) return undefined;
+  return (validate.errors ?? []).map((error) => ({
+    message: error.message ?? "Invalid value.",
+    path: error.instancePath.split("/").slice(1),
+  }));
+};
+```
+
+<Aside type="caution" title="Upstream schemas are untrusted">
+  An MCP server chooses its schemas. Refuse asynchronous schemas as above. A
+  `pattern` keyword runs a regular expression the server chose: use Ajv's
+  `code: { regExp }` option with a linear-time engine such as RE2, or reject
+  patterns you have not reviewed. Mutating validators are not supported, so
+  do not enable `useDefaults`, `coerceTypes`, or `removeAdditional`.
+</Aside>
 
 `"delegate-to-upstream"` leaves validation to the MCP server: the gateway
 checks only the object shape and the lossless JSON model, rules read
@@ -307,10 +344,13 @@ unknown tool fails as `TOOL_NOT_FOUND`, a write through `invoke-read-tool` as
 
 The lexical ranking is deterministic BM25 over the ID, title, and description,
 weighted 3, 2, and 1, with diacritic and plural folding and exact-ID matches
-first. It does not cross languages. A `rank` port receives only visible
-candidates: it may reorder or drop tools but never reveal one. A ranker that
-fails, returns non-string IDs, or misses its deadline falls back to the
-lexical ranking. Results stay within 64 KiB of structured content.
+first. It does not cross languages. The same query over the same catalog
+always returns the same order, but the weights and folding may change in any
+release, so ranking order is not public API. A `rank` port receives only
+visible candidates: it may reorder or drop tools but never reveal one, and
+only its first 4,096 IDs are read. A ranker that fails, returns non-string
+IDs, or misses its deadline falls back to the lexical ranking. Results stay
+within 64 KiB of structured content.
 
 `createSearchIndex` and `tokenize` expose the same lexical index for hosts
 that build their own ranking.
