@@ -35,6 +35,8 @@ export {
 export {
   type GatewayMcpConnection,
   type GatewayMcpTool,
+  type McpCatalogLock,
+  McpCatalogLockError,
   type McpGatewayUpstream,
   type McpUpstreamOptions,
   mcpUpstream,

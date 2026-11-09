@@ -60,6 +60,12 @@ export interface McpUpstreamOptions {
   /** Expected catalog fingerprint; discovery fails when the catalog differs. */
   readonly pin?: string;
   /**
+   * A reviewed catalog lock, usually `upstream.lock` committed as JSON.
+   * Discovery fails with an `McpCatalogLockError` naming every added,
+   * removed, and changed tool.
+   */
+  readonly lock?: McpCatalogLock;
+  /**
    * Trust every annotation hint of this server. Defaults to `false`: an
    * untrusted hint is republished only when it makes a tool look riskier,
    * and it never makes a tool read-only.
@@ -78,10 +84,62 @@ export interface McpUpstreamOptions {
   readonly signal?: AbortSignal;
 }
 
+/**
+ * A reviewable record of a published MCP catalog: one SHA-256 digest of the
+ * canonical JSON of each tool (name, title, description, schemas, and
+ * annotations), keyed by tool name in sorted order.
+ */
+export interface McpCatalogLock {
+  readonly version: 1;
+  readonly upstream: string;
+  /** The catalog fingerprint, equal to the upstream's `fingerprint`. */
+  readonly fingerprint: string;
+  readonly tools: Readonly<Record<string, string>>;
+}
+
+const MAX_LISTED_LOCK_NAMES = 20;
+
+function listedNames(label: string, names: ReadonlyArray<string>): string {
+  const shown = names.slice(0, MAX_LISTED_LOCK_NAMES);
+  const rest = names.length - shown.length;
+  return `${label} ${JSON.stringify(shown)}${rest > 0 ? ` and ${String(rest)} more` : ""}`;
+}
+
+/** The published catalog differs from its reviewed lock. */
+export class McpCatalogLockError extends Error {
+  readonly upstream: string;
+  readonly added: ReadonlyArray<string>;
+  readonly removed: ReadonlyArray<string>;
+  readonly changed: ReadonlyArray<string>;
+
+  constructor(
+    upstream: string,
+    added: ReadonlyArray<string>,
+    removed: ReadonlyArray<string>,
+    changed: ReadonlyArray<string>,
+  ) {
+    const parts = [
+      ...(added.length === 0 ? [] : [listedNames("added", added)]),
+      ...(removed.length === 0 ? [] : [listedNames("removed", removed)]),
+      ...(changed.length === 0 ? [] : [listedNames("changed", changed)]),
+    ];
+    super(
+      `MCP upstream ${upstream} tool catalog differs from its lock: ${parts.join("; ")}.`,
+    );
+    this.name = "McpCatalogLockError";
+    this.upstream = upstream;
+    this.added = Object.freeze([...added]);
+    this.removed = Object.freeze([...removed]);
+    this.changed = Object.freeze([...changed]);
+  }
+}
+
 export interface McpGatewayUpstream extends GatewayUpstream {
   readonly kind: "mcp";
   /** SHA-256 of the canonical JSON of the published tools, sorted by name. */
   readonly fingerprint: string;
+  /** The lock of the published catalog, to review and commit as JSON. */
+  readonly lock: McpCatalogLock;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -183,6 +241,10 @@ export async function mcpUpstream(
     }
   }
   const fingerprint = await fingerprintTools(selected);
+  const lock = await lockTools(name, fingerprint, selected);
+  if (options.lock !== undefined) {
+    verifyLock(snapshotLock(options.lock, name, maxTools), lock);
+  }
   if (options.pin !== undefined && options.pin !== fingerprint) {
     throw new Error(
       `MCP upstream ${name} tool catalog does not match the pinned fingerprint.`,
@@ -258,6 +320,7 @@ export async function mcpUpstream(
 
   return registerUpstream(name, "mcp", capabilities, {
     fingerprint,
+    lock,
   }) as McpGatewayUpstream;
 }
 
@@ -372,26 +435,123 @@ function boundedInteger(
   return value;
 }
 
+function canonicalTool(tool: GatewayMcpTool): Record<string, unknown> {
+  return {
+    name: tool.name,
+    title: tool.title ?? null,
+    description: tool.description ?? null,
+    inputSchema: tool.inputSchema,
+    outputSchema: tool.outputSchema ?? null,
+    annotations: tool.annotations ?? null,
+  };
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(text),
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function lockTools(
+  upstream: string,
+  fingerprint: string,
+  tools: ReadonlyArray<GatewayMcpTool>,
+): Promise<McpCatalogLock> {
+  const sorted = [...tools].sort((left, right) =>
+    left.name < right.name ? -1 : 1,
+  );
+  const entries: [string, string][] = [];
+  for (const tool of sorted) {
+    entries.push([
+      tool.name,
+      await sha256Hex(canonicalJson(canonicalTool(tool))),
+    ]);
+  }
+  return Object.freeze({
+    version: 1 as const,
+    upstream,
+    fingerprint,
+    tools: Object.freeze(Object.fromEntries(entries)),
+  });
+}
+
+/** Validates a lock read from configuration; a malformed lock never passes. */
+function snapshotLock(
+  value: unknown,
+  upstream: string,
+  maxTools: number,
+): McpCatalogLock {
+  const {
+    version,
+    upstream: owner,
+    fingerprint,
+    tools,
+  } = (value ?? {}) as {
+    readonly version?: unknown;
+    readonly upstream?: unknown;
+    readonly fingerprint?: unknown;
+    readonly tools?: unknown;
+  };
+  if (version !== 1) {
+    throw new TypeError(`Upstream ${upstream} lock must have version 1.`);
+  }
+  if (owner !== upstream) {
+    throw new TypeError(
+      `Upstream ${upstream} lock belongs to another upstream.`,
+    );
+  }
+  if (typeof fingerprint !== "string" || !FINGERPRINT.test(fingerprint)) {
+    throw new TypeError(`Upstream ${upstream} lock fingerprint is invalid.`);
+  }
+  if (
+    typeof tools !== "object" ||
+    tools === null ||
+    Array.isArray(tools) ||
+    Object.keys(tools).length > maxTools ||
+    Object.values(tools).some(
+      (digest) => typeof digest !== "string" || !FINGERPRINT.test(digest),
+    )
+  ) {
+    throw new TypeError(`Upstream ${upstream} lock tools are invalid.`);
+  }
+  return {
+    version: 1,
+    upstream,
+    fingerprint,
+    tools: tools as Readonly<Record<string, string>>,
+  };
+}
+
+function verifyLock(expected: McpCatalogLock, actual: McpCatalogLock): void {
+  const locked = new Map(Object.entries(expected.tools));
+  const current = new Map(Object.entries(actual.tools));
+  const added = [...current.keys()].filter((name) => !locked.has(name));
+  const removed = [...locked.keys()].filter((name) => !current.has(name));
+  const changed = [...current.keys()].filter(
+    (name) => locked.has(name) && locked.get(name) !== current.get(name),
+  );
+  const sort = (names: string[]) => names.sort();
+  if (added.length + removed.length + changed.length > 0) {
+    throw new McpCatalogLockError(
+      actual.upstream,
+      sort(added),
+      sort(removed),
+      sort(changed),
+    );
+  }
+}
+
 async function fingerprintTools(
   tools: ReadonlyArray<GatewayMcpTool>,
 ): Promise<string> {
   const canonical = [...tools]
     .sort((left, right) => (left.name < right.name ? -1 : 1))
-    .map((tool) => ({
-      name: tool.name,
-      title: tool.title ?? null,
-      description: tool.description ?? null,
-      inputSchema: tool.inputSchema,
-      outputSchema: tool.outputSchema ?? null,
-      annotations: tool.annotations ?? null,
-    }));
-  const digest = await globalThis.crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(canonicalJson(canonical)),
-  );
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+    .map(canonicalTool);
+  return sha256Hex(canonicalJson(canonical));
 }
 
 /** JSON with object keys sorted at every level, so key order cannot change a fingerprint. */
