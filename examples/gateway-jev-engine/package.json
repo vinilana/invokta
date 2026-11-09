@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@invokta/core": "0.10.0",
-    "@invokta/gateway": "0.0.0-poc",
+    "@invokta/gateway": "0.10.0",
     "@invokta/mcp": "0.10.0",
     "zod": "4.6.7"
   }

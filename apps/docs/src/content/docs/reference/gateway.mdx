@@ -1,0 +1,331 @@
+---
+title: '@invokta/gateway'
+description: API reference for serving several Action Engines and MCP servers behind one authenticated, policy-enforcing engine.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@invokta/gateway` serves several Action Engines and MCP servers behind one
+endpoint that checks the authentication and authorization rules you configure.
+
+The gateway is a capability map, not a runtime. `createGateway` returns an
+ordinary map that you pass to `createEngine` and serve with any adapter, so
+every call still enters through `engine.invoke`. The package adds no adapter,
+transport, error code, event, context field, or pipeline stage.
+
+## Install
+
+```sh
+npm install @invokta/core @invokta/gateway
+```
+
+The package is native ESM and an optional runtime helper: no framework runtime
+package depends on it. Its only dependency is `@invokta/core`; it does not
+depend on an adapter or the MCP SDK, and its modules use only ECMAScript and
+Web platform globals. Tests and the declared engine run on Node.js 22.20.0 or
+later.
+
+## API
+
+```ts
+import {
+  apiKeyAuthenticator,
+  chainAuthenticators,
+  createDiscovery,
+  createGateway,
+  createSearchIndex,
+  engineUpstream,
+  hashApiKey,
+  McpCatalogLockError,
+  mcpUpstream,
+  requireScopes,
+  tokenize,
+} from "@invokta/gateway";
+```
+
+```ts
+function createGateway(options: GatewayOptions): Gateway;
+
+interface GatewayOptions {
+  readonly upstreams: ReadonlyArray<GatewayUpstream>;
+  readonly rules?: ReadonlyArray<GatewayRule>;
+  readonly defaultAccess?: GatewayAccess;
+  readonly onDecision?: (decision: GatewayDecision) => void | Promise<void>;
+}
+
+interface Gateway {
+  readonly capabilities: CapabilityMap;
+  readonly routes: ReadonlyArray<GatewayRoute>;
+  readonly visibility: GatewayVisibility;
+}
+```
+
+`gateway` is frozen. `routes` lists every published capability with its
+upstream, kind, upstream ID, governing rule, and trusted read-only status.
+`visibility` is the `visibility` option of
+[`@invokta/mcp`](/reference/mcp/) and [`@invokta/http`](/reference/http/).
+
+```ts
+import { createEngine } from "@invokta/core";
+import { serveMcpHttp } from "@invokta/mcp";
+
+const gateway = createGateway({
+  upstreams: [
+    engineUpstream({ name: "billing", engine: billingEngine }),
+    await mcpUpstream({
+      name: "docs",
+      namespace: "kb",
+      connection: docs,
+      validator: "delegate-to-upstream",
+    }),
+  ],
+  rules: [
+    { name: "no-refunds", match: "billing.refund", access: "deny" },
+    { name: "billing-read", match: "billing.*", access: "authenticated" },
+    { name: "kb-read", match: "kb.*", access: requireScopes("kb:read") },
+  ],
+});
+
+const engine = createEngine({
+  name: "acme-gateway",
+  version: "1.0.0",
+  capabilities: gateway.capabilities,
+});
+
+await serveMcpHttp(engine, { auth, visibility: gateway.visibility });
+```
+
+### Engine upstreams
+
+```ts
+function engineUpstream(options: EngineUpstreamOptions): GatewayUpstream;
+```
+
+| Option | Default | Contract |
+| --- | --- | --- |
+| `name` | Required | 1-64 lowercase letters, digits, or inner hyphens; unique per gateway |
+| `engine` | Required | `invoke`, `list`, and `describe` of an in-process engine |
+| `namespace` | None | The gateway publishes `<namespace>.<capability ID>` |
+| `include` | Every capability | Capability ID patterns; each must match |
+| `principal` | Unchanged | Maps the gateway caller to the upstream principal |
+| `validator` | None | Validates input before the gateway rule and output after the call |
+
+The catalog is read once. Each capability forwards to the upstream
+`engine.invoke` with the request ID, source, mapped principal, signal, and
+progress sink, so the upstream's validation, access rule, timeout, and events
+still apply. The upstream `timeoutMs` is republished, and an upstream
+`DOMAIN_ERROR` is raised again with the same code.
+
+### MCP upstreams
+
+```ts
+function mcpUpstream(options: McpUpstreamOptions): Promise<McpGatewayUpstream>;
+
+interface McpGatewayUpstream extends GatewayUpstream {
+  readonly kind: "mcp";
+  readonly fingerprint: string;
+  readonly lock: McpCatalogLock;
+}
+```
+
+| Option | Default | Contract |
+| --- | --- | --- |
+| `name` | Required | Same grammar as engine upstreams |
+| `connection` | Required | `listTools` and `callTool`; `McpClientConnection` fits |
+| `validator` | Required | A `JsonSchemaValidator` or `"delegate-to-upstream"` |
+| `namespace` | `name` | Prefix of the published IDs |
+| `include` | Every tool | Tool name patterns; each must match |
+| `timeoutMs` | `30000` | Finite timeout of every tool call |
+| `discoveryTimeoutMs` | `30000` | Deadline of the whole discovery, at most `300000` |
+| `maxTools` | `256` | At most `4096`; discovery reads at most 64 pages |
+| `maxToolBytes` | `65536` | Canonical size of one tool definition, at most `1048576` |
+| `pin` | None | Expected catalog fingerprint |
+| `lock` | None | A reviewed `McpCatalogLock` |
+| `trustAnnotations` | `false` | Trust every annotation hint of this server |
+| `readOnlyTools` | None | Tool names the operator vouches are read-only |
+| `forwardToolErrors` | `false` | Publish the first 1,024 characters of a tool error's text |
+| `signal` | None | Cancels discovery |
+
+Tools are listed once, at the composition root; the gateway never re-lists
+them. Discovery fails on a duplicate name, a schema without an object root, a
+tool name outside 1 to 128 characters of `A-Za-z0-9._-`, a definition over
+`maxToolBytes`, or the deadline. Each tool is published as
+`<namespace>.<tool>` and returns `structuredContent` when it has an output
+schema, `{ content }` otherwise.
+
+A tool error is the declared domain error `UPSTREAM_TOOL_ERROR`. Its upstream
+text may hold internal details, so it is published, bounded to 1,024
+characters, only with `forwardToolErrors: true`.
+
+`pin` fails startup when the catalog fingerprint changes. `lock` carries one
+digest per tool and fails startup with `McpCatalogLockError`, whose `added`,
+`removed`, and `changed` lists name every difference. Commit `upstream.lock`
+as JSON to review catalog changes.
+
+Without trust, the gateway republishes only annotation hints that make a tool
+look riskier, and a hint alone never makes a tool read-only.
+
+### Validation
+
+```ts
+type JsonSchemaValidator = (
+  schema: JsonObject,
+  value: JsonObject,
+) => ReadonlyArray<JsonSchemaIssue> | undefined;
+
+interface JsonSchemaIssue {
+  readonly message: string;
+  readonly path?: ReadonlyArray<string | number>;
+}
+```
+
+A validator, such as Ajv, makes invalid input `INPUT_INVALID` before the
+gateway rule and the call, and an invalid structured result `OUTPUT_INVALID`.
+It is synchronous; the gateway passes the same frozen schema on every call so
+it can be compiled once. A validator that throws or returns anything but a
+list or `undefined`, including a promise, fails closed. At most 100 issues
+with 512-character messages reach public details.
+
+`"delegate-to-upstream"` leaves validation to the MCP server: the gateway
+checks only the object shape and the lossless JSON model, rules read
+unvalidated input, and the server's rejection is an `UPSTREAM_TOOL_ERROR`.
+
+### Rules
+
+```ts
+interface GatewayRule {
+  readonly name?: string;
+  readonly match: string | ReadonlyArray<string>;
+  readonly access: GatewayAccess;
+  readonly visible?: (
+    principal: Principal | null,
+    route: GatewayUpstreamRoute,
+  ) => boolean;
+}
+
+type GatewayAccess =
+  | "public"
+  | "authenticated"
+  | "deny"
+  | ((args: GatewayAccessArgs) => boolean | Promise<boolean>);
+```
+
+- `match` is an exact capability ID, `prefix.*`, or `*`.
+- The first matching rule governs a capability; unmatched capabilities get
+  `defaultAccess`, `deny` by default.
+- Every pattern must match a capability, and a rule shadowed by earlier rules
+  fails construction.
+- An access function allows only when it returns `true`. One that throws or
+  rejects denies, reports `failed`, and logs a payload-free warning.
+- `visible` is synchronous and never sees input. It defaults to the access
+  itself for `public`, `authenticated`, `deny`, and `requireScopes`, and to
+  every authenticated caller for other functions. Visibility never grants
+  access.
+
+`requireScopes(...scopes)` requires every scope in
+`principal.attributes.scopes`, the attribute the default mapping of
+[`@invokta/auth-jwt`](/reference/auth-jwt/) fills.
+
+<Aside type="caution" title="MCP upstreams see one credential">
+  An MCP upstream sees only the gateway's service credential, so every caller
+  the gateway allows acts with that credential's authority. The gateway's rules
+  are then the only per-caller control: give the service credential no more
+  authority than the rules allow. Engine upstreams still enforce their own
+  access rules against the mapped principal.
+</Aside>
+
+### Authentication helpers
+
+```ts
+type GatewayAuthenticator = (
+  request: GatewayAuthenticationRequest,
+) => Principal | null | Promise<Principal | null>;
+
+function chainAuthenticators(
+  ...authenticators: ReadonlyArray<GatewayAuthenticator>
+): GatewayAuthenticator;
+
+function apiKeyAuthenticator(
+  options: ApiKeyAuthenticatorOptions,
+): GatewayAuthenticator;
+
+function hashApiKey(key: string): Promise<string>;
+```
+
+A `GatewayAuthenticator` is the adapters' `authenticate` hook as-is.
+`chainAuthenticators` returns the first principal other than `null` or
+`undefined`; a hook that throws stops the chain, and an aborted request stops
+before the next hook. `apiKeyAuthenticator` reads one header (`x-api-key` by
+default), keeps only SHA-256 digests, bounds keys to 1,024 characters, and
+compares against every digest. The gateway never forwards a caller's
+credential to an upstream.
+
+### Audit
+
+`onDecision` receives one frozen `GatewayDecision` per authorization:
+`requestId`, `capabilityId`, `upstream`, `rule`, `outcome` (`allowed`,
+`denied`, or `failed`), and `principalId`. It never receives input, output, or
+credentials. A failing sink is contained.
+
+### Discovery
+
+```ts
+function createDiscovery(options: DiscoveryOptions): Discovery;
+
+interface Discovery {
+  readonly capabilities: CapabilityMap;
+  readonly visibility: GatewayVisibility;
+  readonly gatewayEngine: Engine;
+}
+```
+
+Discovery serves a large catalog through three capabilities, plus at most 32
+`alwaysList` capabilities published directly:
+
+| Capability | Input | Contract |
+| --- | --- | --- |
+| `gateway.search-tools` | `{ query, limit? }` | Visible tools that match, best first; `limit` 1-20, default 8 |
+| `gateway.invoke-read-tool` | `{ tool, arguments? }` | Invokes a visible tool trusted to be read-only |
+| `gateway.invoke-tool` | `{ tool, arguments? }` | Invokes any visible tool; annotated destructive and open-world |
+
+`gatewayEngine` is the engine over `gateway.capabilities` that every
+invocation goes through, so the target's gateway rule always runs. A hidden or
+unknown tool fails as `TOOL_NOT_FOUND`, a write through `invoke-read-tool` as
+`TOOL_NOT_READ_ONLY`, and a target's domain error as `TOOL_DOMAIN_ERROR`.
+
+| Option | Default | Contract |
+| --- | --- | --- |
+| `gateway` | Required | A gateway created by `createGateway` |
+| `prefix` | `gateway` | Prefix of the discovery capability IDs |
+| `alwaysList` | None | Patterns of capabilities also published directly, at most 32 |
+| `queryLanguage` | `English` | Language the model should search in |
+| `queryGuidance` | Keyword guidance | 1-500 characters replacing the search instruction |
+| `rank` | Lexical BM25 | A host ranker, such as embedding search |
+| `rankTimeoutMs` | `2000` | At most `60000` |
+| `onSearch` | None | Receives each search without its query |
+| `gatewayEngine` | Generated | `name`, `version`, `logger`, `onEvent`, and `middleware` of the internal engine |
+
+The lexical ranking is deterministic BM25 over the ID, title, and description,
+weighted 3, 2, and 1, with diacritic and plural folding and exact-ID matches
+first. It does not cross languages. A `rank` port receives only visible
+candidates: it may reorder or drop tools but never reveal one. A ranker that
+fails, returns non-string IDs, or misses its deadline falls back to the
+lexical ranking. Results stay within 64 KiB of structured content.
+
+`createSearchIndex` and `tokenize` expose the same lexical index for hosts
+that build their own ranking.
+
+## Limits
+
+| Concern | Behavior |
+| --- | --- |
+| Catalog changes | Read once at startup; a change needs a restart and fails `pin` or `lock` |
+| Dropped upstream connection | Calls fail until the host reconnects and restarts |
+| Rich MCP content without an output schema | Returned as structured `{ content }` |
+| Request IDs | Shared with engine upstreams for correlation |
+| Rule matching | Capability ID only; anything else needs an access function |
+| Search response | 64 KiB of structured content; MCP also repeats it as text |
+
+ADR 0053 records the package and ADR 0054 the discovery. The repository's
+`gateway-engine`, `gateway-discovery-engine`, `gateway-jev-engine`, and
+`gateway-semantic-search-engine` examples run each feature end to end.

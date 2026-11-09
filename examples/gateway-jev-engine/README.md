@@ -4,9 +4,8 @@ Let [TypeSafe's Jev](https://typesafe.ai) decide which of a vendor's 200 MCP
 tools a task needs, behind a gateway that only ever shows each caller the
 tools it may call.
 
-> Proof of concept. `@invokta/gateway` is private and unpublished, so this
-> example runs only inside this repository. The design is in
-> [Action Engine gateway](../../docs/action-engine-gateway.md).
+> The API is in the
+> [`@invokta/gateway` reference](https://docs.invokta.dev/reference/gateway/).
 
 ## How it works
 

@@ -1,4 +1,4 @@
-// Runnable proof of concept. Build the workspace first (`yarn build`), then run
+// Runnable demo. Build the workspace first (`yarn build`), then run
 // `node packages/gateway/demo/serve.mjs` from the repository root.
 //
 // It starts four loopback listeners:
@@ -127,7 +127,7 @@ const gateway = createGateway({
 
 const discovery = createDiscovery({
   gateway,
-  gatewayEngine: { name: "acme-gateway", version: "0.0.0-poc" },
+  gatewayEngine: { name: "acme-gateway", version: "1.0.0" },
   onSearch(event) {
     process.stderr.write(`search ${JSON.stringify(event)}\n`);
   },
@@ -136,7 +136,7 @@ const discovery = createDiscovery({
 const engine = discovery.gatewayEngine;
 const discoveryEngine = createEngine({
   name: "acme-gateway-discovery",
-  version: "0.0.0-poc",
+  version: "1.0.0",
   capabilities: discovery.capabilities,
 });
 
@@ -167,7 +167,7 @@ const discoveryServer = await serveMcpHttp(discoveryEngine, {
 
 process.stdout.write(
   [
-    "Gateway proof of concept is running.",
+    "Gateway demo is running.",
     "",
     `Upstream docs pinned fingerprint: ${docs.fingerprint}`,
     "Routes:",

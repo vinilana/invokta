@@ -7,7 +7,7 @@
   contract is AE-VIS-01 and AE-GATEWAY-01..06 in
   [architecture and contracts](./architecture.md); where this note differs, the
   contract and the ADRs win.
-- Date: 2026-11-07, accepted 2026-11-09
+- Date: 2026-11-07, accepted and published as `@invokta/gateway` 2026-11-09
 - Applies to: `@invokta/gateway`; the optional `visibility` option of
   `@invokta/mcp` and `@invokta/http`; no change to `@invokta/core`
 
@@ -45,9 +45,12 @@ Consequences:
 - **One execution path.** Every adapter still calls only `engine.invoke`
   (AE-ARCH-03). The gateway adds no adapter, transport, error code, event,
   context field, or pipeline stage.
-- **Two enforcement points.** The gateway's rule runs as the capability's
-  `access` stage; an upstream engine still runs its own `access` afterwards.
-  The gateway can only narrow access, never widen it.
+- **Two enforcement points for engines.** The gateway's rule runs as the
+  capability's `access` stage; an upstream engine still runs its own `access`
+  afterwards, so for engine upstreams the gateway can only narrow access. An
+  MCP upstream sees only the gateway's service credential: every caller the
+  gateway allows acts with that credential's authority, and the gateway's
+  rules are the only per-caller control.
 - **Everything composes.** `onEvent`, `@invokta/otel`, `applyMiddleware`
   (rate limits, quotas, caching), `@invokta/tooling`, the CLI, MCP stdio, the
   devtools, and the installer work on a gateway engine unchanged.
@@ -270,7 +273,8 @@ describes.
 The caller's credential is **never forwarded** to an upstream. Passing an
 inbound token through creates a confused deputy and breaks audience binding;
 the MCP authorization specification forbids it. In the proof of concept each
-MCP upstream uses one service credential held by the host. Per-caller
+MCP upstream uses one service credential held by the host, so that credential
+should carry no more authority than the gateway's rules allow. Per-caller
 upstream credentials, through token exchange or a connector broker, are
 phase 6 and reuse the `CredentialSource` port of
 [connector brokers](./connector-brokers.md).
@@ -585,6 +589,12 @@ Controls for tool discovery, prototyped for phases 2 and 3:
 | AE-LIMIT-05 no server-to-client notifications | Visibility changes appear on the client's next `tools/list` | None |
 
 ## Known limitations found by the proof of concept
+
+Resolved before publication: MCP upstreams now choose a validator or an
+explicit `"delegate-to-upstream"`, so rules can read validated input; ADR 0052
+accepts per-caller visibility and a raw stdio session test covers it; and
+`createDiscovery` applies `gatewayEngine.middleware`. The remaining items are
+the limits listed in ADR 0053.
 
 - **Input errors from MCP upstreams arrive as `UPSTREAM_TOOL_ERROR`.** The
   demo shows an upstream Invokta engine's `INPUT_INVALID` wrapped as a domain

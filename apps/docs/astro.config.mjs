@@ -165,6 +165,7 @@ export default defineConfig({
             { slug: "reference/http" },
             { slug: "reference/auth-jwt" },
             { slug: "reference/otel" },
+            { slug: "reference/gateway" },
             { slug: "reference/tooling" },
             { slug: "reference/devtools" },
             { slug: "reference/installer" },

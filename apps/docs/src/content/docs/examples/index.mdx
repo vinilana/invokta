@@ -42,8 +42,8 @@ while its own package owns ports, policies, limits, and outbound connectors.
 | `observability-engine` | Sentry, Datadog, and New Relic credentials plus their organization or account identifiers |
 | `parallel-search` | Network access to Parallel's public search MCP server for live commands; no API key, and its tests use a local fixture |
 | `auth-*` examples | Nothing for the tests, which verify locally generated credentials offline; each README lists the issuer, audience, or key variables its HTTP entry point needs against a real provider project |
-| `gateway-engine`, `gateway-discovery-engine` | Nothing external: each starts its upstream MCP server on loopback. They depend on the private `@invokta/gateway` proof of concept, so they run only inside this repository |
-| `gateway-jev-engine`, `gateway-semantic-search-engine` | Nothing for the tests, which use loopback stand-ins for TypeSafe and for an embeddings API; a live run needs `TYPESAFE_API_KEY`, or an OpenAI-compatible embeddings service such as OpenAI or a local Ollama. Like the other gateway examples, they run only inside this repository |
+| `gateway-engine`, `gateway-discovery-engine` | Nothing external: each starts its upstream MCP server on loopback |
+| `gateway-jev-engine`, `gateway-semantic-search-engine` | Nothing for the tests, which use loopback stand-ins for TypeSafe and for an embeddings API; a live run needs `TYPESAFE_API_KEY`, or an OpenAI-compatible embeddings service such as OpenAI or a local Ollama |
 
 The HTTP entry points use example-specific bearer-token environment variables in
 addition to the requirements above. Every linked README gives the exact variable
@@ -190,10 +190,9 @@ follows its shape. Each pairs with a page in the
 
 ## Serve engines behind a gateway
 
-These examples use the private `@invokta/gateway` proof of concept described
-in the [Action Engine gateway design note](https://github.com/vinilana/invokta/blob/main/docs/action-engine-gateway.md).
-The gateway is a capability map served by the existing adapters, so every
-call still goes through `engine.invoke`.
+These examples use [`@invokta/gateway`](/reference/gateway/). The gateway is
+a capability map served by the existing adapters, so every call still goes
+through `engine.invoke`.
 
 <CardGrid>
   <Card title="Gateway Engine" icon="setting">

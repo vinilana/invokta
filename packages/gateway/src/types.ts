@@ -49,7 +49,11 @@ export interface GatewayUpstream {
 /** Arguments of a gateway access function. */
 export interface GatewayAccessArgs {
   readonly principal: Principal | null;
-  /** The input after the gateway's structural check; the upstream validates it. */
+  /**
+   * The input after the gateway's validation: the configured JSON Schema
+   * validator's, or only the structural check when validation is delegated
+   * to the upstream.
+   */
   readonly input: JsonObject;
   readonly context: ExecutionContext;
   readonly route: GatewayUpstreamRoute;

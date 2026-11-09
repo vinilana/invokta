@@ -76,7 +76,7 @@ while the example owns one replaceable Authorization Server implementation.
 | Required capability fields | 5 |
 | Invocation pipeline stages | 6 |
 | Invocation error codes | 8 framework codes; up to 64 declared domain codes per capability, published inside `DOMAIN_ERROR` |
-| Cross-cutting hooks | 1: `onEvent`; capability middleware is composed into `run`, not registered (ADR 0051) |
+| Cross-cutting hooks | 1: `onEvent`; capability middleware is composed into `run`, not registered (ADR 0051); the gateway's `onDecision` and `onSearch` are package options, not engine hooks |
 | OpenTelemetry signals | 1 span per invocation and 3 metric instruments |
 | Pending OpenTelemetry invocation spans | 10,000 by default, configurable; the oldest is evicted, and the same cap bounds evicted-invocation bookkeeping |
 | OpenTelemetry attribute values | 256 characters on spans and metrics; 256 distinct per metric attribute by default, configurable |
@@ -118,7 +118,10 @@ while the example owns one replaceable Authorization Server implementation.
 | Gateway rule pattern | `*`, an exact capability ID, or `prefix.*` |
 | Gateway MCP tools per upstream | 256 by default, at most 4,096; at most 64 `tools/list` pages |
 | Gateway MCP tool call timeout | 30,000 ms by default; 1 through 2,147,483,647 ms |
-| Gateway upstream tool error text | 1,024 characters |
+| Gateway MCP discovery deadline | 30,000 ms by default; 1 through 300,000 ms for the whole discovery |
+| Gateway MCP tool name | 1 to 128 characters from `A-Za-z0-9._-` |
+| Gateway MCP tool definition | 65,536 bytes of canonical JSON by default, at most 1,048,576 |
+| Gateway upstream tool error text | Omitted by default; 1,024 characters with `forwardToolErrors` |
 | Gateway validator issues | 100 per value, 512-character messages |
 | Gateway catalog lock names per message | 20 per kind of change |
 | Gateway API key | 1,024 characters |
@@ -147,8 +150,11 @@ of upstreams.
 **AE-LIMIT-03 — AI and quality.** Invokta does not provide a model router,
 context compiler, memory, RAG abstraction, prompt registry, official provider
 connectors or connector catalog, connector lifecycle, semantic cache, economics
-engine, eval runner, automated judge,
-release gate, or canary platform. The tooling contract diff (AE-EVOLVE-02) is a
+engine, eval runner, automated judge, release gate, or canary platform. The
+gateway's discovery ranks tools with a deterministic lexical index and accepts
+a host-owned `rank` port; Invokta ships no embedding model, vector store, or
+model call behind it, and a ranker can only reorder or drop the caller's
+visible tools (ADR 0054). The tooling contract diff (AE-EVOLVE-02) is a
 structural compatibility check between two contract snapshots: it does not
 inspect handler behavior, function access rule logic, prompts, models, or
 quality, does not choose or bump a version, and does not publish or block a

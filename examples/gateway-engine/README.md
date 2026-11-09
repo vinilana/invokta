@@ -4,9 +4,9 @@ Serve two Action Engines and one MCP server owned by another team behind one
 authenticated gateway, with authorization rules the gateway operator
 configures.
 
-> Proof of concept. `@invokta/gateway` is private and unpublished, so this
-> example runs only inside this repository. The design and its open decisions
-> are in [Action Engine gateway](../../docs/action-engine-gateway.md).
+> The design rationale is in
+> [Action Engine gateway](../../docs/action-engine-gateway.md), and the API
+> in the [`@invokta/gateway` reference](https://docs.invokta.dev/reference/gateway/).
 
 ## The scenario
 

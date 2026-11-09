@@ -87,10 +87,10 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [`agent-session-engine`: durable cross-harness sessions and CLI-backed hooks](../examples/agent-session-engine/)
 - [`community-capabilities`: atomic and library capability publication fixture](../examples/community-capabilities/)
 - [`composed-engine`: local, atomic, and library capability composition](../examples/composed-engine/)
-- [`gateway-engine`: engines and an MCP server behind one authenticated gateway (proof of concept)](../examples/gateway-engine/)
-- [`gateway-discovery-engine`: a 200-tool MCP server through per-caller visibility and search-based discovery (proof of concept)](../examples/gateway-discovery-engine/)
-- [`gateway-jev-engine`: TypeSafe Jev decides which tools a task needs behind the gateway (proof of concept)](../examples/gateway-jev-engine/)
-- [`gateway-semantic-search-engine`: embedding search over the gateway's tool catalog (proof of concept)](../examples/gateway-semantic-search-engine/)
+- [`gateway-engine`: engines and an MCP server behind one authenticated gateway](../examples/gateway-engine/)
+- [`gateway-discovery-engine`: a 200-tool MCP server through per-caller visibility and search-based discovery](../examples/gateway-discovery-engine/)
+- [`gateway-jev-engine`: TypeSafe Jev decides which tools a task needs behind the gateway](../examples/gateway-jev-engine/)
+- [`gateway-semantic-search-engine`: embedding search over the gateway's tool catalog](../examples/gateway-semantic-search-engine/)
 
 ## Normative language
 

@@ -4,10 +4,10 @@ Serve a vendor's 200-tool MCP server through a gateway that shows each caller
 only the tools it can call, and lets clients that should not receive hundreds
 of tools search for them instead.
 
-> Proof of concept. `@invokta/gateway` is private and unpublished, so this
-> example runs only inside this repository. The design is in
+> The design rationale is in
 > [Action Engine gateway](../../docs/action-engine-gateway.md), sections D
-> and C of "Tool discovery at scale".
+> and C of "Tool discovery at scale", and the API in the
+> [`@invokta/gateway` reference](https://docs.invokta.dev/reference/gateway/).
 
 ## The scenario
 
