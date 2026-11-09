@@ -11,6 +11,7 @@ import {
   createHttpHandler,
   type HttpCapabilityVisibility,
 } from "../src/index.js";
+import { serveHttp } from "../src/node.js";
 
 function createVisibilityEngine(events: EngineEvent[] = []) {
   const capability = (description: string) =>
@@ -145,6 +146,33 @@ describe("HTTP capability visibility", () => {
     });
 
     expect((await handler(post("admin", "billing.refund"))).status).toBe(404);
+  });
+
+  it("forwards the visibility option from the Node.js server", async () => {
+    const server = await serveHttp(createVisibilityEngine(), {
+      port: 0,
+      visibility,
+      auth: {
+        mode: "required",
+        authenticate: ({ headers }) =>
+          principals[headers.get("x-user") ?? ""] ?? null,
+      },
+    });
+    try {
+      const { port } = server.address();
+      const response = await fetch(
+        `http://127.0.0.1:${String(port)}/capabilities`,
+        { headers: { "x-user": "reader" } },
+      );
+      const body = (await response.json()) as {
+        capabilities: { id: string }[];
+      };
+      expect(body.capabilities.map((capability) => capability.id)).toEqual([
+        "billing.get-invoice",
+      ]);
+    } finally {
+      await server.close();
+    }
   });
 
   it("rejects an invalid visibility option at construction", () => {
