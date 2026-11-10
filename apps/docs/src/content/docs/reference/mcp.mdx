@@ -237,6 +237,7 @@ await client.callTool(
 interface ServeMcpStdioOptions {
   readonly principal?: Principal | null;
   readonly maxReadBufferBytes?: number;
+  readonly visibility?: McpCapabilityVisibility;
 }
 
 function serveMcpStdio<Capabilities extends CapabilityMap>(
@@ -252,8 +253,9 @@ await serveMcpStdio(engine, {
 });
 ```
 
-The principal defaults to `null`. The read buffer defaults to 10,485,760 bytes
-and must be a positive safe integer. A message that keeps the buffer at the
+The principal defaults to `null`. `visibility` applies to that principal as
+described in [capability visibility](#capability-visibility). The read buffer
+defaults to 10,485,760 bytes and must be a positive safe integer. A message that keeps the buffer at the
 limit is accepted; crossing it closes the transport, aborts active requests,
 removes stream listeners, and rejects the promise.
 
@@ -269,6 +271,32 @@ belong on standard error.
   drain stdout and supervise a stalled child process.
 </Aside>
 
+## Capability visibility
+
+```ts
+type McpCapabilityVisibility = (args: {
+  readonly principal: Principal | null;
+  readonly capabilityId: string;
+}) => boolean;
+```
+
+Every MCP adapter accepts an optional `visibility` predicate. It is evaluated
+with the request's authenticated principal over HTTP, or the configured
+principal over stdio. `tools/list` lists only the capabilities for which it
+returns `true`, and `tools/call` answers any other capability with the same
+`Tool <name> not found` protocol error as an unknown tool, without calling
+`engine.invoke` or emitting an event. Without the option every capability is
+listed, as before.
+
+The predicate must be synchronous and read only its arguments. It receives a
+deep-frozen copy of the principal, so it cannot change the identity that
+reaches `engine.invoke`. Any result other than `true`, including a thrown
+error, hides the capability. Visibility never grants access: a visible
+capability still runs its access rule on every call. `validateMcpToolCatalog`
+and the tool-name collision check always cover the complete catalog.
+
+`@invokta/gateway` derives a predicate from its rules as `gateway.visibility`.
+
 ## `serveMcpHttp`
 
 ```ts
@@ -278,6 +306,7 @@ interface McpHttpHandlerOptions {
   readonly allowedOrigins?: ReadonlyArray<string>;
   readonly maxRequestBodyBytes?: number;
   readonly auth: McpHttpAuthOptions;
+  readonly visibility?: McpCapabilityVisibility;
 }
 
 interface ServeMcpHttpOptions extends McpHttpHandlerOptions {

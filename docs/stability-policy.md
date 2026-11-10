@@ -38,7 +38,7 @@ site.
 | `@invokta/cli` | `runCli`, `RunCliOptions`, and `CliIo`; the `list`, `describe`, and `run` grammar; exit codes; the stdout and stderr JSON shapes |
 | `@invokta/mcp` | Every export of the package root and of `./web`; the capability-to-tool mapping, including portable tool names, result content, and the `dev.invokta/deprecated` `_meta` key; stdio and HTTP options, defaults, limits, and status behavior; the MCP protocol baseline |
 | `@invokta/http` | Every export of the package root and of `./node`; the routes, status mapping, options, defaults, and limits; the structure of the generated OpenAPI document |
-| `@invokta/auth-jwt`, `@invokta/otel` | Every export of the package root; the documented options, defaults, limits, and, for `@invokta/otel`, span, metric, and attribute names |
+| `@invokta/auth-jwt`, `@invokta/otel`, `@invokta/gateway` | Every export of the package root; the documented options, defaults, limits, and, for `@invokta/otel`, span, metric, and attribute names; for `@invokta/gateway`, the declared domain error codes, the discovery capability IDs, and the catalog lock format (`version: 1`), but not the ranking order of `search-tools` |
 | `@invokta/tooling` | The `invokta` commands, arguments, options, and exit codes; the package-root exports; the contract snapshot format (`formatVersion`) and the change codes reported by `contract diff`. The wording of human-readable reports is not public |
 | `@invokta/installer` | The `invokta-installer` commands, flags, and exit codes; the `./engine` export; the `invokta.mcp.json` manifest and persisted state formats |
 | `@invokta/deploy` | The `invokta-deploy` commands, flags, and exit codes; the package-root and `./scaffold` exports; the deploy manifest format |

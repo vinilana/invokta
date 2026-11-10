@@ -43,6 +43,7 @@ export {
 export { createMcpHttpHandler, type McpHttpHandler } from "./web.js";
 export { toMcpToolName } from "./tool-name.js";
 export {
+  type McpCapabilityVisibility,
   McpToolNameCollisionError,
   validateMcpToolCatalog,
 } from "./protocol-server.js";
@@ -52,12 +53,20 @@ export type {
   McpToolContentWarningCode,
 } from "./tool-content.js";
 
-import { createMcpServer } from "./protocol-server.js";
+import {
+  bindVisibility,
+  createMcpServer,
+  type McpCapabilityVisibility,
+  optionalVisible,
+  snapshotVisibility,
+} from "./protocol-server.js";
 import { preserveFalsyRequestIds } from "./request-id-transport.js";
 
 export interface ServeMcpStdioOptions {
   readonly principal?: Principal | null;
   readonly maxReadBufferBytes?: number;
+  /** Lists and serves only the capabilities visible to `principal`. */
+  readonly visibility?: McpCapabilityVisibility;
 }
 
 const DEFAULT_MAX_READ_BUFFER_BYTES = 10 * 1024 * 1024;
@@ -130,9 +139,12 @@ export async function serveMcpStdio<Capabilities extends CapabilityMap>(
   if (!Number.isSafeInteger(maxReadBufferBytes) || maxReadBufferBytes <= 0) {
     throw new TypeError("maxReadBufferBytes must be a positive safe integer.");
   }
+  const visibility = snapshotVisibility(options.visibility);
+  const principal = options.principal ?? null;
   const server = createMcpServer(engine, {
-    principal: options.principal ?? null,
+    principal,
     source: "mcp-stdio",
+    ...optionalVisible(bindVisibility(visibility, principal)),
   });
   const transport = new CallbackStdioServerTransport(
     process.stdout,

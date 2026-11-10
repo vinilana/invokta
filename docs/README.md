@@ -23,6 +23,7 @@ contracts below define one implementation of that concept.
 | Choose a domain outcome | [Use cases by company area](../apps/docs/src/content/docs/use-cases/index.mdx) |
 | Add a provider or data source | [Outbound connector recipe](../apps/docs/src/content/docs/recipes/external-provider.mdx) |
 | Secure an MCP HTTP engine | [HTTP authentication](./http-authentication.md) |
+| Serve several engines and MCP servers behind one authenticated endpoint | [`@invokta/gateway`](../packages/gateway/README.md) and the [gateway examples](../examples/gateway-engine/) |
 | Install an engine in agent clients | [Installer reference](../apps/docs/src/content/docs/reference/installer.mdx) |
 | Contribute to Invokta | [Contributor guide](../CONTRIBUTING.md) |
 | Change a public contract | Follow the maintainer reading order below before editing |
@@ -65,6 +66,7 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [Self-hosted OAuth recipe](../apps/docs/src/content/docs/recipes/auth/self-hosted-oauth.mdx)
 - [OAuth client interoperability release checklist](./oauth-client-interoperability-checklist.md)
 - [Integrating a PDP through a capability access rule](./capability-authorization.md)
+- [Action Engine gateway: design rationale and measurements](./action-engine-gateway.md)
 - [Building an outbound connector](../apps/docs/src/content/docs/recipes/external-provider.mdx)
 - [Instrumenting an engine with OpenTelemetry](../apps/docs/src/content/docs/recipes/opentelemetry.mdx)
 - [Authoring and composing community capabilities](./capability-composition.md)
@@ -85,6 +87,10 @@ conflicts with a contract or ADR, the normative source takes precedence.
 - [`agent-session-engine`: durable cross-harness sessions and CLI-backed hooks](../examples/agent-session-engine/)
 - [`community-capabilities`: atomic and library capability publication fixture](../examples/community-capabilities/)
 - [`composed-engine`: local, atomic, and library capability composition](../examples/composed-engine/)
+- [`gateway-engine`: engines and an MCP server behind one authenticated gateway](../examples/gateway-engine/)
+- [`gateway-discovery-engine`: a 200-tool MCP server through per-caller visibility and search-based discovery](../examples/gateway-discovery-engine/)
+- [`gateway-jev-engine`: TypeSafe Jev decides which tools a task needs behind the gateway](../examples/gateway-jev-engine/)
+- [`gateway-semantic-search-engine`: embedding search over the gateway's tool catalog](../examples/gateway-semantic-search-engine/)
 
 ## Normative language
 

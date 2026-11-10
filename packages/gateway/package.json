@@ -1,0 +1,41 @@
+{
+  "name": "@invokta/gateway",
+  "version": "0.10.0",
+  "description": "Gateway capabilities that serve several Action Engines and MCP servers behind one authenticated, policy-enforcing engine.",
+  "author": "Vini Lana <vini@aicoders.academy>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vinilana/invokta.git",
+    "directory": "packages/gateway"
+  },
+  "homepage": "https://docs.invokta.dev/reference/gateway/",
+  "bugs": {
+    "url": "https://github.com/vinilana/invokta/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "prepack": "npm run --silent build"
+  },
+  "dependencies": {
+    "@invokta/core": "0.10.0"
+  }
+}

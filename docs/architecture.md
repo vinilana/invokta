@@ -361,7 +361,8 @@ MUST fail closed if two keys map to the same tool name. A deprecated capability
 keeps its tool; its description starts with the deprecation notice and the same
 notice is published as `_meta["dev.invokta/deprecated"]` (AE-EVOLVE-01).
 Success returns
-`structuredContent` and a JSON text fallback. A nonexistent tool is a protocol
+`structuredContent` and a JSON text fallback. A nonexistent tool, including one
+hidden by visibility (AE-VIS-01), is a protocol
 error; all other capability errors return `isError: true`. Error serialization
 is atomic: if the adapter cannot safely read or serialize the structured
 `EngineError`, it MUST return the generic `EXECUTION_FAILED` tool error and MUST
@@ -539,9 +540,9 @@ change, including dot-segment aliases (ADR 0048).
 **AE-HTTP-02 — Boundary.** Each request is checked in order: host allowlist
 (loopback names by default), `Origin` (rejected unless CORS lists it exactly),
 route, CORS preflight, method (405 with `Allow`), declared body size (413),
-authentication, capability ID (an ID outside the captured catalog is 404
-`CAPABILITY_NOT_FOUND` without reaching `engine.invoke`, emitting an event, or
-reading the body), `application/json` content type (415), streamed strict UTF-8
+authentication, capability ID (an ID outside the captured catalog, or hidden
+from the principal by visibility (AE-VIS-01), is 404 `CAPABILITY_NOT_FOUND`
+without reaching `engine.invoke`, emitting an event, or reading the body), `application/json` content type (415), streamed strict UTF-8
 body within the limit (default 1,048,576 bytes; 413), and JSON parsing
 (400 `INVALID_JSON`). `auth` is required and uses the same required or
 `dangerously-disabled-for-development` modes and the same structural
@@ -561,6 +562,104 @@ and `describe`, embeds each schema as a component with local references rebased
 onto it, uses the base path as a relative server URL, and declares Bearer
 security only when authentication is required. A JSON Schema `$id` or anchor
 that would occur twice in the document fails generation with a `TypeError`.
+
+## Capability visibility
+
+**AE-VIS-01 — Per-caller listing.** `serveMcpStdio`, `serveMcpHttp`,
+`createMcpHttpHandler`, `createHttpHandler`, and `serveHttp` MAY receive an
+optional `visibility({ principal, capabilityId })` predicate, validated as a
+function before the adapter serves. It is evaluated with the request's
+snapshotted principal over HTTP and the configured principal over stdio, and it
+receives a deep-frozen copy of that principal. Only a returned `true` makes a
+capability visible; any other result, including a throw, hides it. A hidden
+capability is indistinguishable from one outside the catalog: MCP omits it from
+`tools/list` and answers `tools/call` with the unknown-tool protocol error, and
+plain HTTP omits it from `GET /capabilities`, answers `GET` and `POST
+/capabilities/{id}` with 404 `CAPABILITY_NOT_FOUND` before reading the body,
+and generates `GET /openapi.json` from the visible set, caching at most 64
+distinct documents keyed by the JSON array of visible IDs and evicting the
+first inserted. A returned promise hides a capability like any non-`true`
+result. Over stdio the configured principal is cloned once at startup. Neither
+adapter calls `engine.invoke` or emits an event for a hidden capability. Visibility never grants access: the access rule still runs
+on every invocation. The core `list` and `describe` stay principal-free, and
+the MCP catalog preflight and tool-name collision check always cover the
+complete catalog. Without the option, every adapter behaves as before. ADR 0052
+defines the boundary.
+
+## Gateway
+
+**AE-GATEWAY-01 — A capability map over upstreams.** `@invokta/gateway`
+depends only on `@invokta/core` and uses only ECMAScript and Web platform
+globals. `createGateway({ upstreams, rules?, defaultAccess?, onDecision? })`
+returns a frozen `{ capabilities, routes, visibility }`. `capabilities` is an
+ordinary capability map that the host passes to `createEngine` and serves with
+any adapter, so every call enters through `engine.invoke` and the gateway adds
+no adapter, transport, error code, event, context field, or pipeline stage.
+Upstream names are unique; two upstreams may not publish the same capability
+ID. `routes` lists every published capability with its upstream, kind,
+upstream ID, governing rule, and trusted read-only status, and `visibility` is
+the AE-VIS-01 predicate derived from the rules. ADR 0053 defines the package.
+
+**AE-GATEWAY-02 — Upstreams.** `engineUpstream` reads an in-process engine's
+catalog once and republishes each contract unchanged; its capabilities forward
+to the upstream `engine.invoke` with the request ID, source, mapped principal,
+signal, and progress sink, and raise an upstream `DOMAIN_ERROR` again as the
+same declared domain error. `mcpUpstream` lists a connected MCP server's tools
+once at the composition root through a structural client interface, reading at
+most 64 pages and `maxTools` tools (256 by default, at most 4,096), failing on
+duplicate names and non-object schemas, and publishing `<namespace>.<tool>`.
+Discovery has one total deadline (30,000 ms by default), and every published
+tool needs a name of 1 to 128 `A-Za-z0-9._-` characters and a canonical
+definition within `maxToolBytes` (65,536 by default). Each tool call has a
+finite timeout (30,000 ms by default) and the invocation signal; a tool error
+is the declared domain error `UPSTREAM_TOOL_ERROR`, whose upstream text is
+published only with `forwardToolErrors`. Every MCP upstream chooses a
+synchronous JSON Schema validator, which makes invalid input `INPUT_INVALID`
+before the gateway rule and an invalid structured result `OUTPUT_INVALID` and
+fails closed, or `"delegate-to-upstream"`; engine upstreams accept the same
+validator optionally. `pin` and `lock` turn any
+catalog change into a startup failure, and a lock failure names every added,
+removed, and changed tool. Untrusted MCP hints are republished only when they
+make a tool look riskier; `trustAnnotations` and `readOnlyTools` vouch for
+them.
+
+**AE-GATEWAY-03 — Rules.** The first rule whose `match` (an exact ID,
+`prefix.*`, or `*`) covers a capability governs it, bound at construction;
+unmatched capabilities get `defaultAccess`, `deny` by default. Every rule
+pattern and include pattern must match at least one capability, and a rule
+shadowed by earlier rules fails construction. `access` is `public`, `authenticated`, `deny`, or a function
+of `{ principal, input, context, route }` that allows only on `true`; a
+throwing or rejecting function denies. `visible(principal, route)` is
+synchronous; without it, visibility follows the core access kinds and
+`requireScopes`, and other functions are visible to every authenticated
+caller. Upstream engines still enforce their own access rules; an MCP upstream
+sees only the gateway's service credential, so the rules are its only
+per-caller control.
+
+**AE-GATEWAY-04 — Credentials.** The gateway never forwards a caller's
+credential to an upstream; each MCP connection holds the host's service
+credential. `chainAuthenticators` returns the first principal of several
+`authenticate` hooks and stops at a throw. `apiKeyAuthenticator` keeps only
+SHA-256 digests, reads one header, bounds presented keys to 1,024 characters,
+and compares against every digest.
+
+**AE-GATEWAY-05 — Audit.** `onDecision` receives one frozen decision per
+authorization with the request ID, capability, upstream, rule, outcome, and
+principal ID, never input, output, or credentials; a failing sink is contained
+and cannot change the decision.
+
+**AE-GATEWAY-06 — Search-based discovery.** `createDiscovery` returns the
+discovery tools `search-tools`, `invoke-read-tool`, and `invoke-tool` plus an
+optional `alwaysList` of at most 32 capabilities, a visibility predicate, and a
+gateway engine that it builds from `gateway.capabilities` with the host's
+optional middleware. Searches see only the caller's visible tools, rank them
+with deterministic BM25 or a host `rank` port whose result is intersected with
+them, return at most 20 tools within 64 KiB, and fall back to the lexical
+ranking when the port fails or misses its deadline. `invoke-read-tool` accepts
+only trusted read-only targets; both invoke tools call the target through the
+gateway engine. Hidden and unknown targets fail identically as
+`TOOL_NOT_FOUND`, and target domain errors become `TOOL_DOMAIN_ERROR`.
+`onSearch` never receives the query. ADR 0054 defines the boundary.
 
 ## Authentication and authorization
 

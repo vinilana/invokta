@@ -108,6 +108,25 @@ More than 16 planned values fall back to the unchanged JSON result, and
 unannotated outputs are never affected. `validateMcpToolCatalog` returns
 `contentWarnings` for annotations that come close but will not map.
 
+## Per-caller visibility
+
+`serveMcpStdio`, `serveMcpHttp`, and `createMcpHttpHandler` accept an optional
+synchronous `visibility({ principal, capabilityId })` predicate. A caller lists
+only the tools it returns `true` for; any other tool answers `tools/call` with
+the same "not found" protocol error as an unknown tool, without reaching
+`engine.invoke`. The predicate sees a deep-frozen principal, a throw hides the
+tool, and visibility never grants access: the access rule still runs on every
+call. `@invokta/gateway` derives one from its rules as `gateway.visibility`.
+
+```ts
+await serveMcpHttp(engine, {
+  auth: { mode: "required", authenticate },
+  visibility: ({ principal, capabilityId }) =>
+    !capabilityId.startsWith("admin.") ||
+    principal?.attributes?.role === "admin",
+});
+```
+
 ## Serving from a Web-standard runtime
 
 ```ts
