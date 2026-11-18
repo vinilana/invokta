@@ -1170,7 +1170,7 @@ istanbul-reports@^3.2.0:
     html-escaper "^2.0.0"
     istanbul-lib-report "^3.0.0"
 
-jose@6.2.15, jose@^6.1.3, jose@^6.2.10, jose@^6.2.15:
+jose@6.2.15, jose@^6.1.3, jose@^6.2.15:
   version "6.2.15"
   resolved "https://registry.yarnpkg.com/jose/-/jose-6.2.15.tgz#b1016c7e0a33d711bffc25598526b62d57730a27"
   integrity sha512-qdF6ewcZARtef63fJ9AKKZPgxw+t7USH6HLXYcD4CrdmSvDp79rpJSPFEKc90QBeGS63u1KQtN2MZQHC0yDIzA==
@@ -1202,10 +1202,10 @@ koa-compose@^4.1.0:
   resolved "https://registry.yarnpkg.com/koa-compose/-/koa-compose-4.1.0.tgz#507306b9371901db41121c812e923d0d67d3e877"
   integrity sha512-8ODW8TrDuMYvXRwra/Kh7/rJo9BtOfPc6qO8eAfC80CnCvSjSl0bkRM24X6/XBBEyj0v1nRUQ1LyOy3dbqOWXw==
 
-koa@^3.2.1:
-  version "3.2.1"
-  resolved "https://registry.yarnpkg.com/koa/-/koa-3.2.1.tgz#c99b0c17469418ad5672d3f5832a5610cd6500e4"
-  integrity sha512-e7IpWJrnanNUroVK2taAgMxoEZvHLXdQiNjeExSu/DEIWm83jaKGBgb7tLmu2rMYpA027qFB3iLR/k3AVpFRnA==
+koa@^3.3.0:
+  version "3.3.0"
+  resolved "https://registry.yarnpkg.com/koa/-/koa-3.3.0.tgz#1ea6b8000a93afef30afefaa1401f821fc85e02a"
+  integrity sha512-NdsWJYxVzUuYt718DtEQRhUXqqsAPA4VlaUGrlidjh/T2TP/4OQXqQg4ouUHfHD9f+tgmwLZWPm+JQLgqM9YbA==
   dependencies:
     accepts "^1.3.8"
     content-disposition "~1.0.1"
@@ -1409,14 +1409,14 @@ obug@^2.1.1:
   resolved "https://registry.yarnpkg.com/obug/-/obug-2.1.4.tgz#9090d8a548a522517915d2aa6aae907197ac6cf8"
   integrity sha512-4a+OsYv9UktOJKE+l1A4OufDgdRF9PifWj+tJnHURo/P+WOxpG4GzUFL9qCalmWauao6ogiG+QvnCovwPoyAWA==
 
-oidc-provider@~9.12.2:
-  version "9.12.2"
-  resolved "https://registry.yarnpkg.com/oidc-provider/-/oidc-provider-9.12.2.tgz#24137fc1c45e975ebff8bcfac70608703fc4d077"
-  integrity sha512-UaqeVpeijTocxVbDowPqPKloGjb49bxRSzHfChyI86teR+6xxoiI1V5jv8CHL2AIUmA2rg0xTZcYaC9GguympA==
+oidc-provider@~9.15.0:
+  version "9.15.0"
+  resolved "https://registry.yarnpkg.com/oidc-provider/-/oidc-provider-9.15.0.tgz#9587345563de961eb70e248b5312c45e971dfcc5"
+  integrity sha512-iK12JdGBWRNMz8pAG6r3p//bvKOEmb4OBOApSQSflfoex9ar5xjeaYn9XrJHf6EFj/+Q/O478wM6BLGd9lVu+Q==
   dependencies:
     debug "^4.4.3"
-    jose "^6.2.10"
-    koa "^3.2.1"
+    jose "^6.2.15"
+    koa "^3.3.0"
 
 on-finished@^2.4.1:
   version "2.4.1"
