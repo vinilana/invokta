@@ -25,6 +25,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | AI implementation | Keep implementation replaceable | Own prompts, models, retrieval, tools, evidence, and risk controls | Provider SDKs, prompt registry, RAG abstraction, or memory |
 | Quality | Validate contracts and provide testable direct execution | Own fixtures, evals, regression suites, and human review | Eval runner, automated judge, or canary platform |
 | Capability reuse | Eager explicit composition with deterministic collision detection | Choose imports, effective IDs, and trusted dependencies | Runtime plugin marketplace or remote discovery |
+| Gateway | Optional `@invokta/gateway`: capabilities over engine and MCP upstreams, first-match rules, per-caller visibility, API-key and chained authentication, catalog pinning and locks, and search-based discovery with a rank port | Choose upstreams, rules, service credentials, validators, rankers, and rate limits | Federated catalog, registry, tenancy, token passthrough, or a policy language |
 | Supporting tools | Engine and capability-package creators, composition checker, contract snapshot and diff, MCP client installer, deployment generator, and engine dev server with doctor diagnostics | Review generated files and own local, package, or deployment authority | Autonomous publishing, installation, or deployment service |
 
 ## Fixed limits
@@ -33,7 +34,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | --- | --- |
 | Framework runtime packages | 4 |
 | Supporting packages | 7 |
-| Optional runtime helper packages | 2: auth-jwt and otel |
+| Optional runtime helper packages | 3: auth-jwt, otel, and gateway |
 | Official inbound adapters | 3: CLI, MCP, and plain HTTP JSON |
 | MCP transports | 2: stdio and stateless Streamable HTTP |
 | Core primitives | 5: Capability, Connector Definition, Engine, Context, Principal |
@@ -41,7 +42,7 @@ belongs in Invokta, a custom engine, or a later evidence-driven package.
 | Runtime pipeline stages | 6 |
 | Invocation error codes | 8 |
 | Cross-cutting hooks | 1: `onEvent`; capability middleware is composed into `run` |
-| Authentication implementations | 1: opt-in JWT bearer verification |
+| Authentication implementations | 2: opt-in JWT bearer verification and static API keys |
 | Directly supported policy engines | 0 |
 | Dependency containers | 0 |
 | Runtime plugin systems | 0 |
@@ -81,7 +82,9 @@ observable repetition, for example:
 | Context compiler | Repeated context strategies cause measurable inconsistency |
 
 Until that evidence exists, keep the behavior in the custom engine's composition
-root or an injected service.
+root or an injected service. ADR 0053 records one deliberate exception: the
+maintainers promoted the gateway package from a prototype validated end to end
+and four runnable examples, without waiting for production deployments.
 
 An official example is executable integration guidance, not evidence that every
 dependency it contains belongs in a framework runtime package. See ADR 0024 for

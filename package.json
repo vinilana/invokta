@@ -47,6 +47,7 @@
     "@biomejs/biome": "2.5.15",
     "@types/node": "26.6.6",
     "@vitest/coverage-v8": "4.1.12",
+    "ajv": "8.20.0",
     "typescript": "7.0.2",
     "vitest": "4.1.12",
     "zod": "4.6.7"

@@ -7,6 +7,40 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- `serveMcpStdio`, `serveMcpHttp`, `createMcpHttpHandler`, `createHttpHandler`,
+  and `serveHttp` accept an optional synchronous
+  `visibility({ principal, capabilityId })` predicate, exported as
+  `McpCapabilityVisibility` and `HttpCapabilityVisibility`. A caller lists,
+  describes, and sees in the OpenAPI document only the capabilities the
+  predicate shows it; a hidden capability answers exactly like an unknown one,
+  without reaching `engine.invoke` or emitting an event. The predicate receives
+  a deep-frozen principal, anything but `true` hides the capability, and
+  visibility never grants access. Without the option, every adapter behaves as
+  before (ADR 0052).
+- `@invokta/gateway`, an optional runtime helper that depends only on
+  `@invokta/core`, serves several Action Engines and MCP servers as one
+  capability map. `engineUpstream` republishes an in-process engine's
+  contracts and forwards to its `engine.invoke`; `mcpUpstream` lists a
+  connected MCP server's tools once at startup within a deadline, tool-count,
+  page, name, and size bounds, and can `pin` or `lock` the reviewed catalog.
+  Every MCP upstream chooses a synchronous `JsonSchemaValidator` or
+  `"delegate-to-upstream"`, and upstream tool error text is published only
+  with `forwardToolErrors`. `createGateway` binds first-match rules by
+  capability ID, denies by default, audits decisions through `onDecision`
+  without payloads, and compiles `gateway.visibility` for the adapters'
+  `visibility` option. `chainAuthenticators`, `apiKeyAuthenticator`,
+  `hashApiKey`, and `requireScopes` cover authentication and scope checks
+  (ADR 0053).
+- `createDiscovery` serves a large gateway catalog as `search-tools`,
+  `invoke-read-tool`, and `invoke-tool` plus a bounded `alwaysList`, with
+  deterministic BM25 ranking, an optional host `rank` port that can only
+  reorder or drop visible tools, a 64 KiB response budget, and the target's
+  gateway rule on every invocation (ADR 0054).
+- Four examples: `gateway-engine`, `gateway-discovery-engine`,
+  `gateway-jev-engine`, and `gateway-semantic-search-engine`.
+
 ## [0.10.0] - 2026-11-05
 
 ### Added

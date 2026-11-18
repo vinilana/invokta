@@ -5,7 +5,7 @@ sidebar:
   label: Overview
 ---
 
-Invokta publishes four runtime packages, two optional runtime helpers,
+Invokta publishes four runtime packages, three optional runtime helpers,
 and seven supporting packages. Each has one bounded responsibility.
 
 ## Runtime packages
@@ -26,11 +26,14 @@ public API and never call capability handlers directly.
 | --- | --- | --- |
 | `@invokta/auth-jwt` | Verify one issuer's JWT bearer access tokens as the MCP HTTP or plain HTTP `authenticate` hook | [JWT bearer reference](/reference/auth-jwt/) |
 | `@invokta/otel` | Record OpenTelemetry spans and invocation metrics from engine events as the `onEvent` hook | [OpenTelemetry reference](/reference/otel/) |
+| `@invokta/gateway` | Serve several engines and MCP servers as one capability map with authentication helpers, first-match rules, per-caller visibility, and search-based discovery | [Gateway reference](/reference/gateway/) |
 
-`@invokta/auth-jwt` depends only on `jose`, and `@invokta/otel` only on core
-types and the `@opentelemetry/api` peer. No runtime package depends on either
-helper; a host-written authentication or `onEvent` hook remains equally
-supported. `@invokta/otel` observes events and never invokes a capability.
+`@invokta/auth-jwt` depends only on `jose`, `@invokta/otel` only on core
+types and the `@opentelemetry/api` peer, and `@invokta/gateway` only on the
+core. No runtime package depends on a helper; a host-written authentication or
+`onEvent` hook, or a host-composed engine, remains equally supported.
+`@invokta/otel` observes events and never invokes a capability, and every
+gateway call still enters through `engine.invoke`.
 
 ## Supporting packages
 

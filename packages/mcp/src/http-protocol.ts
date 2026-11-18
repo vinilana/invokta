@@ -12,7 +12,14 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { OAuthProtectedResourceMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
 
 import { requestsProgressNotifications } from "./progress.js";
-import { createMcpServer, createMcpToolCatalog } from "./protocol-server.js";
+import {
+  bindVisibility,
+  createMcpServer,
+  createMcpToolCatalog,
+  type McpCapabilityVisibility,
+  optionalVisible,
+  snapshotVisibility,
+} from "./protocol-server.js";
 import { preserveFalsyRequestIds } from "./request-id-transport.js";
 
 const DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
@@ -70,6 +77,12 @@ export interface McpHttpHandlerOptions {
   readonly allowedOrigins?: ReadonlyArray<string>;
   readonly maxRequestBodyBytes?: number;
   readonly auth: McpHttpAuthOptions;
+  /**
+   * Lists and serves only the capabilities this predicate shows to the
+   * authenticated principal. A hidden capability answers like a nonexistent
+   * tool. Defaults to every capability.
+   */
+  readonly visibility?: McpCapabilityVisibility;
 }
 
 /**
@@ -774,6 +787,7 @@ export function createMcpHttpProtocol<Capabilities extends CapabilityMap>(
   const metadataPath =
     metadataUrl === undefined ? undefined : new URL(metadataUrl).pathname;
   const toolCatalog = createMcpToolCatalog(engine);
+  const visibility = snapshotVisibility(options.visibility);
 
   return async function handleMcpHttpRequest(facts) {
     try {
@@ -898,6 +912,7 @@ export function createMcpHttpProtocol<Capabilities extends CapabilityMap>(
       {
         principal,
         source: "mcp-http",
+        ...optionalVisible(bindVisibility(visibility, principal)),
         requestSignal: AbortSignal.any([facts.signal, streamAbort.signal]),
         canSendProgress: () => progressCapacity(),
       },

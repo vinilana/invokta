@@ -19,7 +19,10 @@ export type {
   McpHttpHeaderView,
   McpHttpProtectedResourceMetadata,
 } from "./http-protocol.js";
-export { McpToolNameCollisionError } from "./protocol-server.js";
+export {
+  type McpCapabilityVisibility,
+  McpToolNameCollisionError,
+} from "./protocol-server.js";
 
 /** A Web-standard request handler for one engine's MCP endpoint. */
 export type McpHttpHandler = (request: Request) => Promise<Response>;

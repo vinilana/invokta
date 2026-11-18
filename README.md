@@ -178,6 +178,9 @@ turning the framework into a service container.
   tokens as the MCP HTTP or plain HTTP authentication hook.
 - `@invokta/otel` optionally instruments engine events as OpenTelemetry spans
   and invocation metrics; your host's OpenTelemetry SDK exports them.
+- `@invokta/gateway` optionally serves several engines and MCP servers as one
+  capability map, with authentication helpers, first-match rules, per-caller
+  visibility, and search-based tool discovery.
 - `@invokta/tooling` validates composed capabilities and final MCP tool names,
   and snapshots and diffs capability contracts for release gates.
 - `@invokta/devtools` provides an engine inspector plus MCP and CLI

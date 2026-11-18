@@ -161,6 +161,9 @@ export async function serveHttp<Capabilities extends CapabilityMap>(
     ...(options.maxRequestBodyBytes === undefined
       ? {}
       : { maxRequestBodyBytes: options.maxRequestBodyBytes }),
+    ...(options.visibility === undefined
+      ? {}
+      : { visibility: options.visibility }),
   });
   const activeRequests = new Set<AbortController>();
 

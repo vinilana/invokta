@@ -29,9 +29,69 @@ import {
 } from "./tool-content.js";
 import { toMcpToolName } from "./tool-name.js";
 
+/**
+ * Decides whether one capability is listed for, and callable by, the
+ * authenticated principal. It is synchronous and reads only its arguments; a
+ * hidden capability answers exactly like a nonexistent tool. Visibility never
+ * grants access: the capability's access rule still runs on every call.
+ */
+export type McpCapabilityVisibility = (args: {
+  readonly principal: Principal | null;
+  readonly capabilityId: string;
+}) => boolean;
+
+/** Validates an optional visibility option before an adapter serves. */
+export function snapshotVisibility(
+  value: unknown,
+): McpCapabilityVisibility | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "function") {
+    throw new TypeError("visibility must be a function.");
+  }
+  return value as McpCapabilityVisibility;
+}
+
+/**
+ * Binds a visibility option to one request's principal. The predicate sees a
+ * deep-frozen copy, so it cannot change the identity that reaches `invoke`,
+ * and anything but a returned `true`, including a throw, hides the tool.
+ */
+export function bindVisibility(
+  visibility: McpCapabilityVisibility | undefined,
+  principal: Principal | null,
+): ((capabilityId: string) => boolean) | undefined {
+  if (visibility === undefined) return undefined;
+  const frozen =
+    principal === null ? null : deepFreeze(structuredClone(principal));
+  return (capabilityId) => {
+    try {
+      return visibility({ principal: frozen, capabilityId }) === true;
+    } catch {
+      return false;
+    }
+  };
+}
+
+/** Spreads a bound visibility into server options only when configured. */
+export function optionalVisible(
+  visible: ((capabilityId: string) => boolean) | undefined,
+): { readonly visible?: (capabilityId: string) => boolean } {
+  return visible === undefined ? {} : { visible };
+}
+
+function deepFreeze<Value>(value: Value): Value {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    for (const nested of Object.values(value)) deepFreeze(nested);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 interface McpServerOptions {
   readonly principal: Principal | null;
   readonly source: Extract<ExecutionSource, "mcp-stdio" | "mcp-http">;
+  /** Bound visibility of the request's principal; every tool when absent. */
+  readonly visible?: (capabilityId: string) => boolean;
   readonly requestSignal?: AbortSignal;
   /**
    * Reports whether the response channel can take another progress
@@ -281,13 +341,23 @@ export function createMcpServer<Capabilities extends CapabilityMap>(
     { capabilities: { tools: {} } },
   );
 
+  const visible = options.visible;
   server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: Array.from(catalog.tools),
+    tools:
+      visible === undefined
+        ? Array.from(catalog.tools)
+        : catalog.tools.filter((tool) =>
+            visible(catalog.capabilityIdForToolName(tool.name) as string),
+          ),
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const capabilityId = catalog.capabilityIdForToolName(request.params.name);
-    if (capabilityId === undefined) {
+    // A hidden tool is indistinguishable from a nonexistent one.
+    if (
+      capabilityId === undefined ||
+      (visible !== undefined && !visible(capabilityId))
+    ) {
       throw new McpError(
         ErrorCode.InvalidParams,
         `Tool ${request.params.name} not found`,

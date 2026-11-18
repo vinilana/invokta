@@ -52,7 +52,13 @@ interface HttpHandlerOptions {
   readonly cors?: HttpCorsOptions;
   readonly maxRequestBodyBytes?: number;
   readonly auth: HttpAuthOptions;
+  readonly visibility?: HttpCapabilityVisibility;
 }
+
+type HttpCapabilityVisibility = (args: {
+  readonly principal: Principal | null;
+  readonly capabilityId: string;
+}) => boolean;
 
 type HttpHandler = (request: Request) => Promise<Response>;
 
@@ -127,6 +133,16 @@ The handler passes `request.signal` to the authenticator and to
 `engine.invoke`. A runtime that aborts the signal when the client disconnects
 therefore cancels the invocation.
 
+`visibility` is an optional synchronous predicate over the authenticated
+principal and a capability ID. With it, `GET /capabilities` lists only visible
+capabilities, `GET` and `POST /capabilities/{id}` answer a hidden ID with the
+same 404 `CAPABILITY_NOT_FOUND` as an unknown one before the body is read, and
+`GET /openapi.json` describes only the visible operations; at most 64 distinct
+documents are cached, keyed by the visible IDs, and the first inserted is
+evicted. The predicate receives a deep-frozen principal, and
+anything but `true`, including a throw, hides the capability. Visibility never
+grants access. `serveHttp` forwards the option unchanged.
+
 ### Request boundary
 
 Checks occur in this order:
@@ -138,7 +154,8 @@ Checks occur in this order:
 5. the method is supported;
 6. a declared body is within the limit;
 7. authentication succeeds and the principal is snapshotted;
-8. the capability ID is in the catalog;
+8. the capability ID is in the catalog and, with `visibility`, visible to the
+   principal;
 9. the content type is `application/json`;
 10. the streamed body is within the limit and valid UTF-8 JSON; and
 11. `engine.invoke` runs with source `http`.

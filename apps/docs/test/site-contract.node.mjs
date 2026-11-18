@@ -40,6 +40,7 @@ const packageReferences = [
   ["http", "@invokta/http"],
   ["auth-jwt", "@invokta/auth-jwt"],
   ["otel", "@invokta/otel"],
+  ["gateway", "@invokta/gateway"],
   ["tooling", "@invokta/tooling"],
   ["devtools", "@invokta/devtools"],
   ["installer", "@invokta/installer"],
