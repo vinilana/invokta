@@ -1,6 +1,6 @@
 # Validation record
 
-- Last reviewed: 2026-11-05
+- Last reviewed: 2026-11-18
 - Public API changes: standalone atomic capability and capability-library
   creators accepted in ADR 0014; engine and capability-library agent
   instruction aliases accepted in ADR 0015; generated development skills
@@ -33,8 +33,11 @@
   schema-derived CLI flags and capability help accepted in ADR 0047; the plain
   HTTP JSON adapter with OpenAPI export accepted in ADR 0048; the JWT bearer
   authentication helper accepted in ADR 0049; OpenTelemetry instrumentation
-  from engine events accepted in ADR 0050; and typed capability middleware
-  composition accepted in ADR 0051.
+  from engine events accepted in ADR 0050; typed capability middleware
+  composition accepted in ADR 0051; per-caller capability visibility in the
+  MCP and HTTP adapters accepted in ADR 0052; the Action Engine gateway
+  package accepted in ADR 0053; and search-based tool discovery for gateways
+  accepted in ADR 0054.
 - Architectural conventions: ADR 0036 defines engine-owned outbound connectors;
   ADR 0037 adds their optional typed core authoring definition without changing
   capability contracts, the error-code taxonomy, or the execution path.
@@ -61,23 +64,23 @@ consumer can use the protocol surface without coupling to engine code.
 
 ## Current delivery gates
 
-- `yarn run check` on Node.js 22.23.4 and Yarn 1.22.22 passes typecheck, lint,
-  formatting, 4,033 of 4,035 tests in 245 files, V8 coverage, and the full
+- `yarn run check` on Node.js 24.22.3 and Yarn 1.22.22 passes typecheck, lint,
+  formatting, 4,233 of 4,235 tests in 272 files, V8 coverage, and the full
   TypeScript build, followed by 19 example gates. A root container skips two
   tests: the intentional container test and a privilege-dependent deploy test.
-  Coverage is 81.15% statements, 77.35% branches, 84.35% functions, and 82.38%
+  Coverage is 81.54% statements, 77.84% branches, 84.77% functions, and 82.57%
   lines. CI runs the same gate on Node.js 24.20.0.
 - `yarn release:verify` passes for 0.10.0: metadata alignment and
-  clean tarball inspection for all 13 public packages, isolated ESM imports,
+  clean tarball inspection for all 14 public packages, isolated ESM imports,
   all four packed engine profiles, authenticated MCP HTTP exchange, DevTools
   doctor checks, and the
-  atomic and capability-library creator smoke tests. See the release record
+  atomic and capability-library creator smoke tests. See the release records
   below for the npm version it needs.
 - `yarn validate` in `apps/docs` passes 16 route and link contract tests, zero
-  Astro diagnostics, and the 59-page production site build.
-- The 2026-11-05 release audits report zero vulnerabilities across 305 audited
-  root packages and 569 documentation packages. The standalone OAuth example's
-  independent npm lockfile also reports zero; see the release record below.
+  Astro diagnostics, and the 60-page production site build.
+- The 2026-11-18 release audits report zero vulnerabilities across 310 audited
+  root packages and 571 documentation packages. The standalone OAuth example's
+  independent npm lockfile also reports zero; see the release records below.
 
 ## Boundaries exercised
 
@@ -528,5 +531,67 @@ registry wait.
 
 Publication remains subject to the release PR CI, the new packages' bootstrap
 and trusted publishers, the annotated tag's Verify job, and the protected npm
+environment. Registry integrity and a clean example `npm ci` must be checked
+again after publication.
+
+## Release 0.10.0 re-preparation (2026-11-18)
+
+No `v0.10.0` tag was created after the preparation above, so 0.10.0 is still
+the next release and now also carries the changes merged since: the gateway
+package and per-caller visibility accepted in ADRs 0052 through 0054 (#137),
+and the dependency updates from #120, #121, #122, and #138 through #142. The
+`yaml` 2.9.1 update from #123 is applied with the two exact-pin assertions that
+kept its Verify job red. Every public package, `@invokta/gateway` included,
+already carried version 0.10.0 and exact 0.10.0 internal pins, so this run
+changes no version. It moves the gateway notes from Unreleased into the 0.10.0
+changelog entry, dates that entry, and corrects the statements the merged
+changes made stale: the `jose` 6.2.15 pin of `@invokta/auth-jwt` in the
+changelog and its documentation page, and the package count in `RELEASING.md`.
+The publish job timeout rises from 150 to 160 minutes so each of the 14
+publications can use its full 10-minute registry wait. The run changes
+metadata, documentation, workflow configuration, and a lockfile only, so it
+uses the documentation/tooling exception to a new RED test.
+
+The gates ran on the development container's Node.js 24.22.3, npm 11.19.1, and
+Yarn 1.22.22, with the release changes staged. The frozen-lockfile installs
+passed, and `yarn run check`, `yarn validate`, and the audits produced the
+totals under [Current delivery gates](#current-delivery-gates). The Windows
+archive-path test passes, `yarn release:pack` passes all 14 package dry-runs,
+and `yarn release:verify` passes for all 14 packages with the same consumers
+as before. No packed consumer resolved an `@invokta/*` package from the
+registry. `git diff --cached --check` is clean.
+
+On 2026-11-17 the three audits started to report GHSA-fc5q-39xc-vjpf against
+every published `picomatch` version, without a patched release, through
+Vitest, Vite, and the documentation toolchain. With the `hono` and
+`@hono/node-server` updates merged it was the only remaining finding. The
+GitHub Advisory Database withdrew the advisory on 2026-11-18, before these
+gates ran, so the zero-vulnerability results above needed no exception and the
+audit commands are unchanged.
+
+A clean throwaway worktree of the `yaml` update commit was installed with the
+frozen lockfile, then built, and packed all 14 tarballs. The procedure
+reproduced the five SHA-512 values the example already locked for
+`@invokta/core`, `@invokta/cli`, `@invokta/tooling`, `@invokta/deploy`, and
+`@invokta/devtools`, whose contents did not change. The example's lockfile now
+uses the new values for `@invokta/mcp`, which gained the visibility option, and
+`@invokta/installer`, which pins `yaml` 2.9.1. It also follows the merged
+manifest ranges: `jose` 6.2.15 and `cookies` 0.9.1 stay on the versions the
+workspace lockfile resolves and tests, and `oidc-provider` 9.15.0 with
+`koa` 3.3.0, `pg` 8.23.1 with its three updated `pg-*` packages, and `yaml`
+2.9.1 are the registry's entries. `npm install --package-lock-only` leaves the
+result unchanged; the other 243 entries are untouched.
+
+Isolated `npm ci --ignore-scripts --no-audit --no-fund` with the seven Invokta
+entries resolved to the local tarballs and an empty cache verified every
+integrity value and installed 209 packages; a copy with one altered value
+failed with `EINTEGRITY`.
+
+The registry still serves 0.9.1 only for `@invokta/core` and `@invokta/cli`
+and 0.9.0 for the other eight existing packages. `@invokta/http`,
+`@invokta/auth-jwt`, `@invokta/otel`, and `@invokta/gateway` return `E404`, so
+each needs the `0.0.0` placeholder bootstrap and trusted publisher from
+`RELEASING.md` before the tag. Publication remains subject to the release PR
+CI, that bootstrap, the annotated tag's Verify job, and the protected npm
 environment. Registry integrity and a clean example `npm ci` must be checked
 again after publication.

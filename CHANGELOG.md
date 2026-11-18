@@ -7,41 +7,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-### Added
-
-- `serveMcpStdio`, `serveMcpHttp`, `createMcpHttpHandler`, `createHttpHandler`,
-  and `serveHttp` accept an optional synchronous
-  `visibility({ principal, capabilityId })` predicate, exported as
-  `McpCapabilityVisibility` and `HttpCapabilityVisibility`. A caller lists,
-  describes, and sees in the OpenAPI document only the capabilities the
-  predicate shows it; a hidden capability answers exactly like an unknown one,
-  without reaching `engine.invoke` or emitting an event. The predicate receives
-  a deep-frozen principal, anything but `true` hides the capability, and
-  visibility never grants access. Without the option, every adapter behaves as
-  before (ADR 0052).
-- `@invokta/gateway`, an optional runtime helper that depends only on
-  `@invokta/core`, serves several Action Engines and MCP servers as one
-  capability map. `engineUpstream` republishes an in-process engine's
-  contracts and forwards to its `engine.invoke`; `mcpUpstream` lists a
-  connected MCP server's tools once at startup within a deadline, tool-count,
-  page, name, and size bounds, and can `pin` or `lock` the reviewed catalog.
-  Every MCP upstream chooses a synchronous `JsonSchemaValidator` or
-  `"delegate-to-upstream"`, and upstream tool error text is published only
-  with `forwardToolErrors`. `createGateway` binds first-match rules by
-  capability ID, denies by default, audits decisions through `onDecision`
-  without payloads, and compiles `gateway.visibility` for the adapters'
-  `visibility` option. `chainAuthenticators`, `apiKeyAuthenticator`,
-  `hashApiKey`, and `requireScopes` cover authentication and scope checks
-  (ADR 0053).
-- `createDiscovery` serves a large gateway catalog as `search-tools`,
-  `invoke-read-tool`, and `invoke-tool` plus a bounded `alwaysList`, with
-  deterministic BM25 ranking, an optional host `rank` port that can only
-  reorder or drop visible tools, a 64 KiB response budget, and the target's
-  gateway rule on every invocation (ADR 0054).
-- Four examples: `gateway-engine`, `gateway-discovery-engine`,
-  `gateway-jev-engine`, and `gateway-semantic-search-engine`.
-
-## [0.10.0] - 2026-11-05
+## [0.10.0] - 2026-11-18
 
 ### Added
 
@@ -110,7 +76,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   bearer authenticator usable directly as the `serveMcpHttp` `authenticate`
   hook or with any adapter exposing `headers.get` and an optional `signal`
   (ADR 0049). It verifies one configured issuer's signed access tokens with
-  `jose` 6.2.12, its only runtime dependency, against a remote HTTPS JWKS URL
+  `jose` 6.2.15, its only runtime dependency, against a remote HTTPS JWKS URL
   or a local key set. It requires an exact issuer, an audience, an explicit
   asymmetric algorithm allowlist, `sub`, and `exp`, and supports a clock
   tolerance of at most 300 seconds, required scopes, a token length bound of
@@ -238,6 +204,37 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The `image-engine` example reports liveness immediately and every 15 seconds
   while each provider request is pending, with a progress recipe in the
   documentation site.
+- `serveMcpStdio`, `serveMcpHttp`, `createMcpHttpHandler`, `createHttpHandler`,
+  and `serveHttp` accept an optional synchronous
+  `visibility({ principal, capabilityId })` predicate, exported as
+  `McpCapabilityVisibility` and `HttpCapabilityVisibility`. A caller lists,
+  describes, and sees in the OpenAPI document only the capabilities the
+  predicate shows it; a hidden capability answers exactly like an unknown one,
+  without reaching `engine.invoke` or emitting an event. The predicate receives
+  a deep-frozen principal, anything but `true` hides the capability, and
+  visibility never grants access. Without the option, every adapter behaves as
+  before (ADR 0052).
+- `@invokta/gateway`, an optional runtime helper that depends only on
+  `@invokta/core`, serves several Action Engines and MCP servers as one
+  capability map. `engineUpstream` republishes an in-process engine's
+  contracts and forwards to its `engine.invoke`; `mcpUpstream` lists a
+  connected MCP server's tools once at startup within a deadline, tool-count,
+  page, name, and size bounds, and can `pin` or `lock` the reviewed catalog.
+  Every MCP upstream chooses a synchronous `JsonSchemaValidator` or
+  `"delegate-to-upstream"`, and upstream tool error text is published only
+  with `forwardToolErrors`. `createGateway` binds first-match rules by
+  capability ID, denies by default, audits decisions through `onDecision`
+  without payloads, and compiles `gateway.visibility` for the adapters'
+  `visibility` option. `chainAuthenticators`, `apiKeyAuthenticator`,
+  `hashApiKey`, and `requireScopes` cover authentication and scope checks
+  (ADR 0053).
+- `createDiscovery` serves a large gateway catalog as `search-tools`,
+  `invoke-read-tool`, and `invoke-tool` plus a bounded `alwaysList`, with
+  deterministic BM25 ranking, an optional host `rank` port that can only
+  reorder or drop visible tools, a 64 KiB response budget, and the target's
+  gateway rule on every invocation (ADR 0054).
+- Four examples: `gateway-engine`, `gateway-discovery-engine`,
+  `gateway-jev-engine`, and `gateway-semantic-search-engine`.
 
 ### Changed
 
@@ -301,6 +298,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `AE-LIMIT-01` and `AE-LIMIT-05` no longer exclude progress. MCP Tasks,
   streaming partial results, resumption, and persisted progress remain out of
   scope.
+- `@invokta/installer` and `create-invokta-engine` pin `yaml` 2.9.1 instead of
+  2.9.0. Authentication examples use jose 6.2.15, and the self-hosted OAuth
+  provider uses oidc-provider 9.15.0 with pg 8.23.1. The documentation site
+  moves to Astro 7.4.7. The workspace and standalone example lockfiles are
+  synchronized with the dependency updates.
 
 ### Fixed
 
@@ -311,8 +313,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   30 seconds, for npm to make each published version readable. It previously
   failed after about one minute while npm was still processing the first
   package, which stopped the 0.9.1 workflow after publishing `@invokta/core`.
-  The publish job timeout increases from 20 to 150 minutes, so each of the
-  thirteen packages can use its full 10-minute wait.
+  The publish job timeout increases from 20 to 160 minutes, so each of the
+  fourteen packages can use its full 10-minute wait.
+
+### Security
+
+- Locked `hono` and `@hono/node-server` versions move from 4.13.14 and 2.1.5 to
+  the patched 4.13.18 and 2.1.8 in the workspace and standalone OAuth example
+  lockfiles. Both are resolved through the MCP TypeScript SDK that
+  `@invokta/mcp` pins.
 
 ## [0.9.1] - 2026-10-30
 
