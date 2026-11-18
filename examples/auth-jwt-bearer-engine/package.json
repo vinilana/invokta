@@ -24,6 +24,6 @@
     "@invokta/devtools": "0.10.0",
     "@invokta/tooling": "0.10.0",
     "@modelcontextprotocol/sdk": "1.32.2",
-    "jose": "^6.2.12"
+    "jose": "^6.2.15"
   }
 }
