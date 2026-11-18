@@ -303,6 +303,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   provider uses oidc-provider 9.15.0 with pg 8.23.1. The documentation site
   moves to Astro 7.4.7. The workspace and standalone example lockfiles are
   synchronized with the dependency updates.
+- Development tooling moves to Biome 2.6.4. Its new Markdown and YAML
+  formatters are disabled, so `yarn format:check` covers the same files as
+  before.
 
 ### Fixed
 
