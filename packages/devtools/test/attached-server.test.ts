@@ -732,6 +732,37 @@ describe("attached devtools server", () => {
     expect(activityBody.records).toHaveLength(3);
   });
 
+  it("maps unsupported registration failures when starting OAuth", async () => {
+    const controller = createController();
+    controller.beginOAuth.mockRejectedValueOnce({
+      code: "UNSUPPORTED_REGISTRATION",
+    });
+    const server = await startOnAvailablePort((port) =>
+      startAttachedDevtoolsServer({ port, controller }),
+    );
+    servers.push(server);
+    const base = `http://127.0.0.1:${String(server.address().port)}`;
+    const session = await fetch(`${base}/api/session`);
+    const cookie = cookiePair(session);
+    const csrf = ((await session.json()) as { csrfToken: string }).csrfToken;
+
+    const response = await fetch(`${base}/api/connection`, {
+      method: "POST",
+      headers: mutationHeaders(base, cookie, csrf),
+      body: JSON.stringify({
+        transport: "http",
+        url: "https://mcp.example.test/rpc",
+        authentication: { type: "oauth" },
+      }),
+    });
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "UNSUPPORTED_REGISTRATION",
+      message:
+        "The authorization server exposes no client registration mechanism this release can use.",
+    });
+  });
+
   it("starts OAuth and completes its one-time callback without exposing secrets", async () => {
     const controller = createController();
     const server = await startOnAvailablePort((port) =>

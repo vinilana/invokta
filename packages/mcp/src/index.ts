@@ -23,6 +23,7 @@ export {
   type McpJsonValue,
   type McpOAuthAuthorization,
   type McpOAuthAuthorizationOptions,
+  type McpOAuthClientAuthentication,
   type McpOAuthClientTarget,
   type McpOAuthInspection,
   type McpOAuthStep,

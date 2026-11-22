@@ -20,6 +20,8 @@ const verificationErrorMessages = {
   CONNECTION_FAILED: "The MCP connection failed.",
   AUTHENTICATION_FAILED: "The MCP target rejected authentication.",
   PROTOCOL_ERROR: "The MCP target returned an invalid protocol response.",
+  UNSUPPORTED_REGISTRATION:
+    "The authorization server exposes no client registration mechanism this release can use.",
   TIMEOUT: "The MCP verification deadline expired.",
   LIMIT_EXCEEDED: "The MCP verification limit was exceeded.",
   CANCELLED: "The MCP verification was cancelled.",

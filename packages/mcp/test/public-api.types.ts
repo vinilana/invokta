@@ -22,6 +22,7 @@ import {
   type McpJsonValue,
   type McpOAuthAuthorization,
   type McpOAuthAuthorizationOptions,
+  type McpOAuthClientAuthentication,
   type McpOAuthClientTarget,
   type McpOAuthInspection,
   type McpOAuthStep,
@@ -97,6 +98,26 @@ const oauthTarget = {
   url: "https://mcp.example.com/mcp",
   authentication: { type: "oauth" },
 } as const satisfies McpOAuthClientTarget;
+const oauthTargetWithClientId = {
+  transport: "http",
+  url: "https://mcp.example.com/mcp",
+  authentication: {
+    type: "oauth",
+    clientId: "public-client",
+    issuer: "https://issuer.example.com",
+    redirectUris: ["http://127.0.0.1:4100/oauth/callback"],
+  },
+} as const satisfies McpOAuthClientTarget;
+type AssertExtends<Base, _Value extends Base> = Base;
+declare const oauthAuthentication: AssertExtends<
+  McpOAuthClientAuthentication,
+  typeof oauthTarget.authentication
+> &
+  AssertExtends<
+    McpOAuthClientAuthentication,
+    typeof oauthTargetWithClientId.authentication
+  >;
+void oauthAuthentication;
 const oauthOptions: McpOAuthAuthorizationOptions = {
   redirectUrl: "http://127.0.0.1:4100/oauth/callback",
   state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
@@ -170,6 +191,7 @@ expectTypeOf(clientError.code).toEqualTypeOf<
   | "CONNECTION_FAILED"
   | "AUTHENTICATION_FAILED"
   | "PROTOCOL_ERROR"
+  | "UNSUPPORTED_REGISTRATION"
   | "TIMEOUT"
   | "LIMIT_EXCEEDED"
   | "CANCELLED"

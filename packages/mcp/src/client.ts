@@ -101,10 +101,19 @@ export interface McpClientConnection {
   close(): Promise<void>;
 }
 
+export type McpOAuthClientAuthentication =
+  | { readonly type: "oauth" }
+  | {
+      readonly type: "oauth";
+      readonly clientId: string;
+      readonly issuer: string;
+      readonly redirectUris?: readonly string[];
+    };
+
 export interface McpOAuthClientTarget {
   readonly transport: "http";
   readonly url: string;
-  readonly authentication: { readonly type: "oauth" };
+  readonly authentication: McpOAuthClientAuthentication;
 }
 
 export interface McpOAuthAuthorizationOptions {
@@ -147,6 +156,7 @@ export type McpClientErrorCode =
   | "CONNECTION_FAILED"
   | "AUTHENTICATION_FAILED"
   | "PROTOCOL_ERROR"
+  | "UNSUPPORTED_REGISTRATION"
   | "TIMEOUT"
   | "LIMIT_EXCEEDED"
   | "CANCELLED";
@@ -198,7 +208,19 @@ const OAUTH_STATE = /^[A-Za-z0-9_-]{43}$/;
 const OAUTH_CALLBACK_PATH = "/oauth/callback";
 const MAX_OAUTH_AUTHORIZATION_URL_BYTES = 8_192;
 const MAX_OAUTH_CODE_POINTS = 4_096;
+const MAX_OAUTH_CLIENT_ID_LENGTH = 256;
+const MAX_OAUTH_ISSUER_LENGTH = 2_048;
 const textEncoder = new TextEncoder();
+
+function containsOAuthControlCharacter(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0);
+    if (code === undefined || code <= 0x1f || code === 0x7f) {
+      return true;
+    }
+  }
+  return false;
+}
 
 const ERROR_MESSAGES = {
   INVALID_TARGET: "The MCP client target is invalid.",
@@ -206,6 +228,8 @@ const ERROR_MESSAGES = {
   CONNECTION_FAILED: "The MCP client connection failed.",
   AUTHENTICATION_FAILED: "The MCP target rejected the supplied credentials.",
   PROTOCOL_ERROR: "The MCP peer returned an invalid protocol exchange.",
+  UNSUPPORTED_REGISTRATION:
+    "The authorization server exposes no client registration mechanism this release can use. Configure a public client_id and issuer on the target, advertise registration_endpoint for dynamic client registration, or wait for CIMD support when only client_id_metadata_document_supported is advertised.",
   TIMEOUT: "The MCP client operation timed out.",
   LIMIT_EXCEEDED: "The MCP client message limit was exceeded.",
   CANCELLED: "The MCP client operation was cancelled.",
@@ -229,6 +253,12 @@ interface HttpTargetSnapshot {
   readonly transport: "http";
   readonly url: URL;
   readonly credentials: Record<string, string>;
+}
+
+interface OAuthTargetSnapshot extends HttpTargetSnapshot {
+  readonly oauthClientId?: string;
+  readonly oauthConfiguredIssuer?: string;
+  readonly oauthRedirectUris?: readonly string[];
 }
 
 interface OAuthAuthorizationSnapshot {
@@ -517,7 +547,119 @@ function parseOAuthCallbackUrl(value: unknown): URL | undefined {
   return url;
 }
 
-function snapshotOAuthTarget(target: McpOAuthClientTarget): HttpTargetSnapshot {
+function snapshotOAuthClientId(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > MAX_OAUTH_CLIENT_ID_LENGTH ||
+    containsOAuthControlCharacter(value) ||
+    HTTP_WHITESPACE_AT_START_OR_END.test(value)
+  ) {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+  return value;
+}
+
+function snapshotOAuthIssuer(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > MAX_OAUTH_ISSUER_LENGTH ||
+    containsOAuthControlCharacter(value) ||
+    HTTP_WHITESPACE_AT_START_OR_END.test(value)
+  ) {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+  if (
+    url.username !== "" ||
+    url.password !== "" ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    (value !== url.href &&
+      value !== url.origin &&
+      !(url.pathname === "/" && `${value}/` === url.href))
+  ) {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+  if (
+    url.protocol !== "https:" &&
+    !(
+      url.protocol === "http:" &&
+      (url.hostname === "127.0.0.1" || url.hostname === "[::1]")
+    )
+  ) {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+  return value;
+}
+
+function snapshotOAuthRedirectUris(
+  value: unknown,
+): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  const redirectUris = snapshotStringArray(value);
+  if (redirectUris === undefined || redirectUris.length === 0) {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+  const canonical: string[] = [];
+  for (const entry of redirectUris) {
+    const parsed = parseOAuthCallbackUrl(entry);
+    if (parsed === undefined) throw new ClientBoundaryFailure("INVALID_TARGET");
+    canonical.push(parsed.href);
+  }
+  return canonical;
+}
+
+function snapshotOAuthAuthentication(
+  value: unknown,
+): Pick<
+  OAuthTargetSnapshot,
+  "oauthClientId" | "oauthConfiguredIssuer" | "oauthRedirectUris"
+> {
+  const authentication = dataProperties(value);
+  if (
+    authentication === undefined ||
+    authentication.type !== "oauth" ||
+    !hasExactlyKeys(
+      authentication,
+      ["type"],
+      ["clientId", "issuer", "redirectUris"],
+    )
+  ) {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+  const clientId = snapshotOAuthClientId(authentication.clientId);
+  const issuer = snapshotOAuthIssuer(authentication.issuer);
+  const oauthRedirectUris = snapshotOAuthRedirectUris(
+    authentication.redirectUris,
+  );
+  if (clientId === undefined && issuer !== undefined) {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+  if (clientId !== undefined && issuer === undefined) {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+  if (oauthRedirectUris !== undefined && clientId === undefined) {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+  return {
+    ...(clientId === undefined ? {} : { oauthClientId: clientId }),
+    ...(issuer === undefined ? {} : { oauthConfiguredIssuer: issuer }),
+    ...(oauthRedirectUris === undefined ? {} : { oauthRedirectUris }),
+  };
+}
+
+function snapshotOAuthTarget(
+  target: McpOAuthClientTarget,
+): OAuthTargetSnapshot {
   try {
     const record = dataProperties(target);
     if (
@@ -527,23 +669,45 @@ function snapshotOAuthTarget(target: McpOAuthClientTarget): HttpTargetSnapshot {
     ) {
       throw new ClientBoundaryFailure("INVALID_TARGET");
     }
-    const authentication = dataProperties(record.authentication);
     const url = parseCanonicalHttpUrl(record.url);
-    if (
-      authentication === undefined ||
-      !hasExactlyKeys(authentication, ["type"]) ||
-      authentication.type !== "oauth" ||
-      url === undefined
-    ) {
+    if (url === undefined) {
       throw new ClientBoundaryFailure("INVALID_TARGET");
     }
-    return { transport: "http", url, credentials: createDataRecord() };
+    const oauth = snapshotOAuthAuthentication(record.authentication);
+    return {
+      transport: "http",
+      url,
+      credentials: createDataRecord(),
+      ...oauth,
+    };
   } catch (cause) {
     if (cause instanceof ClientBoundaryFailure) {
       throw clientError(cause.code, cause);
     }
     throw clientError("INVALID_TARGET", cause);
   }
+}
+
+function assertOAuthRedirectAllowlist(
+  snapshot: OAuthTargetSnapshot,
+  redirectUrl: URL,
+): void {
+  if (snapshot.oauthRedirectUris === undefined) return;
+  if (!snapshot.oauthRedirectUris.includes(redirectUrl.href)) {
+    throw new ClientBoundaryFailure("INVALID_TARGET");
+  }
+}
+
+function assertInteractiveOAuthRegistrationStrategy(
+  metadata: Readonly<{
+    client_id_metadata_document_supported?: boolean | undefined;
+    registration_endpoint?: string | undefined;
+  }>,
+  hasConfiguredClientId: boolean,
+): void {
+  if (hasConfiguredClientId) return;
+  if (typeof metadata.registration_endpoint === "string") return;
+  throw new ClientBoundaryFailure("UNSUPPORTED_REGISTRATION");
 }
 
 function snapshotOAuthAuthorizationOptions(
@@ -597,9 +761,33 @@ function snapshotAuthorizationCode(value: unknown): string {
   return value;
 }
 
+function authorizationRedirectUriMatches(
+  authorizationUrl: URL,
+  expectedRedirectUri: string,
+): boolean {
+  const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
+  return (
+    redirectUri !== null &&
+    redirectUri.length > 0 &&
+    redirectUri === expectedRedirectUri
+  );
+}
+
+/**
+ * @internal Validates an authorization URL `redirect_uri` for package tests.
+ * Prefer exercising redirect validation through `beginMcpOAuthAuthorization`.
+ */
+export function matchesMcpOAuthAuthorizationRedirectUri(
+  authorizationUrl: URL,
+  expectedRedirectUri: string,
+): boolean {
+  return authorizationRedirectUriMatches(authorizationUrl, expectedRedirectUri);
+}
+
 function serializeAuthorizationUrl(
   value: URL,
   expectedState: string,
+  expectedRedirectUri: string,
   trust: OAuthEndpointTrust,
 ): string {
   if (
@@ -608,7 +796,8 @@ function serializeAuthorizationUrl(
     value.password !== "" ||
     value.hash !== "" ||
     value.searchParams.getAll("state").length !== 1 ||
-    value.searchParams.get("state") !== expectedState
+    value.searchParams.get("state") !== expectedState ||
+    !authorizationRedirectUriMatches(value, expectedRedirectUri)
   ) {
     throw new ClientBoundaryFailure("PROTOCOL_ERROR");
   }
@@ -969,6 +1158,9 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
   private readonly pathAwareResourceMetadataUrl: string;
   private readonly rootResourceMetadataUrl: string;
   private advertisedResourceMetadataUrl: string | undefined;
+  private readonly configuredClientId: string | undefined;
+  private readonly configuredIssuer: string | undefined;
+  private dynamicClientRegistrationAdvertised = false;
   private client: OAuthClientInformationMixed | undefined;
   private tokenSet: OAuthTokens | undefined;
   private verifier: string | undefined;
@@ -983,7 +1175,11 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
     private readonly resourceUrl: URL,
     readonly lifecycleSignal: AbortSignal,
     state: string,
+    configuredClientId?: string,
+    configuredIssuer?: string,
   ) {
+    this.configuredClientId = configuredClientId;
+    this.configuredIssuer = configuredIssuer;
     this.retainedState = state;
     this.trust = new OAuthEndpointTrust(resourceUrl);
     const { pathAware, root } = resourceMetadataUrls(resourceUrl);
@@ -1002,6 +1198,13 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
       software_id: "invokta-devtools",
       software_version: CLIENT_VERSION,
     });
+    if (configuredClientId !== undefined) {
+      this.client = Object.freeze({ client_id: configuredClientId });
+    }
+  }
+
+  hasConfiguredClientId(): boolean {
+    return this.configuredClientId !== undefined;
   }
 
   get redirectUrl(): string {
@@ -1024,6 +1227,12 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
 
   saveClientInformation(value: OAuthClientInformationMixed): void {
     this.assertWritable();
+    if (this.configuredClientId !== undefined) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    if (!this.dynamicClientRegistrationAdvertised) {
+      throw new ClientBoundaryFailure("UNSUPPORTED_REGISTRATION");
+    }
     if (typeof value.client_id !== "string" || value.client_id.length === 0) {
       throw new ClientBoundaryFailure("PROTOCOL_ERROR");
     }
@@ -1057,6 +1266,9 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
 
   redirectToAuthorization(value: URL): void {
     this.assertWritable();
+    if (!authorizationRedirectUriMatches(value, this.callbackUrl.href)) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
     this.authorizationUrl = new URL(value.href);
   }
 
@@ -1099,26 +1311,48 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
     // The issuer has been matched to an advertised authorization server, so
     // the endpoints its validated metadata publishes are that server's own
     // delegation — hosted providers commonly place them on another origin.
-    if (value.authorizationServerMetadata !== undefined) {
-      const metadata = value.authorizationServerMetadata;
-      for (const endpoint of [
-        metadata.authorization_endpoint,
-        metadata.token_endpoint,
-        metadata.registration_endpoint,
-      ]) {
-        if (endpoint === undefined) continue;
-        let endpointUrl: URL;
-        try {
-          endpointUrl = new URL(endpoint);
-        } catch {
-          throw new ClientBoundaryFailure("PROTOCOL_ERROR");
-        }
-        if (!this.trust.allowsDelegatedEndpoint(endpointUrl)) {
-          throw new ClientBoundaryFailure("PROTOCOL_ERROR");
-        }
-        this.trust.trustAdvertisedServer(endpointUrl);
-      }
+    if (
+      this.configuredIssuer !== undefined &&
+      value.authorizationServerUrl !== this.configuredIssuer
+    ) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
     }
+    if (value.authorizationServerMetadata === undefined) {
+      if (this.hasConfiguredClientId()) {
+        throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+      }
+      throw new ClientBoundaryFailure("UNSUPPORTED_REGISTRATION");
+    }
+    const metadata = value.authorizationServerMetadata;
+    this.dynamicClientRegistrationAdvertised =
+      typeof metadata.registration_endpoint === "string";
+    if (
+      this.configuredIssuer !== undefined &&
+      metadata.issuer !== this.configuredIssuer
+    ) {
+      throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    for (const endpoint of [
+      metadata.authorization_endpoint,
+      metadata.token_endpoint,
+      metadata.registration_endpoint,
+    ]) {
+      if (endpoint === undefined) continue;
+      let endpointUrl: URL;
+      try {
+        endpointUrl = new URL(endpoint);
+      } catch {
+        throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+      }
+      if (!this.trust.allowsDelegatedEndpoint(endpointUrl)) {
+        throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+      }
+      this.trust.trustAdvertisedServer(endpointUrl);
+    }
+    assertInteractiveOAuthRegistrationStrategy(
+      value.authorizationServerMetadata,
+      this.hasConfiguredClientId(),
+    );
     this.discovery = structuredClone(value);
   }
 
@@ -1177,6 +1411,17 @@ class EphemeralOAuthProvider implements OAuthClientProvider {
     }
     if (advertised.length === 0) {
       throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+    }
+    if (this.configuredIssuer !== undefined) {
+      const servers = parsed.data.authorization_servers ?? [];
+      if (!servers.includes(this.configuredIssuer)) {
+        throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+      }
+      // The official MCP SDK contacts authorization_servers[0]; reject when the
+      // configured issuer is present but not first.
+      if (servers[0] !== this.configuredIssuer) {
+        throw new ClientBoundaryFailure("PROTOCOL_ERROR");
+      }
     }
     for (const authorizationServerUrl of advertised) {
       this.trust.trustAdvertisedServer(authorizationServerUrl);
@@ -1824,6 +2069,7 @@ export async function beginMcpOAuthAuthorization(
 ): Promise<McpOAuthAuthorization> {
   const snapshot = snapshotOAuthTarget(target);
   const authorizationOptions = snapshotOAuthAuthorizationOptions(options);
+  assertOAuthRedirectAllowlist(snapshot, authorizationOptions.redirectUrl);
   const lifecycleAbort = new AbortController();
   const abortLifecycle = (): void => {
     if (!lifecycleAbort.signal.aborted) {
@@ -1835,6 +2081,8 @@ export async function beginMcpOAuthAuthorization(
     snapshot.url,
     lifecycleAbort.signal,
     authorizationOptions.state,
+    snapshot.oauthClientId,
+    snapshot.oauthConfiguredIssuer,
   );
   const bootstrapState: ConnectionState = {
     closing: false,
@@ -1909,6 +2157,7 @@ export async function beginMcpOAuthAuthorization(
     authorizationUrl = serializeAuthorizationUrl(
       captured,
       authorizationOptions.state,
+      authorizationOptions.redirectUrl.href,
       provider.trust,
     );
   } catch (cause) {
@@ -2023,6 +2272,7 @@ interface InspectionContext {
   readonly resourceUrl: URL;
   readonly trust: OAuthEndpointTrust;
   readonly signal: AbortSignal | undefined;
+  readonly configuredIssuer?: string;
 }
 
 function okStep(
@@ -2248,6 +2498,29 @@ async function inspectOAuthResourceMetadata(
   for (const server of advertisedServers) {
     context.trust.trustAdvertisedServer(server);
   }
+  const authorizationServers = parsed.data.authorization_servers ?? [];
+  if (context.configuredIssuer !== undefined) {
+    if (!authorizationServers.includes(context.configuredIssuer)) {
+      return {
+        step: failedStep(
+          "resource-metadata",
+          `The protected resource metadata does not list the configured issuer ${context.configuredIssuer}.`,
+          "Advertise the configured issuer in authorization_servers, or change the configured issuer to match the resource. The interactive client uses authorization_servers[0].",
+          document,
+        ),
+      };
+    }
+    if (authorizationServers[0] !== context.configuredIssuer) {
+      return {
+        step: failedStep(
+          "resource-metadata",
+          `The protected resource metadata names ${authorizationServers[0]} as the first authorization server, but the configured issuer is ${context.configuredIssuer}.`,
+          "List the configured issuer first in authorization_servers, or change the configured issuer. The interactive client contacts authorization_servers[0].",
+          document,
+        ),
+      };
+    }
+  }
   return {
     step: okStep(
       "resource-metadata",
@@ -2263,7 +2536,9 @@ async function inspectOAuthServerMetadata(
   authorizationServer: string,
 ): Promise<{
   readonly step: McpOAuthStep;
+  readonly issuer?: string;
   readonly registrationEndpoint?: string;
+  readonly clientIdMetadataDocumentSupported: boolean;
 }> {
   const candidates = buildDiscoveryUrls(authorizationServer);
   let url = candidates[0]?.url ?? context.resourceUrl;
@@ -2284,6 +2559,7 @@ async function inspectOAuthServerMetadata(
   }
   if (result === undefined) {
     return {
+      clientIdMetadataDocumentSupported: false,
       step: failedStep(
         "authorization-server-metadata",
         `The authorization server metadata at ${url.href} could not be read.`,
@@ -2293,6 +2569,7 @@ async function inspectOAuthServerMetadata(
   }
   if (result.status !== 200) {
     return {
+      clientIdMetadataDocumentSupported: false,
       step: failedStep(
         "authorization-server-metadata",
         `The authorization server metadata at ${url.href} answered ${String(result.status)}.`,
@@ -2303,6 +2580,7 @@ async function inspectOAuthServerMetadata(
   const document = parseInspectionDocument(result.body);
   if (document === undefined) {
     return {
+      clientIdMetadataDocumentSupported: false,
       step: failedStep(
         "authorization-server-metadata",
         `The authorization server metadata at ${url.href} is not a JSON document.`,
@@ -2313,6 +2591,7 @@ async function inspectOAuthServerMetadata(
   const parsed = OAuthMetadataSchema.safeParse(document);
   if (!parsed.success) {
     return {
+      clientIdMetadataDocumentSupported: false,
       step: failedStep(
         "authorization-server-metadata",
         `The authorization server metadata at ${url.href} does not match RFC 8414.`,
@@ -2323,6 +2602,7 @@ async function inspectOAuthServerMetadata(
   }
   if (parsed.data.issuer !== authorizationServer) {
     return {
+      clientIdMetadataDocumentSupported: false,
       step: failedStep(
         "authorization-server-metadata",
         `The authorization server metadata declares the issuer ${parsed.data.issuer}.`,
@@ -2346,6 +2626,7 @@ async function inspectOAuthServerMetadata(
       !context.trust.allowsDelegatedEndpoint(endpointUrl)
     ) {
       return {
+        clientIdMetadataDocumentSupported: false,
         step: failedStep(
           "authorization-server-metadata",
           `The authorization server metadata places ${name} at ${endpoint}.`,
@@ -2358,6 +2639,7 @@ async function inspectOAuthServerMetadata(
   }
   if (!parsed.data.response_types_supported.includes("code")) {
     return {
+      clientIdMetadataDocumentSupported: false,
       step: failedStep(
         "authorization-server-metadata",
         "The authorization server does not support the code response type.",
@@ -2371,6 +2653,7 @@ async function inspectOAuthServerMetadata(
   const grantTypes = parsed.data.grant_types_supported;
   if (grantTypes === undefined || !grantTypes.includes("authorization_code")) {
     return {
+      clientIdMetadataDocumentSupported: false,
       step: failedStep(
         "authorization-server-metadata",
         "The authorization server does not advertise the authorization_code grant type.",
@@ -2382,6 +2665,7 @@ async function inspectOAuthServerMetadata(
   const challengeMethods = parsed.data.code_challenge_methods_supported;
   if (challengeMethods === undefined || !challengeMethods.includes("S256")) {
     return {
+      clientIdMetadataDocumentSupported: false,
       step: failedStep(
         "authorization-server-metadata",
         "The authorization server does not advertise the S256 code challenge method.",
@@ -2390,12 +2674,15 @@ async function inspectOAuthServerMetadata(
       ),
     };
   }
+  const clientIdMetadataDocumentSupported =
+    parsed.data.client_id_metadata_document_supported === true;
+  const summary = clientIdMetadataDocumentSupported
+    ? `The authorization server published RFC 8414 metadata at ${url.href} and advertises client_id_metadata_document_supported.`
+    : `The authorization server published RFC 8414 metadata at ${url.href}.`;
   return {
-    step: okStep(
-      "authorization-server-metadata",
-      `The authorization server published RFC 8414 metadata at ${url.href}.`,
-      document,
-    ),
+    step: okStep("authorization-server-metadata", summary, document),
+    clientIdMetadataDocumentSupported,
+    issuer: parsed.data.issuer,
     ...(parsed.data.registration_endpoint === undefined
       ? {}
       : { registrationEndpoint: parsed.data.registration_endpoint }),
@@ -2404,31 +2691,62 @@ async function inspectOAuthServerMetadata(
 
 function inspectOAuthRegistration(
   context: InspectionContext,
-  registrationEndpoint: string | undefined,
+  options: {
+    readonly registrationEndpoint?: string;
+    readonly clientIdMetadataDocumentSupported: boolean;
+    readonly configuredClientId?: string;
+    readonly configuredIssuer?: string;
+    readonly discoveredIssuer?: string;
+    readonly advertisedAuthorizationServer?: string;
+  },
 ): McpOAuthStep {
-  if (registrationEndpoint === undefined) {
+  if (
+    options.configuredIssuer !== undefined &&
+    options.discoveredIssuer !== undefined &&
+    options.discoveredIssuer !== options.configuredIssuer
+  ) {
     return failedStep(
       "registration",
-      "The authorization server metadata does not advertise registration_endpoint.",
-      "This client holds no client ID and registers a public client for each attempt, so the authorization server must support RFC 7591 dynamic client registration.",
+      `The authorization server metadata declares issuer ${options.discoveredIssuer}, which does not match the configured issuer ${options.configuredIssuer}.`,
+      "Configure clientId and issuer for the authorization server the resource actually delegates to, with an exact issuer identifier match.",
     );
   }
-  let url: URL | undefined;
-  try {
-    url = new URL(registrationEndpoint);
-  } catch {
-    url = undefined;
+  if (options.configuredClientId !== undefined) {
+    return okStep(
+      "registration",
+      `The client will use the configured pre-registered public client "${options.configuredClientId}" bound to issuer ${options.configuredIssuer ?? options.discoveredIssuer ?? "the advertised authorization server"}.`,
+    );
   }
-  if (url === undefined || !context.trust.allowsDelegatedEndpoint(url)) {
+  if (options.registrationEndpoint !== undefined) {
+    let url: URL | undefined;
+    try {
+      url = new URL(options.registrationEndpoint);
+    } catch {
+      url = undefined;
+    }
+    if (url === undefined || !context.trust.allowsDelegatedEndpoint(url)) {
+      return failedStep(
+        "registration",
+        `The authorization server advertises dynamic client registration at ${options.registrationEndpoint}.`,
+        "The registration endpoint must be an absolute HTTPS URL — or loopback HTTP behind a loopback resource — with no credentials and no fragment.",
+      );
+    }
+    return okStep(
+      "registration",
+      `The client will use dynamic client registration at ${url.href}.`,
+    );
+  }
+  if (options.clientIdMetadataDocumentSupported) {
     return failedStep(
       "registration",
-      `The authorization server advertises dynamic client registration at ${registrationEndpoint}.`,
-      "The registration endpoint must be an absolute HTTPS URL — or loopback HTTP behind a loopback resource — with no credentials and no fragment.",
+      "The authorization server advertises client_id_metadata_document_supported but interactive CIMD is not available in this release.",
+      "Configure a public client_id and issuer on the target, or advertise registration_endpoint until CIMD support ships.",
     );
   }
-  return okStep(
+  return failedStep(
     "registration",
-    `The authorization server advertises dynamic client registration at ${url.href}.`,
+    "The authorization server exposes no supported client registration strategy.",
+    "Configure a public client_id and issuer on the target, advertise client_id_metadata_document_supported, or publish registration_endpoint for dynamic client registration.",
   );
 }
 
@@ -2441,6 +2759,9 @@ export async function inspectMcpOAuth(
     resourceUrl: snapshot.url,
     trust: new OAuthEndpointTrust(snapshot.url),
     signal: snapshotAbortSignal(options, "INVALID_TARGET"),
+    ...(snapshot.oauthConfiguredIssuer === undefined
+      ? {}
+      : { configuredIssuer: snapshot.oauthConfiguredIssuer }),
   };
 
   const challenge = await inspectOAuthChallenge(context);
@@ -2481,7 +2802,23 @@ export async function inspectMcpOAuth(
   }
 
   steps.push(
-    inspectOAuthRegistration(context, serverMetadata.registrationEndpoint),
+    inspectOAuthRegistration(context, {
+      clientIdMetadataDocumentSupported:
+        serverMetadata.clientIdMetadataDocumentSupported,
+      ...(serverMetadata.issuer === undefined
+        ? {}
+        : { discoveredIssuer: serverMetadata.issuer }),
+      advertisedAuthorizationServer: resourceMetadata.authorizationServer,
+      ...(serverMetadata.registrationEndpoint === undefined
+        ? {}
+        : { registrationEndpoint: serverMetadata.registrationEndpoint }),
+      ...(snapshot.oauthClientId === undefined
+        ? {}
+        : { configuredClientId: snapshot.oauthClientId }),
+      ...(snapshot.oauthConfiguredIssuer === undefined
+        ? {}
+        : { configuredIssuer: snapshot.oauthConfiguredIssuer }),
+    }),
   );
   return Object.freeze({
     steps: Object.freeze(steps),
