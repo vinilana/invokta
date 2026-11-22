@@ -61,3 +61,4 @@ is defined by the architecture, guides, package APIs, and acceptance tests.
 | [0052](0052-per-caller-capability-visibility.md) | Per-caller capability visibility in adapters | Accepted | 2026-11-09 |
 | [0053](0053-action-engine-gateway-package.md) | Action Engine gateway package | Accepted | 2026-11-09 |
 | [0054](0054-search-based-tool-discovery.md) | Search-based tool discovery for gateways | Accepted | 2026-11-09 |
+| [0055](0055-mcp-oauth-client-registration-strategies.md) | MCP OAuth client registration strategies | Accepted | 2026-11-22 |

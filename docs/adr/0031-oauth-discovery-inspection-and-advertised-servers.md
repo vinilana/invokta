@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-13
+- Amended by: [ADR 0055](0055-mcp-oauth-client-registration-strategies.md)
 
 ## Context
 
