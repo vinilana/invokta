@@ -41,6 +41,8 @@ const errorMessages = {
   CONNECTION_FAILED: "The MCP connection failed.",
   AUTHENTICATION_FAILED: "The MCP target rejected the supplied credentials.",
   PROTOCOL_ERROR: "The MCP peer returned an invalid protocol response.",
+  UNSUPPORTED_REGISTRATION:
+    "The authorization server exposes no client registration mechanism this release can use.",
   TIMEOUT: "The MCP operation timed out.",
   LIMIT_EXCEEDED: "The MCP operation exceeded a configured limit.",
   CANCELLED: "The MCP operation was cancelled.",

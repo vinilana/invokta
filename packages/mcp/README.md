@@ -169,19 +169,29 @@ await connection.close();
 A target is either `stdio` (command, args, cwd, env) or `http` (URL, plus
 `none`, `bearer`, or `headers` authentication). Every failure is an
 `McpClientError` carrying one of `INVALID_TARGET`, `SPAWN_FAILED`,
-`CONNECTION_FAILED`, `AUTHENTICATION_FAILED`, `PROTOCOL_ERROR`, `TIMEOUT`,
-`LIMIT_EXCEEDED`, or `CANCELLED`.
+`CONNECTION_FAILED`, `AUTHENTICATION_FAILED`, `PROTOCOL_ERROR`,
+`UNSUPPORTED_REGISTRATION`, `TIMEOUT`, `LIMIT_EXCEEDED`, or `CANCELLED`.
 
 ## Interactive OAuth
 
-`beginMcpOAuthAuthorization` performs discovery, dynamic client registration,
-and PKCE preparation, then returns one validated authorization URL. `finish`
-exchanges the single-use code and returns the same plain `McpClientConnection`.
-Tokens, PKCE material, and registration artifacts stay in process memory and are
-cleared on `close`
-([ADR 0023](../../docs/adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md),
-amended by
-[ADR 0031](../../docs/adr/0031-oauth-discovery-inspection-and-advertised-servers.md)).
+`beginMcpOAuthAuthorization` performs discovery, client registration (dynamic
+client registration when advertised, or a configured pre-registered public
+`clientId` on the target), and PKCE preparation, then returns one validated
+authorization URL. `finish` exchanges the single-use code and returns the same
+plain `McpClientConnection`. Tokens, PKCE material, and registration artifacts
+stay in process memory and are cleared on `close` ([ADR
+0023](../../docs/adr/0023-ephemeral-oauth-for-installed-mcp-inspection.md),
+amended by [ADR
+0031](../../docs/adr/0031-oauth-discovery-inspection-and-advertised-servers.md)
+and [ADR
+0055](../../docs/adr/0055-mcp-oauth-client-registration-strategies.md)).
+
+An OAuth HTTP target may supply
+`{ type: "oauth", clientId: "public-client", issuer: "https://issuer.example" }`
+and optional `redirectUris` that allowlist the exact loopback callback URL.
+The configured `issuer` must exactly match the discovered authorization-server
+metadata `issuer` before the interactive flow proceeds. The facade validates the
+authorization URL `redirect_uri` before returning it.
 
 Protected resource metadata is read only from the MCP resource's own origin.
 The authorization servers that document advertises are then trusted for
@@ -233,9 +243,11 @@ interface McpOAuthStep {
 
 The inspection is read-only. It sends one unauthenticated MCP request to observe
 the `401` challenge, reads the protected resource metadata and the first
-advertised authorization server's RFC 8414 document, and reports whether that
-server advertises a registration endpoint. It never authorizes, never registers,
-never sends a credential, and leaves nothing behind.
+advertised authorization server's RFC 8414 document, and reports the client
+registration strategy the interactive flow would select (pre-registered public
+client, dynamic client registration, or unsupported / not-yet-implemented CIMD).
+It never authorizes, never registers, never sends a credential, and leaves
+nothing behind.
 
 Every step is reported. A step that needed the output of a failed step is
 `skipped` and says so. A network error, an unexpected status, a malformed

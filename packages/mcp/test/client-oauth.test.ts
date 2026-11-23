@@ -51,9 +51,35 @@ async function requestBody(request: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+async function startSiblingAuthorizationServer(): Promise<{ origin: string }> {
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (
+      request.method === "GET" &&
+      url.pathname === "/.well-known/oauth-authorization-server"
+    ) {
+      response.writeHead(200, { "content-type": "application/json" }).end("{}");
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("The sibling authorization server did not bind.");
+  }
+  return { origin: `http://127.0.0.1:${String(address.port)}` };
+}
+
 async function startOAuthFixture(
   options: {
     readonly authorizationEndpoint?: (origin: string) => string;
+    readonly authorizationServerMetadata?: (
+      origin: string,
+    ) => Record<string, unknown>;
+    readonly authorizationServerMetadataStatus?: number;
+    readonly authorizationServers?: (origin: string) => readonly string[];
     readonly issuer?: string;
     readonly registrationError?: "invalid_client";
     readonly rejectTools?: boolean;
@@ -149,7 +175,9 @@ async function startOAuthFixture(
       response.writeHead(200, { "content-type": "application/json" }).end(
         JSON.stringify({
           resource: `${origin}/mcp`,
-          authorization_servers: [origin],
+          authorization_servers: options.authorizationServers?.(origin) ?? [
+            origin,
+          ],
           scopes_supported: ["tools:read"],
         }),
       );
@@ -160,18 +188,24 @@ async function startOAuthFixture(
       url.pathname === "/.well-known/oauth-authorization-server"
     ) {
       observed.authorizationMetadataRequests += 1;
+      if (options.authorizationServerMetadataStatus === 404) {
+        response.writeHead(404).end();
+        return;
+      }
       response.writeHead(200, { "content-type": "application/json" }).end(
-        JSON.stringify({
-          issuer: options.issuer ?? origin,
-          authorization_endpoint:
-            options.authorizationEndpoint?.(origin) ?? `${origin}/authorize`,
-          token_endpoint: `${origin}/token`,
-          registration_endpoint: `${origin}/register`,
-          response_types_supported: ["code"],
-          grant_types_supported: ["authorization_code"],
-          token_endpoint_auth_methods_supported: ["none"],
-          code_challenge_methods_supported: ["S256"],
-        }),
+        JSON.stringify(
+          options.authorizationServerMetadata?.(origin) ?? {
+            issuer: options.issuer ?? origin,
+            authorization_endpoint:
+              options.authorizationEndpoint?.(origin) ?? `${origin}/authorize`,
+            token_endpoint: `${origin}/token`,
+            registration_endpoint: `${origin}/register`,
+            response_types_supported: ["code"],
+            grant_types_supported: ["authorization_code"],
+            token_endpoint_auth_methods_supported: ["none"],
+            code_challenge_methods_supported: ["S256"],
+          },
+        ),
       );
       return;
     }
@@ -270,10 +304,365 @@ async function startOAuthFixture(
     throw new Error("The OAuth fixture did not bind.");
   }
   origin = `http://127.0.0.1:${String(address.port)}`;
-  return { url: `${origin}/mcp`, observed };
+  return { url: `${origin}/mcp`, origin, observed };
 }
 
 describe("plain MCP OAuth client facade", () => {
+  it("skips dynamic client registration when a pre-registered client ID is configured", async () => {
+    const fixture = await startOAuthFixture({
+      authorizationServerMetadata: (origin) => ({
+        issuer: origin,
+        authorization_endpoint: `${origin}/authorize`,
+        token_endpoint: `${origin}/token`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        token_endpoint_auth_methods_supported: ["none"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+    const state = "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF";
+    const redirectUrl = "http://127.0.0.1:4100/oauth/callback";
+    const clientId = "invokta-preregistered";
+
+    const authorization = await beginMcpOAuthAuthorization(
+      {
+        transport: "http",
+        url: fixture.url,
+        authentication: { type: "oauth", clientId, issuer: fixture.origin },
+      },
+      { redirectUrl, state },
+    );
+    authorizations.push(authorization);
+
+    expect(fixture.observed.registrationBodies).toHaveLength(0);
+    const authorizationUrl = new URL(authorization.authorizationUrl);
+    expect(authorizationUrl.searchParams.get("client_id")).toBe(clientId);
+    expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe(
+      "S256",
+    );
+    expect(authorizationUrl.searchParams.get("code_challenge")).not.toBeNull();
+
+    const connection = await authorization.finish("one-time-code");
+    connections.push(connection);
+    const tokenRequest = new URLSearchParams(
+      fixture.observed.tokenBodies[0] ?? "",
+    );
+    expect(tokenRequest.get("code_verifier")).not.toBeNull();
+    expect(tokenRequest.get("client_secret")).toBeNull();
+    await connection.close();
+  });
+
+  it("accepts a configured redirect URI that appears on the allowlist", async () => {
+    const fixture = await startOAuthFixture({
+      authorizationServerMetadata: (origin) => ({
+        issuer: origin,
+        authorization_endpoint: `${origin}/authorize`,
+        token_endpoint: `${origin}/token`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        token_endpoint_auth_methods_supported: ["none"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+    const redirectUrl = "http://127.0.0.1:4100/oauth/callback";
+    const authorization = await beginMcpOAuthAuthorization(
+      {
+        transport: "http",
+        url: fixture.url,
+        authentication: {
+          type: "oauth",
+          clientId: "allowlisted-client",
+          issuer: fixture.origin,
+          redirectUris: [redirectUrl],
+        },
+      },
+      {
+        redirectUrl,
+        state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+      },
+    );
+    authorizations.push(authorization);
+    await authorization.close();
+  });
+
+  it("rejects discovery when the configured issuer does not match the authorization server", async () => {
+    const fixture = await startOAuthFixture();
+    await expect(
+      beginMcpOAuthAuthorization(
+        {
+          transport: "http",
+          url: fixture.url,
+          authentication: {
+            type: "oauth",
+            clientId: "bound-client",
+            issuer: "https://expected-issuer.example.test",
+          },
+        },
+        {
+          redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+          state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+        },
+      ),
+    ).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    expect(fixture.observed.registrationBodies).toHaveLength(0);
+    expect(fixture.observed.authorizationEndpointRequests).toBe(0);
+  });
+
+  it("rejects when the configured issuer is absent from authorization_servers", async () => {
+    const fixture = await startOAuthFixture();
+    await expect(
+      beginMcpOAuthAuthorization(
+        {
+          transport: "http",
+          url: fixture.url,
+          authentication: {
+            type: "oauth",
+            clientId: "bound-client",
+            issuer: "https://real-as.example.test",
+          },
+        },
+        {
+          redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+          state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+        },
+      ),
+    ).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    expect(fixture.observed.registrationBodies).toHaveLength(0);
+    expect(fixture.observed.authorizationEndpointRequests).toBe(0);
+  });
+
+  it("rejects when the configured issuer is not authorization_servers[0]", async () => {
+    const sibling = await startSiblingAuthorizationServer();
+    const fixture = await startOAuthFixture({
+      authorizationServers: (origin) => [sibling.origin, origin],
+    });
+    await expect(
+      beginMcpOAuthAuthorization(
+        {
+          transport: "http",
+          url: fixture.url,
+          authentication: {
+            type: "oauth",
+            clientId: "bound-client",
+            issuer: fixture.origin,
+          },
+        },
+        {
+          redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+          state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+        },
+      ),
+    ).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    expect(fixture.observed.registrationBodies).toHaveLength(0);
+    expect(fixture.observed.authorizationEndpointRequests).toBe(0);
+  });
+
+  it("rejects when authorization server metadata is missing for a configured client", async () => {
+    const fixture = await startOAuthFixture({
+      authorizationServerMetadataStatus: 404,
+      authorizationServerMetadata: (origin) => ({
+        issuer: origin,
+        authorization_endpoint: `${origin}/authorize`,
+        token_endpoint: `${origin}/token`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+    await expect(
+      beginMcpOAuthAuthorization(
+        {
+          transport: "http",
+          url: fixture.url,
+          authentication: {
+            type: "oauth",
+            clientId: "bound-client",
+            issuer: fixture.origin,
+          },
+        },
+        {
+          redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+          state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+        },
+      ),
+    ).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    expect(fixture.observed.registrationBodies).toHaveLength(0);
+    expect(fixture.observed.authorizationEndpointRequests).toBe(0);
+  });
+
+  it("rejects near-miss configured issuer strings against authorization_servers", async () => {
+    const fixture = await startOAuthFixture();
+    const options = {
+      redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+      state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+    };
+    const configuredPort = new URL(fixture.origin).port;
+    const wrongPortIssuer = `http://127.0.0.1:${String(Number(configuredPort) + 1)}`;
+    for (const issuer of [
+      `${fixture.origin}/`,
+      `${fixture.origin}/extra-path`,
+      wrongPortIssuer,
+    ]) {
+      await expect(
+        beginMcpOAuthAuthorization(
+          {
+            transport: "http",
+            url: fixture.url,
+            authentication: {
+              type: "oauth",
+              clientId: "bound-client",
+              issuer,
+            },
+          },
+          options,
+        ),
+      ).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    }
+    expect(fixture.observed.registrationBodies).toHaveLength(0);
+    expect(fixture.observed.authorizationEndpointRequests).toBe(0);
+  });
+
+  it("rejects OAuth targets whose redirect URI is not allowlisted", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(
+      beginMcpOAuthAuthorization(
+        {
+          transport: "http",
+          url: "http://127.0.0.1:3000/mcp",
+          authentication: {
+            type: "oauth",
+            clientId: "allowlisted-client",
+            issuer: "http://127.0.0.1:3000",
+            redirectUris: ["http://127.0.0.1:4100/oauth/callback"],
+          },
+        },
+        {
+          redirectUrl: "http://[::1]:4100/oauth/callback",
+          state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+        },
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_TARGET" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("fails with unsupported registration when authorization server metadata is missing", async () => {
+    const fixture = await startOAuthFixture({
+      authorizationServerMetadataStatus: 404,
+    });
+
+    await expect(
+      beginMcpOAuthAuthorization(
+        {
+          transport: "http",
+          url: fixture.url,
+          authentication: { type: "oauth" },
+        },
+        {
+          redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+          state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+        },
+      ),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_REGISTRATION" });
+    expect(fixture.observed.registrationBodies).toHaveLength(0);
+    expect(fixture.observed.authorizationEndpointRequests).toBe(0);
+  });
+
+  it("fails with unsupported registration when no registration strategy is available", async () => {
+    const fixture = await startOAuthFixture({
+      authorizationServerMetadata: (origin) => ({
+        issuer: origin,
+        authorization_endpoint: `${origin}/authorize`,
+        token_endpoint: `${origin}/token`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+
+    await expect(
+      beginMcpOAuthAuthorization(
+        {
+          transport: "http",
+          url: fixture.url,
+          authentication: { type: "oauth" },
+        },
+        {
+          redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+          state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+        },
+      ),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_REGISTRATION" });
+    expect(fixture.observed.registrationBodies).toHaveLength(0);
+  });
+
+  it("fails with unsupported registration when only CIMD is advertised", async () => {
+    const fixture = await startOAuthFixture({
+      authorizationServerMetadata: (origin) => ({
+        issuer: origin,
+        authorization_endpoint: `${origin}/authorize`,
+        token_endpoint: `${origin}/token`,
+        client_id_metadata_document_supported: true,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+
+    await expect(
+      beginMcpOAuthAuthorization(
+        {
+          transport: "http",
+          url: fixture.url,
+          authentication: { type: "oauth" },
+        },
+        {
+          redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+          state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+        },
+      ),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_REGISTRATION" });
+    expect(fixture.observed.registrationBodies).toHaveLength(0);
+  });
+
+  it("makes close a barrier for an in-flight token exchange with a configured client", async () => {
+    const tokenGate = deferred();
+    const tokenStarted = deferred();
+    const fixture = await startOAuthFixture({
+      authorizationServerMetadata: (origin) => ({
+        issuer: origin,
+        authorization_endpoint: `${origin}/authorize`,
+        token_endpoint: `${origin}/token`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        token_endpoint_auth_methods_supported: ["none"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+      tokenStarted: tokenStarted.resolve,
+      waitForToken: tokenGate.promise,
+    });
+    const authorization = await beginMcpOAuthAuthorization(
+      {
+        transport: "http",
+        url: fixture.url,
+        authentication: {
+          type: "oauth",
+          clientId: "pre-registered-close",
+          issuer: fixture.origin,
+        },
+      },
+      {
+        redirectUrl: "http://127.0.0.1:4100/oauth/callback",
+        state: "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF",
+      },
+    );
+    authorizations.push(authorization);
+    const finishing = authorization.finish("single-use-code");
+    await tokenStarted.promise;
+    await expect(authorization.close()).resolves.toBeUndefined();
+    await expect(finishing).rejects.toMatchObject({ code: "CANCELLED" });
+    tokenGate.resolve();
+  });
+
   it("discovers, registers, authorizes with PKCE, and returns a plain connection", async () => {
     const fixture = await startOAuthFixture();
     const state = "abcdefghijklmnopqrstuvwxyz0123456789_ABCDEF";

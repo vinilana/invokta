@@ -351,6 +351,14 @@ function safeControllerError(response: ServerResponse, error: unknown): void {
         "The MCP target rejected the configured authentication.",
       );
       return;
+    case "UNSUPPORTED_REGISTRATION":
+      sendAttachedError(
+        response,
+        502,
+        code,
+        "The authorization server exposes no client registration mechanism this release can use.",
+      );
+      return;
     case "SPAWN_FAILED":
     case "CONNECTION_FAILED":
     case "PROTOCOL_ERROR":

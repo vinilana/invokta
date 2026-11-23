@@ -6,7 +6,11 @@ import {
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { inspectMcpOAuth, type McpOAuthStep } from "../src/index.js";
+import {
+  inspectMcpOAuth,
+  type McpOAuthClientTarget,
+  type McpOAuthStep,
+} from "../src/index.js";
 
 const servers: NodeHttpServer[] = [];
 
@@ -129,8 +133,11 @@ async function startInspectionFixture(
   return { origins, observed, url: `${origins.resource}/mcp` };
 }
 
-function oauthTarget(url: string) {
-  return { transport: "http", url, authentication: { type: "oauth" } } as const;
+function oauthTarget(
+  url: string,
+  authentication: McpOAuthClientTarget["authentication"] = { type: "oauth" },
+): McpOAuthClientTarget {
+  return { transport: "http", url, authentication };
 }
 
 function outcomes(steps: readonly McpOAuthStep[]) {
@@ -286,6 +293,164 @@ describe("read-only MCP OAuth discovery inspection", () => {
     expect(inspection.ready).toBe(false);
   });
 
+  it("reports issuer mismatch for a pre-registered client", async () => {
+    const fixture = await startInspectionFixture({
+      authorizationServerMetadata: (origins) => ({
+        issuer: origins.identity,
+        authorization_endpoint: `${origins.identity}/authorize`,
+        token_endpoint: `${origins.identity}/token`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+
+    const inspection = await inspectMcpOAuth(
+      oauthTarget(fixture.url, {
+        type: "oauth",
+        clientId: "clerk-public-client",
+        issuer: "https://different-issuer.example.test/",
+      }),
+    );
+
+    expect(outcomes(inspection.steps)).toEqual([
+      ["challenge", "ok"],
+      ["resource-metadata", "failed"],
+      ["authorization-server-metadata", "skipped"],
+      ["registration", "skipped"],
+    ]);
+    expect(inspection.steps[1]?.summary).toContain(
+      "does not list the configured issuer",
+    );
+    expect(inspection.ready).toBe(false);
+  });
+
+  it("rejects a configured issuer that is listed but not authorization_servers[0]", async () => {
+    const decoyAuthorizationServer = await startOrigin((_request, response) => {
+      response.writeHead(404).end();
+    });
+    const fixture = await startInspectionFixture({
+      authorizationServers: (origins) => [
+        decoyAuthorizationServer,
+        origins.identity,
+      ],
+      authorizationServerMetadata: (origins) => ({
+        issuer: origins.identity,
+        authorization_endpoint: `${origins.identity}/authorize`,
+        token_endpoint: `${origins.identity}/token`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+
+    const inspection = await inspectMcpOAuth(
+      oauthTarget(fixture.url, {
+        type: "oauth",
+        clientId: "clerk-public-client",
+        issuer: fixture.origins.identity,
+      }),
+    );
+
+    expect(outcomes(inspection.steps)).toEqual([
+      ["challenge", "ok"],
+      ["resource-metadata", "failed"],
+      ["authorization-server-metadata", "skipped"],
+      ["registration", "skipped"],
+    ]);
+    expect(inspection.steps[1]?.summary).toContain(
+      "first authorization server",
+    );
+    expect(inspection.ready).toBe(false);
+  });
+
+  it("reports a pre-registered public client without dynamic client registration", async () => {
+    const fixture = await startInspectionFixture({
+      authorizationServerMetadata: (origins) => ({
+        issuer: origins.identity,
+        authorization_endpoint: `${origins.identity}/authorize`,
+        token_endpoint: `${origins.identity}/token`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+
+    const inspection = await inspectMcpOAuth(
+      oauthTarget(fixture.url, {
+        type: "oauth",
+        clientId: "clerk-public-client",
+        issuer: fixture.origins.identity,
+      }),
+    );
+
+    expect(outcomes(inspection.steps)).toEqual([
+      ["challenge", "ok"],
+      ["resource-metadata", "ok"],
+      ["authorization-server-metadata", "ok"],
+      ["registration", "ok"],
+    ]);
+    expect(inspection.steps[3]?.summary).toContain("pre-registered");
+    expect(inspection.steps[3]?.summary).toContain("clerk-public-client");
+    expect(inspection.ready).toBe(true);
+  });
+
+  it("reports client_id_metadata_document_supported on authorization server metadata", async () => {
+    const fixture = await startInspectionFixture({
+      authorizationServerMetadata: (origins) => ({
+        issuer: origins.identity,
+        authorization_endpoint: `${origins.identity}/authorize`,
+        token_endpoint: `${origins.identity}/token`,
+        client_id_metadata_document_supported: true,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+
+    const inspection = await inspectMcpOAuth(oauthTarget(fixture.url));
+
+    expect(inspection.steps[2]?.summary).toContain(
+      "client_id_metadata_document_supported",
+    );
+    expect(outcomes(inspection.steps)).toEqual([
+      ["challenge", "ok"],
+      ["resource-metadata", "ok"],
+      ["authorization-server-metadata", "ok"],
+      ["registration", "failed"],
+    ]);
+    expect(inspection.steps[3]?.summary).toContain(
+      "client_id_metadata_document_supported",
+    );
+    expect(inspection.ready).toBe(false);
+  });
+
+  it("prefers dynamic client registration when CIMD and DCR are both advertised", async () => {
+    const fixture = await startInspectionFixture({
+      authorizationServerMetadata: (origins) => ({
+        issuer: origins.identity,
+        authorization_endpoint: `${origins.identity}/authorize`,
+        token_endpoint: `${origins.identity}/token`,
+        registration_endpoint: `${origins.identity}/register`,
+        client_id_metadata_document_supported: true,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+      }),
+    });
+
+    const inspection = await inspectMcpOAuth(oauthTarget(fixture.url));
+
+    expect(inspection.steps[3]).toMatchObject({
+      name: "registration",
+      outcome: "ok",
+    });
+    expect(inspection.steps[3]?.summary).toContain(
+      "dynamic client registration",
+    );
+    expect(inspection.ready).toBe(true);
+  });
+
   it("reports an authorization server without dynamic client registration", async () => {
     const fixture = await startInspectionFixture({
       authorizationServerMetadata: (origins) => ({
@@ -306,7 +471,7 @@ describe("read-only MCP OAuth discovery inspection", () => {
       ["authorization-server-metadata", "ok"],
       ["registration", "failed"],
     ]);
-    expect(inspection.steps[3]?.hint).toContain("dynamic client registration");
+    expect(inspection.steps[3]?.summary).toContain("registration strategy");
     expect(inspection.ready).toBe(false);
   });
 
