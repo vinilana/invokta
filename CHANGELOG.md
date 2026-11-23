@@ -7,30 +7,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-### Added
-
-- `@invokta/mcp` accepts a pre-registered public `clientId` with a mandatory
-  exact `issuer`, optional `redirectUris` allowlist on `McpOAuthClientTarget`,
-  skips dynamic client registration when both are configured and discovery
-  matches, validates the authorization URL `redirect_uri` before returning it,
-  reports registration strategy selection in `inspectMcpOAuth`, and fails with
-  the dedicated `UNSUPPORTED_REGISTRATION` error when no strategy applies (ADR
-  0055). Interactive CIMD remains a follow-up slice.
-
-### Changed
-
-- `@invokta/mcp` interactive OAuth without a configured `clientId` now fails with
-  `UNSUPPORTED_REGISTRATION` when authorization-server metadata is missing or omits
-  `registration_endpoint`, instead of POSTing an inferred `<issuer>/register`
-  URL.
-- Pre-registered OAuth clients require the configured `issuer` to appear in
-  protected resource `authorization_servers` and to match `authorization_servers[0]`
-  before discovery continues; missing metadata with a configured `clientId` fails
-  closed with `PROTOCOL_ERROR`.
-- DevTools attached HTTP routes map `UNSUPPORTED_REGISTRATION` to HTTP 502 with an
-  explicit remediation message.
-
-## [0.10.0] - 2026-11-18
+## [0.10.0] - 2026-11-22
 
 ### Added
 
@@ -258,6 +235,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   gateway rule on every invocation (ADR 0054).
 - Four examples: `gateway-engine`, `gateway-discovery-engine`,
   `gateway-jev-engine`, and `gateway-semantic-search-engine`.
+- `@invokta/mcp` accepts a pre-registered public `clientId` with a mandatory
+  exact `issuer`, optional `redirectUris` allowlist on `McpOAuthClientTarget`,
+  skips dynamic client registration when both are configured and discovery
+  matches, validates the authorization URL `redirect_uri` before returning it,
+  reports registration strategy selection in `inspectMcpOAuth`, and fails with
+  the dedicated `UNSUPPORTED_REGISTRATION` error when no strategy applies (ADR
+  0055). Interactive CIMD remains a follow-up slice.
 
 ### Changed
 
@@ -329,6 +313,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Development tooling moves to Biome 2.6.4. Its new Markdown and YAML
   formatters are disabled, so `yarn format:check` covers the same files as
   before.
+- `@invokta/mcp` interactive OAuth without a configured `clientId` now fails with
+  `UNSUPPORTED_REGISTRATION` when authorization-server metadata is missing or omits
+  `registration_endpoint`, instead of POSTing an inferred `<issuer>/register`
+  URL.
+- Pre-registered OAuth clients require the configured `issuer` to appear in
+  protected resource `authorization_servers` and to match `authorization_servers[0]`
+  before discovery continues; missing metadata with a configured `clientId` fails
+  closed with `PROTOCOL_ERROR`.
+- DevTools attached HTTP routes map `UNSUPPORTED_REGISTRATION` to HTTP 502 with an
+  explicit remediation message.
 
 ### Fixed
 
