@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { isBuiltin } from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,20 @@ const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
 function readJson(path: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+}
+
+function apiEsmEntry(apiPackage: string): string {
+  const manifest = readJson(`${apiPackage}/package.json`) as {
+    readonly module?: string;
+    readonly exports?: {
+      readonly "."?: { readonly default?: { readonly default?: string } };
+    };
+  };
+  const entry = manifest.exports?.["."]?.default?.default ?? manifest.module;
+  if (entry === undefined) {
+    throw new Error("@opentelemetry/api exposes no ESM entry point");
+  }
+  return entry;
 }
 
 function dependencyNames(manifest: Record<string, unknown>): string[] {
@@ -78,12 +92,13 @@ describe("@invokta/otel package boundary", () => {
     const sources = readdirSync(sourceDirectory)
       .filter((name) => name.endsWith(".ts"))
       .map((name) => join(sourceDirectory, name));
-    const apiDirectory = `${repositoryRoot}/node_modules/@opentelemetry/api/build/esm`;
+    const apiPackage = `${repositoryRoot}/node_modules/@opentelemetry/api`;
+    const apiDirectory = dirname(join(apiPackage, apiEsmEntry(apiPackage)));
     const apiModules = readdirSync(apiDirectory, {
       recursive: true,
       withFileTypes: true,
     })
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
+      .filter((entry) => entry.isFile() && /\.m?js$/u.test(entry.name))
       .map((entry) => join(entry.parentPath, entry.name));
 
     expect(apiModules.length).toBeGreaterThan(10);
