@@ -44,7 +44,7 @@
     "check": "yarn typecheck && yarn lint && yarn format:check && yarn test:coverage && yarn build && yarn check:examples"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.4",
+    "@biomejs/biome": "2.6.8",
     "@types/node": "26.6.6",
     "@vitest/coverage-v8": "4.1.12",
     "ajv": "8.20.0",
