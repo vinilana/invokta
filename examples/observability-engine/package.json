@@ -21,7 +21,7 @@
     "@invokta/core": "0.10.0",
     "@invokta/mcp": "0.10.0",
     "@invokta/otel": "0.10.0",
-    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/api": "1.10.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
